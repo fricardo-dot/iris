@@ -1,8 +1,8 @@
 # Iris — Escopo do Projeto
 
-**Status:** aprovado para iniciar a Fase 0
+**Status:** Fase 0 executada — liberado para iniciar a Fase 1
 **Data:** 2026-08-22
-**Versão:** 3
+**Versão:** 4
 
 ---
 
@@ -325,14 +325,28 @@ limitar o impacto de uma futura reimplementação da fonte de dados**. Note
 que isso não a torna "substituível": Graph, EWS, IMAP e OOM têm modelos
 diferentes de identidade, eventos, conversas e permissões.
 
-### R2 — Guarda de segurança do Object Model
+### R2 — Guarda de segurança do Object Model — *RESOLVIDO na Fase 0*
 
 O Outlook pode avisar ou bloquear acesso programático a endereços de
 destinatários e ao envio. Depende do antivírus registrado no Windows
-Security Center, do Trust Center e de política de grupo. Se a política for
-"negar", **não há solução dentro do aplicativo**.
-**Mitigação:** validar na Fase 0; rascunho + `Display()` como comportamento
-mínimo garantido, envio automático como opcional.
+Security Center, do Trust Center e de política de grupo.
+
+**Medido em 2026-08-22 nesta máquina e nesta conta corporativa:**
+
+- `SenderEmailAddress` lido sem prompt (critério B6)
+- Rascunho criado, `Display()` aberto e fechado sem prompt (C1)
+- `MailItem.Send()` **executado com sucesso** (C2): uma cópia em Itens
+  Enviados, uma entregue na Entrada, zero na Caixa de Saída, zero retries.
+  Entrega confirmada também pelo usuário, pelo identificador no corpo.
+
+**Conclusão: o envio programático é permitido pela política atual.** O Iris
+pode enviar sem intervenção manual.
+
+**Mitigação que permanece:** a política pode mudar sem aviso, e o resultado
+vale para esta máquina. O fallback do C1 — gerar o rascunho e abrir para o
+usuário clicar em Enviar — fica implementado como caminho alternativo, não
+descartado. Todo envio continua passando por `MutateAsync`, com o retry do
+message filter desligado.
 
 ### R3 — Desempenho do COM
 
@@ -353,11 +367,28 @@ Quatro módulos e quatro recursos de IA é bastante trabalho.
 **Mitigação:** as fases da seção 7; cada fase utilizável sozinha, exceto a
 Fase 0, que é investigação descartável e não precisa ser.
 
-### R6 — Threading, STA e reentrância COM
+### R6 — Threading, STA e reentrância COM — *CORRIGIDO na Fase 0*
 
 O OOM tem afinidade de thread. Obter um objeto numa thread e usar em outra,
 ou despachar chamadas em `Task.Run`, causa falhas erráticas.
-**Mitigação:** o broker da seção 4; só DTOs cruzam a fronteira.
+
+**A premissa da v3 estava errada.** O documento assumia que os callbacks de
+evento chegariam na thread STA que assinou. Medido: **eles chegam numa
+thread MTA do pool**. A primeira implementação lia `MailItem.Subject` e
+`EntryID` direto no callback — violação do próprio R6, que funcionava por
+marshaling implícito do COM. É assim que se constrói travamento sob carga.
+
+**Mitigação corrigida:** o handler não toca em COM. Anota onde o callback
+chegou, em que ordem, e devolve a leitura ao dispatcher do broker. O
+despacho é **assíncrono**: bloquear o callback esperando a STA causaria
+deadlock quando o Outlook dispara o evento de dentro de uma chamada que a
+própria STA está executando.
+
+**Ressalva que não se resolve com código:** o RCW é materializado na MTA e
+lido depois na STA. Isso não é o mesmo que "o objeto mora na STA", e o
+estado lido é o do momento do processamento, não o que causou o evento.
+Consequência para a Fase 2: evento é **aviso de pasta suja**, e o
+processamento relê o estado atual em vez de aplicar uma transição.
 
 ### R7 — Referências COM e `OUTLOOK.EXE` órfão
 
@@ -371,13 +402,19 @@ liberar na ordem inversa. Não usar `FinalReleaseComObject` indiscriminado.
 assinados precisam de referência forte viva. Soltar tudo cedo demais mata os
 eventos.
 
-### R8 — Ausência de sincronização incremental confiável
+### R8 — Ausência de sincronização incremental confiável — *CONFIRMADO*
 
 O OOM não tem delta token. Eventos se perdem com Iris fechado, Outlook
 reiniciando, sincronização em lote, queda de conexão ou volume alto.
+
+**Demonstrado na Fase 0 (critério D5):** com a assinatura cancelada, foram
+feitas 3 criações e 1 exclusão. Ao reassinar, **zero eventos** referentes a
+elas — só a comparação de snapshot enxergou a diferença de +2 itens.
+
+Deixou de ser suposição do documento e virou fato medido.
+
 **Mitigação:** eventos para baixa latência **mais** reconciliação periódica
-com checkpoints por pasta. O desenho concreto é entregável da Fase 2, com
-evidência colhida na Fase 0.
+com checkpoints por pasta. O desenho concreto é entregável da Fase 2.
 
 ### R9 — Estado offline e download parcial
 
@@ -451,7 +488,75 @@ SQLite não tem criptografia nativa:
 
 ---
 
-## 10. Stack
+## 10. Resultados da Fase 0
+
+Spike executado em 2026-08-22 contra Outlook clássico x64 16.0.20326 e conta
+Exchange corporativa em modo cached. **23 critérios passam, 0 falham.**
+Código descartável em `spike/`; o que fica são as respostas.
+
+### Perguntas fundadoras, respondidas
+
+| Pergunta | Resposta |
+|---|---|
+| O Outlook clássico existe nesta máquina? | Sim; "novo Outlook" **não** instalado (R1 não se materializou) |
+| Dá para ler caixa, corpo e anexos? | Sim, inclusive anexo de 13 MB aberto de verdade |
+| A política permite enviar programaticamente? | **Sim** — R2 resolvido |
+| Os eventos funcionam? | Sim, com ressalvas do R6 e do R8 |
+| A leitura direta é rápida o bastante? | **Não** — ver abaixo |
+
+### Números que decidem desenho
+
+- **~16 ms por item** para montar o DTO de uma mensagem. Ler 770 itens levou
+  **12,8 segundos**. Uma caixa de 10 mil itens levaria minutos.
+  → Confirma que a Fase 2 (cache) é obrigatória, não otimização.
+- `Restrict` e `Sort` do próprio Outlook são baratos (2–5 ms em 770 itens).
+  → A filtragem deve ficar no Outlook, não em laço nosso.
+
+### Comportamentos descobertos que mudam código
+
+1. **Mensagem não enviada nasce em Rascunhos**, não na pasta onde
+   `Items.Add` foi chamado. Criar item numa pasta específica exige `Save()`
+   seguido de `Move()`.
+2. **Mover um item dentro do mesmo store MUDA o `EntryID`** (critério D3), e
+   aparece como `ItemRemove` na origem mais `ItemAdd` no destino.
+   → Confirma a seção 5: a Fase 2 precisa de chave interna estável.
+3. **Um `Save` gera um `ItemChange`**, independentemente de quantas
+   propriedades mudaram.
+4. **A ordem dos eventos não é confiável** como ordem causal. Processamento
+   precisa ser idempotente.
+5. Nenhuma perda em rajada de 25 entradas — mas isso **não** é evidência
+   sobre carga de sincronização inicial do Exchange.
+
+### Armadilhas de interop, resolvidas
+
+- `Marshal.GetActiveObject` não existe no .NET moderno; exige P/Invoke de
+  `GetActiveObject` (oleaut32) e `CLSIDFromProgID`.
+- O PIA do NuGet **compila e falha em execução** por falta do assembly
+  `office`. Ele existe no GAC, e o .NET moderno não carrega do GAC.
+  Solução: embutir os tipos de interop.
+- `EmbedInteropTypes` dentro de `PackageReference` é **ignorado**; é preciso
+  marcar o `ReferencePath` num target após `ResolveAssemblyReferences`.
+- `COMReference` é inviável nesta cadeia de ferramentas:
+  `ResolveComReference` não existe no MSBuild do .NET Core, e o MSBuild do
+  VS 2022 traz um SDK que recusa `net10.0`. Comparação encerrada.
+
+### O que continua NÃO validado
+
+Registrado para ninguém tratar como testado:
+
+- **Rótulos de sensibilidade do Purview** (`MSIP_Labels` via
+  `PropertyAccessor`). `MailItem.Sensitivity` é a propriedade clássica e não
+  responde por rótulos modernos. **Obrigatório antes da Fase 3.**
+- **Movimento entre stores** — só existe um store nesta conta.
+- **Reinício do Outlook com assinatura ativa** (D7).
+- **Caminho de retry do message filter** — o Outlook nunca ficou ocupado
+  durante as execuções.
+- **Marshaling entre arquiteturas** — Outlook e Iris são ambos x64.
+- **Volume real de caixa grande** — a maior amostra foi de 770 itens.
+
+---
+
+## 11. Stack
 
 **Decidido: VB.NET no .NET 10 (LTS), interface em WPF.**
 
@@ -511,20 +616,31 @@ Option Infer On
 
 ---
 
-## 11. Decisões pendentes
+## 12. Decisões pendentes
 
 - [x] Confirmar a abordagem COM com Outlook clássico
 - [x] Escolher a stack
+- [x] Confirmar se a política permite `Send()` — **permite** (R2)
 - [ ] Escolher o provedor de IA e o modelo — atenção: busca semântica exige
       **embeddings**, e nem todo provedor oferece esse endpoint
 - [ ] Definir o visual: parecido com o Outlook ou identidade própria
 - [ ] Criptografia do cache: DPAPI, SQLCipher ou BitLocker + ACL (R14)
 - [ ] Triagem grava no Outlook ou só no cache? (seção 6)
 - [ ] Verificar a política corporativa aplicável antes da Fase 3 (R11)
+- [ ] Testar rótulos do Purview antes da Fase 3 (seção 10)
 
 ---
 
 ## Apêndice — histórico de revisão
+
+**v4 (2026-08-22)** — Fase 0 executada; 23 critérios passam, 0 falham.
+R2 **resolvido**: o envio programático é permitido, com entrega confirmada
+pelo programa e pelo usuário. R6 **corrigido**: a premissa de que os eventos
+chegariam na thread STA estava errada — chegam em MTA, e a leitura precisa
+ser remarcada para o broker. R8 **confirmado** por medição, não mais por
+suposição. Seção 10 nova, com números, comportamentos descobertos,
+armadilhas de interop e a lista explícita do que continua não validado.
+Stack e decisões renumeradas para 11 e 12.
 
 **v3 (2026-08-22)** — segunda rodada de revisão externa; aprovado para
 iniciar a Fase 0. Correções: resolvida a contradição entre "a UI lê sempre
