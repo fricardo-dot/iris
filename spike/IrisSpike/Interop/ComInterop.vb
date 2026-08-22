@@ -180,7 +180,7 @@ Namespace Interop
     ''' <summary>
     ''' Utilitários COM que o .NET moderno não fornece mais prontos.
     ''' </summary>
-    Friend Module ComHelpers
+    Public Module ComHelpers
 
         ' Marshal.GetActiveObject NÃO existe no .NET Core/5+. Anexar a uma
         ' instância em execução exige P/Invoke direto. Esta é uma pegadinha
@@ -197,29 +197,59 @@ Namespace Interop
         End Sub
 
         ''' <summary>
-        ''' Anexa a uma instância JÁ EM EXECUÇÃO. Retorna Nothing se não há
-        ''' nenhuma. Nunca inicia o aplicativo — o ESCOPO.md exige que o
-        ''' Outlook já esteja aberto, e iniciar por CreateObject produz uma
-        ''' instância sem perfil interativo.
+        ''' Por que não basta "deu certo ou não": um Outlook que está
+        ''' ABRINDO, com diálogo modal ou reparando um store recusa a
+        ''' chamada, e isso é completamente diferente de não estar aberto.
+        ''' Confundir os dois manda o usuário abrir um Outlook que já está
+        ''' na tela — foi exatamente o que este spike fez na primeira
+        ''' execução contra o Outlook real (R13).
         ''' </summary>
-        Public Function GetRunningInstance(progId As String) As Object
+        Public Enum AttachOutcome
+            Ok
+            NotRegistered
+            NotRunning
+            Busy
+            Failed
+        End Enum
+
+        ' HRESULTs relevantes
+        Private Const MK_E_UNAVAILABLE As Integer = &H800401E3
+        Private Const RPC_E_CALL_REJECTED As Integer = &H80010001
+        Private Const RPC_E_SERVERCALL_RETRYLATER As Integer = &H8001010A
+        Private Const RPC_E_DISCONNECTED As Integer = &H80010108
+        Private Const CO_E_SERVER_EXEC_FAILURE As Integer = &H80080005
+
+        ''' <summary>
+        ''' Anexa a uma instância JÁ EM EXECUÇÃO. Nunca inicia o aplicativo —
+        ''' o ESCOPO.md exige que o Outlook já esteja aberto, e iniciar por
+        ''' CreateObject produz uma instância sem perfil interativo.
+        ''' </summary>
+        Public Function GetRunningInstance(progId As String) _
+            As (Instance As Object, Outcome As AttachOutcome, Hresult As Integer)
+
             Dim clsid As Guid
             Try
                 CLSIDFromProgID(progId, clsid)
             Catch ex As COMException
-                ' ProgID não registrado: o Outlook clássico não está instalado.
-                Return Nothing
+                Return (Nothing, AttachOutcome.NotRegistered, ex.HResult)
             End Try
 
             Dim instance As Object = Nothing
             Try
                 GetActiveObject(clsid, IntPtr.Zero, instance)
             Catch ex As COMException
-                ' MK_E_UNAVAILABLE: registrado, mas nenhuma instância rodando.
-                Return Nothing
+                Select Case ex.HResult
+                    Case MK_E_UNAVAILABLE
+                        Return (Nothing, AttachOutcome.NotRunning, ex.HResult)
+                    Case RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER,
+                         RPC_E_DISCONNECTED, CO_E_SERVER_EXEC_FAILURE
+                        Return (Nothing, AttachOutcome.Busy, ex.HResult)
+                    Case Else
+                        Return (Nothing, AttachOutcome.Failed, ex.HResult)
+                End Select
             End Try
 
-            Return instance
+            Return (instance, AttachOutcome.Ok, 0)
         End Function
 
         ''' <summary>
@@ -227,7 +257,12 @@ Namespace Interop
         ''' cria wrappers intermediários que ninguém libera, e o sintoma é
         ''' OUTLOOK.EXE órfão.
         ''' </summary>
-        Public Sub Release(ByRef comObject As Object)
+        ''' <remarks>
+        ''' ByVal de propósito: com Option Strict On, um parâmetro ByRef As
+        ''' Object obrigaria conversão estreitante na volta para qualquer
+        ''' campo tipado. O chamador atribui Nothing ao próprio campo.
+        ''' </remarks>
+        Public Sub Release(comObject As Object)
             If comObject Is Nothing Then Return
             Try
                 If Marshal.IsComObject(comObject) Then
@@ -235,8 +270,6 @@ Namespace Interop
                 End If
             Catch
                 ' Liberar nunca deve derrubar o encerramento.
-            Finally
-                comObject = Nothing
             End Try
         End Sub
 

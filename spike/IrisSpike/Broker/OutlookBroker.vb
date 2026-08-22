@@ -1,6 +1,7 @@
 Imports System.Threading
 Imports System.Windows.Threading
 Imports IrisSpike.Interop
+Imports Outlook = Microsoft.Office.Interop.Outlook
 
 Namespace Broker
 
@@ -8,6 +9,9 @@ Namespace Broker
         Disconnected
         Connected
         Reconnecting
+        ''' <summary>Outlook aberto, mas recusando chamadas (R13).</summary>
+        Busy
+        ''' <summary>Outlook não está em execução, ou nem instalado.</summary>
         Unavailable
     End Enum
 
@@ -23,6 +27,9 @@ Namespace Broker
     '''      como mensagens de janela. Por isso Dispatcher.Run(), não um
     '''      While/Dequeue.
     '''   3. Só DTOs atravessam a fronteira. Nenhum RCW sobe para o chamador.
+    '''
+    ''' Tipagem forte em todo o acesso ao Outlook — o escopo descarta late
+    ''' binding como estratégia principal (seção 10).
     ''' </summary>
     Public NotInheritable Class OutlookBroker
         Implements IDisposable
@@ -35,8 +42,8 @@ Namespace Broker
         Private _disposed As Boolean
 
         ' Sessão Outlook. Só pode ser tocada de dentro da thread do broker.
-        Private _application As Object
-        Private _session As Object
+        Private _application As Outlook.Application
+        Private _namespace As Outlook.NameSpace
 
         ''' <summary>
         ''' R7, tensão deliberada: as coleções Items com eventos assinados
@@ -50,6 +57,10 @@ Namespace Broker
         Public ReadOnly Property ThreadId As Integer
         Public ReadOnly Property Apartment As ApartmentState
         Public Property State As SessionState = SessionState.Disconnected
+
+        ''' <summary>Diagnóstico da última tentativa de anexar.</summary>
+        Public Property LastAttachOutcome As ComHelpers.AttachOutcome
+        Public Property LastAttachHresult As Integer
 
         Public ReadOnly Property MessageFilter As OutlookMessageFilter
             Get
@@ -78,13 +89,11 @@ Namespace Broker
             _thread.Start()
 
             If Not _ready.Wait(timeout) Then
-                Throw New TimeoutException(
-                    $"Broker não subiu em {timeout.TotalSeconds:0}s.")
+                Throw New TimeoutException($"Broker não subiu em {timeout.TotalSeconds:0}s.")
             End If
 
             If _startupError IsNot Nothing Then
-                Throw New InvalidOperationException(
-                    "Falha ao iniciar o broker.", _startupError)
+                Throw New InvalidOperationException("Falha ao iniciar o broker.", _startupError)
             End If
         End Sub
 
@@ -129,26 +138,28 @@ Namespace Broker
         End Function
 
         ''' <summary>
-        ''' Para operações COM idempotentes (leitura). O message filter pode
-        ''' repetir a chamada se o Outlook estiver ocupado.
+        ''' Operação COM idempotente (leitura). O message filter pode repetir
+        ''' a chamada se o Outlook estiver ocupado.
         ''' </summary>
-        Public Function ReadAsync(Of T)(work As Func(Of T)) As Task(Of T)
+        Public Function ReadAsync(Of T)(work As Func(Of Outlook.Application, Outlook.NameSpace, T)) As Task(Of T)
             Return InvokeAsync(Function()
+                                   RequireSession()
                                    _filter.AllowRetry = True
-                                   Return work()
+                                   Return work(_application, _namespace)
                                End Function)
         End Function
 
         ''' <summary>
-        ''' Para operações com efeito colateral — Send() acima de todas.
-        ''' Desliga o retry do message filter enquanto roda: uma chamada
-        ''' repetida aqui envia o e-mail duas vezes (R13).
+        ''' Operação com efeito colateral — Send() acima de todas. Desliga o
+        ''' retry do message filter enquanto roda: uma chamada repetida aqui
+        ''' envia o e-mail duas vezes (R13).
         ''' </summary>
-        Public Function MutateAsync(Of T)(work As Func(Of T)) As Task(Of T)
+        Public Function MutateAsync(Of T)(work As Func(Of Outlook.Application, Outlook.NameSpace, T)) As Task(Of T)
             Return InvokeAsync(Function()
+                                   RequireSession()
                                    _filter.AllowRetry = False
                                    Try
-                                       Return work()
+                                       Return work(_application, _namespace)
                                    Finally
                                        _filter.AllowRetry = True
                                    End Try
@@ -170,22 +181,35 @@ Namespace Broker
             AssertOnBrokerThread()
 
             Try
-                _application = ComHelpers.GetRunningInstance("Outlook.Application")
-                If _application Is Nothing Then
+                Dim attach = ComHelpers.GetRunningInstance("Outlook.Application")
+                LastAttachOutcome = attach.Outcome
+                LastAttachHresult = attach.Hresult
+
+                Select Case attach.Outcome
+                    Case ComHelpers.AttachOutcome.Busy
+                        Return SessionState.Busy
+                    Case ComHelpers.AttachOutcome.NotRunning,
+                         ComHelpers.AttachOutcome.NotRegistered,
+                         ComHelpers.AttachOutcome.Failed
+                        Return SessionState.Unavailable
+                End Select
+
+                ' Referências curtas e nomeadas, nunca encadeadas (R7).
+                Dim app = TryCast(attach.Instance, Outlook.Application)
+                If app Is Nothing Then
+                    ComHelpers.Release(attach.Instance)
                     Return SessionState.Unavailable
                 End If
 
-                ' Referência curta e nomeada, nunca encadeada (R7).
-                Dim app = _application
-                _session = app.GetType().InvokeMember(
-                    "GetNamespace",
-                    Reflection.BindingFlags.InvokeMethod,
-                    Nothing, app, New Object() {"MAPI"})
-
+                _application = app
+                _namespace = app.GetNamespace("MAPI")
                 Return SessionState.Connected
+
             Catch ex As Runtime.InteropServices.COMException
+                ' Anexou, mas GetNamespace foi recusado: Outlook ocupado.
                 ReleaseSessionCore()
-                Return SessionState.Unavailable
+                LastAttachHresult = ex.HResult
+                Return SessionState.Busy
             End Try
         End Function
 
@@ -202,15 +226,12 @@ Namespace Broker
 
         Private Function ProbeCore() As SessionState
             AssertOnBrokerThread()
-
             If _application Is Nothing Then Return ConnectCore()
 
             Try
                 ' Toque barato só para ver se o RCW ainda responde.
-                Dim probe = _application.GetType().InvokeMember(
-                    "Name", Reflection.BindingFlags.GetProperty,
-                    Nothing, _application, Nothing)
-                Return If(probe Is Nothing, SessionState.Disconnected, SessionState.Connected)
+                Dim name = _application.Name
+                Return If(String.IsNullOrEmpty(name), SessionState.Disconnected, SessionState.Connected)
             Catch ex As Runtime.InteropServices.COMException
                 ' RPC_E_DISCONNECTED / RPC_S_SERVER_UNAVAILABLE: o Outlook
                 ' foi embora. Solta tudo e tenta anexar de novo.
@@ -220,6 +241,9 @@ Namespace Broker
             End Try
         End Function
 
+        ''' <summary>
+        ''' Mantém viva a coleção cujo evento foi assinado. Ver _liveSinks.
+        ''' </summary>
         Public Sub TrackSink(sink As Object)
             AssertOnBrokerThread()
             _liveSinks.Add(sink)
@@ -231,16 +255,25 @@ Namespace Broker
             End Get
         End Property
 
+        Private Sub RequireSession()
+            AssertOnBrokerThread()
+            If _application Is Nothing OrElse _namespace Is Nothing Then
+                Throw New InvalidOperationException(
+                    "Sem sessão com o Outlook. Chame ConnectAsync() antes.")
+            End If
+        End Sub
+
         Private Sub ReleaseSessionCore()
             For i = _liveSinks.Count - 1 To 0 Step -1
-                Dim sink = _liveSinks(i)
-                ComHelpers.Release(sink)
+                ComHelpers.Release(_liveSinks(i))
             Next
             _liveSinks.Clear()
 
             ' Ordem inversa da aquisição (R7).
-            ComHelpers.Release(_session)
+            ComHelpers.Release(_namespace)
+            _namespace = Nothing
             ComHelpers.Release(_application)
+            _application = Nothing
         End Sub
 
         Public Sub AssertOnBrokerThread()

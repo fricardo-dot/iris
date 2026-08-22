@@ -24,6 +24,16 @@ Module Program
         ("G", "Ambiente — bitness, COMReference vs pacote, mensagens protegidas")
     }
 
+    ''' <summary>
+    ''' Grupos que precisam de ação sua no meio do teste — enviar de fato,
+    ''' mover uma mensagem, fechar o Outlook. Ficam para o incremento
+    ''' seguinte, com roteiro guiado no console.
+    ''' </summary>
+    Private ReadOnly InteractiveGroups As (Id As String, Title As String)() = {
+        ("C", "Envio — rascunho, Display(), Send() real e entrega confirmada"),
+        ("D", "Eventos — ItemAdd/Change/Remove, movimentos, mudanças offline")
+    }
+
     Function Main(args As String()) As Integer
         Return MainAsync(args).GetAwaiter().GetResult()
     End Function
@@ -60,6 +70,12 @@ Module Program
                 Select Case state
                     Case SessionState.Connected
                         Return (CheckStatus.Pass, "Anexado ao Outlook em execução.")
+                    Case SessionState.Busy
+                        ' R13 ao vivo: aberto, porém recusando chamadas.
+                        Return (CheckStatus.Warn,
+                                $"Outlook em execução mas OCUPADO (HRESULT 0x{broker.LastAttachHresult:X8}) — " &
+                                "inicializando, com diálogo modal aberto ou reparando um store. " &
+                                "Termine a abertura do Outlook e rode de novo.")
                     Case SessionState.Unavailable
                         If Not env.OutlookInstalled Then
                             Return (CheckStatus.Skipped,
@@ -77,20 +93,27 @@ Module Program
 
         ' ---- Grupos B a G ---------------------------------------------
         Console.WriteLine()
-        Console.WriteLine("B a G — dependem do Outlook")
 
-        Dim reason = If(env.OutlookInstalled,
-                        "Outlook instalado mas não está em execução.",
-                        "Outlook clássico não instalado nesta máquina.")
+        If connected Then
+            Console.WriteLine("B, E, F, G — contra o Outlook real")
+            Dim outlookChecks As New OutlookChecks(runner, broker)
+            Await outlookChecks.RunAsync()
 
-        For Each group In PendingGroups
-            If connected Then
+            Console.WriteLine()
+            Console.WriteLine("C, D — exigem interação")
+            For Each group In InteractiveGroups
                 runner.Skip(group.Id, $"{group.Id} — dependente do Outlook", group.Title,
-                            "Ainda não implementado — próximo incremento do spike.")
-            Else
+                            "Exige interação guiada; próximo incremento do spike.")
+            Next
+        Else
+            Console.WriteLine("B a G — dependem do Outlook")
+            Dim reason = If(env.OutlookInstalled,
+                            "Outlook instalado mas não está em execução.",
+                            "Outlook clássico não instalado nesta máquina.")
+            For Each group In PendingGroups
                 runner.Skip(group.Id, $"{group.Id} — dependente do Outlook", group.Title, reason)
-            End If
-        Next
+            Next
+        End If
 
         ' ---- Encerramento ---------------------------------------------
         Console.WriteLine()

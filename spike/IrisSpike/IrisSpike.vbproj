@@ -43,8 +43,27 @@
        ===================================================================== -->
 
   <ItemGroup Condition="'$(UseComReference)' != 'true'">
+    <!-- EmbedInteropTypes é obrigatório, não uma otimização.
+         Sem ele o build passa e o programa MORRE em execução com
+         FileNotFoundException do assembly 'office' (Microsoft.Office.Core),
+         que o pacote não traz. Ele existe no GAC, mas o .NET moderno não
+         carrega do GAC — isso é exclusividade do .NET Framework.
+         Embutir os tipos remove a dependência em tempo de execução. -->
     <PackageReference Include="Microsoft.Office.Interop.Outlook" Version="15.0.4797.1004" />
   </ItemGroup>
+
+  <!-- O metadado EmbedInteropTypes dentro de um PackageReference é
+       IGNORADO pelo SDK. É preciso marcar a referência DEPOIS de resolvida.
+       Verificação: com o embedding ativo, Microsoft.Office.Interop.Outlook.dll
+       deixa de aparecer na pasta de saída. -->
+  <Target Name="EmbedOutlookInterop" AfterTargets="ResolveAssemblyReferences"
+          Condition="'$(UseComReference)' != 'true'">
+    <ItemGroup>
+      <ReferencePath Condition="'%(FileName)' == 'Microsoft.Office.Interop.Outlook'">
+        <EmbedInteropTypes>true</EmbedInteropTypes>
+      </ReferencePath>
+    </ItemGroup>
+  </Target>
 
   <PropertyGroup Condition="'$(UseComReference)' != 'true'">
     <NoWarn>$(NoWarn);NU1701</NoWarn>
