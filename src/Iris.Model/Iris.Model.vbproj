@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- net10.0 SEM -windows de proposito. O interop do Outlook e
+         Windows-only; com este TFM a fronteira do ESCOPO.md secao 4 deixa
+         de ser convencao e passa a ser impossibilidade de compilacao. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Model</RootNamespace>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+  </PropertyGroup>
+
+</Project>

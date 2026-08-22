@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Tambem sem -windows: o Core define IOutlookBroker mas nunca ve COM. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Core</RootNamespace>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Model\Iris.Model.vbproj" />
+  </ItemGroup>
+
+</Project>

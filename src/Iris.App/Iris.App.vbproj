@@ -1,0 +1,30 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Iris.App</RootNamespace>
+    <AssemblyName>Iris</AssemblyName>
+    <UseWPF>true</UseWPF>
+    <StartupObject>Iris.App.Application</StartupObject>
+
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Model\Iris.Model.vbproj" />
+    <ProjectReference Include="..\Iris.Core\Iris.Core.vbproj" />
+
+    <!-- Iris.Outlook é referenciado APENAS para o composition root do
+         startup montar a implementação concreta. Nenhum ViewModel ou View
+         pode tocar neste assembly, e o teste arquitetural
+         ViewModels_NaoReferenciam_Outlook falha se alguém tentar. -->
+    <ProjectReference Include="..\Iris.Outlook\Iris.Outlook.vbproj" />
+  </ItemGroup>
+
+</Project>

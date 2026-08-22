@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Iris.Tests</RootNamespace>
+    <IsPackable>false</IsPackable>
+    <IsTestProject>true</IsTestProject>
+
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.13.0" />
+    <PackageReference Include="MSTest.TestAdapter" Version="3.7.3" />
+    <PackageReference Include="MSTest.TestFramework" Version="3.7.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Todos os projetos, porque os testes arquiteturais precisam
+         INSPECIONAR os assemblies para provar que a fronteira existe. -->
+    <ProjectReference Include="..\..\src\Iris.Model\Iris.Model.vbproj" />
+    <ProjectReference Include="..\..\src\Iris.Core\Iris.Core.vbproj" />
+    <ProjectReference Include="..\..\src\Iris.Outlook\Iris.Outlook.vbproj" />
+    <ProjectReference Include="..\..\src\Iris.App\Iris.App.vbproj" />
+  </ItemGroup>
+
+</Project>

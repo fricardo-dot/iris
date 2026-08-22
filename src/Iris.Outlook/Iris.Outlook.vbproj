@@ -1,0 +1,38 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Iris.Outlook</RootNamespace>
+    <UseWPF>true</UseWPF><!-- Dispatcher para o message pump do broker -->
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Model\Iris.Model.vbproj" />
+    <ProjectReference Include="..\Iris.Core\Iris.Core.vbproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- PrivateAssets="all" impede o pacote de fluir para quem referencia
+         este projeto. O interop para aqui. -->
+    <PackageReference Include="Microsoft.Office.Interop.Outlook" Version="15.0.4797.1004"
+                      PrivateAssets="all" />
+  </ItemGroup>
+
+  <!-- Descoberta da Fase 0: EmbedInteropTypes dentro de PackageReference e
+       IGNORADO. Sem marcar a referencia ja resolvida, o build passa e o
+       programa morre em execucao por falta do assembly 'office'. -->
+  <Target Name="EmbedOutlookInterop" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferencePath Condition="'%(FileName)' == 'Microsoft.Office.Interop.Outlook'">
+        <EmbedInteropTypes>true</EmbedInteropTypes>
+      </ReferencePath>
+    </ItemGroup>
+  </Target>
+
+</Project>
