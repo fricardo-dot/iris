@@ -1,0 +1,12 @@
+# Build .NET
+bin/
+obj/
+*.user
+*.suo
+
+# Visual Studio
+.vs/
+
+# Relatórios gerados pelo spike — cada execução é de uma máquina/momento.
+# Se um relatório precisar virar registro do projeto, commite explicitamente.
+spike/relatorio-fase0.md

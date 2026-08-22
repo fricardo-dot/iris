@@ -1,0 +1,67 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>IrisSpike</RootNamespace>
+    <AssemblyName>IrisSpike</AssemblyName>
+    <TargetFramework>net10.0-windows</TargetFramework>
+
+    <!-- Dispatcher para o message pump do broker (seção 4 do ESCOPO.md). -->
+    <UseWPF>true</UseWPF>
+
+    <!-- ESCOPO.md, seção 10: sem estes, default properties e conversões
+         implícitas escondem chamadas COM. Inegociável. -->
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+
+    <!-- R12: AnyCPU sem Prefer 32-bit é a primeira configuração a testar.
+         O Outlook é servidor COM fora do processo e faz marshaling entre
+         arquiteturas, então bitness idêntico é hipótese a testar, não
+         requisito assumido. -->
+    <PlatformTarget>AnyCPU</PlatformTarget>
+    <Prefer32Bit>false</Prefer32Bit>
+  </PropertyGroup>
+
+  <!-- =====================================================================
+       Referência ao Outlook — uma das duas formas abaixo.
+
+       (A) Pacote NuGet: restaura em qualquer máquina, mesmo sem Outlook
+           instalado, o que permite COMPILAR aqui. NU1701 é esperado: o
+           pacote é um PIA de .NET Framework, mas assembly de interop é
+           apenas metadado de interface COM.
+
+       (B) COMReference: gera o interop a partir da TypeLib REGISTRADA na
+           máquina. Mais fiel à versão instalada do Outlook, porém não
+           compila onde o Outlook não existe.
+
+       Critério G da Fase 0 manda comparar as duas na máquina real.
+       Padrão = (A). Para testar (B), passe -p:UseComReference=true.
+       ===================================================================== -->
+
+  <ItemGroup Condition="'$(UseComReference)' != 'true'">
+    <PackageReference Include="Microsoft.Office.Interop.Outlook" Version="15.0.4797.1004" />
+  </ItemGroup>
+
+  <PropertyGroup Condition="'$(UseComReference)' != 'true'">
+    <NoWarn>$(NoWarn);NU1701</NoWarn>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(UseComReference)' == 'true'">
+    <COMReference Include="Microsoft.Office.Interop.Outlook">
+      <Guid>00062fff-0000-0000-c000-000000000046</Guid>
+      <VersionMajor>9</VersionMajor>
+      <VersionMinor>6</VersionMinor>
+      <WrapperTool>tlbimp</WrapperTool>
+      <Lcid>0</Lcid>
+      <Isolated>false</Isolated>
+      <!-- EmbedInteropTypes com event sinks é uma das coisas que o spike
+           precisa validar; se os eventos não chegarem, testar com False. -->
+      <EmbedInteropTypes>true</EmbedInteropTypes>
+    </COMReference>
+  </ItemGroup>
+
+</Project>
