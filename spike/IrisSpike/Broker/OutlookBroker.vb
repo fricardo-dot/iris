@@ -154,6 +154,18 @@ Namespace Broker
         End Function
 
         ''' <summary>
+        ''' Enfileira trabalho na thread do broker SEM bloquear o chamador.
+        ''' Usado pelos callbacks de evento, que chegam numa thread MTA do
+        ''' pool: bloquear ali para esperar a STA arriscaria deadlock quando
+        ''' o evento e disparado de dentro de uma chamada que a propria STA
+        ''' esta executando.
+        ''' </summary>
+        Public Sub PostToBrokerThread(work As Action)
+            If _dispatcher Is Nothing OrElse _dispatcher.HasShutdownStarted Then Return
+            _dispatcher.InvokeAsync(work)
+        End Sub
+
+        ''' <summary>
         ''' Acesso direto ao NameSpace para helpers que JÁ estão rodando na
         ''' thread do broker. Não passa por GuardResult de propósito: devolve
         ''' RCW por contrato, e quem chama é dono de liberar. Uso interno.
