@@ -64,7 +64,7 @@
                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                             VerticalAlignment="Center">
                     <Ellipse Style="{StaticResource StatusDotState}" />
-                    <TextBlock Margin="8,0,0,0" Text="{Binding State}"
+                    <TextBlock Margin="8,0,0,0" Text="{Binding StatusLabel}"
                                Style="{StaticResource Text.Muted}"
                                VerticalAlignment="Center" />
                 </StackPanel>

@@ -9,3 +9,6 @@ obj/
 
 # Relatórios gerados pelo spike — cada execução é de uma máquina/momento.
 spike/relatorio-fase0.md
+
+# Capturas de tela: contêm dados da caixa de correio real.
+*.png

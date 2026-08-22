@@ -58,6 +58,7 @@ Namespace Global.Iris.App.ViewModels
             End Get
             Private Set(value As SessionState)
                 If SetProperty(_state, value) Then
+                    OnPropertyChanged(NameOf(StatusLabel))
                     OnPropertyChanged(NameOf(Headline))
                     OnPropertyChanged(NameOf(Explanation))
                     OnPropertyChanged(NameOf(ShowOpenOutlook))
@@ -103,6 +104,24 @@ Namespace Global.Iris.App.ViewModels
             Private Set(value As String)
                 SetProperty(_detail, value)
             End Set
+        End Property
+
+        ''' <summary>
+        ''' Rótulo curto do indicador. Existe porque a versão anterior fazia
+        ''' Binding direto no enum e a barra exibia "Connected" — nome de
+        ''' identificador do código vazando para a interface, em inglês.
+        ''' </summary>
+        Public ReadOnly Property StatusLabel As String
+            Get
+                Select Case State
+                    Case SessionState.Connected : Return "Conectado"
+                    Case SessionState.Busy : Return "Outlook ocupado"
+                    Case SessionState.Reconnecting : Return "Reconectando"
+                    Case SessionState.Connecting : Return "Conectando"
+                    Case SessionState.Unavailable : Return "Outlook fechado"
+                    Case Else : Return "Desconectado"
+                End Select
+            End Get
         End Property
 
         ''' <summary>
