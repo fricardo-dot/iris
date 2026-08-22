@@ -21,6 +21,17 @@ Namespace Global.Iris.Model
         ''' </summary>
         Public Property UnreadCount As Integer
         Public Property HasChildren As Boolean
+
+        ''' <summary>
+        ''' PR_ATTR_HIDDEN. E a propriedade que o proprio Outlook usa para
+        ''' nao mostrar pastas internas como "Conversation Action Settings"
+        ''' e "Quick Step Settings".
+        '''
+        ''' O broker REPORTA; quem decide esconder e a camada de
+        ''' apresentacao. Filtrar no broker enterraria uma politica de
+        ''' interface na camada de dados.
+        ''' </summary>
+        Public Property IsHidden As Boolean
     End Class
 
     Public NotInheritable Class RecipientInfo

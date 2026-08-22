@@ -3,9 +3,10 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:model="clr-namespace:Iris.Model;assembly=Iris.Model"
+        xmlns:app="clr-namespace:Iris.App"
         Title="Iris"
-        Height="620" Width="920"
-        MinHeight="420" MinWidth="640"
+        Height="700" Width="1180"
+        MinHeight="480" MinWidth="820"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         Background="{DynamicResource Brush.Background}"
@@ -13,24 +14,19 @@
         UseLayoutRounding="True">
 
     <!--
-        Barra de título própria: sem ícone e sem o nome do programa.
-
-        Nome e ícone continuam existindo NA JANELA (Title e Icon) e portanto
-        na barra de tarefas, no Alt+Tab e para a acessibilidade — eles apenas
-        não são DESENHADOS aqui.
+        Barra de título própria: sem ícone e sem o nome do programa. Ambos
+        continuam existindo NA JANELA (Title e Icon), e portanto na barra de
+        tarefas, no Alt+Tab e para a acessibilidade — só não são desenhados.
 
         WindowChrome, e não WindowStyle=None sozinho: é o que preserva
         arrastar, Aero Snap, duplo clique para maximizar, bordas de resize e
-        Win+Setas. Sem ele todo esse comportamento teria que ser reescrito à
-        mão, e ficaria pior que o do sistema.
+        Win+Setas.
     -->
     <WindowChrome.WindowChrome>
         <!--
-            GlassFrameThickness=1, nao 0. Com 0 o DWM para de compor a
+            GlassFrameThickness=1, não 0. Com 0 o DWM para de compor a
             moldura, e a janela perde a sombra e os cantos arredondados do
-            Windows 11 — parte da sensacao de "menos suave" que uma janela
-            nativa tem e vem exatamente dai. Uma faixa de 1 DIP devolve a
-            composicao sem trazer de volta a legenda do sistema.
+            Windows 11.
         -->
         <WindowChrome CaptionHeight="48"
                       ResizeBorderThickness="6"
@@ -40,6 +36,7 @@
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <app:InverseBoolToVisibility x:Key="NotBoolToVis" />
 
         <!-- A cor do ponto NUNCA é o único sinal: o texto ao lado diz o
              mesmo. Vale para quem não distingue as cores e para quando o
@@ -48,24 +45,56 @@
                BasedOn="{StaticResource StatusDot}">
             <Setter Property="Fill" Value="{DynamicResource Brush.Text.Muted}" />
             <Style.Triggers>
-                <DataTrigger Binding="{Binding State}" Value="{x:Static model:SessionState.Connected}">
+                <DataTrigger Binding="{Binding Connection.State}" Value="{x:Static model:SessionState.Connected}">
                     <Setter Property="Fill" Value="{DynamicResource Brush.Success}" />
                 </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="{x:Static model:SessionState.Busy}">
+                <DataTrigger Binding="{Binding Connection.State}" Value="{x:Static model:SessionState.Busy}">
                     <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
                 </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="{x:Static model:SessionState.Reconnecting}">
+                <DataTrigger Binding="{Binding Connection.State}" Value="{x:Static model:SessionState.Reconnecting}">
                     <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
                 </DataTrigger>
-                <DataTrigger Binding="{Binding State}" Value="{x:Static model:SessionState.Unavailable}">
+                <DataTrigger Binding="{Binding Connection.State}" Value="{x:Static model:SessionState.Unavailable}">
                     <Setter Property="Fill" Value="{DynamicResource Brush.Error}" />
                 </DataTrigger>
             </Style.Triggers>
         </Style>
+
+        <!-- Linha da pasta: nome à esquerda, não lidos à direita. Peso maior
+             quando há não lidos, em vez de pintar a linha inteira. -->
+        <DataTemplate x:Key="FolderNodeTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+
+                <TextBlock Grid.Column="0" Text="{Binding Name}"
+                           FontFamily="{StaticResource Font.Ui}"
+                           FontSize="{StaticResource Font.Size.Body}"
+                           TextTrimming="CharacterEllipsis"
+                           VerticalAlignment="Center">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding HasUnread}" Value="True">
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <TextBlock Grid.Column="1" Text="{Binding UnreadCount}"
+                           Margin="8,0,6,0" VerticalAlignment="Center"
+                           FontFamily="{StaticResource Font.Ui}"
+                           FontSize="{StaticResource Font.Size.Small}"
+                           Foreground="{DynamicResource Brush.Accent}"
+                           Visibility="{Binding HasUnread, Converter={StaticResource BoolToVis}}" />
+            </Grid>
+        </DataTemplate>
     </Window.Resources>
 
-    <!-- A margem muda quando maximizado: sem isso a janela invade a área da
-         barra de tarefas. Calculada por monitor, em código. -->
     <Border x:Name="RootBorder">
         <Grid>
             <Grid.RowDefinitions>
@@ -95,7 +124,7 @@
                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                 VerticalAlignment="Center" Margin="0,0,12,0">
                         <Ellipse Style="{StaticResource StatusDotState}" />
-                        <TextBlock Margin="8,0,0,0" Text="{Binding StatusLabel}"
+                        <TextBlock Margin="8,0,0,0" Text="{Binding Connection.StatusLabel}"
                                    Style="{StaticResource Text.Muted}"
                                    VerticalAlignment="Center" />
                     </StackPanel>
@@ -115,10 +144,81 @@
                 </Grid>
             </Border>
 
-            <!-- ============ Card de estado ============ -->
+            <!-- ============ Conteúdo: pastas | lista | leitura ============ -->
+            <Grid Grid.Row="1"
+                  Visibility="{Binding ShowContent, Converter={StaticResource BoolToVis}}">
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="240" MinWidth="200" MaxWidth="320" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" />
+                </Grid.ColumnDefinitions>
+
+                <!-- Pastas -->
+                <Border Grid.Column="0" Background="{DynamicResource Brush.Surface.1}">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                        <TextBlock Grid.Row="0" Text="PASTAS"
+                                   Style="{StaticResource Text.Muted}"
+                                   FontSize="{StaticResource Font.Size.Caption}"
+                                   Margin="16,16,16,8" />
+
+                        <TreeView Grid.Row="1"
+                                  Style="{StaticResource FolderTree}"
+                                  ItemsSource="{Binding Folders.Roots}"
+                                  ItemTemplate="{StaticResource FolderNodeTemplate}"
+                                  Margin="8,0,8,8">
+                            <TreeView.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <VirtualizingStackPanel />
+                                </ItemsPanelTemplate>
+                            </TreeView.ItemsPanel>
+                        </TreeView>
+
+                        <TextBlock Grid.Row="1" Text="Carregando pastas…"
+                                   Style="{StaticResource Text.Muted}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Top"
+                                   Margin="0,16,0,0"
+                                   Visibility="{Binding Folders.IsLoading, Converter={StaticResource BoolToVis}}" />
+
+                        <TextBlock Grid.Row="1" Text="{Binding Folders.ErrorMessage}"
+                                   Style="{StaticResource Text.Muted}"
+                                   Foreground="{DynamicResource Brush.Error}"
+                                   TextWrapping="Wrap" Margin="16,16,16,0"
+                                   VerticalAlignment="Top"
+                                   Visibility="{Binding Folders.HasError, Converter={StaticResource BoolToVis}}" />
+                    </Grid>
+                </Border>
+
+                <GridSplitter Grid.Column="1" Width="1"
+                              HorizontalAlignment="Stretch"
+                              Background="{DynamicResource Brush.Border.Subtle}"
+                              ResizeBehavior="PreviousAndNext" />
+
+                <!-- Lista e leitura chegam nos marcos 1.3 e 1.4 -->
+                <Border Grid.Column="2" Background="{DynamicResource Brush.Background}">
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Folders.Selected.Name, FallbackValue='Selecione uma pasta'}"
+                                   Style="{StaticResource Text.Title}"
+                                   TextAlignment="Center" />
+                        <TextBlock Text="A lista de mensagens chega no marco 1.3."
+                                   Style="{StaticResource Text.Muted}"
+                                   TextAlignment="Center" Margin="0,8,0,0" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ============ Card de conexão ============ -->
+            <!-- Ocupa a janela só enquanto não há sessão. Com sessão, some e
+                 dá lugar ao conteúdo; o indicador da barra continua contando
+                 o estado sem trocar a tela a cada oscilação. -->
             <Border Grid.Row="1" Style="{StaticResource Card}"
                     Width="480"
-                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                    HorizontalAlignment="Center" VerticalAlignment="Center"
+                    Visibility="{Binding ShowContent, Converter={StaticResource NotBoolToVis}}">
                 <StackPanel>
 
                     <Border Width="56" Height="56"
@@ -130,44 +230,30 @@
                                    HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
 
-                    <TextBlock Text="{Binding Headline}"
+                    <TextBlock Text="{Binding Connection.Headline}"
                                Style="{StaticResource Text.Title}"
-                               TextAlignment="Center"
-                               Margin="0,20,0,0" />
+                               TextAlignment="Center" Margin="0,20,0,0" />
 
-                    <TextBlock Text="{Binding Explanation}"
+                    <TextBlock Text="{Binding Connection.Explanation}"
                                Style="{StaticResource Text.Secondary}"
-                               TextAlignment="Center"
-                               Margin="0,10,0,0" />
+                               TextAlignment="Center" Margin="0,10,0,0" />
 
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
                                 Margin="0,24,0,0">
                         <Button Style="{StaticResource Button.Primary}"
                                 Content="Abrir o Outlook"
-                                Command="{Binding OpenOutlookCommand}"
-                                Visibility="{Binding ShowOpenOutlook, Converter={StaticResource BoolToVis}}"
+                                Command="{Binding Connection.OpenOutlookCommand}"
+                                Visibility="{Binding Connection.ShowOpenOutlook, Converter={StaticResource BoolToVis}}"
                                 Margin="0,0,8,0" />
                         <Button Style="{StaticResource Button.Secondary}"
                                 Content="Verificar novamente"
-                                Command="{Binding RetryCommand}"
+                                Command="{Binding Connection.RetryCommand}"
                                 IsDefault="True" />
                     </StackPanel>
 
-                    <Border Margin="0,24,0,0" Padding="0,16,0,0"
-                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                            BorderThickness="0,1,0,0">
-                        <StackPanel>
-                            <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
-                                       Text="{Binding StoreName, StringFormat='Caixa: {0}'}"
-                                       Visibility="{Binding HasStore, Converter={StaticResource BoolToVis}}" />
-                            <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
-                                       Margin="0,4,0,0"
-                                       Text="{Binding LastCheck, StringFormat='Última verificação: {0:HH:mm:ss}'}" />
-                            <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
-                                       Margin="0,4,0,0"
-                                       Text="{Binding Detail}" />
-                        </StackPanel>
-                    </Border>
+                    <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
+                               Margin="0,20,0,0"
+                               Text="{Binding Connection.Detail}" />
 
                 </StackPanel>
             </Border>

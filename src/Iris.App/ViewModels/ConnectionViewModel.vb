@@ -26,7 +26,7 @@ Namespace Global.Iris.App.ViewModels
         Implements IDisposable
 
         Private ReadOnly _broker As IOutlookBroker
-        Private ReadOnly _ui As Threading.Dispatcher
+        Private ReadOnly _ui As Global.System.Windows.Threading.Dispatcher
         Private _disposed As Boolean
 
         Private _state As SessionState = SessionState.Disconnected
@@ -52,7 +52,7 @@ Namespace Global.Iris.App.ViewModels
         ' entao a ultima vence sem que nenhuma se perca no meio.
         Private ReadOnly _applyGate As New SemaphoreSlim(1, 1)
 
-        Public Sub New(broker As IOutlookBroker, uiDispatcher As Threading.Dispatcher)
+        Public Sub New(broker As IOutlookBroker, uiDispatcher As Global.System.Windows.Threading.Dispatcher)
             _broker = broker
             _ui = uiDispatcher
 

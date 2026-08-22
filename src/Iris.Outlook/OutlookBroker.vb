@@ -468,7 +468,8 @@ Namespace Global.Iris.Outlook
                                         .DefaultItemType = Safe(Function() f.DefaultItemType.ToString()),
                                         .ItemCount = total,
                                         .UnreadCount = SafeInt(Function() f.UnReadItemCount),
-                                        .HasChildren = netos > 0
+                                        .HasChildren = netos > 0,
+                                        .IsHidden = PastaOculta(f)
                                     })
                                 Finally
                                     ComHelpers.Release(f)
@@ -641,6 +642,26 @@ Namespace Global.Iris.Outlook
         ' ===================================================================
         ' Leitura defensiva de propriedades COM
         ' ===================================================================
+
+        ''' <summary>
+        ''' PR_ATTR_HIDDEN via PropertyAccessor. O PropertyAccessor e um
+        ''' objeto COM proprio e precisa ser liberado — encadear
+        ''' f.PropertyAccessor.GetProperty(...) seria o R7 mais uma vez.
+        ''' </summary>
+        Private Shared Function PastaOculta(f As OL.MAPIFolder) As Boolean
+            Const TagOculta As String = "http://schemas.microsoft.com/mapi/proptag/0x10F4000B"
+            Dim acessor As OL.PropertyAccessor = Nothing
+            Try
+                acessor = f.PropertyAccessor
+                Dim valor = acessor.GetProperty(TagOculta)
+                Return TypeOf valor Is Boolean AndAlso CBool(valor)
+            Catch
+                ' Pasta sem a propriedade: tratar como visivel.
+                Return False
+            Finally
+                ComHelpers.Release(acessor)
+            End Try
+        End Function
 
         Private Shared Function Safe(getter As Func(Of String)) As String
             Try : Return If(getter(), "") : Catch : Return "" : End Try

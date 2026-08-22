@@ -13,7 +13,7 @@ Imports Iris.Core
 Class Application
 
     Private _broker As Iris.Outlook.OutlookBroker
-    Private _viewModel As ConnectionViewModel
+    Private _viewModel As MainViewModel
     Private _log As ILog
 
     Private Sub Application_Startup(sender As Object, e As StartupEventArgs) Handles Me.Startup
@@ -43,7 +43,7 @@ Class Application
 
         ' A partir daqui só o contrato circula.
         Dim broker As IOutlookBroker = _broker
-        _viewModel = New ConnectionViewModel(broker, Dispatcher)
+        _viewModel = New MainViewModel(broker, Dispatcher)
 
         Dim janela As New MainWindow With {.DataContext = _viewModel}
         janela.Show()
@@ -51,7 +51,7 @@ Class Application
         ' Primeira conexão sem bloquear a abertura da janela: se o Outlook
         ' estiver ocupado, o usuário vê a tela e o estado, não uma janela
         ' congelada.
-        _viewModel.Observe(_viewModel.InitializeAsync(), "app.initialize")
+        _viewModel.Connection.Observe(_viewModel.InitializeAsync(), "app.initialize")
     End Sub
 
     Private Sub Application_Exit(sender As Object, e As ExitEventArgs) Handles Me.Exit
