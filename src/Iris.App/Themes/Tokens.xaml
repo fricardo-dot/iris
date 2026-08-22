@@ -1,0 +1,121 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:sys="clr-namespace:System;assembly=System.Runtime">
+
+    <!--
+        Tokens do Iris — identidade própria, dark.
+
+        Regra: controles consomem SEMPRE brushes semânticos
+        (Brush.Text.Primary), nunca cores brutas. As cores vivem só aqui,
+        para que trocar a paleta não vire caça a hexadecimal espalhado.
+
+        Superfícies azul-acinzentadas, não preto puro; texto claro, não
+        branco puro. Preto com branco puro é o que cansa a vista em leitura
+        longa, e e-mail é leitura longa.
+    -->
+
+    <!-- ============ Cores ============ -->
+
+    <Color x:Key="Color.Background">#111318</Color>
+    <Color x:Key="Color.Surface.1">#171A21</Color>
+    <Color x:Key="Color.Surface.2">#1D212A</Color>
+    <Color x:Key="Color.Surface.3">#252B36</Color>
+
+    <Color x:Key="Color.Border">#303744</Color>
+    <Color x:Key="Color.Border.Subtle">#252B34</Color>
+
+    <Color x:Key="Color.Text.Primary">#E6EAF0</Color>
+    <Color x:Key="Color.Text.Secondary">#AAB2C0</Color>
+    <Color x:Key="Color.Text.Muted">#858F9F</Color>
+    <Color x:Key="Color.Text.Disabled">#626B78</Color>
+    <!-- Texto SOBRE o acento: escuro, não branco. Contraste melhor. -->
+    <Color x:Key="Color.Text.OnAccent">#10131C</Color>
+
+    <Color x:Key="Color.Accent">#8294FF</Color>
+    <Color x:Key="Color.Accent.Hover">#96A5FF</Color>
+    <Color x:Key="Color.Accent.Pressed">#7184EC</Color>
+    <Color x:Key="Color.Accent.Surface">#29304A</Color>
+    <Color x:Key="Color.Focus">#AAB5FF</Color>
+    <Color x:Key="Color.Link">#8CB4FF</Color>
+
+    <Color x:Key="Color.Success">#62C98B</Color>
+    <Color x:Key="Color.Warning">#E2B75F</Color>
+    <Color x:Key="Color.Error">#ED737A</Color>
+
+    <!-- ============ Brushes semânticos ============ -->
+    <!-- DynamicResource nos brushes deixa a porta aberta para tema claro
+         ou alto contraste sem reescrever os controles. Métricas ficam
+         StaticResource, porque não mudam em runtime e o custo importa. -->
+
+    <SolidColorBrush x:Key="Brush.Background" Color="{StaticResource Color.Background}" />
+    <SolidColorBrush x:Key="Brush.Surface.1" Color="{StaticResource Color.Surface.1}" />
+    <SolidColorBrush x:Key="Brush.Surface.2" Color="{StaticResource Color.Surface.2}" />
+    <SolidColorBrush x:Key="Brush.Surface.3" Color="{StaticResource Color.Surface.3}" />
+
+    <SolidColorBrush x:Key="Brush.Border" Color="{StaticResource Color.Border}" />
+    <SolidColorBrush x:Key="Brush.Border.Subtle" Color="{StaticResource Color.Border.Subtle}" />
+
+    <SolidColorBrush x:Key="Brush.Text.Primary" Color="{StaticResource Color.Text.Primary}" />
+    <SolidColorBrush x:Key="Brush.Text.Secondary" Color="{StaticResource Color.Text.Secondary}" />
+    <SolidColorBrush x:Key="Brush.Text.Muted" Color="{StaticResource Color.Text.Muted}" />
+    <SolidColorBrush x:Key="Brush.Text.Disabled" Color="{StaticResource Color.Text.Disabled}" />
+    <SolidColorBrush x:Key="Brush.Text.OnAccent" Color="{StaticResource Color.Text.OnAccent}" />
+
+    <SolidColorBrush x:Key="Brush.Accent" Color="{StaticResource Color.Accent}" />
+    <SolidColorBrush x:Key="Brush.Accent.Hover" Color="{StaticResource Color.Accent.Hover}" />
+    <SolidColorBrush x:Key="Brush.Accent.Pressed" Color="{StaticResource Color.Accent.Pressed}" />
+    <SolidColorBrush x:Key="Brush.Accent.Surface" Color="{StaticResource Color.Accent.Surface}" />
+    <SolidColorBrush x:Key="Brush.Focus" Color="{StaticResource Color.Focus}" />
+
+    <SolidColorBrush x:Key="Brush.Success" Color="{StaticResource Color.Success}" />
+    <SolidColorBrush x:Key="Brush.Warning" Color="{StaticResource Color.Warning}" />
+    <SolidColorBrush x:Key="Brush.Error" Color="{StaticResource Color.Error}" />
+
+    <!-- ============ Tipografia ============ -->
+    <!-- 14 DIP como base: 12–13 cansa em uso prolongado. -->
+
+    <FontFamily x:Key="Font.Ui">Segoe UI Variable Text, Segoe UI, Sans-Serif</FontFamily>
+    <FontFamily x:Key="Font.Display">Segoe UI Variable Display, Segoe UI, Sans-Serif</FontFamily>
+
+    <sys:Double x:Key="Font.Size.Caption">11</sys:Double>
+    <sys:Double x:Key="Font.Size.Small">12</sys:Double>
+    <sys:Double x:Key="Font.Size.Body">14</sys:Double>
+    <sys:Double x:Key="Font.Size.Subtitle">16</sys:Double>
+    <sys:Double x:Key="Font.Size.Title">20</sys:Double>
+    <sys:Double x:Key="Font.Size.Display">28</sys:Double>
+
+    <sys:Double x:Key="Line.Caption">16</sys:Double>
+    <sys:Double x:Key="Line.Small">17</sys:Double>
+    <sys:Double x:Key="Line.Body">20</sys:Double>
+    <sys:Double x:Key="Line.Subtitle">22</sys:Double>
+    <sys:Double x:Key="Line.Title">28</sys:Double>
+    <sys:Double x:Key="Line.Display">36</sys:Double>
+
+    <!-- ============ Espaçamento — base 4 ============ -->
+
+    <Thickness x:Key="Pad.Button">12,8</Thickness>
+    <Thickness x:Key="Pad.Panel">16</Thickness>
+    <Thickness x:Key="Pad.Card">24</Thickness>
+    <Thickness x:Key="Pad.Row">14,10</Thickness>
+
+    <sys:Double x:Key="Space.4">4</sys:Double>
+    <sys:Double x:Key="Space.8">8</sys:Double>
+    <sys:Double x:Key="Space.12">12</sys:Double>
+    <sys:Double x:Key="Space.16">16</sys:Double>
+    <sys:Double x:Key="Space.24">24</sys:Double>
+    <sys:Double x:Key="Space.32">32</sys:Double>
+
+    <!-- ============ Raios ============ -->
+
+    <CornerRadius x:Key="Radius.Small">4</CornerRadius>
+    <CornerRadius x:Key="Radius.Control">6</CornerRadius>
+    <CornerRadius x:Key="Radius.Card">12</CornerRadius>
+    <CornerRadius x:Key="Radius.Pill">999</CornerRadius>
+
+    <!-- ============ Movimento ============ -->
+    <!-- Nada aqui pode atrasar leitura ou seleção. -->
+
+    <Duration x:Key="Motion.Fast">0:0:0.10</Duration>
+    <Duration x:Key="Motion.Normal">0:0:0.16</Duration>
+
+</ResourceDictionary>

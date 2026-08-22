@@ -27,4 +27,8 @@
     <ProjectReference Include="..\Iris.Outlook\Iris.Outlook.vbproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+  </ItemGroup>
+
 </Project>

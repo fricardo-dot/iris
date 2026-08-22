@@ -1,12 +1,132 @@
-﻿<Window x:Class="MainWindow"
+<Window x:Class="MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:local="clr-namespace:Iris.App"
-        mc:Ignorable="d"
-        Title="MainWindow" Height="450" Width="800">
-    <Grid>
+        xmlns:model="clr-namespace:Iris.Model;assembly=Iris.Model"
+        Title="Iris"
+        Height="620" Width="920"
+        MinHeight="420" MinWidth="640"
+        WindowStartupLocation="CenterScreen"
+        Background="{DynamicResource Brush.Background}"
+        TextOptions.TextFormattingMode="Ideal"
+        UseLayoutRounding="True">
 
+    <!--
+        Janela padrão de propósito: chrome customizado traz bugs de resize,
+        snap, DPI e acessibilidade, e não agregaria nada ao marco 1.1.
+
+        O card central troca de CONTEÚDO por estado; o layout não muda.
+        Trocar a tela inteira a cada transição daria a impressão de que o
+        aplicativo virou outro.
+    -->
+
+    <Window.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+        <!-- A cor do ponto NUNCA é o único sinal: o texto ao lado diz o
+             mesmo. Vale para quem não distingue as cores e para quando o
+             ponto é pequeno demais para se notar. -->
+        <Style x:Key="StatusDotState" TargetType="Ellipse"
+               BasedOn="{StaticResource StatusDot}">
+            <Setter Property="Fill" Value="{DynamicResource Brush.Text.Muted}" />
+            <Style.Triggers>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static model:SessionState.Connected}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Success}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static model:SessionState.Busy}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static model:SessionState.Reconnecting}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Warning}" />
+                </DataTrigger>
+                <DataTrigger Binding="{Binding State}" Value="{x:Static model:SessionState.Unavailable}">
+                    <Setter Property="Fill" Value="{DynamicResource Brush.Error}" />
+                </DataTrigger>
+            </Style.Triggers>
+        </Style>
+    </Window.Resources>
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- ============ Barra superior ============ -->
+        <Border Grid.Row="0"
+                Background="{DynamicResource Brush.Surface.1}"
+                BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                BorderThickness="0,0,0,1"
+                Padding="16,12">
+            <Grid>
+                <TextBlock Text="Iris" Style="{StaticResource Text.Wordmark}"
+                           HorizontalAlignment="Left" VerticalAlignment="Center" />
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                            VerticalAlignment="Center">
+                    <Ellipse Style="{StaticResource StatusDotState}" />
+                    <TextBlock Margin="8,0,0,0" Text="{Binding State}"
+                               Style="{StaticResource Text.Muted}"
+                               VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- ============ Card de estado ============ -->
+        <Border Grid.Row="1" Style="{StaticResource Card}"
+                Width="480"
+                HorizontalAlignment="Center" VerticalAlignment="Center">
+            <StackPanel>
+
+                <Border Width="56" Height="56"
+                        CornerRadius="{StaticResource Radius.Card}"
+                        Background="{DynamicResource Brush.Accent.Surface}"
+                        HorizontalAlignment="Center">
+                    <TextBlock Text="◈" FontSize="26"
+                               Foreground="{DynamicResource Brush.Accent}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" />
+                </Border>
+
+                <TextBlock Text="{Binding Headline}"
+                           Style="{StaticResource Text.Title}"
+                           TextAlignment="Center"
+                           Margin="0,20,0,0" />
+
+                <TextBlock Text="{Binding Explanation}"
+                           Style="{StaticResource Text.Secondary}"
+                           TextAlignment="Center"
+                           Margin="0,10,0,0" />
+
+                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                            Margin="0,24,0,0">
+                    <Button Style="{StaticResource Button.Primary}"
+                            Content="Abrir o Outlook"
+                            Command="{Binding OpenOutlookCommand}"
+                            Visibility="{Binding ShowOpenOutlook, Converter={StaticResource BoolToVis}}"
+                            Margin="0,0,8,0" />
+                    <Button Style="{StaticResource Button.Secondary}"
+                            Content="Verificar novamente"
+                            Command="{Binding RetryCommand}"
+                            IsDefault="True" />
+                </StackPanel>
+
+                <!-- Diagnóstico do marco: o que a conexão realmente viu. -->
+                <Border Margin="0,24,0,0" Padding="0,16,0,0"
+                        BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                        BorderThickness="0,1,0,0">
+                    <StackPanel>
+                        <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
+                                   Text="{Binding StoreName, StringFormat='Caixa: {0}'}"
+                                   Visibility="{Binding HasStore, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
+                                   Margin="0,4,0,0"
+                                   Text="{Binding LastCheck, StringFormat='Última verificação: {0:HH:mm:ss}'}" />
+                        <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
+                                   Margin="0,4,0,0"
+                                   Text="{Binding Detail}" />
+                    </StackPanel>
+                </Border>
+
+            </StackPanel>
+        </Border>
     </Grid>
 </Window>

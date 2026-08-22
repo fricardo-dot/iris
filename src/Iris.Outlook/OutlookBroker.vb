@@ -196,8 +196,11 @@ Namespace Global.Iris.Outlook
                         End Try
                     End Function)
 
+                ' "ok", nao "None": ErrorKind.None significa sucesso, e ler
+                ' "None" numa linha de log parece falha.
                 _log.Write(LogLevel.Debug, operation,
-                           $"{resultado.Kind} em {(DateTime.UtcNow - inicio).TotalMilliseconds:0} ms")
+                           $"{If(resultado.Succeeded, "ok", resultado.Kind.ToString())} " &
+                           $"em {(DateTime.UtcNow - inicio).TotalMilliseconds:0} ms")
                 Return resultado
 
             Catch ex As COMException
