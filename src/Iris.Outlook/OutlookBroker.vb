@@ -53,6 +53,10 @@ Namespace Global.Iris.Outlook
         ' por CObj faria box e leria a COPIA, nao o campo.
         Private _state As Integer = CInt(SessionState.Disconnected)
 
+        ' 1 = o delegate da operacao ja comecou, logo pode ter surtido
+        ' efeito. Serializado pela thread do broker.
+        Private _effectStarted As Integer = 0
+
         Public Event StateChanged As EventHandler(Of SessionState) Implements IOutlookBroker.StateChanged
         Public Event FolderInvalidated As EventHandler(Of FolderInvalidation) Implements IOutlookBroker.FolderInvalidated
 
@@ -153,7 +157,7 @@ Namespace Global.Iris.Outlook
         Private Async Function ReadAsync(Of T)(operation As String,
                                                work As Func(Of OL.Application, OL.NameSpace, OperationResult(Of T)),
                                                cancel As CancellationToken) As Task(Of OperationResult(Of T))
-            Return Await RunAsync(operation, work, allowRetry:=True, cancel:=cancel)
+            Return Await RunAsync(operation, work, allowRetry:=True, isMutation:=False, cancel:=cancel)
         End Function
 
         ''' <summary>
@@ -164,12 +168,13 @@ Namespace Global.Iris.Outlook
         Private Async Function MutateAsync(Of T)(operation As String,
                                                  work As Func(Of OL.Application, OL.NameSpace, OperationResult(Of T)),
                                                  cancel As CancellationToken) As Task(Of OperationResult(Of T))
-            Return Await RunAsync(operation, work, allowRetry:=False, cancel:=cancel)
+            Return Await RunAsync(operation, work, allowRetry:=False, isMutation:=True, cancel:=cancel)
         End Function
 
         Private Async Function RunAsync(Of T)(operation As String,
                                               work As Func(Of OL.Application, OL.NameSpace, OperationResult(Of T)),
                                               allowRetry As Boolean,
+                                              isMutation As Boolean,
                                               cancel As CancellationToken) As Task(Of OperationResult(Of T))
             ' Cancelar antes de começar evita o trabalho. Depois que a
             ' chamada COM começou, cancelar só libera o CHAMADOR — a
@@ -182,6 +187,7 @@ Namespace Global.Iris.Outlook
             End If
 
             Dim inicio = DateTime.UtcNow
+            Volatile.Write(_effectStarted, 0)
             Try
                 Dim resultado = Await InvokeAsync(
                     Function()
@@ -189,6 +195,7 @@ Namespace Global.Iris.Outlook
                             Return OperationResult(Of T).Fail(ErrorKind.NotConnected, "sem sessão")
                         End If
                         _filter.AllowRetry = allowRetry
+                        Volatile.Write(_effectStarted, 1)
                         Try
                             Return work(_application, _namespace)
                         Finally
@@ -204,13 +211,36 @@ Namespace Global.Iris.Outlook
                 Return resultado
 
             Catch ex As COMException
-                Dim kind = Classify(ex.HResult)
-                _log.Write(LogLevel.Warn, operation, $"HRESULT 0x{ex.HResult:X8} -> {kind}")
+                Dim kind = ClassifyFailure(ex.HResult, isMutation, operation)
                 Return OperationResult(Of T).Fail(kind, $"0x{ex.HResult:X8}")
             Catch ex As Exception
+                Dim kind = ClassifyFailure(Nothing, isMutation, operation)
                 _log.Write(LogLevel.Error, operation, ex.GetType().Name)
-                Return OperationResult(Of T).Fail(ErrorKind.Unexpected, ex.GetType().Name)
+                Return OperationResult(Of T).Fail(kind, ex.GetType().Name)
             End Try
+        End Function
+
+        ''' <summary>
+        ''' O contrato diz que falha DEPOIS de uma mutação começar é
+        ''' Ambiguous. A versão anterior usava a mesma classificação para
+        ''' leitura e mutação, então um Send() que estourasse com
+        ''' RPC_E_DISCONNECTED depois de a mensagem sair virava NotConnected
+        ''' — cujo IsRetryable é True. Ou seja: o código convidava a
+        ''' reenviar exatamente no caso em que reenviar duplica.
+        ''' </summary>
+        Private Function ClassifyFailure(hresult As Integer?, isMutation As Boolean,
+                                         operation As String) As ErrorKind
+            If isMutation AndAlso Volatile.Read(_effectStarted) = 1 Then
+                _log.Write(LogLevel.Warn, operation,
+                           $"AMBIGUO apos iniciar mutacao" &
+                           If(hresult.HasValue, $" (0x{hresult.Value:X8})", ""))
+                Return ErrorKind.Ambiguous
+            End If
+
+            If Not hresult.HasValue Then Return ErrorKind.Unexpected
+            Dim kind = Classify(hresult.Value)
+            _log.Write(LogLevel.Warn, operation, $"HRESULT 0x{hresult.Value:X8} -> {kind}")
+            Return kind
         End Function
 
         ''' <summary>
@@ -256,6 +286,19 @@ Namespace Global.Iris.Outlook
         Private Function ConnectCore() As SessionState
             AssertOnBrokerThread()
             Try
+                ' Se ja ha sessao e ela responde, nao reconectar. Liberar a
+                ' sessao antiga ANTES de adquirir a nova pode derrubar o
+                ' proprio RCW recem-obtido, quando GetActiveObject devolve a
+                ' mesma instancia.
+                If _application IsNot Nothing Then
+                    Try
+                        Dim vivo = _application.Name
+                        If Not String.IsNullOrEmpty(vivo) Then Return SessionState.Connected
+                    Catch
+                        ReleaseSessionCore()
+                    End Try
+                End If
+
                 Dim attach = ComHelpers.GetRunningInstance("Outlook.Application")
                 Select Case attach.Outcome
                     Case ComHelpers.AttachOutcome.Busy
@@ -272,14 +315,19 @@ Namespace Global.Iris.Outlook
                     Return SessionState.Unavailable
                 End If
 
-                ReleaseSessionCore()
                 _application = app
                 _namespace = app.GetNamespace("MAPI")
                 Return SessionState.Connected
 
             Catch ex As COMException
+                ' Nem toda COMException e "ocupado": acesso negado e objeto
+                ' desconectado sao coisas diferentes, e chamar tudo de Busy faz
+                ' a UI prometer reconexao automatica que nao vai acontecer.
                 ReleaseSessionCore()
-                Return SessionState.Busy
+                Select Case Classify(ex.HResult)
+                    Case ErrorKind.Busy : Return SessionState.Busy
+                    Case Else : Return SessionState.Unavailable
+                End Select
             End Try
         End Function
 
@@ -300,7 +348,12 @@ Namespace Global.Iris.Outlook
                     Case &H80010001, &H8001010A
                         Return SessionState.Busy
                     Case Else
-                        Return SessionState.Connected
+                        ' Antes isto devolvia Connected, ou seja, mentia para a
+                        ' UI logo depois de o probe falhar. Mantem os RCWs,
+                        ' registra, e reporta estado degradado.
+                        _log.Write(LogLevel.Warn, "broker.probe",
+                                   $"HRESULT 0x{ex.HResult:X8} nao classificado")
+                        Return SessionState.Busy
                 End Select
             End Try
         End Function
@@ -383,13 +436,37 @@ Namespace Global.Iris.Outlook
                                 Dim f = filhos.Item(i)
                                 If f Is Nothing Then Continue For
                                 Try
+                                    ' f.Folders e f.Items sao objetos COM
+                                    ' PROPRIOS. Escrever f.Folders.Count cria um
+                                    ' RCW intermediario sem dono - o R7, que eu
+                                    ' ja violei duas vezes antes desta. E aqui o
+                                    ' vazamento se repetiria a cada pasta
+                                    ' expandida na arvore.
                                     Dim netos = 0
-                                    Try : netos = f.Folders.Count : Catch : End Try
+                                    Dim subpastas As OL.Folders = Nothing
+                                    Try
+                                        subpastas = f.Folders
+                                        netos = subpastas.Count
+                                    Catch
+                                    Finally
+                                        ComHelpers.Release(subpastas)
+                                    End Try
+
+                                    Dim total = 0
+                                    Dim itens As OL.Items = Nothing
+                                    Try
+                                        itens = f.Items
+                                        total = itens.Count
+                                    Catch
+                                    Finally
+                                        ComHelpers.Release(itens)
+                                    End Try
+
                                     lista.Add(New FolderInfo With {
                                         .Key = New FolderKey(Safe(Function() f.EntryID), Safe(Function() f.StoreID)),
                                         .Name = Safe(Function() f.Name),
                                         .DefaultItemType = Safe(Function() f.DefaultItemType.ToString()),
-                                        .ItemCount = SafeInt(Function() f.Items.Count),
+                                        .ItemCount = total,
                                         .UnreadCount = SafeInt(Function() f.UnReadItemCount),
                                         .HasChildren = netos > 0
                                     })
@@ -521,6 +598,7 @@ Namespace Global.Iris.Outlook
             If timeout = Nothing Then timeout = TimeSpan.FromSeconds(10)
             If _dispatcher Is Nothing Then Return
 
+            Dim limpezaOk = True
             Try
                 _dispatcher.Invoke(
                     Sub()
@@ -532,15 +610,22 @@ Namespace Global.Iris.Outlook
                         ReleaseSessionCore()
                         OutlookMessageFilter.Revoke()
                     End Sub, DispatcherPriority.Send, Nothing, timeout)
-            Catch
+            Catch ex As Exception
+                limpezaOk = False
+                _log.Write(LogLevel.Error, "broker.shutdown", "limpeza falhou: " & ex.GetType().Name)
             End Try
 
             _dispatcher.InvokeShutdown()
 
-            If _thread IsNot Nothing AndAlso Not _thread.Join(timeout) Then
-                _log.Write(LogLevel.Error, "broker.shutdown", "thread não encerrou")
+            Dim encerrou = _thread Is Nothing OrElse _thread.Join(timeout)
+            If encerrou Then
+                _log.Write(LogLevel.Info, "broker.shutdown",
+                           If(limpezaOk, "ok", "thread ok, limpeza falhou"))
+            Else
+                ' Registrar "ok" logo depois de o Join falhar era log
+                ' mentiroso, e log mentiroso e pior que log ausente.
+                _log.Write(LogLevel.Error, "broker.shutdown", "thread NAO encerrou no timeout")
             End If
-            _log.Write(LogLevel.Info, "broker.shutdown", "ok")
         End Sub
 
         Public Sub Dispose() Implements IDisposable.Dispose

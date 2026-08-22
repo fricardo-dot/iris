@@ -46,7 +46,7 @@ Class Application
         ' Primeira conexão sem bloquear a abertura da janela: se o Outlook
         ' estiver ocupado, o usuário vê a tela e o estado, não uma janela
         ' congelada.
-        Dim ignorado = _viewModel.InitializeAsync()
+        _viewModel.Observe(_viewModel.InitializeAsync(), "app.initialize")
     End Sub
 
     Private Sub Application_Exit(sender As Object, e As ExitEventArgs) Handles Me.Exit

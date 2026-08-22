@@ -101,6 +101,8 @@ Namespace Global.Iris.Model
     ''' ainda é o mesmo antes de salvar.
     ''' </summary>
     Public NotInheritable Class AttachmentKey
+        Implements IEquatable(Of AttachmentKey)
+
         Public ReadOnly Property Owner As ItemKey
         Public ReadOnly Property Index As Integer
         Public ReadOnly Property FileName As String
@@ -113,8 +115,30 @@ Namespace Global.Iris.Model
             Me.SizeBytes = sizeBytes
         End Sub
 
+        ''' <summary>
+        ''' SEM o nome do arquivo. A politica de log proibe registrar nome de
+        ''' anexo, e alguem inevitavelmente vai passar a chave para o log — a
+        ''' versao anterior deste ToString entregava o nome de bandeja.
+        ''' </summary>
         Public Overrides Function ToString() As String
-            Return $"anexo[{Index}] {FileName} ({SizeBytes} bytes)"
+            Return $"anexo[{Index}] {SizeBytes}b"
+        End Function
+
+        Public Overloads Function Equals(other As AttachmentKey) As Boolean _
+            Implements IEquatable(Of AttachmentKey).Equals
+            If other Is Nothing Then Return False
+            Return Index = other.Index AndAlso
+                   SizeBytes = other.SizeBytes AndAlso
+                   String.Equals(FileName, other.FileName, StringComparison.Ordinal) AndAlso
+                   Equals(Owner, other.Owner)
+        End Function
+
+        Public Overrides Function Equals(obj As Object) As Boolean
+            Return Equals(TryCast(obj, AttachmentKey))
+        End Function
+
+        Public Overrides Function GetHashCode() As Integer
+            Return HashCode.Combine(Owner, Index, FileName, SizeBytes)
         End Function
     End Class
 
@@ -123,11 +147,30 @@ Namespace Global.Iris.Model
     ''' compilador impeça passar uma mensagem qualquer para SendDraftAsync.
     ''' </summary>
     Public NotInheritable Class DraftKey
+        Implements IEquatable(Of DraftKey)
+
         Public ReadOnly Property Item As ItemKey
 
         Public Sub New(item As ItemKey)
             Me.Item = item
         End Sub
+
+        ' Igualdade por valor tambem aqui: sem ela, usar a chave num
+        ' dicionario, num Set ou na selecao do WPF compararia por
+        ' referencia e nunca casaria depois de reconstruida.
+        Public Overloads Function Equals(other As DraftKey) As Boolean _
+            Implements IEquatable(Of DraftKey).Equals
+            If other Is Nothing Then Return False
+            Return Equals(Item, other.Item)
+        End Function
+
+        Public Overrides Function Equals(obj As Object) As Boolean
+            Return Equals(TryCast(obj, DraftKey))
+        End Function
+
+        Public Overrides Function GetHashCode() As Integer
+            Return If(Item Is Nothing, 0, Item.GetHashCode())
+        End Function
 
         Public Overrides Function ToString() As String
             Return $"rascunho:{Item}"

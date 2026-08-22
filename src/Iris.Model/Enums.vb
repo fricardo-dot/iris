@@ -76,6 +76,17 @@ Namespace Global.Iris.Model
         Unknown
     End Enum
 
+    ''' <summary>
+    ''' Tipo de destinatario. Enum, e nao String: com "To"/"Cc" soltos, o
+    ''' Core e a UI passariam a depender de literais que ninguem valida.
+    ''' </summary>
+    Public Enum RecipientKind
+        [To]
+        Cc
+        Bcc
+        Unknown
+    End Enum
+
     Public Enum MessageSort
         ReceivedDesc
         ReceivedAsc

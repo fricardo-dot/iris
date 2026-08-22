@@ -16,6 +16,13 @@ Namespace Global.Iris.Model
 
         Public ReadOnly Property Value As T
         Public ReadOnly Property Kind As ErrorKind
+
+        ''' <summary>
+        ''' DIAGNOSTICO, nao mensagem de usuario. Nao e localizado, e nunca
+        ''' contem corpo, assunto, endereco ou caminho. A UI deve traduzir o
+        ''' <see cref="Kind"/>; exibir Detail direto na tela vaza detalhe
+        ''' tecnico e, pior, pode vazar dado da caixa.
+        ''' </summary>
         Public ReadOnly Property Detail As String
 
         Private Sub New(value As T, kind As ErrorKind, detail As String)

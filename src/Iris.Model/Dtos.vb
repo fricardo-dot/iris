@@ -27,7 +27,7 @@ Namespace Global.Iris.Model
         Public Property DisplayName As String = ""
         Public Property Address As String = ""
         ''' <summary>To, Cc ou Bcc.</summary>
-        Public Property Kind As String = ""
+        Public Property Kind As RecipientKind = RecipientKind.Unknown
         Public Property Resolved As Boolean
     End Class
 
@@ -46,7 +46,13 @@ Namespace Global.Iris.Model
         Public Property Key As ItemKey
         Public Property Subject As String = ""
         Public Property SenderName As String = ""
-        Public Property ReceivedTime As DateTime?
+        ''' <summary>
+        ''' DateTimeOffset, nao DateTime: antes de a Fase 2 persistir isto em
+        ''' SQLite, o fuso precisa estar no dado. "DateTime sem Kind" e a
+        ''' origem classica de mensagem aparecendo com hora errada depois de
+        ''' ler do cache.
+        ''' </summary>
+        Public Property ReceivedTime As DateTimeOffset?
         Public Property SizeBytes As Integer
         Public Property HasAttachments As Boolean
         Public Property IsUnread As Boolean
@@ -66,7 +72,7 @@ Namespace Global.Iris.Model
         Public Property Subject As String = ""
         Public Property SenderName As String = ""
         Public Property SenderAddress As String = ""
-        Public Property ReceivedTime As DateTime?
+        Public Property ReceivedTime As DateTimeOffset?
         Public Property Recipients As New List(Of RecipientInfo)()
         Public Property Attachments As New List(Of AttachmentInfo)()
 
@@ -128,7 +134,7 @@ Namespace Global.Iris.Model
         Public Property Kind As InvalidationKind
         Public Property SubscriptionId As Integer
         Public Property Sequence As Long
-        Public Property At As DateTime
+        Public Property At As DateTimeOffset
     End Class
 
     ''' <summary>Conteúdo editável de um rascunho.</summary>

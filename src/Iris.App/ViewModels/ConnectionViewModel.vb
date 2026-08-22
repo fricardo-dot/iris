@@ -34,9 +34,16 @@ Namespace Global.Iris.App.ViewModels
         Private _storeName As String = ""
         Private _detail As String = ""
 
-        ' 0 = stores ainda não lidos nesta conexão. Interlocked porque duas
-        ' origens de mudança de estado disputam a leitura.
+        ' 0 = stores ainda nao lidos nesta conexao. Interlocked porque duas
+        ' origens de mudanca de estado disputam a leitura.
         Private _storesLoaded As Integer = 0
+
+        ' Geracao da ultima aplicacao de estado. O CompareExchange acima
+        ' impede LEITURA duplicada dos stores; ele nao impede um resultado
+        ' VELHO sobrescrever um novo. Cenario real: Connected comeca a ler os
+        ' stores, o watchdog publica Unavailable, e a leitura antiga termina
+        ' depois e devolve a UI para "Conectado" com o Outlook ja fechado.
+        Private _applyGeneration As Integer = 0
 
         Public Sub New(broker As IOutlookBroker, uiDispatcher As Threading.Dispatcher)
             _broker = broker
@@ -185,6 +192,9 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         Private Async Function ApplyAsync(novo As SessionState) As Task
+            If _disposed Then Return
+
+            Dim minhaGeracao = Interlocked.Increment(_applyGeneration)
             Dim nomeStore = _storeName
 
             If novo <> SessionState.Connected Then
@@ -209,32 +219,58 @@ Namespace Global.Iris.App.ViewModels
                         nomeStore &= $" (+{stores.Value.Count - 1})"
                     End If
                 Else
-                    ' Falhou: libera a flag, senão a caixa ficaria sem nome
-                    ' até a próxima desconexão.
+                    ' Falhou: libera a flag, senao a caixa ficaria sem nome
+                    ' ate a proxima desconexao.
                     Interlocked.Exchange(_storesLoaded, 0)
                 End If
+
+                ' A leitura levou tempo. Se outra transicao aconteceu nesse
+                ' meio, este resultado esta velho e nao pode tocar a UI.
+                If Volatile.Read(_applyGeneration) <> minhaGeracao Then Return
             End If
 
-            OnUi(Sub()
-                     State = novo
-                     StoreName = nomeStore
-                     LastCheck = DateTime.Now
-                 End Sub)
+            Await OnUiAsync(
+                Sub()
+                    ' Checa de novo JA na thread de UI: entre o agendamento e
+                    ' a execucao ainda cabe outra transicao.
+                    If _disposed OrElse Volatile.Read(_applyGeneration) <> minhaGeracao Then Return
+                    State = novo
+                    StoreName = nomeStore
+                    LastCheck = DateTime.Now
+                End Sub)
         End Function
 
         Private Sub OnBrokerStateChanged(sender As Object, novo As SessionState)
             ' Pode chegar em qualquer thread. Nunca tocar propriedade
-            ' observável daqui direto.
-            Dim ignorado = ApplyAsync(novo)
+            ' observavel daqui direto.
+            Observe(ApplyAsync(novo), "vm.stateChanged")
         End Sub
 
-        Private Sub OnUi(action As Action)
+        ''' <summary>
+        ''' Um "Dim ignorado = TaskQualquer()" engole a excecao em silencio.
+        ''' Aqui ela pelo menos aparece no log.
+        ''' </summary>
+        Public Sub Observe(work As Task, operation As String)
+            work.ContinueWith(
+                Sub(t)
+                    If t.Exception Is Nothing Then Return
+                    Global.System.Diagnostics.Debug.WriteLine(
+                        $"[{operation}] {t.Exception.GetBaseException().GetType().Name}")
+                End Sub, TaskContinuationOptions.OnlyOnFaulted)
+        End Sub
+
+        ''' <summary>
+        ''' Aguardavel de proposito: com BeginInvoke, ApplyAsync terminava
+        ''' ANTES de a tela refletir o resultado, e nao havia barreira real
+        ''' para quem esperasse a conclusao.
+        ''' </summary>
+        Private Async Function OnUiAsync(action As Action) As Task
             If _ui.CheckAccess() Then
                 action()
-            Else
-                _ui.BeginInvoke(action)
+                Return
             End If
-        End Sub
+            Await _ui.InvokeAsync(action).Task
+        End Function
 
         ''' <summary>
         ''' Abre o Outlook de forma INTERATIVA, pelo shell. É diferente de
@@ -256,6 +292,9 @@ Namespace Global.Iris.App.ViewModels
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True
+            ' Invalida trabalho em voo: remover o handler impede eventos
+            ' novos, mas uma ApplyAsync ja iniciada ainda tocaria a UI.
+            Interlocked.Increment(_applyGeneration)
             RemoveHandler _broker.StateChanged, AddressOf OnBrokerStateChanged
         End Sub
 
