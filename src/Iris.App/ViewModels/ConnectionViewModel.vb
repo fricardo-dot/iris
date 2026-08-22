@@ -38,12 +38,19 @@ Namespace Global.Iris.App.ViewModels
         ' origens de mudanca de estado disputam a leitura.
         Private _storesLoaded As Integer = 0
 
-        ' Geracao da ultima aplicacao de estado. O CompareExchange acima
-        ' impede LEITURA duplicada dos stores; ele nao impede um resultado
-        ' VELHO sobrescrever um novo. Cenario real: Connected comeca a ler os
-        ' stores, o watchdog publica Unavailable, e a leitura antiga termina
-        ' depois e devolve a UI para "Conectado" com o Outlook ja fechado.
-        Private _applyGeneration As Integer = 0
+        ' Aplicar estado e SERIALIZADO, nao versionado.
+        '
+        ' A primeira tentativa usava geracao: cada ApplyAsync pegava um
+        ' numero e descartava o proprio resultado se outro tivesse comecado
+        ' depois. Isso resolvia o caso "resultado velho sobrescreve novo" e
+        ' criava outro: a conexao inicial e o watchdog publicam Connected
+        ' quase juntos, o primeiro le os stores e o segundo o invalida — e o
+        ' nome da caixa nunca aparecia, porque quem tinha o dado foi
+        ' descartado por quem nao tinha.
+        '
+        ' Serializar resolve os dois: as transicoes sao aplicadas em ordem,
+        ' entao a ultima vence sem que nenhuma se perca no meio.
+        Private ReadOnly _applyGate As New SemaphoreSlim(1, 1)
 
         Public Sub New(broker As IOutlookBroker, uiDispatcher As Threading.Dispatcher)
             _broker = broker
@@ -194,7 +201,17 @@ Namespace Global.Iris.App.ViewModels
         Private Async Function ApplyAsync(novo As SessionState) As Task
             If _disposed Then Return
 
-            Dim minhaGeracao = Interlocked.Increment(_applyGeneration)
+            Await _applyGate.WaitAsync()
+            Try
+                Await ApplyCoreAsync(novo)
+            Finally
+                _applyGate.Release()
+            End Try
+        End Function
+
+        Private Async Function ApplyCoreAsync(novo As SessionState) As Task
+            If _disposed Then Return
+
             Dim nomeStore = _storeName
 
             If novo <> SessionState.Connected Then
@@ -224,16 +241,11 @@ Namespace Global.Iris.App.ViewModels
                     Interlocked.Exchange(_storesLoaded, 0)
                 End If
 
-                ' A leitura levou tempo. Se outra transicao aconteceu nesse
-                ' meio, este resultado esta velho e nao pode tocar a UI.
-                If Volatile.Read(_applyGeneration) <> minhaGeracao Then Return
             End If
 
             Await OnUiAsync(
                 Sub()
-                    ' Checa de novo JA na thread de UI: entre o agendamento e
-                    ' a execucao ainda cabe outra transicao.
-                    If _disposed OrElse Volatile.Read(_applyGeneration) <> minhaGeracao Then Return
+                    If _disposed Then Return
                     State = novo
                     StoreName = nomeStore
                     LastCheck = DateTime.Now
@@ -292,9 +304,8 @@ Namespace Global.Iris.App.ViewModels
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True
-            ' Invalida trabalho em voo: remover o handler impede eventos
-            ' novos, mas uma ApplyAsync ja iniciada ainda tocaria a UI.
-            Interlocked.Increment(_applyGeneration)
+            ' _disposed e checado depois de cada await, entao trabalho em voo
+            ' para de tocar a UI a partir daqui.
             RemoveHandler _broker.StateChanged, AddressOf OnBrokerStateChanged
         End Sub
 

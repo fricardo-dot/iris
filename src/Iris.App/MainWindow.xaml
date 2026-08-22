@@ -1,23 +1,36 @@
 <Window x:Class="MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         xmlns:model="clr-namespace:Iris.Model;assembly=Iris.Model"
         Title="Iris"
         Height="620" Width="920"
         MinHeight="420" MinWidth="640"
         WindowStartupLocation="CenterScreen"
+        WindowStyle="None"
         Background="{DynamicResource Brush.Background}"
         TextOptions.TextFormattingMode="Ideal"
         UseLayoutRounding="True">
 
     <!--
-        Janela padrão de propósito: chrome customizado traz bugs de resize,
-        snap, DPI e acessibilidade, e não agregaria nada ao marco 1.1.
+        Barra de título própria: sem ícone e sem o nome do programa.
 
-        O card central troca de CONTEÚDO por estado; o layout não muda.
-        Trocar a tela inteira a cada transição daria a impressão de que o
-        aplicativo virou outro.
+        Nome e ícone continuam existindo NA JANELA (Title e Icon) e portanto
+        na barra de tarefas, no Alt+Tab e para a acessibilidade — eles apenas
+        não são DESENHADOS aqui.
+
+        WindowChrome, e não WindowStyle=None sozinho: é o que preserva
+        arrastar, Aero Snap, duplo clique para maximizar, bordas de resize e
+        Win+Setas. Sem ele todo esse comportamento teria que ser reescrito à
+        mão, e ficaria pior que o do sistema.
     -->
+    <WindowChrome.WindowChrome>
+        <WindowChrome CaptionHeight="48"
+                      ResizeBorderThickness="6"
+                      GlassFrameThickness="0"
+                      CornerRadius="0"
+                      UseAeroCaptionButtons="False" />
+    </WindowChrome.WindowChrome>
 
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
@@ -45,88 +58,113 @@
         </Style>
     </Window.Resources>
 
-    <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <!-- A margem muda quando maximizado: sem isso a janela invade a área da
+         barra de tarefas. Calculada por monitor, em código. -->
+    <Border x:Name="RootBorder">
+        <Grid>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="48" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-        <!-- ============ Barra superior ============ -->
-        <Border Grid.Row="0"
-                Background="{DynamicResource Brush.Surface.1}"
-                BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                BorderThickness="0,0,0,1"
-                Padding="16,12">
-            <Grid>
-                <TextBlock Text="Iris" Style="{StaticResource Text.Wordmark}"
-                           HorizontalAlignment="Left" VerticalAlignment="Center" />
+            <!-- ============ Barra de título ============ -->
+            <Border Grid.Row="0"
+                    Background="{DynamicResource Brush.Surface.1}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,0,0,1">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
 
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                            VerticalAlignment="Center">
-                    <Ellipse Style="{StaticResource StatusDotState}" />
-                    <TextBlock Margin="8,0,0,0" Text="{Binding StatusLabel}"
-                               Style="{StaticResource Text.Muted}"
-                               VerticalAlignment="Center" />
-                </StackPanel>
-            </Grid>
-        </Border>
+                    <TextBlock Grid.Column="0" Text="Iris" Style="{StaticResource Text.Wordmark}"
+                               Margin="16,0,0,0" VerticalAlignment="Center" />
 
-        <!-- ============ Card de estado ============ -->
-        <Border Grid.Row="1" Style="{StaticResource Card}"
-                Width="480"
-                HorizontalAlignment="Center" VerticalAlignment="Center">
-            <StackPanel>
+                    <!-- A coluna 1 fica vazia de propósito: é a região
+                         contínua de arrasto da janela. -->
 
-                <Border Width="56" Height="56"
-                        CornerRadius="{StaticResource Radius.Card}"
-                        Background="{DynamicResource Brush.Accent.Surface}"
-                        HorizontalAlignment="Center">
-                    <TextBlock Text="◈" FontSize="26"
-                               Foreground="{DynamicResource Brush.Accent}"
-                               HorizontalAlignment="Center" VerticalAlignment="Center" />
-                </Border>
-
-                <TextBlock Text="{Binding Headline}"
-                           Style="{StaticResource Text.Title}"
-                           TextAlignment="Center"
-                           Margin="0,20,0,0" />
-
-                <TextBlock Text="{Binding Explanation}"
-                           Style="{StaticResource Text.Secondary}"
-                           TextAlignment="Center"
-                           Margin="0,10,0,0" />
-
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
-                            Margin="0,24,0,0">
-                    <Button Style="{StaticResource Button.Primary}"
-                            Content="Abrir o Outlook"
-                            Command="{Binding OpenOutlookCommand}"
-                            Visibility="{Binding ShowOpenOutlook, Converter={StaticResource BoolToVis}}"
-                            Margin="0,0,8,0" />
-                    <Button Style="{StaticResource Button.Secondary}"
-                            Content="Verificar novamente"
-                            Command="{Binding RetryCommand}"
-                            IsDefault="True" />
-                </StackPanel>
-
-                <!-- Diagnóstico do marco: o que a conexão realmente viu. -->
-                <Border Margin="0,24,0,0" Padding="0,16,0,0"
-                        BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                        BorderThickness="0,1,0,0">
-                    <StackPanel>
-                        <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
-                                   Text="{Binding StoreName, StringFormat='Caixa: {0}'}"
-                                   Visibility="{Binding HasStore, Converter={StaticResource BoolToVis}}" />
-                        <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
-                                   Margin="0,4,0,0"
-                                   Text="{Binding LastCheck, StringFormat='Última verificação: {0:HH:mm:ss}'}" />
-                        <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
-                                   Margin="0,4,0,0"
-                                   Text="{Binding Detail}" />
+                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="0,0,12,0">
+                        <Ellipse Style="{StaticResource StatusDotState}" />
+                        <TextBlock Margin="8,0,0,0" Text="{Binding StatusLabel}"
+                                   Style="{StaticResource Text.Muted}"
+                                   VerticalAlignment="Center" />
                     </StackPanel>
-                </Border>
 
-            </StackPanel>
-        </Border>
-    </Grid>
+                    <StackPanel Grid.Column="3" Orientation="Horizontal"
+                                VerticalAlignment="Top">
+                        <Button x:Name="MinimizeButton" Style="{StaticResource CaptionButton}"
+                                Content="&#xE921;" ToolTip="Minimizar"
+                                AutomationProperties.Name="Minimizar" />
+                        <Button x:Name="MaximizeButton" Style="{StaticResource CaptionButton}"
+                                Content="&#xE922;" ToolTip="Maximizar"
+                                AutomationProperties.Name="Maximizar" />
+                        <Button x:Name="CloseButton" Style="{StaticResource CaptionButton.Close}"
+                                Content="&#xE8BB;" ToolTip="Fechar"
+                                AutomationProperties.Name="Fechar" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+
+            <!-- ============ Card de estado ============ -->
+            <Border Grid.Row="1" Style="{StaticResource Card}"
+                    Width="480"
+                    HorizontalAlignment="Center" VerticalAlignment="Center">
+                <StackPanel>
+
+                    <Border Width="56" Height="56"
+                            CornerRadius="{StaticResource Radius.Card}"
+                            Background="{DynamicResource Brush.Accent.Surface}"
+                            HorizontalAlignment="Center">
+                        <TextBlock Text="◈" FontSize="26"
+                                   Foreground="{DynamicResource Brush.Accent}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+
+                    <TextBlock Text="{Binding Headline}"
+                               Style="{StaticResource Text.Title}"
+                               TextAlignment="Center"
+                               Margin="0,20,0,0" />
+
+                    <TextBlock Text="{Binding Explanation}"
+                               Style="{StaticResource Text.Secondary}"
+                               TextAlignment="Center"
+                               Margin="0,10,0,0" />
+
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center"
+                                Margin="0,24,0,0">
+                        <Button Style="{StaticResource Button.Primary}"
+                                Content="Abrir o Outlook"
+                                Command="{Binding OpenOutlookCommand}"
+                                Visibility="{Binding ShowOpenOutlook, Converter={StaticResource BoolToVis}}"
+                                Margin="0,0,8,0" />
+                        <Button Style="{StaticResource Button.Secondary}"
+                                Content="Verificar novamente"
+                                Command="{Binding RetryCommand}"
+                                IsDefault="True" />
+                    </StackPanel>
+
+                    <Border Margin="0,24,0,0" Padding="0,16,0,0"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="0,1,0,0">
+                        <StackPanel>
+                            <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
+                                       Text="{Binding StoreName, StringFormat='Caixa: {0}'}"
+                                       Visibility="{Binding HasStore, Converter={StaticResource BoolToVis}}" />
+                            <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
+                                       Margin="0,4,0,0"
+                                       Text="{Binding LastCheck, StringFormat='Última verificação: {0:HH:mm:ss}'}" />
+                            <TextBlock Style="{StaticResource Text.Muted}" TextAlignment="Center"
+                                       Margin="0,4,0,0"
+                                       Text="{Binding Detail}" />
+                        </StackPanel>
+                    </Border>
+
+                </StackPanel>
+            </Border>
+        </Grid>
+    </Border>
 </Window>
