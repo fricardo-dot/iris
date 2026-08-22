@@ -1,17 +1,24 @@
+Imports System.Threading
 Imports IrisSpike.Interop
 Imports Outlook = Microsoft.Office.Interop.Outlook
 
 Namespace Broker
 
     ''' <summary>
-    ''' Um evento observado, já convertido para dados. O objeto COM que o
-    ''' Outlook entrega no callback é lido e liberado na thread do broker —
-    ''' nada de COM sai daqui.
+    ''' Um evento observado, já convertido para dados. O objeto COM entregue
+    ''' no callback é lido e liberado na thread do broker — nada de COM sai
+    ''' daqui.
     ''' </summary>
     Public NotInheritable Class EventRecord
         Public Property Kind As String
-        Public Property At As DateTime
-        ''' <summary>Thread onde o COM foi realmente lido (deve ser a do broker).</summary>
+        ''' <summary>Qual assinatura originou. Sem isto, um callback em voo
+        ''' de uma assinatura já cancelada é contado como se fosse novo.</summary>
+        Public Property SubscriptionId As Integer
+        ''' <summary>Ordem de ENTREGA, não de processamento.</summary>
+        Public Property DeliverySequence As Long
+        Public Property DeliveredAt As DateTime
+        Public Property ProcessedAt As DateTime
+        ''' <summary>Thread onde o COM foi lido (deve ser a do broker).</summary>
         Public Property ThreadId As Integer
         Public Property Apartment As String
         ''' <summary>Thread onde o Outlook ENTREGOU o callback.</summary>
@@ -32,56 +39,81 @@ Namespace Broker
     '''
     ''' DESCOBERTA DA FASE 0, que contradiz a premissa original: o Outlook
     ''' NÃO entrega os callbacks na thread STA que assinou. Medido nesta
-    ''' máquina, eles chegam numa thread MTA do pool. Consequências:
+    ''' máquina, chegam numa thread MTA do pool. Daí o desenho:
     '''
-    '''   • Ler MailItem.Subject direto no handler é tocar COM fora da thread
-    '''     dona do objeto — o R6. Funciona por marshaling implícito, e é
-    '''     assim que se constrói travamento sob carga.
-    '''   • A leitura é despachada para o dispatcher do broker, onde os
-    '''     objetos moram.
-    '''   • O despacho é ASSÍNCRONO de propósito. Bloquear o callback à
-    '''     espera da STA arriscaria deadlock: se o Outlook dispara o evento
-    '''     de dentro de uma chamada que a própria STA está executando, a STA
-    '''     só se libera quando o handler retorna, e o handler estaria
-    '''     esperando a STA.
+    '''   • O handler não toca em propriedade COM alguma. Anota onde chegou,
+    '''     em que ordem, e devolve o trabalho ao dispatcher do broker.
+    '''   • O despacho é ASSÍNCRONO. Bloquear o callback esperando a STA
+    '''     arriscaria deadlock quando o Outlook dispara o evento de dentro
+    '''     de uma chamada que a própria STA está executando.
+    '''   • Se o post não for aceito (broker encerrando), o item é liberado
+    '''     ali mesmo — senão o RCW vaza.
+    '''   • Trabalho postado por uma assinatura já descartada é jogado fora,
+    '''     e o item liberado. Sem isso, evento antigo em voo aparece como
+    '''     evento da assinatura nova.
+    '''
+    ''' RESSALVA HONESTA: o RCW é materializado na MTA e só lido depois na
+    ''' STA. Isso não é o mesmo que "o objeto mora na STA" — a leitura ainda
+    ''' pode depender de marshaling entre apartments, e o estado lido é o do
+    ''' momento do PROCESSAMENTO, não o que causou o evento. Para o produto,
+    ''' o certo é tratar evento como aviso de "pasta suja" e reler o estado
+    ''' atual, não como transição a aplicar cegamente.
     '''
     ''' A referência forte à coleção Items E à pasta pai é obrigatória (R7):
-    ''' se o GC as coletar, o event sink morre junto e os eventos param sem
-    ''' erro nenhum.
+    ''' se o GC as coletar, o sink morre e os eventos param sem erro nenhum.
     ''' </summary>
     Public NotInheritable Class FolderSubscription
         Implements IDisposable
+
+        Private Shared _nextId As Integer
+        Private Shared _nextSequence As Long
 
         Private _folder As Outlook.MAPIFolder
         Private _items As Outlook.Items
         Private _onAdd As Outlook.ItemsEvents_ItemAddEventHandler
         Private _onChange As Outlook.ItemsEvents_ItemChangeEventHandler
         Private _onRemove As Outlook.ItemsEvents_ItemRemoveEventHandler
-        Private _disposed As Boolean
 
+        Private _active As Integer = 1
+        Private _pending As Integer
+
+        Public ReadOnly Property Id As Integer
         Public ReadOnly Property FolderName As String
 
-        ''' <summary>
-        ''' Precisa ser construída DENTRO da thread STA do broker.
-        ''' </summary>
+        ''' <summary>Callbacks postados e ainda não processados.</summary>
+        Public ReadOnly Property Pending As Integer
+            Get
+                Return Volatile.Read(_pending)
+            End Get
+        End Property
+
+        Public ReadOnly Property IsActive As Boolean
+            Get
+                Return Volatile.Read(_active) = 1
+            End Get
+        End Property
+
+        ''' <summary>Precisa ser construída DENTRO da thread STA do broker.</summary>
         ''' <param name="folder">
         ''' A assinatura vira DONA da pasta e da coleção; quem chama não deve
         ''' liberar nenhuma das duas.
         ''' </param>
         ''' <param name="postToBroker">
-        ''' Enfileira trabalho na thread do broker sem bloquear o chamador.
+        ''' Enfileira trabalho na thread do broker sem bloquear. Retorna
+        ''' False se o trabalho não puder ser aceito.
         ''' </param>
         Public Sub New(folderName As String,
                        folder As Outlook.MAPIFolder,
                        sink As Action(Of EventRecord),
-                       postToBroker As Action(Of Action))
+                       postToBroker As Func(Of Action, Boolean))
+            _Id = Interlocked.Increment(_nextId)
             _FolderName = folderName
             _folder = folder
             _items = folder.Items
 
             _onAdd = Sub(item) Handle("ItemAdd", item, sink, postToBroker)
             _onChange = Sub(item) Handle("ItemChange", item, sink, postToBroker)
-            _onRemove = Sub() HandleRemove(sink, postToBroker)
+            _onRemove = Sub() Handle("ItemRemove", Nothing, sink, postToBroker)
 
             AddHandler _items.ItemAdd, _onAdd
             AddHandler _items.ItemChange, _onChange
@@ -89,89 +121,79 @@ Namespace Broker
         End Sub
 
         ''' <summary>
-        ''' Roda na thread de ENTREGA (MTA). Não toca em nenhuma propriedade
-        ''' COM: apenas anota onde o callback chegou e devolve o trabalho ao
-        ''' broker.
+        ''' Roda na thread de ENTREGA (MTA). Não lê nada de COM.
         ''' </summary>
         Private Sub Handle(kind As String,
                            item As Object,
                            sink As Action(Of EventRecord),
-                           postToBroker As Action(Of Action))
-            Dim deliveryThread = Environment.CurrentManagedThreadId
-            Dim deliveryApartment = Threading.Thread.CurrentThread.GetApartmentState().ToString()
-            Dim folderName = _FolderName
+                           postToBroker As Func(Of Action, Boolean))
 
-            postToBroker(
-                Sub()
-                    ' Aqui já é a STA do broker: ler COM é seguro.
-                    Dim record = Describe(kind, folderName, item)
-                    record.DeliveryThreadId = deliveryThread
-                    record.DeliveryApartment = deliveryApartment
-                    sink(record)
-                End Sub)
-        End Sub
-
-        Private Sub HandleRemove(sink As Action(Of EventRecord),
-                                 postToBroker As Action(Of Action))
-            Dim deliveryThread = Environment.CurrentManagedThreadId
-            Dim deliveryApartment = Threading.Thread.CurrentThread.GetApartmentState().ToString()
-            Dim folderName = _FolderName
-
-            postToBroker(
-                Sub()
-                    sink(New EventRecord With {
-                        .Kind = "ItemRemove",
-                        .At = DateTime.UtcNow,
-                        .ThreadId = Environment.CurrentManagedThreadId,
-                        .Apartment = Threading.Thread.CurrentThread.GetApartmentState().ToString(),
-                        .DeliveryThreadId = deliveryThread,
-                        .DeliveryApartment = deliveryApartment,
-                        .Folder = folderName,
-                        .EntryId = "",
-                        .Subject = "(ItemRemove não entrega o item)",
-                        .MessageClass = ""
-                    })
-                End Sub)
-        End Sub
-
-        ''' <summary>
-        ''' Extrai os dados e libera o objeto COM. Roda na thread do broker.
-        ''' </summary>
-        Private Shared Function Describe(kind As String, folderName As String, item As Object) As EventRecord
-            Dim record As New EventRecord With {
+            Dim envelope As New EventRecord With {
                 .Kind = kind,
-                .At = DateTime.UtcNow,
-                .ThreadId = Environment.CurrentManagedThreadId,
-                .Apartment = Threading.Thread.CurrentThread.GetApartmentState().ToString(),
-                .Folder = folderName,
+                .SubscriptionId = Id,
+                .DeliverySequence = Interlocked.Increment(_nextSequence),
+                .DeliveredAt = DateTime.UtcNow,
+                .DeliveryThreadId = Environment.CurrentManagedThreadId,
+                .DeliveryApartment = Thread.CurrentThread.GetApartmentState().ToString(),
+                .Folder = FolderName,
                 .EntryId = "",
-                .Subject = "",
+                .Subject = If(kind = "ItemRemove", "(ItemRemove não entrega o item)", ""),
                 .MessageClass = ""
             }
 
-            Try
-                Dim mail = TryCast(item, Outlook.MailItem)
-                If mail IsNot Nothing Then
-                    Try : record.EntryId = mail.EntryID : Catch : End Try
-                    Try : record.Subject = mail.Subject : Catch : End Try
-                    Try : record.MessageClass = mail.MessageClass : Catch : End Try
-                Else
-                    record.MessageClass = "(não é MailItem)"
-                End If
-            Finally
+            If Not IsActive Then
                 ComHelpers.Release(item)
-            End Try
+                Return
+            End If
 
-            Return record
-        End Function
+            Interlocked.Increment(_pending)
+
+            Dim accepted = postToBroker(
+                Sub()
+                    Try
+                        ' Já é a STA do broker: ler COM é seguro aqui.
+                        If Not IsActive Then Return
+                        Fill(envelope, item)
+                        sink(envelope)
+                    Finally
+                        ComHelpers.Release(item)
+                        Interlocked.Decrement(_pending)
+                    End Try
+                End Sub)
+
+            If Not accepted Then
+                ' Broker encerrando: ninguém mais vai liberar este RCW.
+                Interlocked.Decrement(_pending)
+                ComHelpers.Release(item)
+            End If
+        End Sub
+
+        ''' <summary>Lê o item. Roda na thread do broker.</summary>
+        Private Shared Sub Fill(record As EventRecord, item As Object)
+            record.ProcessedAt = DateTime.UtcNow
+            record.ThreadId = Environment.CurrentManagedThreadId
+            record.Apartment = Thread.CurrentThread.GetApartmentState().ToString()
+
+            If item Is Nothing Then Return
+
+            Dim mail = TryCast(item, Outlook.MailItem)
+            If mail Is Nothing Then
+                record.MessageClass = "(não é MailItem)"
+                Return
+            End If
+
+            Try : record.EntryId = mail.EntryID : Catch : End Try
+            Try : record.Subject = mail.Subject : Catch : End Try
+            Try : record.MessageClass = mail.MessageClass : Catch : End Try
+        End Sub
 
         ''' <summary>
-        ''' Ordem obrigatória: RemoveHandler ANTES de liberar os RCWs.
+        ''' Marca inativa ANTES de desconectar, para que trabalho já postado
+        ''' seja descartado em vez de contado. Ordem obrigatória:
+        ''' RemoveHandler antes de liberar os RCWs.
         ''' </summary>
         Public Sub Dispose() Implements IDisposable.Dispose
-            If _disposed Then Return
-            _disposed = True
-
+            If Interlocked.Exchange(_active, 0) = 0 Then Return
             If _items Is Nothing Then Return
 
             Try
@@ -179,7 +201,7 @@ Namespace Broker
                 RemoveHandler _items.ItemChange, _onChange
                 RemoveHandler _items.ItemRemove, _onRemove
             Catch
-                ' Outlook já pode ter ido embora; seguir para a liberação.
+                ' Outlook já pode ter ido embora.
             End Try
 
             _onAdd = Nothing

@@ -160,10 +160,20 @@ Namespace Broker
         ''' o evento e disparado de dentro de uma chamada que a propria STA
         ''' esta executando.
         ''' </summary>
-        Public Sub PostToBrokerThread(work As Action)
-            If _dispatcher Is Nothing OrElse _dispatcher.HasShutdownStarted Then Return
-            _dispatcher.InvokeAsync(work)
-        End Sub
+        ''' <returns>
+        ''' False se o trabalho NAO foi aceito. Quem chama precisa saber:
+        ''' um callback de evento carrega um RCW, e se ninguem processar o
+        ''' trabalho, ninguem libera o objeto.
+        ''' </returns>
+        Public Function PostToBrokerThread(work As Action) As Boolean
+            If _dispatcher Is Nothing OrElse _dispatcher.HasShutdownStarted Then Return False
+            Try
+                _dispatcher.InvokeAsync(work)
+                Return True
+            Catch
+                Return False
+            End Try
+        End Function
 
         ''' <summary>
         ''' Acesso direto ao NameSpace para helpers que JÁ estão rodando na

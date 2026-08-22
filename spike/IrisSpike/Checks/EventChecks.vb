@@ -201,7 +201,7 @@ Namespace Checks
         ' ===================================================================
         Private Async Function D2_EventSemanticsAsync() As Task
             Await _runner.RunAsync(
-                "D2", Group, "Semântica: eventos por operação",
+                "D2", Group, "Semântica: eventos por operação (entrada via Move)",
                 Async Function()
                     If _subscription Is Nothing Then
                         Return (CheckStatus.Skipped, "Sem assinatura ativa.")
@@ -231,7 +231,7 @@ Namespace Checks
                     ' registrar o comportamento real, porque a Fase 2 não
                     ' pode presumir um evento por operação.
                     Return (CheckStatus.Info,
-                            $"criar → {Describe(onCreate)}; " &
+                            $"entrada na pasta via Move → {Describe(onCreate)}; " &
                             $"alterar 1 prop → {Describe(onChange)}; " &
                             $"alterar 2 props num Save → {Describe(onMulti)}; " &
                             $"excluir → {Describe(onDelete)}.")
@@ -254,7 +254,7 @@ Namespace Checks
                     Await Task.Delay(1500)
 
                     ClearLog()
-                    Dim after = Await _broker.ReadAsync(
+                    Dim after = Await _broker.MutateAsync(
                         Function(app, ns)
                             Dim source = EnsureFolder(_broker, TestFolder)
                             Try
@@ -294,11 +294,19 @@ Namespace Checks
                     Dim sequence = If(records.Count = 0, "(nenhum)",
                         String.Join(" → ", records.Select(Function(r) $"{r.Kind}@{r.Folder}")))
 
-                    Dim note = $"EntryID {If(changed, "MUDOU", "permaneceu igual")}. Eventos: {sequence}."
+                    Dim note = $"EntryID {If(changed, "MUDOU", "permaneceu igual")}. " &
+                               $"Eventos observados: {sequence}."
                     If changed Then
                         note &= " Confirma a seção 5 do ESCOPO: EntryID não correlaciona item " &
                                 "movido, e a Fase 2 precisa de chave interna própria."
                     End If
+                    ' A ORDEM acima não é prova da ordem real do Outlook: a
+                    ' leitura de cada item acontece depois, na STA, então o
+                    ' log mede ordem de processamento. Conclusão segura para
+                    ' a Fase 2: eventos não têm ordem causal confiável, e o
+                    ' processamento precisa ser idempotente — evento é aviso
+                    ' de "pasta suja", não transição a aplicar.
+                    note &= " A ordem exibida é de processamento, não prova da ordem emitida."
 
                     Return (CheckStatus.Info, note)
                 End Function)
@@ -311,10 +319,19 @@ Namespace Checks
             Await _runner.RunAsync(
                 "D5", Group, "Mudanças com a assinatura cancelada não são recuperadas",
                 Async Function()
+                    ' Drenar o que ficou em voo dos critérios anteriores.
+                    ' A versão anterior usava ClearLog() como barreira, e
+                    ' ClearLog não drena nada: limpa a lista enquanto
+                    ' callbacks antigos ainda estão a caminho da MTA. Era o
+                    ' que produzia o falso "evento reproduzido".
+                    Await QuiesceAsync()
+
                     Dim countBefore = Await CountItemsAsync(TestFolder)
 
                     ' Cancelar a assinatura equivale ao Iris fechado.
                     Await UnsubscribeAsync(destination:=False)
+                    Await QuiesceAsync()
+                    ClearLog()
 
                     Dim created As New List(Of String)()
                     For i = 1 To 3
@@ -325,15 +342,18 @@ Namespace Checks
                     Dim countAfter = Await CountItemsAsync(TestFolder)
                     Dim delta = countAfter - countBefore
 
-                    ' Reassina e observa se algo é reproduzido.
-                    ClearLog()
+                    ' Reassina. Só contam registros DESTA assinatura.
                     Await SubscribeAsync(TestFolder, isDestination:=False)
-                    Await Task.Delay(3000)
-                    Dim replayed = Snapshot()
+                    Dim newId = _subscription.Id
+                    Await Task.Delay(4000)
+
+                    Dim replayed = SnapshotOf(newId)
+                    Dim strays = Snapshot().Count - replayed.Count
 
                     Dim note = $"3 criações e 1 exclusão sem assinatura. " &
-                               $"Eventos reproduzidos ao reassinar: {replayed.Count}. " &
-                               $"Snapshot viu {delta:+#;-#;0} item(ns)."
+                               $"Eventos da assinatura nova (#{newId}): {replayed.Count}" &
+                               If(strays > 0, $" (+{strays} de assinaturas antigas, descartados)", "") &
+                               $". Snapshot viu {delta:+#;-#;0} item(ns)."
 
                     If delta = 0 Then
                         ' Sem escrita efetiva não há o que concluir — evita o
@@ -359,7 +379,7 @@ Namespace Checks
         ' ===================================================================
         Private Async Function D6_BurstAsync() As Task
             Await _runner.RunAsync(
-                "D6", Group, "Rajada: 25 criações seguidas",
+                "D6", Group, "Rajada: 25 entradas seguidas na pasta",
                 Async Function()
                     If _subscription Is Nothing Then
                         Return (CheckStatus.Skipped, "Sem assinatura ativa.")
@@ -397,8 +417,9 @@ Namespace Checks
                     End If
 
                     Return (CheckStatus.Info,
-                            note & " Nenhuma perda neste volume. Não generalizar: 25 itens " &
-                            "não é uma caixa em sincronização inicial.")
+                            note & " Nenhuma perda neste volume. NÃO generalizar: são 25 Moves " &
+                            "para dentro da pasta, não 25 mensagens chegando por sincronização " &
+                            "do Exchange, e 25 itens não é uma caixa em carga inicial.")
                 End Function)
         End Function
 
@@ -465,6 +486,48 @@ Namespace Checks
             SyncLock _logLock
                 Return New List(Of EventRecord)(_log)
             End SyncLock
+        End Function
+
+        ''' <summary>
+        ''' Registros de UMA assinatura. Contar o log inteiro confunde
+        ''' callback antigo em voo com evento novo — foi o que poluiu o D5.
+        ''' </summary>
+        Private Function SnapshotOf(subscriptionId As Integer) As List(Of EventRecord)
+            SyncLock _logLock
+                Return _log.Where(Function(r) r.SubscriptionId = subscriptionId).ToList()
+            End SyncLock
+        End Function
+
+        ''' <summary>
+        ''' Espera a fila de callbacks drenar e o barulho cessar. ClearLog
+        ''' sozinho nao e barreira: ele limpa a lista, nao drena os callbacks
+        ''' que ainda estao a caminho da MTA.
+        ''' </summary>
+        Private Async Function QuiesceAsync(Optional quietMs As Integer = 1500,
+                                            Optional timeoutMs As Integer = 15000) As Task
+            Dim deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs)
+            Dim lastCount = -1
+            Dim stableSince = DateTime.UtcNow
+
+            While DateTime.UtcNow < deadline
+                Dim pending = 0
+                If _subscription IsNot Nothing Then pending += _subscription.Pending
+                If _destSubscription IsNot Nothing Then pending += _destSubscription.Pending
+
+                Dim count As Integer
+                SyncLock _logLock
+                    count = _log.Count
+                End SyncLock
+
+                If pending = 0 AndAlso count = lastCount Then
+                    If (DateTime.UtcNow - stableSince).TotalMilliseconds >= quietMs Then Return
+                Else
+                    lastCount = count
+                    stableSince = DateTime.UtcNow
+                End If
+
+                Await Task.Delay(200)
+            End While
         End Function
 
         Private Async Function WaitForEventsAsync(minCount As Integer, timeoutMs As Integer) As Task(Of Boolean)
@@ -541,7 +604,7 @@ Namespace Checks
         End Function
 
         Private Async Function CreateItemAsync(folderName As String, subject As String) As Task(Of String)
-            Return Await _broker.ReadAsync(
+            Return Await _broker.MutateAsync(
                 Function(app, ns)
                     Dim folder = EnsureFolder(_broker, folderName)
                     Try
@@ -584,7 +647,7 @@ Namespace Checks
                                                entryId As String,
                                                subject As String,
                                                Optional setBody As Boolean = False) As Task
-            Await _broker.ReadAsync(
+            Await _broker.MutateAsync(
                 Function(app, ns)
                     Dim folder = EnsureFolder(_broker, folderName)
                     Try
@@ -607,7 +670,7 @@ Namespace Checks
         End Function
 
         Private Async Function DeleteItemAsync(folderName As String, entryId As String) As Task
-            Await _broker.ReadAsync(
+            Await _broker.MutateAsync(
                 Function(app, ns)
                     Dim folder = EnsureFolder(_broker, folderName)
                     Try
@@ -654,7 +717,7 @@ Namespace Checks
         End Function
 
         Private Async Function DeleteByEntryIdAsync(entryId As String) As Task
-            Await _broker.ReadAsync(
+            Await _broker.MutateAsync(
                 Function(app, ns)
                     Try
                         Dim item = TryCast(ns.GetItemFromID(entryId), Outlook.MailItem)

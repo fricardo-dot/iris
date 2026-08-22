@@ -131,6 +131,12 @@ Namespace Checks
                     Dim ghost = Guid.NewGuid().ToString("N").Substring(0, 12)
                     Dim location = Await FindByTokenAsync(ghost)
 
+                    If location.StartsWith("ERRO:") Then
+                        Return (CheckStatus.Fail,
+                                $"A busca não conseguiu executar ({location}). " &
+                                "Um procedimento de desambiguação que não roda é pior que nenhum.")
+                    End If
+
                     If location <> "" Then
                         Return (CheckStatus.Fail,
                                 $"Busca encontrou um GUID inexistente em {location} — " &
@@ -165,10 +171,11 @@ Namespace Checks
                     Dim result = Await _broker.MutateAsync(
                         Function(app, ns)
                             Dim item As Outlook.MailItem = Nothing
+                            Dim sendStarted = False
                             Try
                                 item = TryCast(app.CreateItem(Outlook.OlItemType.olMailItem),
                                                Outlook.MailItem)
-                                If item Is Nothing Then Return (Sent:=False, Detail:="CreateItem falhou")
+                                If item Is Nothing Then Return (Sent:=False, Started:=False, Detail:="CreateItem falhou")
 
                                 item.Subject = $"{Marker} envio {token}"
                                 item.Body = "Mensagem automática de teste do spike da Fase 0 do Iris." &
@@ -183,7 +190,13 @@ Namespace Checks
                                     Finally
                                         ComHelpers.Release(r)
                                     End Try
-                                    recipients.ResolveAll()
+                                    ' Ignorar este retorno era mandar mensagem
+                                    ' para destinatario nao resolvido.
+                                    If Not recipients.ResolveAll() Then
+                                        Return (Sent:=False, Started:=False,
+                                                Detail:=$"ResolveAll falhou para '{_sendTo}'. " &
+                                                        "Send() NAO foi chamado.")
+                                    End If
                                 Finally
                                     ComHelpers.Release(recipients)
                                 End Try
@@ -193,12 +206,16 @@ Namespace Checks
                                 ' Exatamente uma vez. Sem retry (MutateAsync
                                 ' desliga o do message filter). Depois disto
                                 ' o item NÃO é mais tocado.
+                                ' A partir daqui QUALQUER excecao e ambigua,
+                                ' nao so COMException: depois de invocar
+                                ' Send() nao ha como saber se a mensagem saiu.
+                                sendStarted = True
                                 item.Send()
-                                Return (Sent:=True, Detail:="")
+                                Return (Sent:=True, Started:=True, Detail:="")
 
-                            Catch ex As Runtime.InteropServices.COMException
-                                Return (Sent:=False,
-                                        Detail:=$"COMException 0x{ex.HResult:X8}: {ex.Message}")
+                            Catch ex As Exception
+                                Return (Sent:=False, Started:=sendStarted,
+                                        Detail:=$"{ex.GetType().Name}: {ex.Message}")
                             Finally
                                 ComHelpers.Release(item)
                             End Try
@@ -207,6 +224,13 @@ Namespace Checks
                     Dim retriesDuring = filter.RetriesIssued - retriesBefore
 
                     If Not result.Sent Then
+                        If Not result.Started Then
+                            ' Falhou ANTES de invocar Send(): não há
+                            ' ambiguidade nenhuma, nada saiu.
+                            Return (CheckStatus.Fail,
+                                    $"Preparação falhou e nada foi enviado — {result.Detail}")
+                        End If
+
                         ' AMBÍGUO, não "falhou": a exceção pode ter vindo
                         ' depois de a mensagem sair.
                         Await Task.Delay(4000)
@@ -222,11 +246,19 @@ Namespace Checks
                                 "comportamento oficial do produto (R2).")
                     End If
 
-                    ' Send() retornou. Isso ainda não é entrega.
-                    Await Task.Delay(6000)
-                    Dim sentCopy = Await CountByTokenAsync(token, Outlook.OlDefaultFolders.olFolderSentMail)
-                    Dim inboxCopy = Await CountByTokenAsync(token, Outlook.OlDefaultFolders.olFolderInbox)
-                    Dim outboxCopy = Await CountByTokenAsync(token, Outlook.OlDefaultFolders.olFolderOutbox)
+                    ' Send() retornou. Isso ainda não é entrega. Seis segundos
+                    ' fixos era curto demais para Exchange em modo cached:
+                    ' agora é polling até 90s — e nunca, em hipótese alguma,
+                    ' um reenvio.
+                    Dim sentCopy = 0, inboxCopy = 0, outboxCopy = 0
+                    Dim deadline = DateTime.UtcNow.AddSeconds(90)
+                    While DateTime.UtcNow < deadline
+                        sentCopy = Await CountByTokenAsync(token, Outlook.OlDefaultFolders.olFolderSentMail)
+                        inboxCopy = Await CountByTokenAsync(token, Outlook.OlDefaultFolders.olFolderInbox)
+                        outboxCopy = Await CountByTokenAsync(token, Outlook.OlDefaultFolders.olFolderOutbox)
+                        If sentCopy > 0 AndAlso inboxCopy > 0 Then Exit While
+                        Await Task.Delay(2000)
+                    End While
 
                     Dim note = $"Send() retornou sem exceção; retries emitidos: {retriesDuring}. " &
                                $"Itens Enviados: {sentCopy}; Caixa de Saída: {outboxCopy}; " &
@@ -270,12 +302,29 @@ Namespace Checks
             (Outlook.OlDefaultFolders.olFolderInbox, "Entrada")
         }
 
+        ''' <summary>Sentinela: a consulta falhou, nao "nada encontrado".</summary>
+        Private Const SearchFailed As Integer = -1
+
+        ''' <summary>
+        ''' Pasta onde achou, "" se varreu tudo sem achar, ou "ERRO:..."
+        ''' se alguma consulta falhou - porque "nao achei" e "nao consegui
+        ''' procurar" levam a decisoes opostas.
+        ''' </summary>
         Private Async Function FindByTokenAsync(token As String) As Task(Of String)
             Return Await _broker.ReadAsync(
                 Function(app, ns)
+                    Dim failures As New List(Of String)()
                     For Each target In SearchFolders
-                        If CountInFolder(ns, target.Folder, token) > 0 Then Return target.Name
+                        Dim found = CountInFolder(ns, target.Folder, token)
+                        If found = SearchFailed Then
+                            failures.Add(target.Name)
+                        ElseIf found > 0 Then
+                            Return target.Name
+                        End If
                     Next
+                    If failures.Count > 0 Then
+                        Return "ERRO: consulta falhou em " & String.Join(", ", failures)
+                    End If
                     Return ""
                 End Function)
         End Function
@@ -306,14 +355,17 @@ Namespace Checks
                     ComHelpers.Release(items)
                 End Try
             Catch
-                Return 0
+                ' Converter erro de consulta em zero transformava "a busca
+                ' falhou" em "nao encontrei" - a mentira mais perigosa
+                ' possivel num procedimento de desambiguacao de envio.
+                Return SearchFailed
             Finally
                 ComHelpers.Release(folder)
             End Try
         End Function
 
         Private Async Function DeleteByEntryIdAsync(entryId As String) As Task
-            Await _broker.ReadAsync(
+            Await _broker.MutateAsync(
                 Function(app, ns)
                     Try
                         Dim item As Outlook.MailItem = Nothing
