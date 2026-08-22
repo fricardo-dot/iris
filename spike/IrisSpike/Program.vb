@@ -100,11 +100,20 @@ Module Program
             Await outlookChecks.RunAsync()
 
             Console.WriteLine()
-            Console.WriteLine("C, D — exigem interação")
-            For Each group In InteractiveGroups
-                runner.Skip(group.Id, $"{group.Id} — dependente do Outlook", group.Title,
-                            "Exige interação guiada; próximo incremento do spike.")
-            Next
+            Console.WriteLine("C — Envio")
+            Dim sendTo = ArgumentValue(args, "--send-to")
+            If sendTo <> "" Then
+                Console.WriteLine($"  ATENÇÃO: envio real habilitado para {sendTo}.")
+            Else
+                Console.WriteLine("  Envio real desabilitado (informe --send-to <endereço> para habilitar).")
+            End If
+            Dim sendChecks As New SendChecks(runner, broker, sendTo)
+            Await sendChecks.RunAsync()
+
+            Console.WriteLine()
+            Console.WriteLine("D — Eventos (usa pastas de teste dedicadas)")
+            Dim eventChecks As New EventChecks(runner, broker)
+            Await eventChecks.RunAsync()
         Else
             Console.WriteLine("B a G — dependem do Outlook")
             Dim reason = If(env.OutlookInstalled,
@@ -135,6 +144,20 @@ Module Program
         Console.WriteLine()
 
         Return If(runner.Count(CheckStatus.Fail) > 0, 1, 0)
+    End Function
+
+    ''' <summary>
+    ''' Lê --chave valor. Ausência do argumento é o padrão SEGURO: sem
+    ''' --send-to, nenhuma mensagem é enviada.
+    ''' </summary>
+    Private Function ArgumentValue(args As String(), key As String) As String
+        If args Is Nothing Then Return ""
+        For i = 0 To args.Length - 2
+            If String.Equals(args(i), key, StringComparison.OrdinalIgnoreCase) Then
+                Return args(i + 1)
+            End If
+        Next
+        Return ""
     End Function
 
     Private Sub Banner()

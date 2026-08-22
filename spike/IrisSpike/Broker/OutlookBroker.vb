@@ -52,7 +52,12 @@ Namespace Broker
         ''' bug que se manifesta como "os eventos simplesmente pararam".
         ''' Soltar cedo demais aqui é tão ruim quanto nunca soltar.
         ''' </summary>
-        Private ReadOnly _liveSinks As New List(Of Object)()
+        ''' <remarks>
+        ''' IDisposable, não Object: guardar só a referência mantinha a
+        ''' coleção viva mas não permitia RemoveHandler, então cancelar a
+        ''' assinatura era impossível. Ver FolderSubscription.
+        ''' </remarks>
+        Private ReadOnly _liveSinks As New List(Of IDisposable)()
 
         ' HRESULTs usados na classificação de ProbeCore.
         Private Const RPC_E_CALL_REJECTED As Integer = &H80010001
@@ -146,6 +151,16 @@ Namespace Broker
         Public Function InvokeAsync(work As Action) As Task
             EnsureUsable()
             Return _dispatcher.InvokeAsync(work).Task
+        End Function
+
+        ''' <summary>
+        ''' Acesso direto ao NameSpace para helpers que JÁ estão rodando na
+        ''' thread do broker. Não passa por GuardResult de propósito: devolve
+        ''' RCW por contrato, e quem chama é dono de liberar. Uso interno.
+        ''' </summary>
+        Public Function WithNamespace(Of T)(work As Func(Of Outlook.NameSpace, T)) As T
+            RequireSession()
+            Return work(_namespace)
         End Function
 
         ''' <summary>
@@ -296,9 +311,19 @@ Namespace Broker
         ''' <summary>
         ''' Mantém viva a coleção cujo evento foi assinado. Ver _liveSinks.
         ''' </summary>
-        Public Sub TrackSink(sink As Object)
+        Public Sub TrackSink(sink As IDisposable)
             AssertOnBrokerThread()
             _liveSinks.Add(sink)
+        End Sub
+
+        ''' <summary>
+        ''' Cancela e descarta uma assinatura específica, sem esperar o
+        ''' encerramento do broker. Precisa rodar na thread do broker.
+        ''' </summary>
+        Public Sub ReleaseSink(sink As IDisposable)
+            AssertOnBrokerThread()
+            _liveSinks.Remove(sink)
+            sink.Dispose()
         End Sub
 
         Public ReadOnly Property LiveSinkCount As Integer
@@ -316,8 +341,14 @@ Namespace Broker
         End Sub
 
         Private Sub ReleaseSessionCore()
+            ' Dispose desconecta os handlers e depois libera o RCW. Só
+            ' liberar, como antes, deixaria event sinks pendurados.
             For i = _liveSinks.Count - 1 To 0 Step -1
-                ComHelpers.Release(_liveSinks(i))
+                Try
+                    _liveSinks(i).Dispose()
+                Catch
+                    ' Encerramento nunca lança.
+                End Try
             Next
             _liveSinks.Clear()
 
