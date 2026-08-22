@@ -57,7 +57,7 @@ Namespace Checks
             ' janela sendo bombeada. É assim que os eventos do Outlook
             ' morrem silenciosamente.
             Await _runner.RunAsync(
-                "A2", Group, "Message pump ativo (não é fila bloqueante)",
+                "A2", Group, "Dispatcher despachando na STA (pump estrutural)",
                 Async Function()
                     Dim ticked As New TaskCompletionSource(Of Boolean)(
                         TaskCreationOptions.RunContinuationsAsynchronously)
@@ -86,7 +86,14 @@ Namespace Checks
                                 "mensagens. Eventos do Outlook não chegariam.")
                     End If
 
-                    Return (CheckStatus.Pass, "DispatcherTimer disparou; a thread bombeia mensagens.")
+                    ' Limite honesto: isto prova que o dispatcher despacha e
+                    ' que a thread não está presa num Take() bloqueante. NÃO
+                    ' prova que um callback COM do Outlook chega, nem em qual
+                    ' thread ele chega, nem o comportamento durante uma
+                    ' chamada COM longa. Essa prova é do grupo D.
+                    Return (CheckStatus.Pass,
+                            "DispatcherTimer disparou: dispatcher vivo, thread não bloqueada. " &
+                            "Entrega de evento COM é o grupo D.")
                 End Function)
 
             ' ---------------------------------------------------------------
@@ -156,7 +163,7 @@ Namespace Checks
 
             ' ---------------------------------------------------------------
             Await _runner.RunAsync(
-                "A6", Group, "DTO cruza a fronteira sem referência COM",
+                "A6", Group, "DTO sintético cruza a fronteira sem RCW (regressão)",
                 Async Function()
                     Dim dto = Await _broker.InvokeAsync(
                         Function()
@@ -176,12 +183,37 @@ Namespace Checks
                                 "O DTO carrega RCW escondido: a fronteira da seção 4 está furada.")
                     End If
 
-                    Return (CheckStatus.Pass, "Nenhum RCW no grafo do DTO.")
+                    ' Teste fraco por natureza: o DTO é sintético e já se sabe
+                    ' por inspeção que não tem COM. Vale como regressão. A
+                    ' prova com dado real é o B4, sobre DTOs construídos a
+                    ' partir de MailItem.
+                    Return (CheckStatus.Pass, "Nenhum RCW no grafo do DTO sintético.")
+                End Function)
+
+            ' ---------------------------------------------------------------
+            ' A fronteira agora é IMPOSTA, não só convencionada: ReadAsync e
+            ' MutateAsync passam o resultado por GuardResult. Antes desta
+            ' verificação, devolver um MAPIFolder da lambda compilava e
+            ' funcionava.
+            Await _runner.RunAsync(
+                "A7", Group, "Devolver um RCW pela lambda é bloqueado",
+                Async Function()
+                    Try
+                        Dim leaked = Await _broker.InvokeAsync(
+                            Function() CObj(Activator.CreateInstance(
+                                Type.GetTypeFromProgID("Shell.Application"))))
+
+                        ComHelpers.Release(leaked)
+                        Return (CheckStatus.Fail,
+                                "Um RCW atravessou a fronteira do broker sem ser barrado.")
+                    Catch ex As InvalidOperationException
+                        Return (CheckStatus.Pass, "Tentativa de vazar RCW foi rejeitada.")
+                    End Try
                 End Function)
 
             ' ---------------------------------------------------------------
             Await _runner.RunAsync(
-                "A7", Group, "Uso fora da thread do broker é rejeitado",
+                "A7b", Group, "Guarda de thread rejeita chamada externa",
                 Async Function()
                     Await Task.CompletedTask
                     Try
@@ -189,7 +221,11 @@ Namespace Checks
                         Return (CheckStatus.Fail,
                                 "A guarda não disparou fora da thread do broker (R6).")
                     Catch ex As InvalidOperationException
-                        Return (CheckStatus.Pass, "Guarda de thread rejeitou o acesso externo.")
+                        ' Limite: isto só protege métodos que CHAMAM a guarda.
+                        ' Não intercepta uso de um RCW já vazado — quem faz
+                        ' isso é o A7.
+                        Return (CheckStatus.Pass,
+                                "Guarda rejeitou o acesso externo (protege só quem a chama).")
                     End Try
                 End Function)
 

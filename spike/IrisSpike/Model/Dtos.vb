@@ -60,6 +60,13 @@ Namespace Model
         Public Property HasAttachments As Boolean
         Public Property IsUnread As Boolean
         Public Property Content As ContentState
+        ''' <summary>
+        ''' Nothing = o corpo nem foi tentado. Distinguir "DownloadState diz
+        ''' que está completo" de "o corpo foi realmente lido" é o ponto do
+        ''' R9: a primeira afirmação é uma promessa do Outlook, a segunda é
+        ''' um fato.
+        ''' </summary>
+        Public Property BodyLength As Integer?
         ''' <summary>R11: se o item tem sensitivity label / IRM.</summary>
         Public Property IsProtected As Boolean
         ''' <summary>Classe MAPI, para detectar o que não é MailItem.</summary>

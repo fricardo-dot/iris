@@ -45,8 +45,15 @@ Namespace Checks
                             Dim collection = ns.Stores
                             Try
                                 For i = 1 To collection.Count
-                                    Dim store = TryCast(collection.Item(i), Outlook.Store)
-                                    If store Is Nothing Then Continue For
+                                    ' Adquirir como Object PRIMEIRO: se o
+                                    ' TryCast falhasse direto no Item(i), a
+                                    ' referência adquirida ficaria sem dono.
+                                    Dim raw = collection.Item(i)
+                                    Dim store = TryCast(raw, Outlook.Store)
+                                    If store Is Nothing Then
+                                        ComHelpers.Release(raw)
+                                        Continue For
+                                    End If
                                     Try
                                         result.Add(New StoreInfo With {
                                             .DisplayName = SafeString(Function() store.DisplayName),
@@ -176,31 +183,99 @@ Namespace Checks
                 End Function)
 
             Await _runner.RunAsync(
-                "B5", Group, "Estado de download do conteúdo (R9)",
+                "B5", Group, "DownloadState declarado vs corpo realmente lido (R9)",
                 Async Function()
-                    Dim states = Await _broker.ReadAsync(
+                    ' A versão anterior deste critério só olhava DownloadState
+                    ' e relatava "BodyAvailable=76", dando a impressão de que
+                    ' 76 corpos tinham sido lidos. Nenhum tinha. DownloadState
+                    ' é o que o Outlook PROMETE; ler é o que se confirma.
+                    Dim outcome = Await _broker.ReadAsync(
                         Function(app, ns)
-                            Dim summaries = ReadSummaries(ns, 100, includeBody:=False)
-                            Return summaries.GroupBy(Function(s) s.Content).
-                                             ToDictionary(Function(g) g.Key.ToString(),
-                                                          Function(g) g.Count())
+                            Dim declared = ReadSummaries(ns, 50, includeBody:=False)
+                            Dim actual = ReadSummaries(ns, 50, includeBody:=True)
+                            Return (
+                                Sample:=declared.Count,
+                                DeclaredFull:=Enumerable.Count(declared, Function(s) s.Content = ContentState.BodyAvailable),
+                                BodiesRead:=Enumerable.Count(actual, Function(s) s.BodyLength.HasValue),
+                                Errors:=Enumerable.Count(actual, Function(s) s.Content = ContentState.TransientError),
+                                Empty:=Enumerable.Count(actual, Function(s) s.BodyLength.GetValueOrDefault() = 0))
                         End Function)
 
-                    If states.Count = 0 Then
+                    If outcome.Sample = 0 Then
                         Return (CheckStatus.Skipped, "Caixa de entrada vazia.")
                     End If
 
-                    Dim described = String.Join(", ", states.Select(Function(kv) $"{kv.Key}={kv.Value}"))
-                    Dim headerOnly = If(states.ContainsKey(ContentState.MetadataOnly.ToString()),
-                                        states(ContentState.MetadataOnly.ToString()), 0)
+                    Dim note = $"{outcome.Sample} itens: {outcome.DeclaredFull} declararam olFullItem, " &
+                               $"{outcome.BodiesRead} corpos lidos de fato, {outcome.Errors} com erro."
 
-                    If headerOnly > 0 Then
+                    If outcome.Errors > 0 Then
                         Return (CheckStatus.Warn,
-                                $"{described}. Há itens só com cabeçalho: a UI precisa dos estados " &
-                                "explícitos do R9, nunca bloquear esperando download.")
+                                note & " Há divergência entre promessa e leitura: a UI precisa dos " &
+                                "estados explícitos do R9 e não pode bloquear esperando download.")
                     End If
 
-                    Return (CheckStatus.Pass, described)
+                    If outcome.BodiesRead < outcome.DeclaredFull Then
+                        Return (CheckStatus.Warn,
+                                note & " Menos corpos lidos do que declarados como completos.")
+                    End If
+
+                    Return (CheckStatus.Pass, note)
+                End Function)
+
+            Await _runner.RunAsync(
+                "B7", Group, "Abrir um anexo de verdade",
+                Async Function()
+                    Dim outcome = Await _broker.ReadAsync(
+                        Function(app, ns)
+                            Dim folder = ns.GetDefaultFolder(Outlook.OlDefaultFolders.olFolderInbox)
+                            Try
+                                Dim items = folder.Items
+                                Try
+                                    Dim limit = Math.Min(items.Count, 200)
+                                    For i = 1 To limit
+                                        Dim raw = items.Item(i)
+                                        Try
+                                            Dim mail = TryCast(raw, Outlook.MailItem)
+                                            If mail Is Nothing Then Continue For
+
+                                            Dim attachments As Outlook.Attachments = Nothing
+                                            Try
+                                                attachments = mail.Attachments
+                                                If attachments.Count = 0 Then Continue For
+
+                                                Dim att As Outlook.Attachment = Nothing
+                                                Try
+                                                    att = attachments.Item(1)
+                                                    Return (Found:=True,
+                                                            Name:=att.FileName,
+                                                            Size:=att.Size,
+                                                            Kind:=att.Type.ToString())
+                                                Finally
+                                                    ComHelpers.Release(att)
+                                                End Try
+                                            Finally
+                                                ComHelpers.Release(attachments)
+                                            End Try
+                                        Finally
+                                            ComHelpers.Release(raw)
+                                        End Try
+                                    Next
+                                    Return (Found:=False, Name:="", Size:=0, Kind:="")
+                                Finally
+                                    ComHelpers.Release(items)
+                                End Try
+                            Finally
+                                ComHelpers.Release(folder)
+                            End Try
+                        End Function)
+
+                    If Not outcome.Found Then
+                        Return (CheckStatus.Skipped,
+                                "Nenhuma mensagem com anexo na amostra — leitura de anexo NÃO validada.")
+                    End If
+
+                    Return (CheckStatus.Pass,
+                            $"Anexo lido: {outcome.Name}, {outcome.Size} bytes, tipo {outcome.Kind}.")
                 End Function)
 
             Await _runner.RunAsync(
@@ -321,7 +396,7 @@ Namespace Checks
                 Dim pageSize = size
                 Await _runner.RunAsync(
                     $"F{If(pageSize = 100, 2, 3)}", Group,
-                    $"Ler {pageSize} mensagens só com metadados",
+                    $"Construir até {pageSize} DTOs (metadados + contagem de anexos)",
                     Async Function()
                         Dim outcome = Await _broker.ReadAsync(
                             Function(app, ns)
@@ -347,6 +422,16 @@ Namespace Checks
                         Dim perItem = outcome.Ms / outcome.Count
                         Dim verdict = If(perItem > 5.0, CheckStatus.Warn, CheckStatus.Info)
                         Dim note = $"{outcome.Count} itens em {outcome.Ms:0} ms ({perItem:0.0} ms/item)."
+
+                        ' Honestidade sobre o que o número é: o custo do DTO
+                        ' inteiro, incluindo Attachments.Count, não de um
+                        ' "metadado mínimo". E se a pasta tem menos itens que
+                        ' o alvo, isto NÃO mediu o volume pedido.
+                        If outcome.Count < pageSize Then
+                            note &= $" Alvo era {pageSize}; a pasta não tem esse volume, " &
+                                    "então isto não mede o cenário pedido."
+                        End If
+
                         If verdict = CheckStatus.Warn Then
                             note &= " Acima de 5 ms/item a leitura direta da Fase 1 fica " &
                                     "desconfortável; reforça a Fase 2."
@@ -432,15 +517,24 @@ Namespace Checks
                             End Try
                         End Function)
 
-                    Dim note = $"{survey.Examined} examinadas: {survey.Sensitive} com sensitivity " &
-                               $"não-normal, {survey.Restricted} com permissão restrita."
+                    Dim note = $"{survey.Examined} examinadas: {survey.Sensitive} com Sensitivity " &
+                               $"não-normal, {survey.Restricted} com Permission restrita."
 
                     If survey.Sensitive > 0 OrElse survey.Restricted > 0 Then
                         Return (CheckStatus.Warn,
                                 note & " O escopo de pastas da IA precisa excluí-las (R11).")
                     End If
 
-                    Return (CheckStatus.Info, note & " Nenhuma protegida na amostra.")
+                    ' Ressalva que muda a conclusão: MailItem.Sensitivity é a
+                    ' propriedade CLÁSSICA (Normal/Personal/Private/
+                    ' Confidential). Ela NÃO é sensitivity label do Purview,
+                    ' que vive em propriedade MAPI nomeada (MSIP_Labels) e
+                    ' exige PropertyAccessor. Zero aqui não diz nada sobre
+                    ' rótulos modernos.
+                    Return (CheckStatus.Info,
+                            note & " Nenhuma protegida na amostra. ATENÇÃO: rótulos do Purview " &
+                            "(MSIP_Labels via PropertyAccessor) continuam NÃO TESTADOS — " &
+                            "Sensitivity clássica não é rótulo moderno.")
                 End Function)
         End Function
 
@@ -481,6 +575,7 @@ Namespace Checks
         End Function
 
         Private Shared Function Summarize(mail As Outlook.MailItem, includeBody As Boolean) As MailSummary
+            ' O que o Outlook DECLARA sobre o conteúdo.
             Dim state = ContentState.MetadataOnly
             Try
                 If mail.DownloadState = Outlook.OlDownloadState.olFullItem Then
@@ -490,10 +585,18 @@ Namespace Checks
                 state = ContentState.TransientError
             End Try
 
-            If includeBody AndAlso state = ContentState.BodyAvailable Then
+            Dim attachmentCount = CountAttachments(mail)
+
+            ' O que de fato acontece quando se tenta ler. Só isto prova
+            ' disponibilidade; DownloadState é promessa, não fato (R9).
+            Dim bodyLength As Integer? = Nothing
+            If includeBody Then
                 Try
                     Dim body = mail.Body
-                    If mail.Attachments.Count > 0 Then state = ContentState.AttachmentsAvailable
+                    bodyLength = If(body, "").Length
+                    state = If(attachmentCount > 0,
+                               ContentState.AttachmentsAvailable,
+                               ContentState.BodyAvailable)
                 Catch ex As COMException
                     state = ContentState.TransientError
                 End Try
@@ -509,12 +612,31 @@ Namespace Checks
                 .SenderAddress = "",
                 .ReceivedTime = SafeDate(Function() mail.ReceivedTime),
                 .SizeBytes = SafeInt(Function() mail.Size),
-                .HasAttachments = SafeInt(Function() mail.Attachments.Count) > 0,
+                .HasAttachments = attachmentCount > 0,
                 .IsUnread = SafeBool(Function() mail.UnRead),
                 .Content = state,
+                .BodyLength = bodyLength,
                 .IsProtected = SafeInt(Function() CInt(mail.Permission)) <> 0,
                 .MessageClass = SafeString(Function() mail.MessageClass)
             }
+        End Function
+
+        ''' <summary>
+        ''' mail.Attachments devolve um objeto COM. Escrever
+        ''' <c>mail.Attachments.Count</c> cria um RCW intermediário que
+        ''' ninguém libera — é literalmente o exemplo do R7, e a primeira
+        ''' versão deste spike cometeu o erro duas vezes na mesma função.
+        ''' </summary>
+        Private Shared Function CountAttachments(mail As Outlook.MailItem) As Integer
+            Dim attachments As Outlook.Attachments = Nothing
+            Try
+                attachments = mail.Attachments
+                Return attachments.Count
+            Catch
+                Return 0
+            Finally
+                ComHelpers.Release(attachments)
+            End Try
         End Function
 
         ' Propriedades COM lançam por item corrompido, offline ou baixado

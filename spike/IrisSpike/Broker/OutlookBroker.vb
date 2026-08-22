@@ -54,6 +54,13 @@ Namespace Broker
         ''' </summary>
         Private ReadOnly _liveSinks As New List(Of Object)()
 
+        ' HRESULTs usados na classificação de ProbeCore.
+        Private Const RPC_E_CALL_REJECTED As Integer = &H80010001
+        Private Const RPC_E_SERVERCALL_RETRYLATER As Integer = &H8001010A
+        Private Const RPC_E_DISCONNECTED As Integer = &H80010108
+        Private Const RPC_S_SERVER_UNAVAILABLE As Integer = &H800706BA
+        Private Const CO_E_OBJNOTCONNECTED As Integer = &H800401FD
+
         Public ReadOnly Property ThreadId As Integer
         Public ReadOnly Property Apartment As ApartmentState
         Public Property State As SessionState = SessionState.Disconnected
@@ -125,10 +132,14 @@ Namespace Broker
             End Try
         End Sub
 
-        ''' <summary>Executa na thread do broker e devolve um valor.</summary>
+        ''' <summary>
+        ''' Executa na thread do broker e devolve um valor. Todo resultado
+        ''' passa por <see cref="GuardResult"/> — é o ponto único por onde
+        ''' qualquer coisa sai da thread do broker.
+        ''' </summary>
         Public Function InvokeAsync(Of T)(work As Func(Of T)) As Task(Of T)
             EnsureUsable()
-            Return _dispatcher.InvokeAsync(work).Task
+            Return _dispatcher.InvokeAsync(Function() GuardResult(work())).Task
         End Function
 
         ''' <summary>Executa na thread do broker sem retorno.</summary>
@@ -147,6 +158,27 @@ Namespace Broker
                                    _filter.AllowRetry = True
                                    Return work(_application, _namespace)
                                End Function)
+        End Function
+
+        ''' <summary>
+        ''' A assinatura genérica destes métodos permite escrever
+        ''' <c>ReadAsync(Function(app, ns) ns.GetDefaultFolder(...))</c> e
+        ''' devolver um RCW ao chamador — a fronteira da seção 4 é uma
+        ''' convenção, não algo que o compilador imponha.
+        '''
+        ''' Aqui isso vira erro em tempo de execução. No produto, a correção
+        ''' de verdade é outra: estes genéricos ficam privados e a API pública
+        ''' expõe operações específicas (GetMailSummariesAsync,
+        ''' CreateDraftAsync, SubscribeFolderAsync), sem lambda recebendo
+        ''' Application ou NameSpace.
+        ''' </summary>
+        Private Shared Function GuardResult(Of T)(value As T) As T
+            If ComHelpers.ContainsComReference(value) Then
+                Throw New InvalidOperationException(
+                    "Um objeto COM tentou atravessar a fronteira do broker. " &
+                    "Só DTOs podem sair (ESCOPO.md, seção 4).")
+            End If
+            Return value
         End Function
 
         ''' <summary>
@@ -201,6 +233,10 @@ Namespace Broker
                     Return SessionState.Unavailable
                 End If
 
+                ' Uma sessão anterior precisa sair antes de a nova entrar,
+                ' senão reconectar vaza o Application e o NameSpace antigos.
+                ReleaseSessionCore()
+
                 _application = app
                 _namespace = app.GetNamespace("MAPI")
                 Return SessionState.Connected
@@ -232,12 +268,28 @@ Namespace Broker
                 ' Toque barato só para ver se o RCW ainda responde.
                 Dim name = _application.Name
                 Return If(String.IsNullOrEmpty(name), SessionState.Disconnected, SessionState.Connected)
+
             Catch ex As Runtime.InteropServices.COMException
-                ' RPC_E_DISCONNECTED / RPC_S_SERVER_UNAVAILABLE: o Outlook
-                ' foi embora. Solta tudo e tenta anexar de novo.
-                State = SessionState.Reconnecting
-                ReleaseSessionCore()
-                Return ConnectCore()
+                LastAttachHresult = ex.HResult
+
+                ' Tratar QUALQUER COMException como sessão morta derrubaria a
+                ' conexão por uma recusa transitória — e reconectar é caro.
+                ' Classificar pelo HRESULT é o que separa "morreu" de
+                ' "está ocupado agora".
+                Select Case ex.HResult
+                    Case RPC_E_DISCONNECTED, RPC_S_SERVER_UNAVAILABLE, CO_E_OBJNOTCONNECTED
+                        State = SessionState.Reconnecting
+                        ReleaseSessionCore()
+                        Return ConnectCore()
+
+                    Case RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER
+                        ' Vivo, só indisponível neste instante. Manter a sessão.
+                        Return SessionState.Busy
+
+                    Case Else
+                        ' Erro real e não classificado: não presumir morte.
+                        Return SessionState.Connected
+                End Select
             End Try
         End Function
 
@@ -297,6 +349,22 @@ Namespace Broker
         Public Sub Shutdown(Optional timeout As TimeSpan = Nothing)
             If timeout = Nothing Then timeout = TimeSpan.FromSeconds(10)
             If _dispatcher Is Nothing Then Return
+
+            ' A liberação precisa acontecer com o PUMP AINDA VIVO. Desconectar
+            ' event sinks e liberar proxies COM pode exigir processamento de
+            ' mensagens; fazer isso depois que Dispatcher.Run() retornou é
+            ' pedir para travar ou deixar referência pendurada. A limpeza no
+            ' fim de ThreadBody continua existindo, mas só como rede de
+            ' segurança para o caminho em que ninguém chamou Shutdown().
+            Try
+                _dispatcher.Invoke(
+                    Sub()
+                        ReleaseSessionCore()
+                        OutlookMessageFilter.Revoke()
+                    End Sub, DispatcherPriority.Send, Nothing, timeout)
+            Catch
+                ' Se a limpeza ordenada falhar, ainda assim derruba a thread.
+            End Try
 
             _dispatcher.InvokeShutdown()
 

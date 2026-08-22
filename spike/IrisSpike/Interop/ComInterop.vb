@@ -85,7 +85,20 @@ Namespace Interop
         Private _retries As Integer
         Private _cancelled As Integer
 
+        ''' <summary>
+        ''' ThreadStatic porque o registro do message filter é POR THREAD.
+        ''' Como Shared comum, dois brokers (ou outro componente que use
+        ''' filtro) enxergariam o estado um do outro.
+        ''' </summary>
+        <ThreadStatic>
         Private Shared _registered As OutlookMessageFilter
+
+        ''' <summary>
+        ''' Filtro que estava registrado antes de nós. CoRegisterMessageFilter
+        ''' devolve o anterior, e descartá-lo significa não conseguir
+        ''' restaurar o estado da thread no encerramento.
+        ''' </summary>
+        Private _previous As IOleMessageFilter
 
         <DllImport("ole32.dll")>
         Private Shared Function CoRegisterMessageFilter(
@@ -105,14 +118,20 @@ Namespace Interop
                 Throw New InvalidOperationException(
                     $"CoRegisterMessageFilter falhou (HRESULT 0x{hr:X8}).")
             End If
+            filter._previous = previous
             _registered = filter
             Return filter
         End Function
 
-        ''' <summary>Remove o filtro. Também por thread.</summary>
+        ''' <summary>
+        ''' Restaura o filtro anterior. Também por thread. Registrar Nothing
+        ''' deixaria a thread sem o filtro que ela tinha antes de nós.
+        ''' </summary>
         Public Shared Sub Revoke()
-            Dim previous As IOleMessageFilter = Nothing
-            CoRegisterMessageFilter(Nothing, previous)
+            Dim current = _registered
+            Dim restore As IOleMessageFilter = If(current Is Nothing, Nothing, current._previous)
+            Dim discarded As IOleMessageFilter = Nothing
+            CoRegisterMessageFilter(restore, discarded)
             _registered = Nothing
         End Sub
 
@@ -278,8 +297,16 @@ Namespace Interop
         ''' escondida. É a asserção que sustenta a fronteira da seção 4 do
         ''' ESCOPO.md: só DTOs atravessam, nunca RCW.
         ''' </summary>
+        ''' <remarks>
+        ''' LIMITES conhecidos, para ninguém tratar isto como prova formal:
+        ''' a profundidade é finita; getters são executados (podem ter efeito
+        ''' colateral) e os que lançam são ignorados; um wrapper que esconda
+        ''' um RCW atrás de lógica própria pode escapar. A garantia de
+        ''' verdade vem do desenho — DTOs de tipos primitivos e uma API que
+        ''' não devolve COM — e isto aqui é rede de segurança, não o piso.
+        ''' </remarks>
         Public Function ContainsComReference(graph As Object,
-                                             Optional maxDepth As Integer = 4) As Boolean
+                                             Optional maxDepth As Integer = 6) As Boolean
             Return ContainsComReferenceCore(graph, maxDepth, New HashSet(Of Object)(ReferenceEqualityComparer.Instance))
         End Function
 
@@ -305,7 +332,23 @@ Namespace Interop
                 Return False
             End If
 
-            For Each prop In t.GetProperties()
+            ' Campos também, não só propriedades: um RCW guardado em campo
+            ' privado passaria batido numa varredura só de propriedades.
+            Const AllInstance As Reflection.BindingFlags =
+                Reflection.BindingFlags.Public Or Reflection.BindingFlags.NonPublic Or
+                Reflection.BindingFlags.Instance
+
+            For Each field In t.GetFields(AllInstance)
+                Dim value As Object
+                Try
+                    value = field.GetValue(node)
+                Catch
+                    Continue For
+                End Try
+                If ContainsComReferenceCore(value, depth - 1, seen) Then Return True
+            Next
+
+            For Each prop In t.GetProperties(AllInstance)
                 If prop.GetIndexParameters().Length > 0 OrElse Not prop.CanRead Then Continue For
                 Dim value As Object
                 Try
