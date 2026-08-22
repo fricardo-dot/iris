@@ -25,10 +25,16 @@
         mão, e ficaria pior que o do sistema.
     -->
     <WindowChrome.WindowChrome>
+        <!--
+            GlassFrameThickness=1, nao 0. Com 0 o DWM para de compor a
+            moldura, e a janela perde a sombra e os cantos arredondados do
+            Windows 11 — parte da sensacao de "menos suave" que uma janela
+            nativa tem e vem exatamente dai. Uma faixa de 1 DIP devolve a
+            composicao sem trazer de volta a legenda do sistema.
+        -->
         <WindowChrome CaptionHeight="48"
                       ResizeBorderThickness="6"
-                      GlassFrameThickness="0"
-                      CornerRadius="0"
+                      GlassFrameThickness="1"
                       UseAeroCaptionButtons="False" />
     </WindowChrome.WindowChrome>
 

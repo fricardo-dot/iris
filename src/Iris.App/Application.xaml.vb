@@ -20,6 +20,11 @@ Class Application
         _log = New FileLog(FileLog.DefaultPath())
         _log.Write(LogLevel.Info, "app.startup", "iniciando")
 
+        ' Tier 0 = renderizacao por software: TUDO fica travado, e nenhuma
+        ' otimizacao de codigo compensa. Vale saber antes de culpar o codigo.
+        _log.Write(LogLevel.Info, "app.render",
+                   $"tier={Media.RenderCapability.Tier >> 16}")
+
         _broker = New Iris.Outlook.OutlookBroker(_log)
 
         Try

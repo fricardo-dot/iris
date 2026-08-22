@@ -62,8 +62,10 @@ Class MainWindow
         Public ptMaxTrackSize As NativePoint
     End Structure
 
+    ' NativeRect, e nao RECT: mesma armadilha do NativePoint — VB e
+    ' case-insensitive e RECT eclipsaria System.Windows.Rect.
     <StructLayout(LayoutKind.Sequential)>
-    Private Structure RECT
+    Private Structure NativeRect
         Public Left As Integer
         Public Top As Integer
         Public Right As Integer
@@ -73,8 +75,8 @@ Class MainWindow
     <StructLayout(LayoutKind.Sequential)>
     Private Structure MONITORINFO
         Public cbSize As Integer
-        Public rcMonitor As RECT
-        Public rcWork As RECT
+        Public rcMonitor As NativeRect
+        Public rcWork As NativeRect
         Public dwFlags As Integer
     End Structure
 
@@ -92,6 +94,19 @@ Class MainWindow
     End Function
 
     Private _maximizeHover As Boolean
+
+    ' Retangulo do botao maximizar, em pixels de tela, em CACHE.
+    '
+    ' WM_NCHITTEST e disparado a cada movimento do mouse sobre a janela — e
+    ' a primeira versao chamava PointToScreen e VisualTreeHelper.GetDpi em
+    ' TODA mensagem. Isso e travessia de arvore visual no caminho mais
+    ' quente que existe, e aparecia como janela menos fluida que a de um
+    ' aplicativo nativo.
+    '
+    ' O retangulo so muda quando a janela muda de tamanho, posicao, estado
+    ' ou DPI, entao e recalculado nesses momentos e mais em nenhum outro.
+    Private _maxButtonRect As Rect = Rect.Empty
+    Private _maxButtonRectDirty As Boolean = True
 
     ' ===================================================================
     ' Ciclo de vida da janela
@@ -119,6 +134,7 @@ Class MainWindow
         MaximizeButton.ToolTip = If(maximizada, "Restaurar", "Maximizar")
         ' O leitor de tela precisa anunciar a ação atual, não a inicial.
         Automation.AutomationProperties.SetName(MaximizeButton, If(maximizada, "Restaurar", "Maximizar"))
+        _maxButtonRectDirty = True
     End Sub
 
     ' ===================================================================
@@ -231,23 +247,42 @@ Class MainWindow
     ''' ele muda com resize, maximização, mudança de DPI e troca de monitor.
     ''' </summary>
     Private Function SobreBotaoMaximizar(lParam As IntPtr) As Boolean
-        If MaximizeButton Is Nothing OrElse Not MaximizeButton.IsVisible Then Return False
+        Dim r = RetanguloBotaoMaximizar()
+        If r.IsEmpty Then Return False
 
         Dim bruto = lParam.ToInt32()
-        Dim tela As New Point(CShort(bruto And &HFFFF), CShort((bruto >> 16) And &HFFFF))
+        Return r.Contains(CShort(bruto And &HFFFF), CShort((bruto >> 16) And &HFFFF))
+    End Function
+
+    Private Function RetanguloBotaoMaximizar() As Rect
+        If Not _maxButtonRectDirty Then Return _maxButtonRect
+
+        _maxButtonRectDirty = False
+        _maxButtonRect = Rect.Empty
+
+        If MaximizeButton Is Nothing OrElse Not MaximizeButton.IsVisible Then Return _maxButtonRect
 
         Try
             Dim canto = MaximizeButton.PointToScreen(New Point(0, 0))
             Dim dpi = VisualTreeHelper.GetDpi(MaximizeButton)
-            Dim largura = MaximizeButton.ActualWidth * dpi.DpiScaleX
-            Dim altura = MaximizeButton.ActualHeight * dpi.DpiScaleY
-
-            Return tela.X >= canto.X AndAlso tela.X < canto.X + largura AndAlso
-                   tela.Y >= canto.Y AndAlso tela.Y < canto.Y + altura
+            _maxButtonRect = New Rect(canto.X, canto.Y,
+                                      MaximizeButton.ActualWidth * dpi.DpiScaleX,
+                                      MaximizeButton.ActualHeight * dpi.DpiScaleY)
         Catch
-            Return False
+            _maxButtonRect = Rect.Empty
         End Try
+
+        Return _maxButtonRect
     End Function
+
+    ''' <summary>
+    ''' Tudo que move ou redimensiona o botao invalida o cache. DPI entra na
+    ''' lista porque arrastar entre monitores com escalas diferentes muda o
+    ''' tamanho em pixels sem mudar o tamanho em DIPs.
+    ''' </summary>
+    Private Sub InvalidarRetanguloBotao() Handles Me.SizeChanged, Me.LocationChanged, Me.DpiChanged
+        _maxButtonRectDirty = True
+    End Sub
 
     ''' <summary>
     ''' Com HTMAXBUTTON o WPF não recebe IsMouseOver, então o realce do
