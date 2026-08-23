@@ -71,8 +71,6 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _autosave As DispatcherTimer
 
         Private _key As DraftKey
-        Private _saveTask As Task
-        Private _savePendente As Boolean
 
         ''' <summary>
         ''' Conta as edições do usuário. Depois de gravar, comparar este
@@ -111,15 +109,22 @@ Namespace Global.Iris.App.ViewModels
         Private _geracao As Long
 
         ''' <summary>
-        ''' Uma descarga por vez.
+        ''' Uma operação de rascunho por vez — a operação INTEIRA.
         '''
-        ''' _saveTask NÃO servia de trava: dois chamadores — anexar e
-        ''' conferir o envio são comandos independentes — passavam os dois
-        ''' pelo teste, atribuíam os dois a _saveTask e disparavam duas
-        ''' gravações com a MESMA chave. A primeira trocava o EntryID e a
-        ''' segunda voltava NotFound.
+        ''' Duas versões desta trava estiveram erradas, e o motivo vale
+        ''' registrar. A primeira era o campo _saveTask, que não travava
+        ''' nada: dois comandos independentes passavam os dois pelo teste e
+        ''' disparavam duas gravações com a MESMA chave.
+        '''
+        ''' A segunda cobria só a descarga — e como anexar DESCARREGA e
+        ''' DEPOIS anexa, a trava era liberada no meio: outro comando entrava
+        ''' na fresta, pegava a chave, e o anexo girava o EntryID debaixo
+        ''' dele. A corrida não tinha sumido, tinha mudado de lugar.
+        '''
+        ''' Agora cobre da primeira à última chamada de cada comando. Toda
+        ''' operação que LÊ ou MUDA a chave entra por aqui.
         ''' </summary>
-        Private ReadOnly _descarga As New SemaphoreSlim(1, 1)
+        Private ReadOnly _exclusiva As New SemaphoreSlim(1, 1)
 
         Private _carregando As Boolean
         Private _disposed As Boolean
@@ -142,8 +147,10 @@ Namespace Global.Iris.App.ViewModels
             }
             AddHandler _autosave.Tick, AddressOf OnAutosaveTick
 
-            AttachCommand = New AsyncRelayCommand(AddressOf AnexarAsync, Function() PodeEditar)
-            RequestSendCommand = New AsyncRelayCommand(AddressOf PedirEnvioAsync, Function() PodeEditar)
+            AttachCommand = New AsyncRelayCommand(
+                Function() ExclusivoAsync(AddressOf AnexarAsync), Function() PodeEditar)
+            RequestSendCommand = New AsyncRelayCommand(
+                Function() ExclusivoAsync(AddressOf PedirEnvioAsync), Function() PodeEditar)
             ' AllowConcurrentExecutions de propósito. O padrão do toolkit
             ' já barraria a segunda execução, e era exatamente isso o
             ' problema: a proteção contra envio duplo ficava sendo um efeito
@@ -151,15 +158,22 @@ Namespace Global.Iris.App.ViewModels
             ' passava verde mesmo sem a trava existir. Deixando o comando
             ' permitir concorrência, quem segura é _envioComecou — que é o
             ' que o código diz que segura.
-            ConfirmSendCommand = New AsyncRelayCommand(AddressOf ConfirmarEnvioAsync,
-                                                       Function() State = ComposerState.ConfirmingSend,
-                                                       AsyncRelayCommandOptions.AllowConcurrentExecutions)
-            CancelSendCommand = New RelayCommand(Sub() State = ComposerState.Editing,
+            ConfirmSendCommand = New AsyncRelayCommand(
+                Function() ExclusivoAsync(AddressOf ConfirmarEnvioAsync),
+                Function() State = ComposerState.ConfirmingSend,
+                AsyncRelayCommandOptions.AllowConcurrentExecutions)
+            ' VoltarAEditar, e não State = Editing direto. Uma tecla que
+            ' escapou para dentro da confirmação deixa o rascunho sujo, e
+            ' voltar sem rearmar o timer faria esse texto esperar a próxima
+            ' tecla para ser gravado — que pode não vir nunca.
+            CancelSendCommand = New RelayCommand(AddressOf VoltarAEditar,
                                                  Function() State = ComposerState.ConfirmingSend)
             CloseCommand = New RelayCommand(AddressOf Fechar)
-            SaveAndCloseCommand = New AsyncRelayCommand(AddressOf SalvarEFecharAsync)
-            DiscardCommand = New AsyncRelayCommand(AddressOf DescartarAsync)
-            KeepEditingCommand = New RelayCommand(Sub() State = ComposerState.Editing)
+            SaveAndCloseCommand = New AsyncRelayCommand(
+                Function() ExclusivoAsync(AddressOf SalvarEFecharAsync))
+            DiscardCommand = New AsyncRelayCommand(
+                Function() ExclusivoAsync(AddressOf DescartarAsync))
+            KeepEditingCommand = New RelayCommand(AddressOf VoltarAEditar)
         End Sub
 
         Public ReadOnly Property AttachCommand As IAsyncRelayCommand
@@ -489,7 +503,13 @@ Namespace Global.Iris.App.ViewModels
             Title = titulo
             Status = "Criando rascunho…"
 
+            Dim marca = Interlocked.Read(_geracao)
             Dim resultado = Await criar(CancellationToken.None)
+
+            ' A janela pode ter fechado enquanto o rascunho era criado.
+            ' Abrir agora traria de volta um compositor que ninguém pediu.
+            If Not GeracaoValida(marca) Then Return
+
             If Not resultado.Succeeded Then
                 State = ComposerState.Closed
                 Status = "Não foi possível criar o rascunho. " & Traduzir(resultado.Kind)
@@ -603,66 +623,52 @@ Namespace Global.Iris.App.ViewModels
 
         Private Sub OnAutosaveTick(sender As Object, e As EventArgs)
             _autosave.Stop()
-            _observe(SalvarAsync(), "composer.autosave")
+            _observe(ExclusivoAsync(AddressOf AutosalvarAsync), "composer.autosave")
         End Sub
 
-        ''' <summary>
-        ''' Uma gravação em voo por vez, com no máximo um estado pendente.
-        ''' Enfileirar cada edição produziria versões intermediárias que
-        ''' ninguém quer e ocuparia a fila única da STA, que é a mesma que
-        ''' serve a lista e a leitura.
-        ''' </summary>
-        Private Function SalvarAsync() As Task
-            If _saveTask IsNot Nothing AndAlso Not _saveTask.IsCompleted Then
-                _savePendente = True
-                Return _saveTask
-            End If
-
-            _saveTask = GravarAteEstabilizarAsync()
-            Return _saveTask
+        Private Async Function AutosalvarAsync() As Task
+            ' Outro comando pode ter descarregado enquanto este tick
+            ' esperava a trava. Se não há mais nada sujo, não grava.
+            If Not IsDirty OrElse Not IsOpen Then Return
+            Await GravarUmaVezAsync()
         End Function
 
         ''' <summary>
-        ''' <paramref name="orcamento"/> limita as voltas do laço interno.
-        ''' Sem ele, "teto de três rodadas" era só o laço de FORA: uma tecla
-        ''' durante a gravação marca _savePendente e dá mais uma volta aqui
-        ''' dentro, sem passar pelo teto nenhuma vez.
+        ''' UMA gravação. Quem chama já tem a trava, e o laço de convergência
+        ''' é de quem chama.
         ''' </summary>
-        Private Async Function GravarAteEstabilizarAsync(
-            Optional orcamento As Integer = MaxGravacoesPorDescarga) As Task
+        Private Async Function GravarUmaVezAsync() As Task
+            Dim geracao = Interlocked.Read(_geracao)
 
-            Dim voltas = 0
-            Do
-                voltas += 1
-                If voltas > orcamento Then Return
+            ' Fotografa o contador ANTES da chamada. O que for digitado
+            ' durante a gravação tem número maior e continua sujo.
+            Dim marca = Interlocked.Read(_edicoes)
 
-                _savePendente = False
+            Dim conteudo As New DraftContent With {
+                .Subject = Subject,
+                .UserText = UserText,
+                .ToLine = ToLine,
+                .CcLine = CcLine
+            }
 
-                ' Fotografa o contador ANTES da chamada. O que for digitado
-                ' durante a gravação tem número maior e continua sujo.
-                Dim marca = Interlocked.Read(_edicoes)
+            Dim resultado = Await _broker.UpdateDraftAsync(_key, conteudo, CancellationToken.None)
 
-                Dim conteudo As New DraftContent With {
-                    .Subject = Subject,
-                    .UserText = UserText,
-                    .ToLine = ToLine,
-                    .CcLine = CcLine
-                }
+            ' O rascunho pode ter sido descartado enquanto isto gravava.
+            ' Aplicar agora reinstalaria chave e anexos num compositor
+            ' fechado.
+            If Not GeracaoValida(geracao) Then Return
 
-                Dim resultado = Await _broker.UpdateDraftAsync(_key, conteudo, CancellationToken.None)
-
-                If resultado.Succeeded Then
-                    ' A chave muda a cada Save. Reler é obrigatório: guardar
-                    ' a antiga daria NotFound na hora de enviar.
-                    Aplicar(resultado.Value, primeiraVez:=False)
-                    If Interlocked.Read(_edicoes) = marca Then IsDirty = False
-                    If Status.StartsWith(FalhaAoSalvar, StringComparison.Ordinal) Then Status = ""
-                Else
-                    ' Não fecha e não descarta: o texto continua na tela. A
-                    ' próxima tecla dispara outra tentativa.
-                    Status = FalhaAoSalvar & Traduzir(resultado.Kind)
-                End If
-            Loop While _savePendente
+            If resultado.Succeeded Then
+                ' A chave muda a cada Save. Reler é obrigatório: guardar a
+                ' antiga daria NotFound na hora de enviar.
+                Aplicar(resultado.Value, primeiraVez:=False)
+                If Interlocked.Read(_edicoes) = marca Then IsDirty = False
+                If Status.StartsWith(FalhaAoSalvar, StringComparison.Ordinal) Then Status = ""
+            Else
+                ' Não fecha e não descarta: o texto continua na tela. A
+                ' próxima tecla dispara outra tentativa.
+                Status = FalhaAoSalvar & Traduzir(resultado.Kind)
+            End If
         End Function
 
         Private Const FalhaAoSalvar As String = "Não foi possível salvar agora. "
@@ -674,9 +680,6 @@ Namespace Global.Iris.App.ViewModels
         ''' ele parar de digitar.
         ''' </summary>
         Private Const MaxRodadasDeDescarga As Integer = 3
-
-        ''' <summary>Voltas do laço interno, por chamada.</summary>
-        Private Const MaxGravacoesPorDescarga As Integer = 3
 
         ''' <summary>
         ''' Garante que o store tem exatamente o que está na tela.
@@ -691,48 +694,56 @@ Namespace Global.Iris.App.ViewModels
         ''' devolveria "pronto" com a tela ainda na frente do store.
         ''' </summary>
         ''' <returns>True se o store bate com a tela.</returns>
-        Private Async Function DescarregarAsync() As Task(Of Boolean)
+        ''' <summary>
+        ''' Descarrega SEM pegar a trava: quem chama já a tem.
+        '''
+        ''' Um laço só, e não dois aninhados. Antes havia um laço aqui e
+        ''' outro dentro da gravação, e o "teto de três rodadas" valia só
+        ''' para o de fora — o de dentro dava voltas extras sem passar pelo
+        ''' teto. Com a trava cobrindo a operação inteira, o laço de dentro
+        ''' deixou de ter função: nenhuma outra gravação consegue começar
+        ''' enquanto esta acontece.
+        ''' </summary>
+        Private Async Function DescarregarSemTravaAsync() As Task(Of Boolean)
             Dim marca = Interlocked.Read(_geracao)
+            _autosave.Stop()
 
-            ' Serializa de verdade. Ver o comentário de _descarga: o campo
-            ' _saveTask sozinho deixava dois chamadores entrarem juntos.
-            Await _descarga.WaitAsync()
-            Try
+            Dim rodadas = 0
+            Do While IsDirty
+                rodadas += 1
+                If rodadas > MaxRodadasDeDescarga Then Return False
+
+                Dim antes = Interlocked.Read(_edicoes)
+                Await GravarUmaVezAsync()
+
                 If Not GeracaoValida(marca) Then Return False
 
-                _autosave.Stop()
+                ' Continuar sujo SEM edição nova quer dizer que a gravação
+                ' falhou. Insistir só repetiria a falha; o Status já explica
+                ' o que houve, e o autosave tenta de novo na próxima tecla.
+                If IsDirty AndAlso Interlocked.Read(_edicoes) = antes Then Return False
+            Loop
 
-                If _saveTask IsNot Nothing AndAlso Not _saveTask.IsCompleted Then
-                    Await _saveTask
-                End If
-
-                Dim rodadas = 0
-                Do While IsDirty
-                    rodadas += 1
-                    If rodadas > MaxRodadasDeDescarga Then Return False
-
-                    Dim antes = Interlocked.Read(_edicoes)
-                    _saveTask = GravarAteEstabilizarAsync(MaxGravacoesPorDescarga)
-                    Await _saveTask
-
-                    If Not GeracaoValida(marca) Then Return False
-
-                    ' Continuar sujo SEM edição nova quer dizer que a gravação
-                    ' falhou. Insistir só repetiria a falha; o Status já
-                    ' explica o que houve, e o autosave tenta de novo na
-                    ' próxima tecla.
-                    If IsDirty AndAlso Interlocked.Read(_edicoes) = antes Then Return False
-                Loop
-
-                Return True
-            Finally
-                _descarga.Release()
-            End Try
+            Return True
         End Function
 
         ''' <summary>
         ''' A continuação que voltou ainda pertence ao rascunho que a pediu?
         ''' </summary>
+        ''' <summary>
+        ''' Roda o trabalho com a trava de rascunho na mão.
+        ''' Quem está aqui dentro NÃO pode chamar isto de novo: seria
+        ''' espera sobre si mesmo.
+        ''' </summary>
+        Private Async Function ExclusivoAsync(trabalho As Func(Of Task)) As Task
+            Await _exclusiva.WaitAsync()
+            Try
+                Await trabalho()
+            Finally
+                _exclusiva.Release()
+            End Try
+        End Function
+
         Private Function GeracaoValida(marca As Long) As Boolean
             Return Interlocked.Read(_geracao) = marca
         End Function
@@ -751,7 +762,7 @@ Namespace Global.Iris.App.ViewModels
             ' em voo pode trocá-la no meio do caminho: a anexação sairia com
             ' a chave velha e voltaria NotFound. Esperar também garante que
             ' as duas mutações não disputem a fila única da STA.
-            If Not Await DescarregarAsync() Then
+            If Not Await DescarregarSemTravaAsync() Then
                 AvisarDescargaIncompleta()
                 Return
             End If
@@ -790,7 +801,7 @@ Namespace Global.Iris.App.ViewModels
             ' A confirmação tem de descrever o que vai sair AGORA. Conferir
             ' com o store atrasado faria o usuário aprovar uma versão e o
             ' Outlook mandar outra.
-            If Not Await DescarregarAsync() Then
+            If Not Await DescarregarSemTravaAsync() Then
                 AvisarDescargaIncompleta()
                 Return
             End If
@@ -874,7 +885,13 @@ Namespace Global.Iris.App.ViewModels
             State = ComposerState.Sending
             Status = "Enviando…"
 
+            Dim marca = Interlocked.Read(_geracao)
             Dim resultado = Await _broker.SendDraftAsync(_key, CancellationToken.None)
+
+            ' Defesa estrutural. Hoje fechar é recusado durante o envio, mas
+            ' depender de uma invariante de outro método para não escrever
+            ' num objeto morto é depender de alguém não mudar de ideia.
+            If Not GeracaoValida(marca) Then Return
 
             If resultado.Succeeded Then
                 Status = ""
@@ -943,8 +960,7 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End If
 
-            If IsDirty OrElse _autosave.IsEnabled OrElse
-               (_saveTask IsNot Nothing AndAlso Not _saveTask.IsCompleted) Then
+            If IsDirty OrElse _autosave.IsEnabled Then
                 State = ComposerState.ConfirmingClose
                 Return
             End If
@@ -956,7 +972,7 @@ Namespace Global.Iris.App.ViewModels
             State = ComposerState.Editing
             Status = "Salvando…"
 
-            If Not Await DescarregarAsync() Then
+            If Not Await DescarregarSemTravaAsync() Then
                 ' Não fecha em cima de uma gravação que falhou: fechar aqui
                 ' seria perder o texto justamente no caso em que ele não
                 ' está guardado.
@@ -975,7 +991,9 @@ Namespace Global.Iris.App.ViewModels
         Private Async Function DescartarAsync() As Task
             _autosave.Stop()
 
+            Dim marca = Interlocked.Read(_geracao)
             Dim resultado = Await _broker.DeleteDraftAsync(_key, CancellationToken.None)
+            If Not GeracaoValida(marca) Then Return
 
             ' NotFound é sucesso disfarçado: o rascunho já não está lá, que
             ' é exatamente o que se queria.
@@ -1005,9 +1023,6 @@ Namespace Global.Iris.App.ViewModels
             Attachments.Clear()
             Preview = Nothing
             _key = Nothing
-            _saveTask = Nothing
-            _savePendente = False
-
             ' Sobe a geração ANTES de zerar o resto: qualquer continuação em
             ' voo que volte daqui em diante descobre que o rascunho dela
             ' acabou e larga o resultado.
@@ -1066,7 +1081,13 @@ Namespace Global.Iris.App.ViewModels
             _disposed = True
             _autosave.Stop()
             RemoveHandler _autosave.Tick, AddressOf OnAutosaveTick
-            _descarga.Dispose()
+
+            ' _exclusiva NAO e descartado. Uma operacao ainda em voo faria
+            ' o WaitAsync pendente estourar ObjectDisposedException, ou o
+            ' Finally de quem ja tem a trava chamar Release num semaforo
+            ' morto. E recurso puramente gerenciado, com a mesma vida do
+            ' ViewModel; deixar o GC levar e mais seguro que fechar por
+            ' cima de quem esta usando.
         End Sub
 
     End Class

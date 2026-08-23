@@ -192,15 +192,43 @@ Class MainWindow
 
     Private _aguardandoCompositor As Boolean
 
+    ''' <summary>
+    ''' Espera a resposta do usuário à pergunta de fechamento.
+    '''
+    ''' Escuta o ESTADO, e não só IsOpen. Escutando IsOpen, "Continuar
+    ''' editando" não desarmava nada: a intenção de fechar ficava guardada
+    ''' para sempre, e o próximo fechamento do compositor por outro motivo
+    ''' — um envio bem-sucedido, por exemplo — fechava a janela do nada.
+    ''' </summary>
     Private Sub CompositorMudou(sender As Object, e As System.ComponentModel.PropertyChangedEventArgs)
-        If e.PropertyName <> NameOf(Iris.App.ViewModels.ComposerViewModel.IsOpen) Then Return
+        If e.PropertyName <> NameOf(Iris.App.ViewModels.ComposerViewModel.State) Then Return
 
         Dim composer = TryCast(sender, Iris.App.ViewModels.ComposerViewModel)
-        If composer Is Nothing OrElse composer.IsOpen Then Return
+        If composer Is Nothing Then Return
 
+        Select Case composer.State
+            Case Iris.App.ViewModels.ComposerState.ConfirmingClose
+                ' A pergunta está na tela. Continua esperando.
+                Return
+
+            Case Iris.App.ViewModels.ComposerState.Closed
+                ' Respondeu salvar ou descartar. Fecha, como foi pedido.
+                DesarmarEspera(composer)
+
+                ' BeginInvoke para o segundo Close não sair de dentro da
+                ' pilha de quem acabou de mexer no ViewModel.
+                Dispatcher.BeginInvoke(New Action(Sub() Close()))
+
+            Case Else
+                ' Voltou a editar, ou foi enviar. De qualquer forma
+                ' desistiu de fechar agora, e a intenção morre aqui.
+                DesarmarEspera(composer)
+        End Select
+    End Sub
+
+    Private Sub DesarmarEspera(composer As Iris.App.ViewModels.ComposerViewModel)
         RemoveHandler composer.PropertyChanged, AddressOf CompositorMudou
         _aguardandoCompositor = False
-        Close()
     End Sub
 
 

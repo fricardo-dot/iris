@@ -30,6 +30,7 @@ Public Class ComposerTests
     Private Const DebounceDeTeste As Integer = 40
 
     Private ReadOnly _criados As New List(Of ComposerViewModel)()
+    Private ReadOnly _temporarios As New List(Of String)()
 
     ''' <summary>
     ''' Descarta os compositores do teste.
@@ -46,6 +47,15 @@ Public Class ComposerTests
             vm.Dispose()
         Next
         _criados.Clear()
+
+        For Each caminho In _temporarios
+            Try
+                IO.File.Delete(caminho)
+            Catch
+                ' Nao e problema do teste se o arquivo continuar preso.
+            End Try
+        Next
+        _temporarios.Clear()
     End Sub
 
     Private Function Montar(broker As FakeBroker,
@@ -730,18 +740,98 @@ Public Class ComposerTests
         Assert.IsNull(vm.Preview)
     End Sub
 
+
+    ''' <summary>
+    ''' Anexar DESCARREGA e depois anexa. Se a trava cobrisse so a descarga,
+    ''' outro comando entraria nessa fresta, pegaria a chave, e o anexo
+    ''' giraria o EntryID debaixo dele — o duplo devolve NotFound para chave
+    ''' vencida, entao a corrida vira falha visivel.
+    '''
+    ''' Este teste dispara anexar e conferir o envio ao mesmo tempo, com a
+    ''' gravacao presa no meio para garantir a sobreposicao.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Anexar_e_conferir_ao_mesmo_tempo_nao_disputam_a_chave()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker, escolha:=CaminhoDeArquivoReal())
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        vm.UserText = "texto por gravar"
+
+        ' Prende a gravacao para que a segunda operacao chegue enquanto a
+        ' primeira ainda esta no meio do caminho.
+        broker.TravaDoUpdate = New TaskCompletionSource(Of Boolean)()
+
+        Dim anexando = vm.AttachCommand.ExecuteAsync(Nothing)
+        AguardarChamadas(broker, "update", 1)
+
+        Dim conferindo = vm.RequestSendCommand.ExecuteAsync(Nothing)
+
+        broker.TravaDoUpdate.SetResult(True)
+        broker.TravaDoUpdate = Nothing
+        Aguardar(anexando)
+        Aguardar(conferindo)
+
+        ' Com a chave disputada, o duplo teria devolvido NotFound e nada
+        ' disto valeria.
+        Assert.AreEqual(1, vm.Attachments.Count, "O anexo nao entrou.")
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State,
+            "A conferencia falhou — sinal de chave vencida entre as duas operacoes.")
+        Assert.AreEqual(broker.ChaveAtual(), broker.ChavesRecebidas.Last(),
+            "A ultima operacao usou uma chave que ja nao valia.")
+        Assert.IsTrue(vm.HasPreviewAttachments, "O anexo tem de aparecer na confirmacao.")
+    End Sub
+
+    ''' <summary>
+    ''' Uma tecla que escapou para dentro da confirmacao deixa o rascunho
+    ''' sujo. Voltar para a edicao sem rearmar o timer faria esse texto
+    ''' esperar a proxima tecla para ser gravado — e ela pode nao vir.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Voltar_da_confirmacao_com_texto_pendente_volta_a_gravar()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+
+        ' Tecla que escapou: registra, mas nao arma o timer neste estado.
+        vm.UserText = "escapou para dentro da confirmacao"
+        Assert.IsTrue(vm.IsDirty)
+
+        Dim gravacoesAntes = ContarChamadas(broker, "update")
+        vm.CancelSendCommand.Execute(Nothing)
+        BombearPor(DebounceDeTeste * 6)
+
+        Assert.IsTrue(ContarChamadas(broker, "update") > gravacoesAntes,
+            "Voltar a editar tem de rearmar o autosave do que ficou pendente.")
+        Assert.IsFalse(vm.IsDirty)
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================
 
     ''' <summary>
     ''' Um arquivo que existe de verdade. O compositor entrega o caminho ao
-    ''' broker sem conferir; quem confere é a camada COM. Aqui basta ser
-    ''' um caminho plausível.
+    ''' broker sem conferir; quem confere é a camada COM. Aqui basta ser um
+    ''' caminho plausível.
+    '''
+    ''' Nome ÚNICO por chamada. Um nome fixo compartilhado entre os testes
+    ''' dava IOException intermitente — "o arquivo está sendo usado por
+    ''' outro processo" — em cerca de uma execução a cada dezesseis. Bastava
+    ''' o indexador ou o antivírus estar com o handle aberto do teste
+    ''' anterior. Um teste que falha de vez em quando acaba sendo ignorado,
+    ''' que é o mesmo que não ter teste.
     ''' </summary>
-    Private Shared Function CaminhoDeArquivoReal() As String
-        Dim caminho = IO.Path.Combine(IO.Path.GetTempPath(), "iris-teste-anexo.txt")
+    Private Function CaminhoDeArquivoReal() As String
+        Dim caminho = IO.Path.Combine(IO.Path.GetTempPath(),
+                                      $"iris-teste-anexo-{Guid.NewGuid():N}.txt")
         IO.File.WriteAllText(caminho, "anexo de teste")
+        _temporarios.Add(caminho)
         Return caminho
     End Function
 
