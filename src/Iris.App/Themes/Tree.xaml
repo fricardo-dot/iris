@@ -17,6 +17,9 @@
         <Setter Property="Height" Value="20" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Background" Value="Transparent" />
+        <!-- O TreeViewItem controla expansão pelo teclado; a seta é só
+             ponteiro, e não deve entrar na ordem de tabulação. -->
+        <Setter Property="AutomationProperties.IsOffscreenBehavior" Value="Offscreen" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="ToggleButton">
@@ -29,9 +32,9 @@
                                    RenderTransformOrigin="0.5,0.5" />
                     </Border>
                     <ControlTemplate.Triggers>
-                        <!-- Substitui a transformacao inteira: um
+                        <!-- Substitui a transformação inteira: um
                              RotateTransform nomeado dentro de
-                             TextBlock.RenderTransform nao e alcancavel por
+                             TextBlock.RenderTransform não é alcançável por
                              TargetName de trigger. -->
                         <Trigger Property="IsChecked" Value="True">
                             <Setter TargetName="Glifo" Property="RenderTransform">
@@ -53,16 +56,33 @@
     <Style x:Key="FolderTreeItem" TargetType="TreeViewItem">
         <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Secondary}" />
         <Setter Property="IsExpanded" Value="{Binding IsExpanded, Mode=TwoWay}" />
+        <!-- TreeView.SelectedItem é somente leitura: ligar a seleção ao
+             ViewModel passa obrigatoriamente por aqui. -->
+        <Setter Property="IsSelected" Value="{Binding IsSelected, Mode=TwoWay}" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Padding" Value="0" />
+        <Setter Property="AutomationProperties.Name" Value="{Binding Name}" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="TreeViewItem">
-                    <StackPanel>
-                        <Border x:Name="Linha"
+                    <!-- Grid, não StackPanel: um StackPanel mede os filhos
+                         com altura infinita, o que faz o ItemsPresenter
+                         realizar todos os descendentes e anula a
+                         virtualização hierárquica. -->
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Border x:Name="Linha" Grid.Row="0"
                                 Background="Transparent"
+                                BorderBrush="Transparent"
+                                BorderThickness="1"
                                 CornerRadius="{StaticResource Radius.Control}"
-                                Padding="4,6" Margin="0,1">
+                                Padding="4,5" Margin="0,1">
                             <Grid>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="20" />
@@ -82,13 +102,18 @@
                             </Grid>
                         </Border>
 
-                        <ItemsPresenter x:Name="Filhos" Margin="14,0,0,0" Visibility="Collapsed" />
-                    </StackPanel>
+                        <ItemsPresenter x:Name="Filhos" Grid.Row="1"
+                                        Margin="14,0,0,0" Visibility="Collapsed" />
+                    </Grid>
 
                     <ControlTemplate.Triggers>
-                        <Trigger Property="HasItems" Value="True">
+                        <!-- CanExpand, e não HasItems: a seta precisa
+                             aparecer ANTES de os filhos existirem, senão
+                             não há como pedir para carregá-los. Era o que
+                             faltava para a pasta expandir. -->
+                        <DataTrigger Binding="{Binding CanExpand}" Value="True">
                             <Setter TargetName="Expander" Property="Visibility" Value="Visible" />
-                        </Trigger>
+                        </DataTrigger>
                         <Trigger Property="IsExpanded" Value="True">
                             <Setter TargetName="Filhos" Property="Visibility" Value="Visible" />
                         </Trigger>
@@ -98,16 +123,18 @@
                         </Trigger>
                         <!-- Selecionado usa a superfície de acento, não o
                              acento cheio: uma linha inteira em azul forte
-                             cansa numa lista que fica sempre na tela. -->
+                             cansa num painel que fica sempre na tela. -->
                         <Trigger Property="IsSelected" Value="True">
                             <Setter TargetName="Linha" Property="Background"
                                     Value="{DynamicResource Brush.Accent.Surface}" />
                             <Setter Property="Foreground" Value="{DynamicResource Brush.Text.Primary}" />
                         </Trigger>
+                        <!-- Só a COR da borda muda no foco. Mudar a
+                             espessura empurraria o conteúdo e o texto
+                             pularia de lugar. -->
                         <Trigger Property="IsKeyboardFocusWithin" Value="True">
                             <Setter TargetName="Linha" Property="BorderBrush"
                                     Value="{DynamicResource Brush.Focus}" />
-                            <Setter TargetName="Linha" Property="BorderThickness" Value="1" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -120,10 +147,10 @@
         <Setter Property="BorderThickness" Value="0" />
         <Setter Property="ItemContainerStyle" Value="{StaticResource FolderTreeItem}" />
         <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
-        <!-- Virtualização de verdade: sem isto, uma caixa com muitas pastas
-             cria um controle por pasta na abertura. -->
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
         <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
         <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+        <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
     </Style>
 
 </ResourceDictionary>

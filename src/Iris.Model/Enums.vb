@@ -87,6 +87,23 @@ Namespace Global.Iris.Model
         Unknown
     End Enum
 
+    ''' <summary>
+    ''' Tipo de conteudo de uma pasta, em vocabulario proprio.
+    '''
+    ''' Existe para o Core e a UI nao dependerem de comparar a string
+    ''' "olMailItem", que e o nome de um membro de enum do COM vazando para
+    ''' as camadas de cima.
+    ''' </summary>
+    Public Enum FolderContentKind
+        Unknown
+        Mail
+        Calendar
+        Contacts
+        Tasks
+        Notes
+        Journal
+    End Enum
+
     Public Enum MessageSort
         ReceivedDesc
         ReceivedAsc

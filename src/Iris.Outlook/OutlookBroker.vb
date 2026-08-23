@@ -465,7 +465,7 @@ Namespace Global.Iris.Outlook
                                     lista.Add(New FolderInfo With {
                                         .Key = New FolderKey(Safe(Function() f.EntryID), Safe(Function() f.StoreID)),
                                         .Name = Safe(Function() f.Name),
-                                        .DefaultItemType = Safe(Function() f.DefaultItemType.ToString()),
+                                        .ContentKind = TipoDeConteudo(f),
                                         .ItemCount = total,
                                         .UnreadCount = SafeInt(Function() f.UnReadItemCount),
                                         .HasChildren = netos > 0,
@@ -642,6 +642,27 @@ Namespace Global.Iris.Outlook
         ' ===================================================================
         ' Leitura defensiva de propriedades COM
         ' ===================================================================
+
+        ''' <summary>
+        ''' Traduz o tipo do COM para o vocabulario do Model. Sem isto, o
+        ''' Core e a UI acabariam comparando a string "olMailItem" — nome de
+        ''' membro de enum do interop vazando para as camadas de cima.
+        ''' </summary>
+        Private Shared Function TipoDeConteudo(f As OL.MAPIFolder) As FolderContentKind
+            Try
+                Select Case f.DefaultItemType
+                    Case OL.OlItemType.olMailItem : Return FolderContentKind.Mail
+                    Case OL.OlItemType.olAppointmentItem : Return FolderContentKind.Calendar
+                    Case OL.OlItemType.olContactItem : Return FolderContentKind.Contacts
+                    Case OL.OlItemType.olTaskItem : Return FolderContentKind.Tasks
+                    Case OL.OlItemType.olNoteItem : Return FolderContentKind.Notes
+                    Case OL.OlItemType.olJournalItem : Return FolderContentKind.Journal
+                    Case Else : Return FolderContentKind.Unknown
+                End Select
+            Catch
+                Return FolderContentKind.Unknown
+            End Try
+        End Function
 
         ''' <summary>
         ''' PR_ATTR_HIDDEN via PropertyAccessor. O PropertyAccessor e um

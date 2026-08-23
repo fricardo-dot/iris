@@ -13,7 +13,7 @@ Namespace Global.Iris.Model
     Public NotInheritable Class FolderInfo
         Public Property Key As FolderKey
         Public Property Name As String = ""
-        Public Property DefaultItemType As String = ""
+        Public Property ContentKind As FolderContentKind = FolderContentKind.Unknown
         Public Property ItemCount As Integer
         ''' <summary>
         ''' Eventualmente consistente por desenho: o Outlook atualiza isto

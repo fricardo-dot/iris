@@ -62,7 +62,14 @@
 
         <!-- Linha da pasta: nome à esquerda, não lidos à direita. Peso maior
              quando há não lidos, em vez de pintar a linha inteira. -->
-        <DataTemplate x:Key="FolderNodeTemplate">
+        <!--
+            HierarchicalDataTemplate, nao DataTemplate. Sem ItemsSource aqui,
+            o TreeView nunca fica sabendo que existem filhos: nao desenha
+            seta, nao cria os nos, e a pasta simplesmente nao expande. Era
+            exatamente o defeito relatado.
+        -->
+        <HierarchicalDataTemplate x:Key="FolderNodeTemplate"
+                                  ItemsSource="{Binding Children}">
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
@@ -73,6 +80,7 @@
                            FontFamily="{StaticResource Font.Ui}"
                            FontSize="{StaticResource Font.Size.Body}"
                            TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Name}"
                            VerticalAlignment="Center">
                     <TextBlock.Style>
                         <Style TargetType="TextBlock">
@@ -91,8 +99,15 @@
                            FontSize="{StaticResource Font.Size.Small}"
                            Foreground="{DynamicResource Brush.Accent}"
                            Visibility="{Binding HasUnread, Converter={StaticResource BoolToVis}}" />
+
+                <!-- Sem isto, expandir uma pasta lenta mostra um ramo vazio
+                     e o usuario nao sabe se esta carregando ou se acabou. -->
+                <TextBlock Grid.Column="1" Text="…"
+                           Margin="8,0,6,0" VerticalAlignment="Center"
+                           Foreground="{DynamicResource Brush.Text.Muted}"
+                           Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
             </Grid>
-        </DataTemplate>
+        </HierarchicalDataTemplate>
     </Window.Resources>
 
     <Border x:Name="RootBorder">
@@ -115,11 +130,11 @@
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
 
-                    <TextBlock Grid.Column="0" Text="Iris" Style="{StaticResource Text.Wordmark}"
-                               Margin="16,0,0,0" VerticalAlignment="Center" />
-
-                    <!-- A coluna 1 fica vazia de propósito: é a região
-                         contínua de arrasto da janela. -->
+                    <!-- Sem nome e sem icone aqui: o requisito era que
+                         so a barra de tarefas os mostrasse, e a versao
+                         anterior ainda desenhava "Iris". Window.Title segue
+                         atendendo taskbar, Alt+Tab e acessibilidade.
+                         As colunas 0 e 1 sao area continua de arrasto. -->
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                 VerticalAlignment="Center" Margin="0,0,12,0">
@@ -193,10 +208,18 @@
                     </Grid>
                 </Border>
 
-                <GridSplitter Grid.Column="1" Width="1"
-                              HorizontalAlignment="Stretch"
-                              Background="{DynamicResource Brush.Border.Subtle}"
-                              ResizeBehavior="PreviousAndNext" />
+                <!-- Alvo de 6 DIP com a linha de 1 DIP desenhada por
+                     baixo: visualmente fino, praticavel com o mouse. Um
+                     splitter de 1 DIP e correto no desenho e pessimo de
+                     acertar. -->
+                <Border Grid.Column="1" Width="1"
+                        HorizontalAlignment="Center"
+                        Background="{DynamicResource Brush.Border.Subtle}" />
+                <GridSplitter Grid.Column="1" Width="6"
+                              HorizontalAlignment="Center"
+                              Background="Transparent"
+                              ResizeBehavior="PreviousAndNext"
+                              AutomationProperties.Name="Redimensionar painel de pastas" />
 
                 <!-- Lista e leitura chegam nos marcos 1.3 e 1.4 -->
                 <Border Grid.Column="2" Background="{DynamicResource Brush.Background}">

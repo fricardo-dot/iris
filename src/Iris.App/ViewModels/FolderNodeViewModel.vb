@@ -1,4 +1,5 @@
 Imports System.Collections.ObjectModel
+Imports System.Linq
 Imports System.Threading
 Imports System.Threading.Tasks
 Imports CommunityToolkit.Mvvm.ComponentModel
@@ -7,49 +8,44 @@ Imports Iris.Model
 
 Namespace Global.Iris.App.ViewModels
 
+    Public Enum NodeLoadState
+        Unloaded
+        Loading
+        Loaded
+    End Enum
+
     ''' <summary>
     ''' Um nó da árvore de pastas, carregado sob demanda.
     '''
-    ''' Carregar a árvore inteira na abertura seria simples e errado: uma
-    ''' caixa com muitas pastas custaria segundos, e a Fase 0 mediu ~16 ms
-    ''' por item só de montar DTO. Cada nível é buscado quando expande, uma
-    ''' vez só.
+    ''' Carregar a árvore inteira na abertura seria simples e errado: a Fase
+    ''' 0 mediu ~16 ms por item só de montar DTO, e uma caixa com muitas
+    ''' pastas pagaria isso a cada abertura. Cada nível é buscado quando
+    ''' expande, uma vez só.
     ''' </summary>
     Public NotInheritable Class FolderNodeViewModel
         Inherits ObservableObject
 
-        ''' <summary>
-        ''' Filho falso, para o TreeView desenhar a seta de expansão sem que
-        ''' os filhos reais existam ainda. É substituído no primeiro
-        ''' expandir.
-        ''' </summary>
-        Private Shared ReadOnly Marcador As FolderNodeViewModel = New FolderNodeViewModel()
+        Private ReadOnly _context As FolderTreeContext
 
-        Private ReadOnly _broker As IOutlookBroker
-        Private ReadOnly _ui As Global.System.Windows.Threading.Dispatcher
-        Private ReadOnly _onError As Action(Of ErrorKind, String)
+        Private _state As NodeLoadState = NodeLoadState.Unloaded
+        Private _loadGeneration As Integer = 0
+        Private ReadOnly _gate As New Object()
 
         Private _isExpanded As Boolean
+        Private _isSelected As Boolean
         Private _isLoading As Boolean
-        Private _loaded As Integer = 0
+        Private _unreadCount As Integer
+        Private _itemCount As Integer
+        Private _hasUnrealizedChildren As Boolean
 
-        Private Sub New()
-            ' Só para o marcador.
-            Name = ""
-        End Sub
-
-        Public Sub New(info As FolderInfo, broker As IOutlookBroker,
-                       ui As Global.System.Windows.Threading.Dispatcher, onError As Action(Of ErrorKind, String))
-            _broker = broker
-            _ui = ui
-            _onError = onError
+        Public Sub New(info As FolderInfo, context As FolderTreeContext)
+            _context = context
 
             Key = info.Key
             Name = info.Name
-            UnreadCount = info.UnreadCount
-            ItemCount = info.ItemCount
-
-            If info.HasChildren Then Children.Add(Marcador)
+            _unreadCount = info.UnreadCount
+            _itemCount = info.ItemCount
+            _hasUnrealizedChildren = info.HasChildren
         End Sub
 
         Public ReadOnly Property Key As FolderKey
@@ -57,16 +53,59 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property Children As New ObservableCollection(Of FolderNodeViewModel)()
 
         ''' <summary>
+        ''' Existem filhos ainda não buscados.
+        '''
+        ''' Substitui o nó-marcador da versão anterior. Um filho falso na
+        ''' coleção é um item de verdade para o WPF: ganha container, entra
+        ''' na navegação por teclado e aparece para a automação, sem nome e
+        ''' sem sentido. O template usa esta propriedade para desenhar a seta
+        ''' sem que nada falso exista na árvore.
+        ''' </summary>
+        Public Property HasUnrealizedChildren As Boolean
+            Get
+                Return _hasUnrealizedChildren
+            End Get
+            Private Set(value As Boolean)
+                If SetProperty(_hasUnrealizedChildren, value) Then
+                    OnPropertyChanged(NameOf(CanExpand))
+                End If
+            End Set
+        End Property
+
+        Public ReadOnly Property CanExpand As Boolean
+            Get
+                Return _hasUnrealizedChildren OrElse Children.Count > 0
+            End Get
+        End Property
+
+        ''' <summary>
         ''' Eventualmente consistente por desenho: o Outlook atualiza a
         ''' contagem de forma assíncrona, e o Iris não vai bloquear a árvore
         ''' para conferir um número que muda sozinho.
         ''' </summary>
         Public Property UnreadCount As Integer
+            Get
+                Return _unreadCount
+            End Get
+            Set(value As Integer)
+                If SetProperty(_unreadCount, value) Then
+                    OnPropertyChanged(NameOf(HasUnread))
+                End If
+            End Set
+        End Property
+
         Public Property ItemCount As Integer
+            Get
+                Return _itemCount
+            End Get
+            Set(value As Integer)
+                SetProperty(_itemCount, value)
+            End Set
+        End Property
 
         Public ReadOnly Property HasUnread As Boolean
             Get
-                Return UnreadCount > 0
+                Return _unreadCount > 0
             End Get
         End Property
 
@@ -76,7 +115,22 @@ Namespace Global.Iris.App.ViewModels
             End Get
             Set(value As Boolean)
                 If Not SetProperty(_isExpanded, value) Then Return
-                If value Then LoadChildrenOnce()
+                If value Then BeginLoadChildren()
+            End Set
+        End Property
+
+        ''' <summary>
+        ''' TwoWay com o TreeViewItem. <c>TreeView.SelectedItem</c> é somente
+        ''' leitura, então ligar a seleção ao ViewModel passa por aqui — sem
+        ''' isto, clicar numa pasta não informava nada a ninguém.
+        ''' </summary>
+        Public Property IsSelected As Boolean
+            Get
+                Return _isSelected
+            End Get
+            Set(value As Boolean)
+                If Not SetProperty(_isSelected, value) Then Return
+                If value Then _context.NotifySelected(Me)
             End Set
         End Property
 
@@ -89,54 +143,115 @@ Namespace Global.Iris.App.ViewModels
             End Set
         End Property
 
-        ''' <summary>
-        ''' Uma vez só, mesmo que o usuário recolha e expanda de novo.
-        ''' Interlocked porque expandir rápido duas vezes dispararia duas
-        ''' buscas concorrentes e duplicaria os filhos.
-        ''' </summary>
-        Private Sub LoadChildrenOnce()
-            If Interlocked.CompareExchange(_loaded, 1, 0) <> 0 Then Return
-            Dim ignorado = LoadChildrenAsync()
+        ' ===================================================================
+        ' Carregamento
+        ' ===================================================================
+
+        Private Sub BeginLoadChildren()
+            Dim geracao As Integer
+
+            SyncLock _gate
+                ' Unloaded / Loading / Loaded em vez de um booleano: antes,
+                ' "já comecei" e "já terminei" eram o mesmo valor, e uma
+                ' invalidação no meio do caminho deixava o nó inconsistente.
+                If _state <> NodeLoadState.Unloaded Then Return
+                _state = NodeLoadState.Loading
+                _loadGeneration += 1
+                geracao = _loadGeneration
+            End SyncLock
+
+            _context.Observe(LoadChildrenAsync(geracao), "folders.loadChildren")
         End Sub
 
-        Private Async Function LoadChildrenAsync() As Task
+        ''' <summary>
+        ''' A geração impede uma resposta antiga de repovoar o nó depois de
+        ''' ele ter sido invalidado ou de a sessão ter caído.
+        ''' </summary>
+        Private Async Function LoadChildrenAsync(geracao As Integer) As Task
             IsLoading = True
             Try
-                Dim resultado = Await _broker.GetFolderChildrenAsync(Key, CancellationToken.None)
+                Dim resultado = Await _context.Broker.GetFolderChildrenAsync(Key, CancellationToken.None)
+
+                If Not Atual(geracao) Then Return
 
                 If Not resultado.Succeeded Then
                     ' Libera para tentar de novo: falhar por Outlook ocupado
                     ' não pode condenar o nó a ficar vazio para sempre.
-                    Interlocked.Exchange(_loaded, 0)
-                    _onError(resultado.Kind, resultado.Detail)
+                    Recolher(geracao)
+                    _context.ReportError(resultado.Kind)
                     Return
                 End If
 
-                Dim filhos = resultado.Value
-                Await _ui.InvokeAsync(
+                Dim visiveis = resultado.Value.Where(Function(f) _context.Policy.IsVisible(f)).ToList()
+
+                Await _context.Ui.InvokeAsync(
                     Sub()
+                        If Not Atual(geracao) Then Return
                         Children.Clear()
-                        For Each f In filhos
-                            If Not FolderTreeViewModel.Exibir(f) Then Continue For
-                            Children.Add(New FolderNodeViewModel(f, _broker, _ui, _onError))
+                        For Each f In visiveis
+                            Children.Add(New FolderNodeViewModel(f, _context))
                         Next
+                        HasUnrealizedChildren = False
+                        OnPropertyChanged(NameOf(CanExpand))
+                        SyncLock _gate
+                            _state = NodeLoadState.Loaded
+                        End SyncLock
                     End Sub).Task
+
+            Catch ex As Exception
+                ' Sem este Catch, uma exceção real deixava o nó preso em
+                ' Loading para sempre, e a Task era descartada em silêncio.
+                Recolher(geracao)
+                _context.ReportError(ErrorKind.Unexpected)
+                Throw
             Finally
                 IsLoading = False
             End Try
         End Function
 
+        Private Function Atual(geracao As Integer) As Boolean
+            SyncLock _gate
+                Return _loadGeneration = geracao
+            End SyncLock
+        End Function
+
+        Private Sub Recolher(geracao As Integer)
+            SyncLock _gate
+                If _loadGeneration <> geracao Then Return
+                _state = NodeLoadState.Unloaded
+            End SyncLock
+        End Sub
+
         ''' <summary>
-        ''' Descarta os filhos e permite buscar de novo. Usado quando a pasta
-        ''' é invalidada — reler é a resposta certa, nunca remendar (R6).
+        ''' Descarta os filhos e permite buscar de novo.
+        '''
+        ''' PRESERVA a expansão de propósito: o usuário abriu aquele ramo, e
+        ''' recolhê-lo porque uma mensagem chegou seria puni-lo por usar o
+        ''' aplicativo. Precisa rodar na thread de UI, porque mexe em
+        ''' ObservableCollection.
         ''' </summary>
         Public Sub Invalidate()
-            Interlocked.Exchange(_loaded, 0)
+            SyncLock _gate
+                _loadGeneration += 1
+                _state = NodeLoadState.Unloaded
+            End SyncLock
+
             Children.Clear()
-            Children.Add(Marcador)
-            _isExpanded = False
-            OnPropertyChanged(NameOf(IsExpanded))
+            HasUnrealizedChildren = True
+            OnPropertyChanged(NameOf(CanExpand))
+
+            If _isExpanded Then BeginLoadChildren()
         End Sub
+
+        ''' <summary>Este nó e a subárvore já materializada.</summary>
+        Public Iterator Function Descendants() As IEnumerable(Of FolderNodeViewModel)
+            Yield Me
+            For Each c In Children
+                For Each d In c.Descendants()
+                    Yield d
+                Next
+            Next
+        End Function
 
     End Class
 

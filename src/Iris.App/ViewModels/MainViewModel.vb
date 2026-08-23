@@ -21,7 +21,7 @@ Namespace Global.Iris.App.ViewModels
 
         Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher)
             Connection = New ConnectionViewModel(broker, ui)
-            Folders = New FolderTreeViewModel(broker, ui)
+            Folders = New FolderTreeViewModel(broker, ui, AddressOf Connection.Observe)
 
             AddHandler Connection.PropertyChanged, AddressOf OnConnectionChanged
         End Sub
@@ -42,11 +42,24 @@ Namespace Global.Iris.App.ViewModels
 
         Public Async Function InitializeAsync() As Task
             Await Connection.InitializeAsync()
+            SyncContentWithSession()
         End Function
 
         Private Sub OnConnectionChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
             If e.PropertyName <> NameOf(ConnectionViewModel.State) Then Return
+            SyncContentWithSession()
+        End Sub
 
+        ''' <summary>
+        ''' Sincroniza o conteúdo com o estado atual da sessão.
+        '''
+        ''' Chamado também DEPOIS de InitializeAsync, e não só por
+        ''' PropertyChanged: se o broker já estivesse conectado quando o
+        ''' ViewModel nasceu, o estado inicial seria Connected, o probe
+        ''' devolveria Connected de novo, SetProperty não dispararia evento
+        ''' nenhum — e a árvore nunca carregaria.
+        ''' </summary>
+        Public Sub SyncContentWithSession()
             OnPropertyChanged(NameOf(ShowContent))
 
             Dim conectado = Connection.State = SessionState.Connected
