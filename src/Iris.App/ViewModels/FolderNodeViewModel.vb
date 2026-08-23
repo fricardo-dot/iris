@@ -160,46 +160,74 @@ Namespace Global.Iris.App.ViewModels
         ' ===================================================================
 
         ''' <summary>
+        ''' Sinal da carga em andamento. Quem chega no meio espera ESTE, em
+        ''' vez de desistir.
+        '''
+        ''' Sem ele, encontrar o nó em Loading fazia EnsureChildrenAsync
+        ''' voltar na hora — e quem estava restaurando um caminho descia para
+        ''' um nível ainda vazio e concluía "a pasta não existe". Confundir
+        ''' "ainda não terminou" com "não existe" deixa o usuário sem seleção
+        ''' e sem assinatura, em silêncio.
+        ''' </summary>
+        Private _sinalDeCarga As TaskCompletionSource(Of Boolean)
+
+        ''' <summary>
         ''' Garante os filhos carregados e DÁ PARA ESPERAR.
         '''
         ''' O caminho normal — expandir com o mouse — dispara e esquece,
         ''' porque a UI não pode travar. Restaurar um caminho precisa do
         ''' contrário: só dá para procurar no nível seguinte depois que o
-        ''' atual terminou de carregar.
+        ''' atual terminou.
         ''' </summary>
         Public Async Function EnsureChildrenAsync() As Task
             If Not CanExpand Then Return
 
             Dim geracao As Integer
-            SyncLock _gate
-                If _state = NodeLoadState.Loaded Then Return
-                If _state = NodeLoadState.Loading Then
-                    ' Alguém já está carregando. Esperar a Task dele exigiria
-                    ' guardá-la; aqui basta não disparar uma segunda carga.
-                    Return
-                End If
-                _state = NodeLoadState.Loading
-                _loadGeneration += 1
-                geracao = _loadGeneration
-            End SyncLock
-
-            Await LoadChildrenAsync(geracao)
-        End Function
-
-        Private Sub BeginLoadChildren()
-            Dim geracao As Integer
+            Dim esperar As TaskCompletionSource(Of Boolean) = Nothing
+            Dim meu As TaskCompletionSource(Of Boolean) = Nothing
 
             SyncLock _gate
                 ' Unloaded / Loading / Loaded em vez de um booleano: antes,
                 ' "já comecei" e "já terminei" eram o mesmo valor, e uma
                 ' invalidação no meio do caminho deixava o nó inconsistente.
-                If _state <> NodeLoadState.Unloaded Then Return
-                _state = NodeLoadState.Loading
-                _loadGeneration += 1
-                geracao = _loadGeneration
+                If _state = NodeLoadState.Loaded Then Return
+
+                If _state = NodeLoadState.Loading Then
+                    esperar = _sinalDeCarga
+                Else
+                    _state = NodeLoadState.Loading
+                    _loadGeneration += 1
+                    geracao = _loadGeneration
+                    meu = New TaskCompletionSource(Of Boolean)()
+                    _sinalDeCarga = meu
+                End If
             End SyncLock
 
-            _context.Observe(LoadChildrenAsync(geracao), "folders.loadChildren")
+            If esperar IsNot Nothing Then
+                Await esperar.Task
+                Return
+            End If
+
+            ' Estado Loading sem sinal: não deveria acontecer, mas voltar
+            ' calado aqui reintroduziria o defeito.
+            If meu Is Nothing Then Return
+
+            Try
+                Await LoadChildrenAsync(geracao)
+            Catch
+                ' Quem espera decide pelo estado do nó, não pela exceção.
+            Finally
+                meu.TrySetResult(True)
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' Expandir com o mouse: dispara e esquece, porque a UI não pode
+        ''' travar esperando o Outlook. Passa pelo MESMO caminho, para não
+        ''' existirem duas máquinas de estado de carga.
+        ''' </summary>
+        Private Sub BeginLoadChildren()
+            _context.Observe(EnsureChildrenAsync(), "folders.loadChildren")
         End Sub
 
         ''' <summary>

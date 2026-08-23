@@ -820,7 +820,10 @@ vez de escolher — numa operação que apaga, "o mais provável" não serve.
 identificando rascunho do Iris.
 
 **Restauração de pasta na reconexão**, descendo o caminho e expandindo o
-que for preciso.
+que for preciso. Quem chega no meio de uma carga já em andamento ESPERA
+por ela — a primeira versão desistia, e desistir fazia a restauração
+concluir "a pasta não existe" quando ela existia e só não tinha terminado
+de carregar.
 
 **116 testes** (eram 57 no início do marco).
 
@@ -832,7 +835,8 @@ que for preciso.
 | 1 | 3 (2 bloqueantes) |
 | 2 | 3 (1 bloqueante) |
 | 3 | 4 |
-| 4 | pendente |
+| 4 | 1 bloqueante |
+| 5 | pendente |
 
 O padrão do 1.5 se repetiu: **a maioria dos achados das passadas 1 a 3
 foram defeitos que eu introduzi corrigindo os anteriores.** Três exemplos

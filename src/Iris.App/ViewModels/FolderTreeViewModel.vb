@@ -228,12 +228,15 @@ Namespace Global.Iris.App.ViewModels
             Dim nivel As IEnumerable(Of FolderNodeViewModel) = Roots
             Dim node As FolderNodeViewModel = Nothing
 
-            For Each chave In caminho
+            ' Por ÍNDICE, e não comparando com a última chave: "sou o último"
+            ' é posição, e expressá-la por igualdade de valor pararia cedo se
+            ' a mesma chave aparecesse duas vezes no caminho.
+            For i = 0 To caminho.Count - 1
+                Dim chave = caminho(i)
                 node = nivel.FirstOrDefault(Function(n) chave.Equals(n.Key))
                 If node Is Nothing Then Return False
 
-                ' Só desce se ainda houver caminho pela frente.
-                If Not chave.Equals(caminho(caminho.Count - 1)) Then
+                If i < caminho.Count - 1 Then
                     Await node.EnsureChildrenAsync()
                     node.IsExpanded = True
                     nivel = node.Children

@@ -84,15 +84,18 @@ Public Class ArchitectureTests
     End Sub
 
     ''' <summary>
-    ''' A fase e criada DENTRO de RunAsync, uma por invocacao.
+    ''' A classe de fase continua instanciavel e com a superficie que a
+    ''' classificacao consome.
     '''
-    ''' O teste anterior provava que nao existe CAMPO. Este prova que existe
-    ''' criacao — sem ele, remover a instanciacao e nunca marcar a fase
-    ''' passaria: nao haveria campo, e a classificacao nunca veria mutacao
-    ''' iniciada, ou seja, o Send ambiguo voltaria a ser retentavel.
+    ''' O que este teste NAO prova, e o nome anterior prometia: que RunAsync
+    ''' chama o construtor, chama Marcar, ou le Iniciou. Reflexao sobre
+    ''' metadados nao alcanca corpo de metodo. E um arame de tropeco
+    ''' estrutural — pega quem apagar a classe ou renomear os membros — e nao
+    ''' substitui o teste de concorrencia, que exigiria Outlook real e duas
+    ''' operacoes sobrepostas de verdade.
     ''' </summary>
     <TestMethod>
-    Public Sub RunAsync_instancia_a_fase_a_cada_invocacao()
+    Public Sub A_classe_de_fase_continua_instanciavel_e_completa()
         Dim broker = GetType(Iris.Outlook.OutlookBroker)
 
         Dim fase = broker.GetNestedTypes(BindingFlags.NonPublic).
