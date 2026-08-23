@@ -1,7 +1,8 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 15 — Q1 e **Q2 fechadas** (seções 9 a 11). Melhoria da Fase 1
-aplicada (seção 12). Q4 começada: custo medido (seção 13).
+**Versão:** 16 — Q1 e **Q2 fechadas** (seções 9 a 11). Melhoria da Fase 1
+aplicada e revisada duas vezes (seção 12). Q4: custo **remedido** com a
+chave certa (seção 13).
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -1279,11 +1280,18 @@ por iteracao: 995 chaves, 34 paginas
 interseccao : 0
 ```
 
-Mesmas mensagens, mesmas páginas, **interseção zero**.
+Mesma contagem, mesmo número de páginas, **interseção zero**.
+
+(Que fossem as *mesmas mensagens* eu só soube **depois** de corrigir: antes
+da correção, 995 = 995 com interseção zero é igualmente compatível com
+"mesmas mensagens, chaves diferentes" e com "duas listas distintas do mesmo
+tamanho".)
 
 > A coluna chamada `EntryID` da `Table` devolve o EntryID de **curto
-> prazo** — 24 bytes, válido só dentro da sessão. O `MailItem.EntryID`
-> devolve o de **longo prazo**, 70 bytes.
+> prazo**; o `MailItem.EntryID` devolve o de **longo prazo**. Medido neste
+> provider e neste store: 24 e 70 bytes. Os tamanhos são o que se observou
+> aqui, não propriedade universal — o que é geral é serem
+> identificadores **diferentes**.
 
 São identificadores diferentes do mesmo item, e **nenhum erro aparece**: a
 listagem funciona, a rolagem funciona, só não casa com nada. Persistir
@@ -1297,9 +1305,37 @@ binária e vira hex maiúsculo para casar com o formato do `MailItem`.
 `PR_CONFLICT_ITEMS` não casava com o `EntryID`. **Duas vezes o mesmo
 engano**, em contextos sem relação aparente.
 
-Se o store não oferecer a coluna, o caminho cai para a iteração em vez de
-degradar a chave — e recusa continuar uma paginação já começada, porque
-cursor de fronteira não se traduz em offset.
+### 12.2.1 O fallback estava quebrado, e a 2ª revisão pegou
+
+Eu escrevi "se o store não oferecer a coluna, cai para iteração". Caía —
+**e parava na página 2.**
+
+A primeira página caía para o caminho legado e devolvia cursor
+`LegacyOffset`. A chamada seguinte olhava a **ordenação** para escolher o
+caminho, via `ReceivedDesc`, e recusava aquele cursor como "de outro modo".
+Pasta com mais de uma página travava com `Stale` exatamente quando o
+fallback era necessário.
+
+Corrigido: quem decide o caminho é o **modo do cursor**, não a ordenação
+sozinha. Cursor nulo escolhe pela ordenação; cursor legado continua no
+caminho legado; cursor de fronteira exige ordenação compatível.
+
+Uma travessia **já começada** ainda não troca de caminho no meio — cursor
+de fronteira não se traduz em offset, e inventar a tradução pularia
+mensagem. Nesse caso: `Stale`, e recarregar resolve.
+
+### 12.2.2 Coluna aceita que não entrega valor
+
+A Q1 já tinha me pegado nisso com `Permission`: eu contei "não lançou
+exceção" como sucesso, e a coluna voltava nula. Agora o caminho por tabela
+**derruba a pasta inteira para o caminho lento** se qualquer linha vier com
+`EntryId` vazio ou sem `ReceivedTime`.
+
+O `Catch` também ficou estreito: só os HRESULTs que significam "esta
+propriedade não existe aqui" (`E_INVALIDARG`, `MAPI_E_NOT_FOUND`). Ocupado,
+desconectado e acesso negado **sobem** para o classificador do broker —
+cair para o caminho lento por causa deles esconderia falha de sessão atrás
+de lentidão.
 
 ### 12.3 O ganho medido, ponta a ponta
 
@@ -1312,7 +1348,13 @@ Travessia completa da Caixa de Entrada (995 mensagens, páginas de 30),
 | iteração + offset | 19.383 ms | 34 |
 
 **10,6x.** Não são os ~18x da Q1: aquele número era in-process sobre o
-DTO, sem o broker no meio. O número honesto para o usuário é este.
+DTO, sem o broker no meio.
+
+Ressalva do que esta medição **não** isola: os dois lados usam ordenações
+diferentes (`ReceivedDesc` contra `SubjectAsc`), porque é assim que os dois
+caminhos existem no código. É a comparação entre **os dois modos reais**,
+não entre `Table` e iteração com tudo o mais constante. E é uma execução,
+numa caixa em cache.
 
 Drenagem extra na Entrada: **0 linhas**. O maior empate num mesmo segundo
 tem 16 itens e não cruzou fronteira de página nesta execução.
@@ -1320,22 +1362,32 @@ tem 16 itens e não cruzou fronteira de página nesta execução.
 ### 12.4 Medições que decidiram o recorte
 
 - **`ReceivedTime` nulo: 0 de 1.792.** Qualquer filtro `< data` excluiria
-  linha nula, e a Q1 já registrava isso como lacuna. Não bloqueia aqui;
-  **continua lacuna do contrato**, porque outra caixa pode ter — e o
-  caminho legado cobre.
+  linha nula, e a partir da segunda página esses itens sumiriam em
+  silêncio.
+
+  Eu tinha escrito que "o caminho legado cobre". **Não cobria**: o legado
+  só entra se o usuário trocar a ordenação, e `ReceivedDesc` é o padrão.
+  Agora cobre de verdade — linha sem `ReceivedTime` derruba a pasta para o
+  caminho legado, como capacidade ausente (§12.2.2).
 - **Maior empate num segundo: 16 itens**, em Rascunhos e nas pastas
   `Iris Spike`, ou seja, **artefato meu**. Correio real empata bem menos.
-  Com página de 30, a página drenada devolve no máximo 45 — sem risco de
-  travar a fila da STA.
+  Com página de 30, a página drenada devolveria no máximo 45 — **sem risco
+  observado neste corpus**. Importação em massa ou outra caixa pode formar
+  empate bem maior, e aí uma página só ocupa a fila da STA por muito mais
+  tempo.
 - **Classes presentes:** 1.741 `IPM.Note`, 49 de reunião, 4 avulsos.
 
 ### 12.5 Dívida que este marco deixa
 
 - **`MessageClass` não é `TryCast(MailItem)`.** O caminho por tabela
   decide elegibilidade por classe; o legado decidia por tipo. A
-  equivalência está **afirmada e não provada**. O teste de cruzamento
-  compara os dois caminhos e daria a divergência, mas na Entrada os dois
-  descartam os mesmos itens — não é prova para outras pastas.
+  equivalência está **afirmada e não provada**. O teste de cruzamento daria
+  a divergência, mas só rodou na Entrada — não é prova para outras pastas.
+- **O cruzamento prova paridade, não completude.** Ele mostra que os dois
+  caminhos concordam naquela pasta e naqueles dois instantes. Os dois
+  poderiam omitir a mesma linha por causa correlacionada, e a pasta está
+  viva entre as duas travessias. Compara **chaves**, não ordem nem campos
+  do resumo.
 - **`ReceivedAsc`, `SubjectAsc` e `SenderAsc`** ficam no caminho lento.
   Estender exige filtro keyset sobre texto: ordenação cultural, caixa,
   acentuação e escaping de apóstrofo, nada disso medido.
@@ -1367,40 +1419,73 @@ falham**. O teste que importa é o do `Unknown` — um que só verificasse
 `Restricted` passaria com o código antigo também.
 
 **A caixa medida não tem mensagem protegida**, então o gate continua sem
-exercício contra o caso real.
+exercício contra o caso real. E o que os testes provam é a **política
+pura**: que `Unknown` bloqueia. **Não** provam que uma falha COM em
+`Permission` vira `Unknown`, nem que `mail.Body` deixa de ser acessado —
+esse caminho só roda com COM. Vale também dizer que `Permission` cobre IRM;
+rótulo de sensibilidade e S/MIME são outros conceitos, e não estão
+cobertos.
 
 ---
 
-## 13. Q4 — parte do custo, respondida
+## 13. Q4 — custo, remedido com a chave certa
 
-`tools/q4-custo.ps1`. Somente leitura.
+`tools/q4-custo.ps1`, **2ª versão**. Somente leitura.
 
-Custo de enumerar `EntryID` + `PR_LAST_MODIFICATION_TIME`, que é o par
-mínimo de que a varredura por geração precisa:
+A 1ª versão media a coluna `"EntryID"` — **exatamente a que a §12.2
+acabou de descobrir que não é identidade durável.** Medir o custo de
+enumerar uma chave que não serve não mede nada. Também engolia falha de
+pasta num `catch` vazio, contava a pasta como percorrida assim mesmo, e
+conferia unicidade **por pasta**, quando a pergunta é se a chave é única na
+caixa.
 
-| Pasta | Itens | a frio | a quente |
-|---|---|---|---|
-| Caixa de Entrada | 1.003 | 155 ms | **26 ms** |
-| Enviados | 106 | 14 ms | 11 ms |
-| Rascunhos | 68 | 10 ms | 11 ms |
-| Excluídos | 144 | 11 ms | 11 ms |
-| Lixo Eletrônico | 172 | 14 ms | 10 ms |
+### 13.1 Os números, e eles pioraram
 
-**Caixa inteira — 129 pastas, 2.284 itens: 2.218 / 1.990 / 1.833 ms** em
-três execuções. Todas as chaves únicas em toda pasta.
+`PR_LONGTERM_ENTRYID_FROM_TABLE` + `PR_LAST_MODIFICATION_TIME`:
 
-### O que isto decide
+| Pasta | Itens | 1ª | 2ª | 3ª |
+|---|---|---|---|---|
+| Caixa de Entrada | 1.004 | 788 ms | 632 ms | 653 ms |
+| Enviados | 106 | 83 ms | 80 ms | 73 ms |
+| Rascunhos | 68 | 58 ms | 57 ms | 53 ms |
+| Excluídos | 144 | 106 ms | 101 ms | 100 ms |
+| Lixo Eletrônico | 172 | 127 ms | 127 ms | 154 ms |
 
-> **A opção 2 da Q4 é acessível.** Exigir **duas observações completas e
-> compatíveis** antes de confirmar ausência custa ~4 s de varredura, não
-> minutos.
+**Caixa inteira: 3.729 / 3.178 / 3.185 ms**, 129 pastas **lidas**, 0
+falhas, profundidade máxima 2, nenhuma pasta truncada.
 
-E isso importa além da Q4: é exatamente o que a **§11.4** pediu para o
-algoritmo conservador de correlação — *"confirmar não coexistência numa
-varredura consistente"*. A Q2 pediu a garantia; a Q4 mostra que ela cabe
-no orçamento.
+Comparando com o que eu tinha publicado:
+
+| | com a chave curta | com a chave **durável** |
+|---|---|---|
+| Caixa de Entrada | 26 ms | **632 ms** |
+| Caixa inteira | ~2,0 s | **~3,2 s** |
+
+> Enumerar a chave durável custa cerca de **24x** mais na Entrada. A chave
+> que serve não é a barata.
+
+### 13.2 Unicidade, agora na caixa e não por pasta
+
+**2.285 itens, 2.285 chaves distintas, 0 repetidas, 0 não binárias.**
+
+E os manifestos da 1ª e da 3ª rodada são **idênticos** — nenhuma chave só
+numa delas. Isso importa: custo estável sobre conteúdo diferente não
+mediria o mesmo trabalho.
+
+### 13.3 O que isto decide, e o que não decide
+
+> **Duas observações completas da caixa custam ~6,4 s de leitura bruta**,
+> não os ~4 s que eu tinha estimado. A opção 2 da Q4 — exigir duas
+> observações compatíveis antes de confirmar ausência — continua na mesa,
+> mas o preço dobrou.
+
+**NÃO está provado** que isso cabe no orçamento do Iris. O número é custo
+bruto em PowerShell, com a caixa só para ele. No Iris essa varredura divide
+a **fila única da STA** com a UI: 3,2 s de tabela seguidos são 3,2 s em que
+abrir uma mensagem não responde. Lote interrompível não é detalhe de
+implementação, é requisito — e é o item 8 do critério de pronto (§8).
 
 **Falta a parte principal da Q4**, que é consistência sob mutação: item
-criado, removido e movido entre duas pastas **durante** a enumeração,
-falha COM no meio, cancelamento no meio, Outlook reiniciado no meio.
-Essa parte escreve na caixa.
+criado, removido e movido entre duas pastas **durante** a enumeração, falha
+COM no meio, cancelamento no meio, Outlook reiniciado no meio. Essa parte
+escreve na caixa.

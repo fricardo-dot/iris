@@ -1,4 +1,5 @@
 Imports System.Collections.Generic
+Imports System.Linq
 Imports Iris.Core
 Imports Iris.Model
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
@@ -127,13 +128,19 @@ Public Class CursorPagingTests
         Return saida
     End Function
 
+    ''' <summary>
+    ''' Devolve a travessia INTEIRA, nao so a contagem. Descartar
+    ''' Exhausted deixava o teste aceitar uma travessia que parou por
+    ''' travamento desde que tivesse lido o numero certo de linhas.
+    ''' </summary>
     Private Shared Function Percorrer(linhas As List(Of LinhaFake), pagina As Integer,
-                                      instavel As Boolean, defeitos As PagingDefects) As Integer
+                                      instavel As Boolean,
+                                      defeitos As PagingDefects) As TraverseOutcome(Of LinhaFake)
         Dim fonte As New FonteFake(linhas, instavel)
         Dim saida = CursorPaging.Traverse(fonte, pagina, defeitos)
         Assert.AreEqual(fonte.Aberturas, fonte.Fechamentos,
                         "todo cursor aberto tem de ser fechado")
-        Return saida.Rows.Count
+        Return saida
     End Function
 
     Private Shared Function Cenarios() As List(Of (Nome As String, Linhas As List(Of LinhaFake), Instavel As Boolean))
@@ -152,12 +159,27 @@ Public Class CursorPagingTests
 
     ' ==================================================================
 
+    ''' <summary>
+    ''' Conjunto EXATO, nao contagem. Contagem certa com item trocado
+    ''' passaria — e a ordem instavel dentro do empate e exatamente o
+    ''' cenario onde isso poderia acontecer.
+    ''' </summary>
     <TestMethod>
     Public Sub Travessia_le_tudo_em_todos_os_cenarios()
         For Each c In Cenarios()
-            Dim total = c.Linhas.Count
-            Dim lidos = Percorrer(c.Linhas, 50, c.Instavel, PagingDefects.None)
-            Assert.AreEqual(total, lidos, $"cenario '{c.Nome}' perdeu item")
+            Dim saida = Percorrer(c.Linhas, 50, c.Instavel, PagingDefects.None)
+
+            Assert.IsTrue(saida.Exhausted,
+                          $"cenario '{c.Nome}' parou sem chegar ao fim")
+
+            Dim esperadas = New HashSet(Of String)(c.Linhas.Select(Function(x) x.Id))
+            Dim obtidas = New HashSet(Of String)(saida.Rows.Select(Function(x) x.Id))
+            Assert.AreEqual(saida.Rows.Count, obtidas.Count,
+                            $"cenario '{c.Nome}' devolveu linha REPETIDA")
+            Assert.IsTrue(esperadas.SetEquals(obtidas),
+                          $"cenario '{c.Nome}': faltaram " &
+                          $"{esperadas.Except(obtidas).Count()} e sobraram " &
+                          $"{obtidas.Except(esperadas).Count()}")
         Next
     End Sub
 
@@ -181,11 +203,20 @@ Public Class CursorPagingTests
             Dim inclusiva = Percorrer(c.Linhas, 50, c.Instavel,
                                       New PagingDefects With {.InclusiveBoundary = True})
 
-            If semDrenar <> total Then pegouSemDrenagem = True
-            If inclusiva <> total Then pegouInclusiva = True
+            If semDrenar.Rows.Count <> total Then pegouSemDrenagem = True
+            If inclusiva.Rows.Count <> total Then pegouInclusiva = True
 
-            Assert.IsTrue(semDrenar <= total, "defeito nao pode inventar item")
-            Assert.IsTrue(inclusiva <= total, "defeito nao pode inventar item")
+            ' A fronteira inclusiva perde item TRAVANDO: ela para sem
+            ' chegar ao fim. Exigir isso separa o defeito de um simples
+            ' "leu menos".
+            If inclusiva.Rows.Count <> total Then
+                Assert.IsFalse(inclusiva.Exhausted,
+                               $"'{c.Nome}': a fronteira inclusiva perdeu item mas " &
+                               "declarou fim normal — nao e o defeito que eu quis reproduzir")
+            End If
+
+            Assert.IsTrue(semDrenar.Rows.Count <= total, "defeito nao pode inventar item")
+            Assert.IsTrue(inclusiva.Rows.Count <= total, "defeito nao pode inventar item")
         Next
 
         Assert.IsTrue(pegouSemDrenagem,
@@ -199,8 +230,8 @@ Public Class CursorPagingTests
         ' Grupo de 500 com página de 50: sem drenar, a fronteira avança
         ' estrita depois dos 50 primeiros e os outros 450 somem.
         Dim linhas = Montar(100, 500, 300)
-        Dim lidos = Percorrer(linhas, 50, False, New PagingDefects With {.SkipDrain = True})
-        Assert.AreEqual(linhas.Count - 450, lidos)
+        Dim saida = Percorrer(linhas, 50, False, New PagingDefects With {.SkipDrain = True})
+        Assert.AreEqual(linhas.Count - 450, saida.Rows.Count)
     End Sub
 
     <TestMethod>
@@ -208,8 +239,9 @@ Public Class CursorPagingTests
         ' Reabrir com <= depois de ler o grupo recomeça no mesmo grupo:
         ' nada é novo, e a travessia para com itens mais antigos por ler.
         Dim linhas = Montar(100, 100, 200)
-        Dim lidos = Percorrer(linhas, 50, False, New PagingDefects With {.InclusiveBoundary = True})
-        Assert.IsTrue(lidos < linhas.Count, "a fronteira inclusiva deveria ter travado")
+        Dim saida = Percorrer(linhas, 50, False, New PagingDefects With {.InclusiveBoundary = True})
+        Assert.IsTrue(saida.Rows.Count < linhas.Count, "deveria ter perdido item")
+        Assert.IsFalse(saida.Exhausted, "e por TRAVAMENTO, nao por fim normal")
     End Sub
 
     <TestMethod>
@@ -224,6 +256,70 @@ Public Class CursorPagingTests
         Assert.AreEqual(6, saida.DrainedExtra)
         Assert.IsFalse(saida.Ended)
     End Sub
+
+    ''' <summary>
+    ''' Grupo unico, sem nada mais antigo. A pagina drena tudo e declara
+    ''' fim numa abertura SO — sem uma consulta extra que voltaria vazia.
+    ''' Um algoritmo que devolvesse fronteira aqui passaria nos outros
+    ''' testes e gastaria uma ida ao Outlook por travessia.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Grupo_unico_termina_em_uma_abertura()
+        Dim fonte As New FonteFake(Montar(0, 16, 0), False)
+        Dim saida = CursorPaging.ReadPage(fonte, Nothing, 10)
+
+        Assert.AreEqual(16, saida.Rows.Count)
+        Assert.AreEqual(6, saida.DrainedExtra)
+        Assert.IsTrue(saida.Ended, "nao ha nada mais antigo: tem de terminar aqui")
+        Assert.AreEqual(1, fonte.Aberturas)
+        Assert.AreEqual(1, fonte.Fechamentos)
+    End Sub
+
+    ''' <summary>
+    ''' Falha ao ABRIR, nao ao ler. O adaptador COM adquire a Table e so
+    ''' depois configura coluna e ordenacao — se qualquer uma lancar, o
+    ''' recurso ja existe. Antes, Abrir ficava FORA do Try e esse caso
+    ''' vazava a Table.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cursor_fecha_quando_ABRIR_lanca()
+        Dim fonte As New FonteQueExplodeAoAbrir()
+        Assert.ThrowsException(Of InvalidOperationException)(
+            Sub() CursorPaging.ReadPage(fonte, Nothing, 30))
+        Assert.AreEqual(1, fonte.Fechamentos,
+                        "Abrir tem de estar DENTRO do Try que garante o Fechar")
+    End Sub
+
+    Private NotInheritable Class FonteQueExplodeAoAbrir
+        Implements IRowSource(Of LinhaFake)
+
+        Public Property Fechamentos As Integer
+
+        Public Sub Abrir(fronteira As DateTimeOffset?, inclusiva As Boolean) _
+            Implements IRowSource(Of LinhaFake).Abrir
+            ' Como o adaptador real: adquire e depois falha.
+            Throw New InvalidOperationException("falha ao configurar a coluna")
+        End Sub
+
+        Public Function Ler(quantas As Integer) As IReadOnlyList(Of LinhaFake) _
+            Implements IRowSource(Of LinhaFake).Ler
+            Throw New InvalidOperationException("nao deveria chegar aqui")
+        End Function
+
+        Public Sub Fechar() Implements IRowSource(Of LinhaFake).Fechar
+            Fechamentos += 1
+        End Sub
+
+        Public Function InstanteDe(linha As LinhaFake) As DateTimeOffset _
+            Implements IRowSource(Of LinhaFake).InstanteDe
+            Return linha.Quando
+        End Function
+
+        Public Function ChaveDe(linha As LinhaFake) As String _
+            Implements IRowSource(Of LinhaFake).ChaveDe
+            Return linha.Id
+        End Function
+    End Class
 
     <TestMethod>
     Public Sub Fonte_vazia_termina_sem_cursor()

@@ -387,6 +387,11 @@ Namespace Global.Iris.App.ViewModels
                 End If
 
                 Dim pagina = resultado.Value
+                ' A geracao da PAGINA e conferida aqui, antes de qualquer
+                ' coisa tocar na colecao. Antes isso era feito depois da
+                ' deduplicacao e do Add: se o broker devolvesse geracao
+                ' vencida, os itens ja tinham entrado na tela.
+                If pagina.Generation <> pedido.Generation Then Return
 
                 Await OnUiAsync(
                     Sub()
@@ -399,11 +404,6 @@ Namespace Global.Iris.App.ViewModels
                         For Each m In pagina.Items
                             If existentes.Add(m.Key) Then Messages.Add(New MessageRowViewModel(m))
                         Next
-
-                        ' a pagina traz a geracao com que foi lida; conferir
-                        ' as duas evita anexar resultado de geracao vencida
-                        ' caso alguma checagem acima mude no futuro.
-                        If pagina.Generation <> pedido.Generation Then Return
 
                         _nextCursor = pagina.NextCursor
                         _skipped += pagina.SkippedCount

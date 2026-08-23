@@ -118,23 +118,39 @@ Namespace Global.Iris.Outlook
                     Return OperationResult(Of MessagePage).Fail(ErrorKind.NotFound, "pasta")
                 End If
 
-                Dim usaTabela = (query.Sort = MessageSort.ReceivedDesc)
-                If usaTabela AndAlso cursor IsNot Nothing AndAlso cursor.Mode <> CursorMode.ReceivedDesc Then
-                    Return OperationResult(Of MessagePage).Fail(ErrorKind.Stale, "cursor de outro modo")
+                ' Quem decide o caminho e o MODO DO CURSOR, nao a ordenacao
+                ' sozinha. Antes era a ordenacao, e isso quebrava a travessia
+                ' exatamente quando o fallback era necessario: a primeira
+                ' pagina caia para iteracao e devolvia cursor legado, e a
+                ' segunda recusava esse cursor como "de outro modo". A pasta
+                ' parava na pagina 2 com Stale.
+                Dim usaTabela As Boolean
+                If cursor Is Nothing Then
+                    usaTabela = (query.Sort = MessageSort.ReceivedDesc)
+                ElseIf cursor.Mode = CursorMode.ReceivedDesc Then
+                    If query.Sort <> MessageSort.ReceivedDesc Then
+                        Return OperationResult(Of MessagePage).Fail(
+                            ErrorKind.Stale, "cursor de outra ordenacao")
+                    End If
+                    usaTabela = True
+                Else
+                    ' Cursor legado: continua no caminho legado, mesmo que a
+                    ' ordenacao seja ReceivedDesc.
+                    usaTabela = False
                 End If
 
                 Dim pagina As MessagePage
                 If usaTabela Then
                     Try
                         pagina = LerPorTabela(folder, query, cursor, targetCount)
-                    Catch ex As LongTermEntryIdUnavailableException
-                        ' Store sem a coluna de chave duravel. So da para cair
-                        ' para o caminho lento se a paginacao estiver no comeco:
-                        ' cursor de fronteira nao se traduz em offset, e inventar
-                        ' a traducao pularia mensagem.
+                    Catch ex As TablePathUnusableException
+                        ' A tabela nao serve para esta pasta. Uma travessia JA
+                        ' comecada nao pode trocar de caminho no meio: cursor de
+                        ' fronteira nao se traduz em offset, e inventar a
+                        ' traducao pularia mensagem. Recarregar resolve.
                         If cursor IsNot Nothing Then
                             Return OperationResult(Of MessagePage).Fail(
-                                ErrorKind.Stale, "store sem chave duravel; recarregue a lista")
+                                ErrorKind.Stale, "caminho rapido indisponivel: " & ex.Message)
                         End If
                         pagina = LerPorIteracao(folder, query, Nothing, targetCount)
                     End Try
@@ -185,6 +201,23 @@ Namespace Global.Iris.Outlook
 
             Dim descartadas = 0
             For Each linha In saida.Rows
+                ' Chave vazia NAO vira item ignorado: e sinal de que a coluna
+                ' foi aceita e nao entrega valor — o mesmo falso positivo que
+                ' a Q1 teve com Permission, quando eu contei "nao lancou"
+                ' como sucesso. A pasta inteira cai para o caminho lento.
+                If String.IsNullOrEmpty(linha.EntryId) Then
+                    Throw New TablePathUnusableException(
+                        "a coluna de EntryID longo foi aceita mas devolveu vazio")
+                End If
+                ' ReceivedTime nulo tambem derruba a pasta inteira. Qualquer
+                ' filtro "< data" exclui linha nula, entao a partir da
+                ' segunda pagina esses itens sumiriam em silencio. Medido: 0
+                ' de 1792 nesta caixa — mas "nao acontece aqui" nao e
+                ' contrato.
+                If Not linha.ReceivedTime.HasValue Then
+                    Throw New TablePathUnusableException(
+                        "item sem ReceivedTime: o filtro por data o excluiria")
+                End If
                 If Not EhMensagem(linha.MessageClass) Then
                     descartadas += 1
                     Continue For
@@ -358,16 +391,29 @@ Namespace Global.Iris.Outlook
         ' ==================================================================
 
         ''' <summary>
-        ''' O provider nao oferece EntryID de longo prazo por tabela. Nao e erro
-        ''' do usuario nem do Outlook: e capacidade ausente, e a resposta e usar
-        ''' o caminho lento, nao degradar a chave.
+        ''' O caminho por tabela nao serve para esta pasta, e a resposta e usar
+        ''' o caminho lento — nunca degradar a chave nem seguir com dado que
+        ''' some depois. Motivos: coluna de EntryID longo indisponivel, coluna
+        ''' aceita devolvendo vazio, ou item sem ReceivedTime.
+        '''
+        ''' Nao e erro do usuario nem do Outlook: e capacidade ausente.
         ''' </summary>
-        Friend NotInheritable Class LongTermEntryIdUnavailableException
+        Friend NotInheritable Class TablePathUnusableException
             Inherits Exception
-            Public Sub New()
-                MyBase.New("PR_LONGTERM_ENTRYID_FROM_TABLE indisponivel neste store")
+            Public Sub New(motivo As String)
+                MyBase.New(motivo)
             End Sub
         End Class
+
+        ''' <summary>
+        ''' "Esta propriedade nao existe neste provider", e nada alem disso.
+        ''' E_INVALIDARG e o que o Outlook devolve para coluna que ele nao
+        ''' reconhece — medido: Columns.Add com um DASL invalido da
+        ''' "Value does not fall within the expected range".
+        ''' </summary>
+        Private Function EhColunaRecusada(hresult As Integer) As Boolean
+            Return hresult = &H80070057 OrElse hresult = &H8004010F
+        End Function
 
         ''' <summary>Uma linha crua da Table, já fora do COM.</summary>
         Friend NotInheritable Class TableRow
@@ -438,11 +484,14 @@ Namespace Global.Iris.Outlook
                 Dim coluna As OL.Column = Nothing
                 Try
                     coluna = colunas.Add(nome)
-                Catch ex As COMException When nome = TagEntryIdLongo
-                    ' Sem EntryID de longo prazo nao da para produzir chave
-                    ' utilizavel. Cair para a coluna curta seria devolver chave
-                    ' que morre com a sessao, e isso e pior que ser lento.
-                    Throw New LongTermEntryIdUnavailableException()
+                Catch ex As COMException When nome = TagEntryIdLongo AndAlso EhColunaRecusada(ex.HResult)
+                    ' SO os HRESULTs que significam "esta propriedade nao
+                    ' existe aqui". Busy, desconectado e acesso negado sao
+                    ' outra coisa e precisam subir para o classificador do
+                    ' broker — cair para o caminho lento por causa deles
+                    ' esconderia falha de sessao atras de lentidao.
+                    Throw New TablePathUnusableException(
+                        "PR_LONGTERM_ENTRYID_FROM_TABLE indisponivel neste store")
                 Finally
                     ComHelpers.Release(coluna)
                 End Try

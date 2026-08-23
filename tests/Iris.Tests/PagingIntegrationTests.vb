@@ -1,4 +1,5 @@
 Imports System.Collections.Generic
+Imports System.Linq
 Imports System.Threading
 Imports Iris.Core
 Imports Iris.Model
@@ -126,15 +127,18 @@ Public Class PagingIntegrationTests
 
             Console.WriteLine($"por Table   : {porTabela.Count} chaves, {rapido.Paginas} paginas")
             Console.WriteLine($"por iteracao: {porIteracao.Count} chaves, {lento.Paginas} paginas")
-            ' So o COMPRIMENTO da chave. A do curto prazo tem 48 chars e a
-            ' duravel tem 140 — foi assim que o defeito apareceu. O valor
-            ' inteiro carrega o endereco do usuario em hex e nao precisa
-            ' aparecer em log de teste.
-            If rapido.Chaves.Count > 0 AndAlso lento.Chaves.Count > 0 Then
-                Console.WriteLine($"comprimento da chave: Table={rapido.Chaves(0).EntryId.Length} " &
-                                  $"iteracao={lento.Chaves(0).EntryId.Length}")
-                Assert.AreEqual(lento.Chaves(0).EntryId.Length, rapido.Chaves(0).EntryId.Length,
-                                "as duas chaves tem de ter o MESMO formato")
+            ' A comparacao de comprimento anterior pegava a PRIMEIRA chave
+            ' de cada travessia — e as ordenacoes sao diferentes, entao eram
+            ' MENSAGENS diferentes. Agora compara a mesma mensagem, achada
+            ' na intersecao. E o valor inteiro nao vai para o log: ele
+            ' carrega o endereco do usuario em hex.
+            Dim comum = porTabela.Intersect(porIteracao).FirstOrDefault()
+            If comum IsNot Nothing Then
+                Dim naTabela = rapido.Chaves.First(Function(k) k.Equals(comum))
+                Dim naIteracao = lento.Chaves.First(Function(k) k.Equals(comum))
+                Console.WriteLine($"comprimento da chave comum: {naTabela.EntryId.Length}")
+                Assert.AreEqual(naIteracao.EntryId, naTabela.EntryId,
+                                "a MESMA mensagem tem de ter a MESMA chave nos dois caminhos")
             End If
 
             Dim soNaTabela = porTabela.Except(porIteracao).Count()

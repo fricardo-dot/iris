@@ -24,6 +24,30 @@ Namespace Global.Iris.Core
         ''' <summary>Lê até N linhas. Lista vazia significa fim.</summary>
         Function Ler(quantas As Integer) As IReadOnlyList(Of TLinha)
 
+        ''' <summary>
+        ''' Libera o cursor. Tem de ser IDEMPOTENTE e tem de funcionar
+        ''' mesmo que <see cref="Abrir"/> tenha falhado no meio: a
+        ''' implementacao COM adquire a Table antes de configurar colunas
+        ''' e ordenacao, e qualquer uma dessas etapas pode lancar.
+        ''' </summary>
+        ''' <summary>
+        ''' Libera o cursor. Tem de ser IDEMPOTENTE e tem de funcionar
+        ''' mesmo que <see cref="Abrir"/> tenha falhado no meio: a
+        ''' implementacao COM adquire a Table antes de configurar colunas
+        ''' e ordenacao, e qualquer uma dessas etapas pode lancar.
+        ''' </summary>
+        ''' <summary>
+        ''' Libera o cursor. Tem de ser IDEMPOTENTE e tem de funcionar
+        ''' mesmo que <see cref="Abrir"/> tenha falhado no meio: a
+        ''' implementacao COM adquire a Table antes de configurar colunas
+        ''' e ordenacao, e qualquer uma dessas etapas pode lancar.
+        ''' </summary>
+        ''' <summary>
+        ''' Libera o cursor. Tem de ser IDEMPOTENTE e tem de funcionar
+        ''' mesmo que <see cref="Abrir"/> tenha falhado no meio: a
+        ''' implementacao COM adquire a Table antes de configurar colunas
+        ''' e ordenacao, e qualquer uma dessas etapas pode lancar.
+        ''' </summary>
         Sub Fechar()
 
         Function InstanteDe(linha As TLinha) As DateTimeOffset
@@ -152,8 +176,11 @@ Namespace Global.Iris.Core
             Dim extras = 0
             Dim proxima As DateTimeOffset? = Nothing
 
-            source.Abrir(boundary, defects.InclusiveBoundary)
+            ' Abrir fica DENTRO do Try. Fora dele, uma falha no meio da
+            ' abertura — configurar coluna, ordenar — deixava o recurso ja
+            ' adquirido sem ninguem para liberar.
             Try
+                source.Abrir(boundary, defects.InclusiveBoundary)
                 Dim primeira = source.Ler(targetSize)
                 If primeira Is Nothing OrElse primeira.Count = 0 Then
                     ' Fim: nada nesta fronteira.
