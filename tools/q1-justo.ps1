@@ -7,9 +7,9 @@
 #   - o lado da Table nao pegava Permission, usava PR_HASATTACH, e ainda
 #     trazia tres colunas a mais.
 #
-# Aqui os dois lados fazem o MESMO trabalho: as oito propriedades escalares
-# que os dois conseguem entregar. Depois, mede-se o que cada extra custa,
-# em separado.
+# Aqui os dois lados fazem o MESMO trabalho: as SETE propriedades escalares
+# que o MailSummary le do item. Depois mede-se o que cada extra custa, em
+# separado.
 
 param([int]$PastaId = 6, [int]$TamanhoDaPagina = 50, [int]$Execucoes = 3)
 

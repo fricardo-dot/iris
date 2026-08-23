@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 7 — Q1 respondida e corrigida duas vezes. Seção 9.
+**Versão:** 8 — Q1 FECHADA. Seção 9.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -469,7 +469,7 @@ Assumindo que a lista venha do cache:
 Medido em 2026-08-23, na Caixa de Entrada real (1.003 itens, Exchange
 cached). Somente leitura. Scripts em `tools/q1-*.ps1`.
 
-**Esta seção está na 3ª versão.** A primeira foi revisada e tinha três
+**Esta seção está na 4ª versão.** A primeira foi revisada e tinha três
 problemas: uma comparação que não era equivalente, uma paginação que ainda
 perdia mensagem, e uma conclusão mais larga que a evidência.
 
@@ -506,9 +506,15 @@ Somar os componentes daria 27x, mas essa soma infla — cada medição
 carrega overhead próprio. **O número defensável é ~18x**, da medição
 direta do DTO completo.
 
-**Travessia completa:** 1.003 itens em **742 ms** por `Table` + cursor. Os
-~12 s do caminho atual são extrapolação de páginas amostradas, não uma
-travessia medida — e estão rotulados como tal.
+**Travessia completa:** 1.003 itens em **~1,0 s** (960–1167 ms em três
+execuções), 22 aberturas de cursor.
+
+Esse número é do algoritmo **correto**. As primeiras medições davam
+742–864 ms, mas eram da versão que perdia mensagem: a drenagem do grupo
+custa uma leitura a mais por página. **Correção custa ~20%**, e é barato.
+
+Os ~12 s do caminho atual são extrapolação de páginas amostradas, não uma
+travessia medida.
 
 ### As colunas
 
@@ -521,12 +527,12 @@ Todas as do `MailSummary` vêm em lote, **menos uma**:
 | **HasAttachment** | `PR_HASATTACH` (0x0E1B000B) — sem abrir `Attachments` |
 | **SearchKey** | `PR_SEARCH_KEY` (0x300B0102) |
 | **InternetMessageId** | `PR_INTERNET_MESSAGE_ID` (0x1035001E) |
-| **Permission** | **NÃO vem** |
+| **Permission** | **não foi obtido** pelos candidatos testados |
 
 As duas do meio mudam a Q2: as evidências de correlação vêm **de graça,
 junto com a listagem**.
 
-### `Permission`: não vem, e eu quase registrei que vinha
+### `Permission`: não foi obtido, e eu quase registrei que sim
 
 Testei com o proptag `0x0E01000B`, que é `PR_DELETE_AFTER_SUBMIT`. A coluna
 foi **aceita** e devolveu nulo — e meu script marcava como sucesso qualquer
@@ -535,7 +541,7 @@ primeira tentativa, exatamente na armadilha que a revisão do plano tinha
 previsto.
 
 Corrigido: o teste agora procura em 40 itens e exige **ao menos um valor
-não nulo**. Com isso, `Permission` aparece corretamente como **NÃO**.
+não nulo**. Com isso, `Permission` deixa de aparecer como disponível.
 (Corrigi também um segundo erro do mesmo script: o fallback de
 `LastModificationTime` apontava para `datereceived`, e teria declarado
 sucesso para a propriedade errada.)
@@ -577,14 +583,22 @@ Foi o que eu tinha feito, e está errado. Se o grupo empatado for **maior
 que a página**, a consulta seguinte pode devolver os mesmos itens, nenhum
 ser novo, e a paginação declarar fim.
 
-A saída tem **três** partes, e faltar uma já perde mensagem: reabrir com
-`<=` para não pular empatado; **drenar** o grupo da fronteira; e depois de
-drenado avançar com `<` **estrito**.
+A saída tem **duas** partes, e faltar uma já perde mensagem:
 
-**3. A terceira parte era a que faltava.** Reabrir com `<=` depois de
-drenar recomeça no mesmo grupo: nada é novo, e a paginação declara fim com
-itens mais antigos por ler. Não aparecia na caixa real porque aqui o maior
-empate tem 3 itens.
+1. **DRENAR** o resto do grupo do último instante **no mesmo cursor** —
+   sem reabrir, então sem filtro envolvido nessa parte;
+2. só então reabrir com `<` **estrito**.
+
+**3. A segunda parte era a que faltava.** Eu reabria com `<=` depois de
+drenar, e a consulta seguinte recomeçava no mesmo grupo: nada é novo, e a
+paginação declara fim com itens mais antigos por ler. Não aparecia na
+caixa real porque aqui o maior empate tem 3 itens.
+
+Uma versão intermediária tinha uma variável `inclusivo` que reabria com
+`<=`. Era **código morto** — a primeira fronteira é nula e toda drenagem
+bem-sucedida deixa a fronteira estrita — e eu descrevia o algoritmo como
+sendo de "três partes" por causa dela. Removida: descrição que não
+corresponde ao código é pior que ausência de descrição.
 
 E minha primeira drenagem quebrou de outro jeito ainda: marcava como
 vistos os itens de FORA do grupo, e a página seguinte os achava repetidos —
@@ -597,15 +611,23 @@ script real reabria com `<=` — os cenários passavam provando um algoritmo
 melhor do que o implementado. Terceira vez neste projeto que um teste
 promete mais do que verifica.
 
-Controles negativos, já com o algoritmo compartilhado:
+Os controles negativos são **executáveis**: os dois defeitos entram por
+parâmetro (`-SemDrenagem`, `-FronteiraInclusiva`) e o teste roda as três
+variantes lado a lado. Antes eu editava o arquivo à mão e anotava o
+resultado — número anotado não é regressão verificável.
 
-| Cenário | Fronteira inclusiva | Sem drenar | Correto |
+E o teste **falha** se nenhum controle negativo perder item: sem isso, um
+teste que não distingue certo de errado passaria para sempre, inclusive
+depois de a correção ser desfeita.
+
+| Cenário | Sem drenar | Fronteira inclusiva | Correto |
 |---|---|---|---|
-| empate de 50 (= página) + antigos | perde 200 | OK | OK |
-| empate de 100 (2x) + antigos | perde 200 | perde 50 | OK |
-| empate de 500 (10x) + antigos | perde 300 | **perde 450** | OK |
-| tudo no mesmo segundo | OK | **perde 150 de 200** | OK |
-| empate de 200, **ordem instável** | perde 100 | perde 150 | OK |
+| empate de 50 (= página) + antigos | — | perde 200 | OK |
+| empate de 100 (2x) + antigos | perde 50 | perde 200 | OK |
+| empate de 500 (10x) + antigos | **perde 450** | perde 300 | OK |
+| tudo no mesmo segundo | **perde 150 de 200** | — | OK |
+| empate no FIM da pasta | perde 50 | — | OK |
+| empate de 200, **ordem instável** | perde 150 | perde 100 | OK |
 
 O cenário de ordem instável embaralha as linhas dentro do empate a cada
 consulta: o OOM não promete ordem estável ali, e um algoritmo que dependa

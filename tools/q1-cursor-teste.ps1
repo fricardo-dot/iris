@@ -2,11 +2,16 @@
 #
 # Nao toca no Outlook.
 #
-# A versao anterior deste teste avancava a fronteira com AddSeconds(-1),
-# que e "< T", enquanto o script real reabria com "<= T". Os cenarios
-# passavam provando um algoritmo MELHOR do que o implementado — teste que
-# nao testa o que diz. Agora os dois chamam Invoke-PaginacaoPorCursor, em
-# paginacao.ps1: a unica diferenca e de onde as linhas vem.
+# Duas coisas que este teste faz e a versao anterior nao fazia:
+#
+#   1. Chama Invoke-PaginacaoPorCursor, de paginacao.ps1 — o mesmo codigo
+#      que q1-cursor.ps1 roda contra o Outlook. Antes o teste tinha uma
+#      copia do algoritmo que avancava com "< T" enquanto o real usava
+#      "<= T", entao os cenarios passavam provando outra coisa.
+#
+#   2. Roda os CONTROLES NEGATIVOS de verdade, com os defeitos ligados por
+#      parametro. Antes eu editava o arquivo a mao e anotava o resultado —
+#      numero anotado nao e regressao verificavel.
 #
 # A caixa real tem no maximo 3 itens no mesmo segundo, entao o caso que
 # quebra — grupo empatado MAIOR que a pagina — so da para exercitar aqui.
@@ -26,10 +31,11 @@ function Abrir-Fonte {
         else            { $Fonte.Itens | Where-Object { $_.Quando -lt $Fronteira } }
     }
 
-    # Dentro do empate a ordem e EMBARALHADA quando OrdemInstavel: o OOM
-    # nao promete ordem estavel num empate, e um algoritmo que dependa
-    # dela esta errado mesmo passando.
     $ordenado = @($conjunto | Sort-Object -Property @{Expression='Quando'; Descending=$true})
+
+    # Dentro do empate a ordem e EMBARALHADA a cada abertura: o OOM nao
+    # promete ordem estavel ali, e algoritmo que dependa dela esta errado
+    # mesmo passando.
     if ($Fonte.Instavel) {
         $novo = @()
         foreach ($g in ($ordenado | Group-Object Quando | Sort-Object { [datetime]$_.Name } -Descending)) {
@@ -67,39 +73,64 @@ function Montar {
     return ,$itens
 }
 
-function Testar {
-    param([string]$Nome, [object[]]$Itens, [int]$Pagina, [switch]$Instavel)
+function Rodar {
+    param([object[]]$Itens, [int]$Pagina, [switch]$Instavel,
+          [switch]$SemDrenagem, [switch]$FronteiraInclusiva)
 
     $fonte = New-Fonte $Itens -OrdemInstavel:$Instavel
-    $r = Invoke-PaginacaoPorCursor `
+    return Invoke-PaginacaoPorCursor `
         -Abrir  { param($f, $i) Abrir-Fonte $fonte $f $i } `
         -Ler    { param($c, $n) Ler-Fonte $c $n } `
         -Fechar { param($c) } `
-        -TamanhoDaPagina $Pagina
-
-    $ok = ($r.Lidos -eq $Itens.Count)
-    Write-Host ("{0,-40} | {1,5} | {2,5} | {3,9} | {4}" -f `
-        $Nome, $Itens.Count, $r.Lidos, $r.Consultas,
-        $(if ($ok) { "OK" } else { "PERDEU $($Itens.Count - $r.Lidos)" }))
-    return $ok
+        -TamanhoDaPagina $Pagina `
+        -SemDrenagem:$SemDrenagem -FronteiraInclusiva:$FronteiraInclusiva
 }
 
-Write-Host ("{0,-40} | {1,5} | {2,5} | {3,9} | {4}" -f "cenario","total","lidos","consultas","resultado")
-Write-Host ("-" * 84)
+$casos = @(
+    @{ Nome = "sem empate";                        Itens = (Montar 300 0 0)     },
+    @{ Nome = "empate de 3 (como a caixa real)";   Itens = (Montar 150 3 150)   },
+    @{ Nome = "empate de 50 (= pagina) + antigos"; Itens = (Montar 100 50 200)  },
+    @{ Nome = "empate de 100 (2x) + antigos";      Itens = (Montar 100 100 200) },
+    @{ Nome = "empate de 500 (10x) + antigos";     Itens = (Montar 100 500 300) },
+    @{ Nome = "tudo no mesmo segundo";             Itens = (Montar 0 200 0)     },
+    @{ Nome = "empate no FIM da pasta";            Itens = (Montar 200 100 0)   },
+    @{ Nome = "empate de 200, ordem INSTAVEL";     Itens = (Montar 100 200 100); Instavel = $true }
+)
 
-$ok = $true
-$ok = (Testar "sem empate"                        (Montar 300 0 0)     50) -and $ok
-$ok = (Testar "empate de 3 (como a caixa real)"   (Montar 150 3 150)   50) -and $ok
+Write-Host ("{0,-40} | {1,5} | {2,8} | {3,10} | {4,10}" -f `
+    "cenario", "total", "correto", "sem drenar", "inclusiva")
+Write-Host ("-" * 88)
 
-# O CASO QUE FALTAVA: grupo empatado >= pagina, com itens MAIS ANTIGOS
-# depois dele. Sem o avanco ESTRITO apos drenar, a paginacao para aqui.
-$ok = (Testar "empate de 50 (= pagina) + antigos" (Montar 100 50 200)  50) -and $ok
-$ok = (Testar "empate de 100 (2x) + antigos"      (Montar 100 100 200) 50) -and $ok
-$ok = (Testar "empate de 500 (10x) + antigos"     (Montar 100 500 300) 50) -and $ok
-$ok = (Testar "tudo no mesmo segundo"             (Montar 0 200 0)     50) -and $ok
-$ok = (Testar "empate no FIM da pasta"            (Montar 200 100 0)   50) -and $ok
-$ok = (Testar "empate de 200, ordem INSTAVEL"     (Montar 100 200 100) 50 -Instavel) -and $ok
+$tudoOk = $true
+$algumDefeitoPego = $false
+
+foreach ($c in $casos) {
+    $inst = [bool]$c.Instavel
+    $total = $c.Itens.Count
+
+    $bom  = (Rodar $c.Itens 50 -Instavel:$inst).Lidos
+    $sem  = (Rodar $c.Itens 50 -Instavel:$inst -SemDrenagem).Lidos
+    $incl = (Rodar $c.Itens 50 -Instavel:$inst -FronteiraInclusiva).Lidos
+
+    if ($bom -ne $total) { $tudoOk = $false }
+    if ($sem -ne $total -or $incl -ne $total) { $algumDefeitoPego = $true }
+
+    Write-Host ("{0,-40} | {1,5} | {2,8} | {3,10} | {4,10}" -f `
+        $c.Nome, $total,
+        $(if ($bom -eq $total) { "OK" } else { "PERDEU $($total-$bom)" }),
+        $(if ($sem -eq $total) { "-" } else { "perde $($total-$sem)" }),
+        $(if ($incl -eq $total) { "-" } else { "perde $($total-$incl)" }))
+}
 
 Write-Host ""
-if ($ok) { Write-Host "Todos os cenarios leram tudo." }
-else { Write-Host "ALGUM CENARIO PERDEU ITEM."; exit 1 }
+if (-not $tudoOk) {
+    Write-Host "FALHA: o algoritmo correto perdeu item."
+    exit 1
+}
+if (-not $algumDefeitoPego) {
+    # Sem isto, um teste que nao distingue certo de errado passaria para
+    # sempre — inclusive depois de a correcao ser desfeita.
+    Write-Host "FALHA: nenhum controle negativo perdeu item. O teste nao discrimina."
+    exit 1
+}
+Write-Host "O algoritmo correto leu tudo, e os dois defeitos foram pegos."

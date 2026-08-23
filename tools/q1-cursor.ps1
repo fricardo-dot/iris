@@ -97,7 +97,7 @@ $r = Invoke-PaginacaoPorCursor -Abrir $abrir -Ler $ler -Fechar $fechar `
 $cronometro.Stop()
 
 Write-Host ""
-Write-Host ("lidos: {0} de {1}   |   consultas: {2}" -f $r.Lidos, $total, $r.Consultas)
+Write-Host ("lidos: {0} de {1}   |   aberturas de cursor: {2}" -f $r.Lidos, $total, $r.Aberturas)
 Write-Host ("tempo: {0} ms   =>   {1:N2} ms/item" -f `
     [int]$cronometro.Elapsed.TotalMilliseconds,
     ($cronometro.Elapsed.TotalMilliseconds / [Math]::Max($r.Lidos, 1)))
