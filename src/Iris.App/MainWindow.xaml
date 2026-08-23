@@ -108,6 +108,66 @@
                            Visibility="{Binding IsLoading, Converter={StaticResource BoolToVis}}" />
             </Grid>
         </HierarchicalDataTemplate>
+
+        <!--
+            Linha da mensagem. Arvore visual rasa de proposito: cada elemento
+            aqui e multiplicado por cada linha visivel.
+
+            Nao lida usa PESO, nao cor de fundo — pintar a linha inteira
+            cansaria numa lista que fica sempre aberta.
+        -->
+        <DataTemplate x:Key="MessageRowTemplate">
+            <Grid>
+                <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="Auto" />
+                </Grid.ColumnDefinitions>
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                </Grid.RowDefinitions>
+
+                <TextBlock Grid.Row="0" Grid.Column="0"
+                           Text="{Binding SenderName}"
+                           FontFamily="{StaticResource Font.Ui}"
+                           FontSize="{StaticResource Font.Size.Body}"
+                           Foreground="{DynamicResource Brush.Text.Primary}"
+                           TextTrimming="CharacterEllipsis">
+                    <TextBlock.Style>
+                        <Style TargetType="TextBlock">
+                            <Style.Triggers>
+                                <DataTrigger Binding="{Binding IsUnread}" Value="True">
+                                    <Setter Property="FontWeight" Value="SemiBold" />
+                                </DataTrigger>
+                            </Style.Triggers>
+                        </Style>
+                    </TextBlock.Style>
+                </TextBlock>
+
+                <StackPanel Grid.Row="0" Grid.Column="1" Orientation="Horizontal"
+                            VerticalAlignment="Center" Margin="8,0,0,0">
+                    <TextBlock Text="&#xE723;"
+                               FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                               FontSize="11" Margin="0,0,6,0"
+                               Foreground="{DynamicResource Brush.Text.Muted}"
+                               ToolTip="Tem anexo"
+                               Visibility="{Binding HasAttachments, Converter={StaticResource BoolToVis}}" />
+                    <TextBlock Text="{Binding ReceivedTime, StringFormat='{}{0:dd/MM HH:mm}'}"
+                               FontFamily="{StaticResource Font.Ui}"
+                               FontSize="{StaticResource Font.Size.Small}"
+                               Foreground="{DynamicResource Brush.Text.Muted}" />
+                </StackPanel>
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                           Text="{Binding Subject}"
+                           Margin="0,3,0,0"
+                           FontFamily="{StaticResource Font.Ui}"
+                           FontSize="{StaticResource Font.Size.Small}"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                           TextTrimming="CharacterEllipsis"
+                           ToolTip="{Binding Subject}" />
+            </Grid>
+        </DataTemplate>
     </Window.Resources>
 
     <Border x:Name="RootBorder">
@@ -221,17 +281,65 @@
                               ResizeBehavior="PreviousAndNext"
                               AutomationProperties.Name="Redimensionar painel de pastas" />
 
-                <!-- Lista e leitura chegam nos marcos 1.3 e 1.4 -->
-                <Border Grid.Column="2" Background="{DynamicResource Brush.Background}">
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Folders.Selected.Name, FallbackValue='Selecione uma pasta'}"
+                <!-- Lista de mensagens. A leitura chega no marco 1.4. -->
+                <Grid Grid.Column="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Border Grid.Row="0" Padding="16,14,16,10"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="0,0,0,1">
+                        <TextBlock Text="{Binding Messages.FolderName}"
                                    Style="{StaticResource Text.Title}"
-                                   TextAlignment="Center" />
-                        <TextBlock Text="A lista de mensagens chega no marco 1.3."
-                                   Style="{StaticResource Text.Muted}"
-                                   TextAlignment="Center" Margin="0,8,0,0" />
-                    </StackPanel>
-                </Border>
+                                   FontSize="{StaticResource Font.Size.Subtitle}"
+                                   TextTrimming="CharacterEllipsis" />
+                    </Border>
+
+                    <ListBox Grid.Row="1"
+                             Style="{StaticResource MessageList}"
+                             ItemsSource="{Binding Messages.Messages}"
+                             SelectedItem="{Binding Messages.Selected, Mode=TwoWay}"
+                             ItemTemplate="{StaticResource MessageRowTemplate}" />
+
+                    <!-- Nenhuma pasta escolhida ainda -->
+                    <TextBlock Grid.Row="1" Text="Selecione uma pasta"
+                               Style="{StaticResource Text.Muted}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding Messages.IsEmpty, Converter={StaticResource BoolToVis}}" />
+
+                    <TextBlock Grid.Row="1" Text="{Binding Messages.ErrorMessage}"
+                               Style="{StaticResource Text.Muted}"
+                               Foreground="{DynamicResource Brush.Error}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding Messages.HasError, Converter={StaticResource BoolToVis}}" />
+
+                    <!-- Rodape: e aqui que o criterio de aceite do 1.3 fica
+                         verificavel olhando a tela, em vez de por impressao. -->
+                    <Border Grid.Row="2" Padding="16,8"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="0,1,0,0">
+                        <Grid>
+                            <TextBlock Text="{Binding Messages.StatusLine}"
+                                       Style="{StaticResource Text.Muted}"
+                                       HorizontalAlignment="Left" VerticalAlignment="Center" />
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <TextBlock Text="carregando…" Style="{StaticResource Text.Muted}"
+                                           VerticalAlignment="Center" Margin="0,0,12,0"
+                                           Visibility="{Binding Messages.IsLoading, Converter={StaticResource BoolToVis}}" />
+                                <Button Content="Carregar mais"
+                                        Style="{StaticResource Button.Secondary}"
+                                        Padding="10,4"
+                                        FontSize="{StaticResource Font.Size.Small}"
+                                        Command="{Binding Messages.LoadMoreCommand}"
+                                        Visibility="{Binding Messages.HasMore, Converter={StaticResource BoolToVis}}" />
+                            </StackPanel>
+                        </Grid>
+                    </Border>
+                </Grid>
             </Grid>
 
             <!-- ============ Card de conexão ============ -->

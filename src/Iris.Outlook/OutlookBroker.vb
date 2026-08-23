@@ -494,10 +494,14 @@ Namespace Global.Iris.Outlook
                 ErrorKind.NotImplemented, $"previsto para o marco {marco}"))
         End Function
 
-        Public Function GetMessagePageAsync(query As MessageQuery, offset As Integer, count As Integer,
-                                            cancel As CancellationToken) As Task(Of OperationResult(Of MessagePage)) _
-            Implements IOutlookBroker.GetMessagePageAsync
-            Return Pendente(Of MessagePage)("1.3")
+        Public Async Function GetMessagePageAsync(query As MessageQuery, offset As Integer, count As Integer,
+                                                  cancel As CancellationToken) _
+            As Task(Of OperationResult(Of MessagePage)) Implements IOutlookBroker.GetMessagePageAsync
+
+            Return Await ReadAsync(Of MessagePage)(
+                "outlook.getMessagePage",
+                Function(app, ns) MessagePaging.ReadPage(ns, query, offset, count),
+                cancel)
         End Function
 
         Public Function GetMessageDetailAsync(item As ItemKey, cancel As CancellationToken) _

@@ -1,0 +1,78 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        Lista de mensagens.
+
+        Aqui o template importa mais que em qualquer outro lugar do Iris:
+        cada elemento é multiplicado por cada linha visível. Por isso a
+        linha é uma árvore visual RASA — sem sombra, sem gradiente, sem
+        avatar, sem MultiBinding, sem animação. A Fase 0 mediu ~16 ms por
+        item só no COM; não vale acrescentar custo do lado do WPF.
+    -->
+
+    <Style x:Key="MessageRow" TargetType="ListBoxItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="AutomationProperties.Name" Value="{Binding Subject}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Linha"
+                            Background="Transparent"
+                            BorderBrush="Transparent"
+                            BorderThickness="0,0,0,1"
+                            Padding="14,10">
+                        <ContentPresenter />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Linha" Property="Background"
+                                    Value="{DynamicResource Brush.Surface.2}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Linha" Property="Background"
+                                    Value="{DynamicResource Brush.Accent.Surface}" />
+                        </Trigger>
+                        <!-- Só a cor muda no foco. Mexer na espessura
+                             empurraria o conteúdo e a linha pularia. -->
+                        <Trigger Property="IsKeyboardFocused" Value="True">
+                            <Setter TargetName="Linha" Property="BorderBrush"
+                                    Value="{DynamicResource Brush.Focus}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="MessageList" TargetType="ListBox">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource MessageRow}" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="ScrollViewer.HorizontalScrollBarVisibility" Value="Disabled" />
+
+        <!--
+            Virtualização de verdade. VirtualizingStackPanel evita CRIAR
+            controles; ele não evita buscar dados do Outlook — quem faz isso
+            é a paginação. As duas coisas são necessárias, e confundi-las
+            seria acreditar que a lista se resolve sozinha.
+
+            CanContentScroll=True é obrigatório: com False o ScrollViewer
+            mede o conteúdo inteiro e a virtualização morre.
+        -->
+        <Setter Property="ScrollViewer.CanContentScroll" Value="True" />
+        <Setter Property="VirtualizingPanel.IsVirtualizing" Value="True" />
+        <Setter Property="VirtualizingPanel.VirtualizationMode" Value="Recycling" />
+        <Setter Property="VirtualizingPanel.ScrollUnit" Value="Pixel" />
+        <Setter Property="ItemsPanel">
+            <Setter.Value>
+                <ItemsPanelTemplate>
+                    <VirtualizingStackPanel />
+                </ItemsPanelTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

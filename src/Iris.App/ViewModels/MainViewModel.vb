@@ -22,12 +22,16 @@ Namespace Global.Iris.App.ViewModels
         Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher)
             Connection = New ConnectionViewModel(broker, ui)
             Folders = New FolderTreeViewModel(broker, ui, AddressOf Connection.Observe)
+            Messages = New MessageListViewModel(broker, ui, AddressOf Connection.Observe)
+
+            AddHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
 
             AddHandler Connection.PropertyChanged, AddressOf OnConnectionChanged
         End Sub
 
         Public ReadOnly Property Connection As ConnectionViewModel
         Public ReadOnly Property Folders As FolderTreeViewModel
+        Public ReadOnly Property Messages As MessageListViewModel
 
         ''' <summary>
         ''' Enquanto não há sessão, o card de conexão ocupa a janela. Quando
@@ -70,13 +74,31 @@ Namespace Global.Iris.App.ViewModels
                 Connection.Observe(Folders.ReloadAsync(), "folders.reload")
             Else
                 Folders.Clear()
+                Messages.Clear()
             End If
+        End Sub
+
+        ''' <summary>
+        ''' Selecionar uma pasta é o que dispara a lista. A pasta manda; a
+        ''' lista obedece — e nunca o contrário.
+        ''' </summary>
+        Private Sub OnFoldersChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
+            If e.PropertyName <> NameOf(FolderTreeViewModel.Selected) Then Return
+
+            Dim pasta = Folders.Selected
+            If pasta Is Nothing Then
+                Messages.Clear()
+                Return
+            End If
+
+            Connection.Observe(Messages.ShowFolderAsync(pasta.Key, pasta.Name), "messages.showFolder")
         End Sub
 
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True
             RemoveHandler Connection.PropertyChanged, AddressOf OnConnectionChanged
+            RemoveHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
             Connection.Dispose()
         End Sub
 
