@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 11 — critério de 5.000 itens dispensado; medição substituta na seção 15.
+**Versão:** 12 — critério de 5.000 dispensado; medição corrigida na seção 15.
 
 ---
 
@@ -384,8 +384,10 @@ extrapolação nem por semelhança com outra medição.
 - **Fixture de 5.000 itens: critério DISPENSADO pelo usuário** em
   2026-08-23, por não ser viável na caixa corporativa. Ver seção 15: o
   critério não foi cumprido, foi retirado, e há medição substituta.
-- **Acesso por índice em offset profundo: MEDIDO** em 2026-08-23, e o
-  resultado é bom. Ver seção 15.
+- **Custo de página: MEDIDO** em 2026-08-23, com a metodologia corrigida
+  depois de a primeira tentativa ter modelado o broker errado. Cerca de
+  600 ms por página de 50; o gargalo é ler propriedade, não indexar. Ver
+  seção 15.
 - **Virtualização do WPF: MEDIDA e aprovada.** 5.000 DTOs sintéticos numa
   janela real, contando containers realizados: dezenas, não milhares, com
   controle negativo que exige o contador acusar mais de mil quando a
@@ -899,59 +901,83 @@ teste é intrusivo mesmo com limpeza depois.
 O critério **não foi cumprido**. Foi retirado. Esta seção existe para que
 ninguém leia "Fase 1 concluída" e presuma que os 5.000 foram medidos.
 
-### O que o critério queria saber
+### A primeira medição que fiz estava errada
 
-Duas coisas diferentes, que estavam grudadas num número:
+Vale registrar, porque o erro é instrutivo.
 
-1. **A lista aguenta muitos itens sem travar?** — pergunta sobre o WPF.
-2. **`Items.Item(i)` degrada em offset profundo?** — pergunta sobre o
-   Object Model. Se degradar, "Carregar mais" fica progressivamente mais
-   lento e a paginação por índice não escala.
+Cronometrei acesso por índice em offsets crescentes, ordenando UMA vez
+antes, e concluí "6 a 9 ms/item, sem correlação com o offset, logo O(1)".
+Dois furos, os dois apontados na revisão:
 
-### O que ESTÁ medido
+1. **O modelo não era o do broker.** `ReadPage` refaz `folder.Items`,
+   `Sort` e `Count` a CADA página, inclusive no "Carregar mais". Ordenar
+   uma vez e medir só o índice deixava de fora justamente a parte que
+   poderia degradar com o tamanho da pasta.
+2. **Eu lia 4 propriedades; o DTO lê 9 mais `Attachments.Count`.** O
+   número que apurei subestimava o custo real pela metade.
 
-**(1) já estava.** 5.000 DTOs sintéticos numa janela real, contando
-containers realizados: dezenas, não milhares, com controle negativo que
-exige o contador acusar mais de mil quando a virtualização é desligada.
-Isso prova o WPF e não diz nada sobre o custo do OOM — são medições
-separadas.
+"O(1)" também era conclusão maior que a evidência: cinco offsets numa
+caixa, em ordem crescente, não demonstram complexidade — no máximo
+ausência de degradação grosseira naquele intervalo.
 
-**(2) foi medido agora**, sem criar item nenhum: na Caixa de Entrada real,
-com 1.003 itens, cronometrando páginas de 50 em offsets crescentes e
-tocando as mesmas propriedades que o DTO da lista usa. Somente leitura.
+### A medição corrigida
+
+`tools/medir-pagina.ps1`. Somente leitura. Três fases cronometradas em
+separado, offsets em ordem ALEATÓRIA — em ordem crescente, profundidade e
+aquecimento de cache ficam confundidos — e todas as propriedades do
+`Summarize`.
+
+Caixa de Entrada, 1.003 itens, páginas de 50, três execuções:
+
+| fase | custo |
+|---|---|
+| `folder.Items` + `Sort` | 2–5 ms (14 ms na primeira, fria) |
+| `Count` | 0–1 ms |
+| ler a página (50 itens) | 554–1070 ms |
+
+**Por item, por offset** (ms/item, três execuções):
 
 | offset | exec 1 | exec 2 | exec 3 |
 |---|---|---|---|
-| 0 | 9,51 | 6,41 | 7,19 |
-| 100 | 6,82 | 7,27 | 6,35 |
-| 300 | 6,83 | 6,86 | 6,22 |
-| 600 | 6,51 | 6,98 | 6,41 |
-| 900 | 7,18 | 7,29 | 6,81 |
+| 0 | 14,44 | 12,93 | 14,45 |
+| 100 | 12,03 | 11,08 | 11,15 |
+| 300 | 13,20 | 11,32 | 11,75 |
+| 600 | 12,77 | 11,79 | 11,67 |
+| 900 | 21,40 | 13,79 | 13,67 |
 
-(ms por item)
+### O que isto mostra
 
-**O custo não tem correlação com o offset.** Offset 900 sai igual a offset
-0. A dispersão é ruído de cache e sincronização — a primeira execução de
-todas deu 13 ms/item em dois offsets, e sumiu nas seguintes, por isso três
-execuções e não uma.
+**O gargalo é ler propriedade, não indexar.** `Sort` e `Count` somam menos
+de 1% do tempo da página; os outros 99% são as nove propriedades por item.
+Isso bate com os ~16 ms/item medidos na Fase 0.
 
-**Conclusão:** `Items.Item(i)` é O(1) na prática nesta caixa, em modo
-cached. A paginação por índice escala, e "Carregar mais" não fica mais
-lento à medida que o usuário desce.
+**Uma página custa cerca de 600 ms.** É o tempo real de um "Carregar
+mais", e é o número que importa para a experiência.
+
+**Há uma subida leve com a profundidade, e ela NÃO é ruído puro.**
+Descontando o 21,40 da primeira execução, que é cache frio: offset 100 dá
+~11,1 ms/item e offset 900 dá ~13,7 — cerca de 23% mais caro. Pequeno, e
+possivelmente devido às mensagens em si (tamanho, anexos) e não à
+profundidade. Mas está lá, e afirmar "sem correlação", como escrevi antes,
+seria escolher a leitura conveniente.
+
+**Nada aqui indica que a paginação por índice quebre.** Uma subida de 23%
+entre o topo e o item 900 não é o que impediria "Carregar mais" de
+funcionar.
 
 ### O que CONTINUA sem resposta
 
-Dizer o que a medição não cobre importa tanto quanto o resultado:
-
-- **Pasta com 5.000 itens no OOM não foi exercitada.** O comportamento foi
-  medido até 1.003. Nada garante que `Items.Count` e `Items.Sort` — que
-  rodam uma vez por pasta, antes da primeira página — se comportem igual
-  numa coleção cinco vezes maior. O `Sort` é o candidato mais provável a
-  degradar, e ele não foi cronometrado em separado.
-- **Modo online (não cached) não foi medido.** Esta caixa está em cached
-  mode. Sem cache local, cada acesso vira ida ao servidor, e o resultado
-  acima não se transfere.
-- **Outras pastas não foram medidas.** Só a Caixa de Entrada.
+- **Pasta com 5.000 itens não foi exercitada.** `Sort` custa 2–5 ms em
+  1.003 itens; se ele for O(n log n) de verdade, em 5.000 daria talvez
+  15–30 ms — ainda irrelevante perto dos 600 ms da leitura. É extrapolação,
+  não medição, e está escrita aqui como extrapolação.
+- **Modo online (não cached) não foi medido.** Esta caixa é cached. Sem
+  cache local cada acesso vira ida ao servidor, e nada disto se transfere.
+- **Medido por PowerShell, não pelo broker.** Serve para COMPARAR offsets
+  e fases; não é a latência ponta a ponta da aplicação, que ainda passa
+  pela fila da STA e pelo message filter.
+- **Uma ordenação só** (`ReceivedTime` decrescente), **uma pasta**, uma
+  máquina, uma sessão.
 
 ### Se um dia isto voltar a importar
 
