@@ -733,6 +733,41 @@ Por isso o teste de persistência **não** se chama "disco cheio": ele prova
 que o compositor recebeu uma falha de gravação e preservou o texto. É o que
 ele prova, e é o nome que ele leva.
 
+### Resultado do eixo 5, executado em 2026-08-23
+
+Com autorização do usuário, o Outlook dele foi fechado e reaberto com o
+Iris rodando. O log do broker registrou:
+
+```
+epoca 1 -> Connected      conexao inicial
+state Unavailable         Outlook fechado; watchdog notou em 11 s
+epoca 2 -> Connected      sessao NOVA adquirida; reconexao em 33 s
+```
+
+**Provado:** o RCW morto é solto, uma instância nova é adquirida, a época
+sobe, `SessionReplaced` dispara, e a árvore recarrega com dado fresco —
+as contagens de não lidos vieram diferentes das anteriores, ou seja, houve
+releitura de verdade e não cache.
+
+**NÃO provado, e é preciso dizer:** o caminho exato do F1-M —
+`Connected → Connected` sem transição de estado — não foi reproduzido. O
+Outlook desta caixa leva de 30 a 90 s para subir, e o probe roda a cada
+15 s, então o watchdog sempre pega o `Unavailable` no meio. O caminho
+específico continua provado só pelos testes de ViewModel.
+
+Isso significa que a janela do F1-M é **estreita na prática**: exige o
+Outlook voltar entre dois probes. Não muda a decisão de corrigir — falha
+silenciosa e permanente merece defesa mesmo quando rara, e a época passou a
+ser o sinal confiável independentemente de o estado mudar — mas o registro
+tem que dizer o que foi medido, e não o que foi presumido.
+
+**Efeito colateral observado:** encerrar o Outlook com `Stop-Process
+-Force` deixou o processo travado no arranque por vários minutos — janela
+fantasma de 322×18 px em coordenada negativa, sem registro no ROT. Não é
+defeito do Iris; é o Outlook não gostando de morte súbita. Na segunda
+execução o `Quit()` funcionou e a reabertura foi limpa. Quem repetir este
+roteiro deve usar `Quit()` e ter paciência, não `Stop-Process`.
+
 ### Critério de pronto
 
 1. F1-M e F1-N corrigidos, com teste de concorrência para o segundo.
