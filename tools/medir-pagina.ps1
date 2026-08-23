@@ -11,6 +11,15 @@
 # Aqui as tres fases sao cronometradas em separado, e os offsets vao em
 # ordem ALEATORIA — em ordem crescente, profundidade e aquecimento de cache
 # ficam confundidos um com o outro.
+#
+# DIFERENCAS que sobram em relacao ao ReadPage, e que este script NAO
+# reproduz:
+#   - o broker filtra o que nao e MailItem; aqui tudo e tocado igual;
+#   - o Summarize tolera excecao por propriedade, com Texto()/Numero();
+#     aqui uma propriedade que estoure derruba a medicao;
+#   - o broker passa pela fila da STA e pelo message filter.
+# Ou seja: serve para COMPARAR fases e offsets, nao como latencia ponta a
+# ponta da aplicacao.
 
 param(
     [int]$PastaId = 6,          # 6 = Caixa de Entrada
@@ -21,7 +30,12 @@ param(
 $ol = [Runtime.InteropServices.Marshal]::GetActiveObject("Outlook.Application")
 $ns = $ol.GetNamespace("MAPI")
 $pasta = $ns.GetDefaultFolder($PastaId)
-$total = $pasta.Items.Count
+
+# Nao encadear: $pasta.Items.Count cria um RCW intermediario que ninguem
+# libera. Mesma regra do codigo de producao (R7).
+$itensDaPasta = $pasta.Items
+$total = $itensDaPasta.Count
+[void][Runtime.InteropServices.Marshal]::ReleaseComObject($itensDaPasta)
 
 Write-Output "pasta: $($pasta.Name)  |  itens: $total  |  pagina: $TamanhoDaPagina"
 Write-Output ""

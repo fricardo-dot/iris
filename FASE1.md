@@ -947,23 +947,30 @@ Caixa de Entrada, 1.003 itens, páginas de 50, três execuções:
 
 ### O que isto mostra
 
-**O gargalo é ler propriedade, não indexar.** `Sort` e `Count` somam menos
-de 1% do tempo da página; os outros 99% são as nove propriedades por item.
-Isso bate com os ~16 ms/item medidos na Fase 0.
+**O gargalo está na fase de obter e resumir os itens, não em ordenar ou
+contar.** `Sort` e `Count` somam menos de 1% do tempo da página. Os ~99%
+restantes são `Item(i)` mais a leitura das nove propriedades mais o
+marshaling e a liberação COM de cada item — o script não separa essas
+parcelas entre si. Bate com os ~16 ms/item medidos na Fase 0.
 
 **Uma página custa cerca de 600 ms.** É o tempo real de um "Carregar
 mais", e é o número que importa para a experiência.
 
-**Há uma subida leve com a profundidade, e ela NÃO é ruído puro.**
-Descontando o 21,40 da primeira execução, que é cache frio: offset 100 dá
-~11,1 ms/item e offset 900 dá ~13,7 — cerca de 23% mais caro. Pequeno, e
-possivelmente devido às mensagens em si (tamanho, anexos) e não à
-profundidade. Mas está lá, e afirmar "sem correlação", como escrevi antes,
-seria escolher a leitura conveniente.
+**A página do offset 900 saiu ~23% mais lenta que a do offset 100, e a
+causa é indeterminada.**
 
-**Nada aqui indica que a paginação por índice quebre.** Uma subida de 23%
-entre o topo e o item 900 não é o que impediria "Carregar mais" de
-funcionar.
+Não é "subida com a profundidade": a série não é monótona. Offset 0 sai
+em ~13,9 ms/item, quase igual ao 900 (~13,7), e o mais RÁPIDO é o 100
+(~11,4). Se a profundidade explicasse, o offset 0 seria o mais barato de
+todos.
+
+Três execuções, páginas com mensagens diferentes — tamanhos e anexos
+diferentes — não sustentam nem "cresce com o offset" nem "não é ruído".
+O que dá para afirmar é a diferença observada, e que ela é pequena.
+
+**Nada aqui indica que a paginação por índice quebre.** Nenhum offset
+medido custou o dobro de outro, e a variação está na mesma ordem de
+grandeza da variação entre execuções do MESMO offset.
 
 ### O que CONTINUA sem resposta
 
