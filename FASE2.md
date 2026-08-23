@@ -1,7 +1,8 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 9 — Q1 fechada (seção 9). Q2 na parte de leitura (seção 10);
-falta a parte que escreve, que depende de autorização.
+**Versão:** 10 — Q1 fechada (seção 9). Q2 na parte de leitura, 2ª versão
+depois do Codex (seção 10). Falta o teste de `Move`, que é o experimento
+decisivo e depende de autorização.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -683,83 +684,137 @@ funciona — e traz junto as três armadilhas acima, que precisam ir com ele.
 
 ## 10. Q2 — parte de LEITURA respondida
 
-Corpus: **1.318 itens** reais (Entrada 1003, Enviados 106, Rascunhos 68,
-Excluídos 141). Nada foi criado, movido ou apagado.
+**Esta seção está na 2ª versão.** A 1ª foi ao Codex e voltou com defeitos
+que os dados confirmaram. O que mudou está em 10.9.
 
-Scripts: `tools/q2-evidencias.ps1` (presença e colisão), `q2-colisoes.ps1`
-(quem colide), `q2-par.ps1` (o par, propriedade a propriedade),
-`q2-quase.ps1` (o que heurística funde).
+Corpus: **2.281 itens em 127 pastas**, um store. Nada foi criado, movido
+ou apagado.
 
-### O oráculo, e por que ele só vale numa direção
+Scripts: `tools/q2-chaves.ps1` (presença, unicidade, matriz de colisão),
+`q2-pares.ps1` (cada par de colisão, propriedade a propriedade),
+`q2-conferir.ps1` (Table x PropertyAccessor, e deriva), `q2-quase.ps1`
+(o que heurística funde).
 
-Escrito antes de rodar qualquer avaliação:
+### 10.1 O oráculo, e o que ele NÃO é
 
-> Message-ID **diferente**, os dois não vazios ⇒ mensagens diferentes.
-> Isso é o RFC 5322, não inferência minha.
+> Message-ID **diferente**, os dois não vazios => **mensagens** diferentes.
 >
-> Message-ID **igual** ⇒ mesma mensagem, e **não autoriza unir**.
+> Message-ID **igual** => mesma mensagem, e **não autoriza unir**.
 
-A segunda metade não estava na minha primeira versão — eu contava "mesmo
-Message-ID" como acerto. A parte do par mostrou que é falso, e a coluna
-foi renomeada de `certos` para `mesma msg`. **"Mesma mensagem" é mais
-grosso que "mesmo item"**, e a diferença é exatamente onde mora o R2-G.
+A segunda metade não estava na 1ª versão: eu contava "mesmo Message-ID"
+como acerto. O par 1 abaixo desmente.
 
-### Presença
+E a primeira metade é mais fraca do que eu escrevi. Eu disse que era "o
+RFC 5322, não inferência minha". O RFC identifica uma **mensagem**, não um
+**item**, e não fala de continuidade sob movimentação. A leitura honesta
+da coluna "errados" da tabela 10.6 é:
 
-| Pasta | Itens | Message-ID | SearchKey |
+> pares unidos pela regra cujos Message-ID não vazios **conflitam**.
+
+É evidência negativa forte para correio transportado normal. Não é ground
+truth de identidade de item.
+
+### 10.2 Presença e unicidade, corpus inteiro
+
+| Chave | Presente | Distintos | Grupos repetidos |
 |---|---|---|---|
-| Entrada | 1003 | 100% | 100% |
-| Enviados | 106 | 100% | 100% |
-| Rascunhos | 68 | **44%** | 100% |
-| Excluídos | 141 | **69%** | 100% |
+| `PR_RECORD_KEY` | **100%** | **2.281 / 2.281** | **0** |
+| `PR_CHANGE_KEY` | **100%** | 2.281 / 2.281 | 0 |
+| `EntryID` | 100% | 2.281 / 2.281 | 0 |
+| `PR_SEARCH_KEY` | **100%** | 2.278 | 3 |
+| Message-ID | 86% | 1.964 | 4 |
+| `PR_SOURCE_KEY` | **0%** | — | — |
 
-**`PR_SEARCH_KEY` está em 100% dos 1.318.** Message-ID falta em 82, e não
-por acaso: **38 dos 68 rascunhos** não têm nenhum. Rascunho nunca enviado
-não passou por transporte, então não existe Message-ID para ele ter. Era
-previsão do Codex; agora é medição.
+`PR_SOURCE_KEY` (`0x65E00102`), sugerida pelo Codex por ser a identidade
+dos mecanismos de sincronização do Exchange, **volta nula nos 2.281**.
+Medida, não suposta.
 
-### A única colisão da caixa é o pior caso do plano
+Message-ID falta em **313** itens, **todos `IPM.Note`**. Compromissos
+(`IPM.Appointment`, 490) têm. E **30 dos 68 rascunhos têm Message-ID** —
+o que derruba minha explicação da 1ª versão ("rascunho não passou por
+transporte, então não tem"). Rascunho **pode** ter, e por que uns têm e
+outros não continua **não explicado**.
 
-Em 1.318 itens há **um** grupo com Message-ID repetido e **um** com
-SearchKey repetido — o mesmo par, e é um artefato meu da Fase 0
-(`[IRIS-SPIKE-C]`, o envio do critério C2).
+### 10.3 Os quatro pares, e cada um quebra uma regra diferente
 
-| Propriedade | Enviados | Excluídos | igual? |
+| | par 1 | pares 2 e 3 | par 4 |
 |---|---|---|---|
-| `MessageID` | `<CPWP152MB6288…>` | `<CPWP152MB6288…>` | **SIM** |
-| `SearchKey` | `1345298cfcc2bf4d…` | `1345298cfcc2bf4d…` | **SIM** |
-| `ConversationIndex` | `01dd328782c553ce…` | `01dd328782c553ce…` | **SIM** |
-| `ConversationTopic` | idem | idem | **SIM** |
-| `PR_CLIENT_SUBMIT_TIME` | 22:42:32 | 22:42:32 | **SIM** |
-| `EntryID` | …`A40F2400` | …`04122400` | não |
-| `PR_RECORD_KEY` | …`3f965334a4…` | …`3f96533404…` | não |
-| `Size` | 8.380 | **33.166** | não |
-| `PR_MESSAGE_FLAGS` | 1 | 34 | não |
-| `PR_TRANSPORT_MESSAGE_HEADERS` | vazio | **4.615 chars** | não |
-| `PR_MESSAGE_DELIVERY_TIME` | 22:42:00 | 22:42:35 | não |
+| **o que é** | enviado x recebido (auto-endereçado, artefato meu da Fase 0) | conflito de sincronização: Conflitos x Lixo Eletrônico | duas entregas do mesmo Message-ID, Lixo Eletrônico |
+| Message-ID | **igual** | **igual** | **igual** |
+| `PR_SEARCH_KEY` | **igual** | **igual** | **diferente** |
+| `ConversationIndex` | **igual** | **igual** | diferente |
+| `PR_CLIENT_SUBMIT_TIME` | **igual** | **igual** | diferente (10 s) |
+| `PR_MESSAGE_DELIVERY_TIME` | diferente | **igual** | diferente (9 s) |
+| cabeçalhos de transporte | vazio x 4.615 | **iguais** | 10.197 x 10.251 |
+| `PR_MESSAGE_FLAGS` | 1 x 34 | 0 x 262146 | iguais |
+| `Size` | 8.380 x 33.166 | 127.252 x 127.028 | 70.790 x 70.748 |
+| `PR_RECORD_KEY` | **diferente** | **diferente** | **diferente** |
 
-`MsgFlags` 1 = `READ`; 34 = `0x22` = `FROMME|UNMODIFIED`. Um foi
-submetido e lido; o outro foi **entregue** — 4.615 caracteres de cabeçalho
-de transporte que só o transporte escreve. Não são duas leituras do mesmo
-item: são **dois itens**, e o Outlook mostra os dois.
+- **Par 1** — dois itens que compartilham **toda** evidência derivada de
+  conteúdo. `MsgFlags` 1 = `READ`; 34 = `0x22` = `FROMME|UNMODIFIED`. Um
+  foi submetido, o outro **entregue**: 4.615 caracteres de cabeçalho que só
+  o transporte escreve.
+- **Pares 2 e 3** — o caso que faltava no corpus: **duas manifestações do
+  mesmo item**, criadas pelo próprio Outlook ao resolver conflito. Aqui
+  unir é defensável, e nenhuma chave atribuída pelo store as une.
+- **Par 4** — **falso positivo natural** do Message-ID, não fabricado por
+  mim: duas entregas distintas com o mesmo `Message-ID`, 10 segundos de
+  diferença. `SearchKey` as separa.
 
-**Consequência, e é a resposta central da Q2:**
+**`SearchKey` erra nas duas direções**: une o par 1 (itens distintos) e
+separa o par 4 (mesma mensagem). Não é derivada só do conteúdo nem só do
+item.
 
-> `PR_SEARCH_KEY` e Message-ID identificam uma **mensagem**, não um
-> **item**. Nenhum dos dois, nem os dois juntos, distingue o enviado do
-> recebido. Correlacionar por qualquer um deles sozinho funde o par — e
-> aí o lido/triado de um vaza no outro.
+### 10.4 A resposta da Q2
 
-`PR_RECORD_KEY` também não serve: os últimos bytes dele são os do
-`EntryID`. É outro **localizador**, não identidade — confirma §3.1 em vez
-de acrescentar evidência.
+> As evidências se dividem em **duas famílias**, e nenhuma tem as duas
+> propriedades de que o Iris precisa ao mesmo tempo.
+>
+> **Derivadas do conteúdo** — Message-ID, `PR_SEARCH_KEY`,
+> `ConversationIndex`. Identificam a **mensagem**. Não distinguem o
+> enviado do recebido (par 1) e nem sempre distinguem entregas distintas
+> (par 4). **Únicas: não. Estáveis sob movimentação: provavelmente sim.**
+>
+> **Atribuídas pelo store** — `EntryID`, `PR_RECORD_KEY`,
+> `PR_CHANGE_KEY`. Únicas em 2.281 de 2.281, e separam todos os quatro
+> pares. **Únicas: sim. Estáveis: NÃO MEDIDO.**
+>
+> Se nenhuma família for simultaneamente única e estável, **não existe
+> identidade de item obtenível pelo OOM**, e o 2.1 tem de ser desenhado
+> em cima de correlação explícita e reversível — ou de não correlacionar.
 
-### O outro lado: o que heurística funde
+Isso torna o teste de `Move` **o experimento decisivo da Q2**, não um
+complemento.
 
-Pares unidos pela regra cujo Message-ID é **diferente** (logo, erro
-comprovado):
+### 10.5 `PR_RECORD_KEY`: eu a descartei errado
 
-| Regra | Grupos | **Pares errados** | Maior grupo |
+A 1ª versão dizia: "os últimos bytes dela são os do `EntryID`, logo é
+outro localizador". **Duas coisas erradas.**
+
+Primeiro, é falso. `EntryID` tem 24 bytes, `RecordKey` tem 46, e em
+**2.281 de 2.281** nenhuma contém a outra — nem como sufixo, nem em
+qualquer posição. Eu tinha olhado um par e comparado de olho.
+
+Segundo, mesmo que compartilhassem bytes, isso não provaria equivalência
+semântica.
+
+E a decomposição diz o contrário do que eu concluí. Comparando as 18
+pastas com 5+ itens, **os bytes 0–38 e 44–45 são idênticos em todas as
+pastas**; só os bytes **39–43** variam de item para item. **Não há
+identificador de pasta dentro da `RecordKey`** — que é justamente a
+precondição estrutural para sobreviver a um `Move`. Nos pares de conflito,
+as duas `RecordKey` diferem em **2 bytes** (42 e 43), valores vizinhos de
+um contador.
+
+Isso **não prova** que ela sobrevive: o store pode alocar outra no `Move`.
+Prova que o motivo pelo qual eu a descartei não existia.
+
+### 10.6 O que heurística funde
+
+Subconjunto de **1.318 itens nas 4 pastas padrão** — esta tabela é a
+única que não foi refeita sobre o corpus completo.
+
+| Regra | Grupos | Pares com Message-ID conflitante | Maior grupo |
 |---|---|---|---|
 | assunto | 184 | **1.398** | 19 |
 | assunto + remetente | 158 | **773** | 19 |
@@ -767,39 +822,77 @@ comprovado):
 | assunto + remetente + instante | 1 | **1** | 2 |
 | os quatro juntos | 0 | 0 | — |
 
-Assunto + remetente + tamanho **ainda funde 5 pares distintos**. Com o
-instante junto, ainda 1. E a única linha que não erra é a que **não une
-nada**: zero grupos, recall zero.
+Assunto + remetente + tamanho ainda funde 5 pares conflitantes. A linha que
+não erra **não une nada**.
 
-### O que isto decide
+Na 1ª versão eu chamei isso de "recall zero". Está errado: sem positivos
+rotulados, recall é **indefinido**, não zero. E o corpus agora tem
+positivos — os pares de conflito.
 
-1. **Nenhuma evidência isolada correlaciona itens.** Nem SearchKey, que é
-   a única presente em 100%.
-2. **Identidade de item precisa do papel**, não só do conteúdo: submetido
-   x entregue separa o par que todo o resto confunde.
-3. **Na dúvida, não unir** (§3.1) sai reforçado. Nesta caixa **não existe
-   um único par que devesse ser correlacionado** — toda união disponível
-   aqui é erro. É um resultado, não uma falha do corpus.
-4. Rascunho não entra em esquema que exija Message-ID: 56% deles não têm.
+Também caiu a frase "nesta caixa não existe par que devesse ser
+correlacionado". Existe: os pares 2 e 3.
 
-### NÃO validado, e por quê
+### 10.7 Confiabilidade da medição
 
-- **Item movido** — a evidência sobrevive a um `Move`? É o D4 da Fase 0.
-  **Escreve na caixa; depende de autorização.** É também o único jeito de
-  produzir um par que *deva* ser unido.
-- **Rascunho antes/depois de enviar** e **encaminhar/reenviar** — exigem
-  enviar, e enviar está proibido fora do C2.
-- **Cópias com Message-ID idêntico entre stores** — um store nesta
-  máquina.
-- **SearchKey de enviado x recebido em mensagem para terceiros.** O par
-  aqui é auto-endereçado. Para mensagem normal a cópia do destinatário não
-  está nesta caixa, então não há colisão possível *nem informação*: as
-  outras 105 de Enviados não colidirem **não prova nada** sobre o caso.
+- **Marshaling.** Tudo sai de `Table.GetArray` com colunas de proptag
+  binário. Conferido contra `PropertyAccessor.GetProperty`: **183 valores,
+  0 divergências**. Valores que não voltam como `byte[]` ou `String` são
+  contados como anomalia, não como presença — nenhuma ocorreu.
+- **Deriva.** `Table` não é snapshot. Duas leituras seguidas de Entrada
+  (1003) e Excluídos (141): **0 itens surgiram, 0 sumiram, 0 chaves
+  mudaram**.
+- `q2-pares.ps1` cobre **1.789** itens, não 2.281: 15 pastas de Contatos
+  recusam a coluna `SenderName`. Não afeta os grupos de colisão, que saem
+  de `q2-chaves.ps1` sobre os 2.281.
 
-### Erro de método desta rodada
+### 10.8 NÃO validado
 
-`$grupos.Count` com **um** grupo devolveu 2, e eu quase registrei "2
-grupos de colisão". O PowerShell desembrulha a coleção de um elemento e
-`.Count` acaba lendo a propriedade do `GroupInfo` — o tamanho do grupo, não
-o número deles. Some com `@()` em volta. Um número plausível saindo do
-lugar errado é o modo de falha mais caro que este projeto já teve.
+- **Sobrevivência a `Move`** de `RecordKey`, `SearchKey` e `EntryID` — o
+  experimento decisivo. **Escreve na caixa; depende de autorização.**
+- **`Copy`**: se a `RecordKey` muda numa cópia (esperado, pelos pares de
+  conflito), `Copy` cria identidade nova. Não medido.
+- **Rascunho antes/depois de enviar**, **encaminhar/reenviar** — exigem
+  enviar, proibido fora do C2.
+- **Entre stores** — um store nesta máquina.
+- **Enviado x recebido em mensagem para terceiros.** O par 1 é
+  auto-endereçado. Para mensagem normal a cópia do destinatário não está
+  nesta caixa: não há colisão possível **nem informação**. As outras 105
+  de Enviados não colidirem **não prova nada**.
+- **Por que 30 rascunhos têm Message-ID e 38 não.**
+
+### 10.9 Quatro erros meus nesta rodada
+
+1. **Escopo inventado.** Li 4 pastas e escrevi "a caixa". São 127 pastas e
+   2.281 itens — eu tinha visto 58% e relatado 100%.
+2. **`$grupos.Count` sem `@()`.** Com um grupo só, o PowerShell devolve o
+   tamanho do `GroupInfo`. Eu **documentei** esse erro na 1ª versão e
+   deixei ele no código que gerou a tabela publicada.
+3. **`q2-par.ps1` selecionava por prefixo de assunto**, achou 13 itens,
+   guardou 2 num hashtable e sobrescreveu 11 em silêncio. Os 2 que
+   sobraram eram, por acaso, os certos.
+4. **Discriminador refutado pelos meus próprios dados.** O comentário dizia
+   "enviado tem `SubmitTime` e não tem `DeliveryTime`". As duas
+   propriedades estão nos **dois** itens do par 1. Quem discrimina é
+   `PR_TRANSPORT_MESSAGE_HEADERS` com `PR_MESSAGE_FLAGS`.
+
+Os três scripts da 1ª rodada foram **removidos**, não corrigidos: um
+script com escopo errado convida a ser reusado.
+
+### 10.10 Duas armadilhas de PowerShell, para não repetir
+
+**Concatenação dentro de `@(...)` precisa de parênteses.**
+
+```powershell
+@("EntryID", $PT + "0x300B0102")      # 3 elementos: "EntryID", "$PT", "0x.."
+@("EntryID", ($PT + "0x300B0102"))    # 2, que era o que eu queria
+```
+
+Sem os parênteses o `Columns.Add` recebia a URL do prefixo sozinha, e as
+**127 pastas** falhavam com *"Value does not fall within the expected
+range"* — dentro de um `catch { }` vazio, que devolveu **corpus: 0 itens**
+sem uma linha de erro.
+
+**`$pid` é somente-leitura.** É o PID do processo, e o PowerShell é
+case-insensitive: `foreach ($pid in ...)` aborta. É a mesma classe de
+eclipse que o `CLAUDE.md` documenta em VB — sete ocorrências lá, agora uma
+aqui, em outra linguagem.
