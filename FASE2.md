@@ -1,8 +1,7 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 14 — Q1 fechada (seção 9). **Q2 FECHADA**: leitura na seção
-10, `Move`/`Copy` na 11, causalidade da PCL na 11.6. Resposta negativa,
-com o escopo explicitado. Quatro rodadas de Codex.
+**Versão:** 15 — Q1 e **Q2 fechadas** (seções 9 a 11). Melhoria da Fase 1
+aplicada (seção 12). Q4 começada: custo medido (seção 13).
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -1240,3 +1239,168 @@ Então este resultado é **n=1 sobre um item de procedência incerta**. O
 comportamento da PCL num item entregue pelo transporte **não foi medido**.
 O achado de que a PCL é substituída e não acumulada é forte; a
 generalização para correio recebido não está feita.
+
+---
+
+## 12. Melhoria da Fase 1, aplicada: `ReadPage` por `Table` + cursor
+
+A Q1 mediu o ganho; esta seção é o que aconteceu ao aplicá-lo.
+
+### 12.1 O desenho foi revisado ANTES de implementar, e mudou
+
+O Codex derrubou o meu desenho num ponto que teria sido a **terceira vez
+no projeto** que eu implemento algo que os testes não cobrem:
+
+> Eu ia guardar "chaves já vistas do grupo de fronteira" no cursor. O
+> algoritmo provado pela Q1 **drena o empate inteiro**, e por isso não
+> precisa de chave nenhuma — quando a página termina, o grupo ficou para
+> trás por completo. Guardar chaves seria outro algoritmo.
+
+Consequência aceita, e virou contrato: **`targetCount` é ALVO, não teto.**
+A página vai até o fim do grupo do último instante. Pedir 30 pode devolver
+45, e `MessagePage.DrainedExtra` existe para isso ser explicável em vez de
+parecer defeito.
+
+Outras correções da revisão: `PR_CHANGE_KEY` não é identidade;
+`TotalAtRead` vira `TotalAtStart` e só na primeira página; `ExaminedCount`
+sai do contrato; a dedup do ViewModel **fica** (protege contra outra
+coisa); e a ordenação por `ReceivedAsc` **não** entra, porque a Q1 mediu
+só decrescente.
+
+### 12.2 O defeito que só o teste de cruzamento pegaria
+
+O teste de integração compara o conjunto de chaves dos **dois caminhos** —
+`Table` e iteração são implementações independentes. Resultado da primeira
+execução:
+
+```
+por Table   : 995 chaves, 34 paginas
+por iteracao: 995 chaves, 34 paginas
+interseccao : 0
+```
+
+Mesmas mensagens, mesmas páginas, **interseção zero**.
+
+> A coluna chamada `EntryID` da `Table` devolve o EntryID de **curto
+> prazo** — 24 bytes, válido só dentro da sessão. O `MailItem.EntryID`
+> devolve o de **longo prazo**, 70 bytes.
+
+São identificadores diferentes do mesmo item, e **nenhum erro aparece**: a
+listagem funciona, a rolagem funciona, só não casa com nada. Persistir
+chave de curto prazo no cache da Fase 2 quebraria **na sessão seguinte** —
+o pior tipo de defeito, porque o teste do dia passa.
+
+Corrigido com `PR_LONGTERM_ENTRYID_FROM_TABLE` (`0x66700102`), que é
+binária e vira hex maiúsculo para casar com o formato do `MailItem`.
+
+É a mesma distinção curto/longo prazo que apareceu na §10.3.1, quando o
+`PR_CONFLICT_ITEMS` não casava com o `EntryID`. **Duas vezes o mesmo
+engano**, em contextos sem relação aparente.
+
+Se o store não oferecer a coluna, o caminho cai para a iteração em vez de
+degradar a chave — e recusa continuar uma paginação já começada, porque
+cursor de fronteira não se traduz em offset.
+
+### 12.3 O ganho medido, ponta a ponta
+
+Travessia completa da Caixa de Entrada (995 mensagens, páginas de 30),
+**pelo broker**, com fila da STA e despacho assíncrono:
+
+| | tempo | páginas |
+|---|---|---|
+| `Table` + cursor | **1.826 ms** | 34 |
+| iteração + offset | 19.383 ms | 34 |
+
+**10,6x.** Não são os ~18x da Q1: aquele número era in-process sobre o
+DTO, sem o broker no meio. O número honesto para o usuário é este.
+
+Drenagem extra na Entrada: **0 linhas**. O maior empate num mesmo segundo
+tem 16 itens e não cruzou fronteira de página nesta execução.
+
+### 12.4 Medições que decidiram o recorte
+
+- **`ReceivedTime` nulo: 0 de 1.792.** Qualquer filtro `< data` excluiria
+  linha nula, e a Q1 já registrava isso como lacuna. Não bloqueia aqui;
+  **continua lacuna do contrato**, porque outra caixa pode ter — e o
+  caminho legado cobre.
+- **Maior empate num segundo: 16 itens**, em Rascunhos e nas pastas
+  `Iris Spike`, ou seja, **artefato meu**. Correio real empata bem menos.
+  Com página de 30, a página drenada devolve no máximo 45 — sem risco de
+  travar a fila da STA.
+- **Classes presentes:** 1.741 `IPM.Note`, 49 de reunião, 4 avulsos.
+
+### 12.5 Dívida que este marco deixa
+
+- **`MessageClass` não é `TryCast(MailItem)`.** O caminho por tabela
+  decide elegibilidade por classe; o legado decidia por tipo. A
+  equivalência está **afirmada e não provada**. O teste de cruzamento
+  compara os dois caminhos e daria a divergência, mas na Entrada os dois
+  descartam os mesmos itens — não é prova para outras pastas.
+- **`ReceivedAsc`, `SubjectAsc` e `SenderAsc`** ficam no caminho lento.
+  Estender exige filtro keyset sobre texto: ordenação cultural, caixa,
+  acentuação e escaping de apóstrofo, nada disso medido.
+- **Restauração de seleção** só funciona se o item estiver na primeira
+  página. Defeito preexistente, e a §12 não o corrige: se falhar, a flag
+  de restauração termina sem nova seleção e o detalhe antigo pode ficar
+  aberto sem linha correspondente.
+- **`FakeBroker` recusa `GetMessagePageAsync`**, então as corridas de
+  geração e recarga do ViewModel continuam sem teste funcional.
+
+### 12.6 De brinde: um gate de segurança que falhava aberto
+
+Achado pelo Codex ao revisar o desenho, e **independente dele**.
+
+`MessageReading` lia `Permission` pelo helper `Numero()`, que converte
+qualquer exceção em zero — e zero ali significa "não é protegida". Então
+**"não consegui determinar" virava permissão para ler o corpo**, que o R11
+proíbe mandar para tela, log ou IA.
+
+`ProtectionState` agora tem três estados, `Unknown` bloqueia junto com
+`Restricted`, e `Unknown` é o **primeiro** valor do enum de propósito: DTO
+que ninguém preencheu nasce bloqueado. A regra saiu para
+`Iris.Core/ProtectionPolicy.vb`, pelo mesmo motivo do
+`OutlookFailurePolicy`.
+
+Controle negativo verificado desfazendo a correção: com
+`state <> Restricted` no lugar de `state = Unprotected`, **2 dos 4 testes
+falham**. O teste que importa é o do `Unknown` — um que só verificasse
+`Restricted` passaria com o código antigo também.
+
+**A caixa medida não tem mensagem protegida**, então o gate continua sem
+exercício contra o caso real.
+
+---
+
+## 13. Q4 — parte do custo, respondida
+
+`tools/q4-custo.ps1`. Somente leitura.
+
+Custo de enumerar `EntryID` + `PR_LAST_MODIFICATION_TIME`, que é o par
+mínimo de que a varredura por geração precisa:
+
+| Pasta | Itens | a frio | a quente |
+|---|---|---|---|
+| Caixa de Entrada | 1.003 | 155 ms | **26 ms** |
+| Enviados | 106 | 14 ms | 11 ms |
+| Rascunhos | 68 | 10 ms | 11 ms |
+| Excluídos | 144 | 11 ms | 11 ms |
+| Lixo Eletrônico | 172 | 14 ms | 10 ms |
+
+**Caixa inteira — 129 pastas, 2.284 itens: 2.218 / 1.990 / 1.833 ms** em
+três execuções. Todas as chaves únicas em toda pasta.
+
+### O que isto decide
+
+> **A opção 2 da Q4 é acessível.** Exigir **duas observações completas e
+> compatíveis** antes de confirmar ausência custa ~4 s de varredura, não
+> minutos.
+
+E isso importa além da Q4: é exatamente o que a **§11.4** pediu para o
+algoritmo conservador de correlação — *"confirmar não coexistência numa
+varredura consistente"*. A Q2 pediu a garantia; a Q4 mostra que ela cabe
+no orçamento.
+
+**Falta a parte principal da Q4**, que é consistência sob mutação: item
+criado, removido e movido entre duas pastas **durante** a enumeração,
+falha COM no meio, cancelamento no meio, Outlook reiniciado no meio.
+Essa parte escreve na caixa.
