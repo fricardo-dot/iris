@@ -1,8 +1,8 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 12 — Q1 fechada (seção 9). **Q2 RESPONDIDA**: leitura na
-seção 10, experimento de `Move` na seção 11. A resposta é negativa e
-fecha a questão.
+**Versão:** 13 — Q1 fechada (seção 9). **Q2 RESPONDIDA**: leitura na
+seção 10, `Move`/`Copy` na 11, causalidade da PCL na 11.6. Resposta
+negativa, com o escopo explicitado.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -812,7 +812,8 @@ partição misturava origem com função, e a conclusão não decorre dos dados.
 | Papel | Propriedades | Única? | Estável sob `Move`? |
 |---|---|---|---|
 | Identidade do objeto no store | `PR_RECORD_KEY`, `EntryID` | **sim**, 2.281/2.281 | **NÃO** — medido, §11 |
-| Linhagem copiada junto | Message-ID, `PR_SEARCH_KEY`, `ConversationIndex` | não | **sim** — medido, §11 |
+| Linhagem copiada junto | Message-ID, `PR_SEARCH_KEY` | não | **sim** — medido, §11 |
+| ↳ mesma família, **não medida** no `Move` | `ConversationIndex` | não | não medido |
 | Versão / causalidade | `PR_CHANGE_KEY`, `PR_PREDECESSOR_CHANGE_LIST` | sim, **e irrelevante** | não, **por desenho** |
 | Localização | `StoreID`, pasta pai | — | não, por definição |
 | Relação entre objetos | `PR_CONFLICT_ITEMS` | — | — |
@@ -846,7 +847,8 @@ que eu não tinha considerado:
    duplicaria o valor, e a Fase 1 registra que a política do tenant pode
    impedir a gravação; nada disso a elimina como via.
 
-E se a `RecordKey` sobreviver ao `Move`, a condição nem se materializa.
+~~E se a `RecordKey` sobreviver ao `Move`, a condição nem se
+materializa.~~ **Ela não sobrevive** (§11.1). A condição se materializou.
 
 De qualquer forma, o teste de `Move` é **o experimento decisivo da Q2** —
 com `Copy` como **controle negativo**, porque uma chave que sobrevive ao
@@ -909,11 +911,12 @@ Assunto + remetente + tamanho ainda funde 5 pares conflitantes. A linha que
 não erra **não une nada**.
 
 Na 1ª versão eu chamei isso de "recall zero". Está errado: sem positivos
-rotulados, recall é **indefinido**, não zero. E o corpus agora tem
-positivos — os pares de conflito.
+rotulados, recall é **indefinido**, não zero.
 
-Também caiu a frase "nesta caixa não existe par que devesse ser
-correlacionado". Existe: os pares 2 e 3.
+Na 2ª versão eu emendei com "e o corpus agora tem positivos — os pares de
+conflito". **Também errado**, e a §10.3.1 desmente: os pares de conflito
+são objetos distintos com vínculo registrado, não continuidade. O corpus
+**continua sem positivo rotulado**, e recall continua indefinido.
 
 ### 10.7 Confiabilidade da medição
 
@@ -1035,46 +1038,102 @@ registrado, e era ela que valia.
 
 ### 11.2 A resposta da Q2
 
-> **Nenhuma propriedade preexistente é ao mesmo tempo única e estável.**
+> **Entre as propriedades medidas, neste provider e neste store, nenhuma
+> é ao mesmo tempo única e estável.**
 >
 > As **únicas** (`EntryID`, `PR_RECORD_KEY`) mudam no `Move`.
 > As **estáveis** (`PR_SEARCH_KEY`, Message-ID) são **duplicadas pelo
 > `Copy`** e compartilhadas por enviado e recebido (par 1 da §10.3).
 >
-> As duas famílias falham, e falham por motivos **opostos**. Não é uma
-> lacuna de medição: é a resposta.
+> Os dois papéis falham, e falham por motivos **opostos**.
+
+O escopo importa e não é detalhe. Para **rejeitar** uma garantia, n=1
+basta: se a `RecordKey` mudou uma vez num `Move` que o produto precisa
+suportar, ela já não serve como identidade garantida. O n=2 só reduz a
+chance de acidente.
+
+Mas "nenhuma propriedade preexistente" seria afirmação de universo aberto,
+e eu não medi todas as propriedades, nem todas as classes, nem
+combinações com estado. A §10.4 já tinha a formulação certa — "entre as
+propriedades **medidas**" — e a §11 tinha voltado a generalizar.
 
 O controle negativo foi o que deu o "opostos". Sem o `Copy`, "a SearchKey
 sobreviveu ao Move" pareceria uma resposta positiva.
+
+**NÃO validado:** `AppointmentItem` e `MeetingItem`, rascunhos, `Move`
+entre stores, PST/IMAP/caixa compartilhada, modo online, reconstrução de
+OST ou perfil, e as operações que **parecem** `Move` mas podem ser
+copy+delete — regras, arquivamento, retenção, envio de rascunho.
 
 ### 11.3 A consequência que vai além da Q2
 
 A ida e volta **não restaura** o `EntryID` nem a `RecordKey`: voltar para a
 pasta de origem produz **mais uma** chave nova. Então:
 
-> Um item que saiu e voltou é **indistinguível**, pelas chaves do store, de
-> um item que foi apagado e de outro que chegou no lugar.
+> **Não existe igualdade de chave única** que reconheça o item depois de um
+> `Move`. Reconhecer exige evidência causal ou comparação com estado.
 
-Isso atinge direto a §3.4 ("o que uma ausência prova") e a Q5. Uma
-verificação que confie em `EntryID` para dizer "sumiu" vai reportar
-exclusão toda vez que o usuário arrastar uma mensagem entre pastas.
+A 1ª redação dizia "indistinguível de apagado + chegou". É forte demais:
+um item movido **deixa rastro** — `SearchKey` e Message-ID preservados,
+conteúdo, instantes, e o par sumiu-aqui/apareceu-ali próximo no tempo.
+O que não existe é a **igualdade** que dispensaria juntar essas pistas.
 
-E confirma a §3.1 por medição, ampliando: **`EntryID` é localizador, e
-`PR_RECORD_KEY` também é.**
+Resta um limite que nenhuma propriedade resolve: **`Copy` seguido de
+exclusão do original é observacionalmente idêntico a `Move`.** O OOM não
+carrega a intenção do usuário. Para o cache isso pode ser aceitável —
+sobrando um único descendente, tratá-lo como continuidade dá o mesmo
+resultado prático.
+
+Isso atinge a §3.4 ("o que uma ausência prova") e a Q5. Uma verificação
+que confie em `EntryID` para dizer "sumiu" vai reportar exclusão toda vez
+que o usuário arrastar uma mensagem entre pastas.
+
+E confirma a §3.1 por medição, ampliando — com uma correção de termo:
+`EntryID` é **localizador** (abre o objeto); `PR_RECORD_KEY` **não abre
+nada**, e é identificador da **encarnação atual** do objeto no provider.
+Nenhum dos dois é identidade lógica durável, que era o ponto.
+
+**Para a Q5**, o que este resultado impõe: estado transitório
+`ausente, aguardando reconciliação`; janela de graça de várias gerações
+consistentes antes de qualquer conclusão; busca de candidatos no store
+inteiro, não só na pasta; **nunca unir se o original e o candidato
+coexistem**; vários candidatos ⇒ registros separados; e nenhuma ausência
+vira "excluído" por decisão do OOM.
 
 ### 11.4 O que sobra para o 2.1
 
 Nenhuma dessas saídas é gratuita, e a escolha é do 2.1:
 
-1. **Propriedade nomeada escrita pelo Iris.** Única e estável por
-   construção. Mas o `Copy` a duplica — o mesmo defeito da SearchKey —, a
-   Fase 1 registra que a política do tenant pode impedir a gravação
-   (débito do marcador `IrisDraft`), e escrever em item do usuário para
-   poder listá-lo é uma decisão de produto, não só técnica.
-2. **Correlação explícita e reversível**: `(SearchKey, Message-ID)` como
-   candidato, papel (submetido x entregue) para separar o par 1, e a
-   união **sempre desfazível**, com procedência registrada.
+1. **Propriedade nomeada escrita pelo Iris.** Eu escrevi "única e estável
+   por construção" e contradisse na linha seguinte: **o `Copy` a duplica**,
+   que é o defeito da SearchKey. Ela é identidade de **linhagem**, e só
+   vira identidade com protocolo: ao ver o mesmo `IrisID` em dois itens
+   coexistentes, **bifurcar** — um mantém, o outro ganha ID novo, com
+   procedência. Some-se a isso que a Fase 1 registra que a política do
+   tenant pode impedir a gravação (débito do marcador `IrisDraft`), que o
+   Iris **não intercepta** cópias feitas pelo Outlook, por regras ou por
+   outro cliente, e que escrever em item do usuário para poder listá-lo é
+   decisão de produto.
+2. **Correlação explícita e reversível.** Eu propus
+   `(SearchKey, Message-ID, papel)`, e tem furo: **a cópia preserva os
+   três**. O `Copy` da §11.1 prova para os dois primeiros, e
+   submetido-x-entregue também é copiado. "Papel" resolve o par 1 e só
+   ele. Só fica de pé como algoritmo conservador: as chaves geram
+   **candidatos, nunca identidade**; exigir **exatamente um**
+   desaparecimento e **um** aparecimento compatível; confirmar
+   **não coexistência** numa varredura consistente; união **provisória**,
+   com procedência e confiança.
 3. **Não correlacionar.** Já estava previsto como resultado aceitável.
+4. **Identidade local + grafo de relações.** Cada encarnação ganha chave
+   do Iris, e `Move`, `Copy`, conflito e duplicata suspeita viram
+   **arestas tipadas** — nunca fusão destrutiva. É o que o
+   `PR_CONFLICT_ITEMS` da §10.3.1 já faz nativamente para um caso.
+5. ~~**Causalidade via `ChangeKey`/PCL.**~~ Medida na §11.6: **não existe.**
+
+E "reversível" precisa ser **estrutural**. Se lido, triado e ações forem
+fisicamente fundidos numa linha só, desfazer depois não recupera a
+separação: o banco tem de guardar **duas encarnações** e uma aresta de
+canonicalização **removível**.
 
 Em qualquer uma, o invariante da §3.1 — **na dúvida, não unir** — sai
 reforçado, porque agora se sabe que não existe chave que dispense o
@@ -1082,9 +1141,23 @@ julgamento.
 
 ### 11.5 Limpeza, e o que ela custou
 
-O `Delete()` no item copiado **não o tirou da pasta**: as duas cópias
-ficaram onde estavam. Percebi porque a conta não fechou — Excluídos e Lixo
-com **+1 cada** — e não porque o script avisou.
+A conta não fechou: esperado `Excluídos +2, Lixo inalterado`; observado
+`Excluídos +1, Lixo +1`. Percebi pela contagem, não porque o script
+avisou.
+
+Eu escrevi na 1ª redação que "o `Delete()` não tirou as cópias da pasta".
+**Não tenho evidência disso.** O balanço também é compatível com um
+`Delete()` ter funcionado e a outra cópia ter ficado na temporária, sendo
+depois roteada pelo `q2-limpar.ps1` — que decidia o destino **pelo prefixo
+do assunto**, e não pelo conjunto exato de chaves capturado no
+experimento. **A causa continua não determinada**, e afirmar mecanismo sem
+evidência foi o erro; o fato verificado é só o desbalanço.
+
+O defeito de fundo é outro e esse está claro: **o script não conferiu a
+pós-condição de nenhuma mutação.** Depois de um `Delete()` não
+retentável, ele deveria reler e confirmar que a cópia saiu de onde estava
+e chegou onde deveria, **antes** de mover o original ou apagar a pasta. O
+`q2-causal.ps1` da §11.6 já faz isso.
 
 Reconciliei pela `SearchKey` dos dois alvos (`tools/q2-achar-copias.ps1`),
 que localiza original e cópia de uma vez **porque a cópia herda a
@@ -1095,13 +1168,52 @@ original, e eu tentei por aí primeiro.
 Estado final:
 
 - **Lixo Eletrônico: 172 itens**, o número de antes.
-- **`Iris Q2 (temp)`: apagada.**
+- **`Iris Q2 (temp)`: removida da raiz** — `Delete()` de pasta é soft, e
+  ela está dentro de Itens Excluídos, não eliminada.
 - Resíduo: **2 cópias em Itens Excluídos**, artefatos meus. Não as apaguei
   de lá: `Delete()` dentro de Itens Excluídos pode ser **permanente**, e
   exclusão permanente sem consentimento explícito está proibida neste
   projeto.
 
-**Contagem em cache não serve para decidir apagar pasta.** O `q2-move.ps1`
-terminou dizendo "itens restantes: 2" logo depois de reportar os dois itens
-de volta na origem, e a contagem estava velha — na releitura havia 1. Foi
-sorte que o script tenha errado para o lado seguro e **mantido** a pasta.
+**Coleção COM obsoleta não serve para decidir apagar pasta.** O
+`q2-move.ps1` terminou dizendo "itens restantes: 2" logo depois de
+reportar os dois itens de volta na origem; na releitura havia **1**. A
+`Items` que ele consultou vinha da referência de pasta segurada desde o
+início. Foi sorte o script ter errado para o lado seguro e **mantido** a
+pasta.
+
+### 11.6 A PCL carrega ancestralidade através do `Move`? Não.
+
+`tools/q2-causal.ps1`. Na §11.1 eu comparei
+`PR_PREDECESSOR_CHANGE_LIST` por **igualdade**, vi que mudava e escrevi
+"muda". A pergunta estava errada: a PCL é uma **lista de antecessoras**, e
+o que importa é **contência** — a PCL de depois contém a `ChangeKey` de
+antes? Se contivesse, haveria continuidade causal sem nenhuma chave igual.
+
+| | `Move` | `Copy` | `Move` de volta |
+|---|---|---|---|
+| PCL depois contém a `ChangeKey` de antes | **não** | não | **não** |
+| PCL cresceu | não | não | não |
+
+A PCL é **substituída, não acumulada**: 21 bytes nas quatro leituras,
+contendo um único registro, que é a `ChangeKey` **atual** do próprio item.
+
+```
+ChangeKey  ff76b71bb72984498978e8b7ac86c493 0000059b
+PCL        14 ff76b71bb72984498978e8b7ac86c493 0000059b
+                                    apos o Move:  00002029
+```
+
+Só o contador final muda; o GUID é estável. Como o corpus tem 2.281
+`ChangeKey` distintas, o GUID é da caixa e o contador é que distingue —
+mais uma razão para ela não ser identidade.
+
+**Sai a saída 5 da §11.4.** Não há aresta causal a explorar aqui.
+
+**Limitação, e ela é séria:** meu seletor pegou o **primeiro** item com o
+prefixo `[IRIS-SPIKE-C]`, e caiu no artefato
+`[IRIS-SPIKE-C] rascunho ...`, **não** no `envio` entregue pelo servidor.
+Então este resultado é **n=1 sobre um item de procedência incerta**. O
+comportamento da PCL num item entregue pelo transporte **não foi medido**.
+O achado de que a PCL é substituída e não acumulada é forte; a
+generalização para correio recebido não está feita.
