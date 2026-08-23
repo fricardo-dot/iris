@@ -164,10 +164,45 @@ Class MainWindow
     Private Sub MainWindow_Closing(sender As Object, e As System.ComponentModel.CancelEventArgs) _
         Handles Me.Closing
 
+        ' O encerramento da SESSAO do Windows — logoff, desligar, reiniciar
+        ' — nao passa por aqui de forma util, e e deliberado nao tentar
+        ' perguntar nesse caso: o sistema esta fechando a sessao, um overlay
+        ' assincrono nao tem tempo garantido de ser respondido, e cancelar o
+        ' desligamento do usuario por causa de um rascunho seria arrogante.
+        ' A protecao ali e o autosave de 1,5 s; a exposicao e o que foi
+        ' digitado nesse intervalo. Registrado na FASE1, secao 11.
+
         Dim vm = TryCast(DataContext, Iris.App.ViewModels.MainViewModel)
         If vm Is Nothing Then Return
-        If Not vm.CanCloseWindow() Then e.Cancel = True
+        If vm.CanCloseWindow() Then Return
+
+        e.Cancel = True
+
+        ' O usuário pediu para fechar, e continua querendo isso. Guardamos a
+        ' intenção e escutamos o compositor: quando ele terminar de salvar
+        ' ou descartar, a janela fecha sozinha.
+        '
+        ' Sem isto, "Salvar e fechar" fechava a MENSAGEM e deixava a janela
+        ' de pé — o botão prometia mais do que fazia, e o usuário tinha de
+        ' clicar no X outra vez sem entender por quê.
+        If _aguardandoCompositor Then Return
+        _aguardandoCompositor = True
+        AddHandler vm.Composer.PropertyChanged, AddressOf CompositorMudou
     End Sub
+
+    Private _aguardandoCompositor As Boolean
+
+    Private Sub CompositorMudou(sender As Object, e As System.ComponentModel.PropertyChangedEventArgs)
+        If e.PropertyName <> NameOf(Iris.App.ViewModels.ComposerViewModel.IsOpen) Then Return
+
+        Dim composer = TryCast(sender, Iris.App.ViewModels.ComposerViewModel)
+        If composer Is Nothing OrElse composer.IsOpen Then Return
+
+        RemoveHandler composer.PropertyChanged, AddressOf CompositorMudou
+        _aguardandoCompositor = False
+        Close()
+    End Sub
+
 
     Private Sub AlternarMaximizado()
         If WindowState = WindowState.Maximized Then

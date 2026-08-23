@@ -180,15 +180,25 @@ Friend NotInheritable Class FakeBroker
         End If
 
         _anexos.Add(New AttachmentInfo With {
-            .Key = New AttachmentKey(ChaveAtual().Item, _anexos.Count + 1,
-                                     System.IO.Path.GetFileName(filePath), 10),
             .FileName = System.IO.Path.GetFileName(filePath),
             .SizeBytes = 10
         })
 
         ' Anexar SALVA. A chave gira aqui também — era exatamente isto que o
         ' duplo antigo não fazia, e por isso o defeito passava batido.
-        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(Salvar()))
+        Dim info = Salvar()
+
+        ' As chaves dos anexos são reconstruídas com o dono NOVO, como o
+        ' Descrever de verdade faz. Deixá-las apontando para o dono anterior
+        ' modelaria mal a promessa que o comentário da classe faz.
+        For i = 0 To _anexos.Count - 1
+            _anexos(i).Key = New AttachmentKey(ChaveAtual().Item, i + 1,
+                                               _anexos(i).FileName, _anexos(i).SizeBytes)
+        Next
+        info.Attachments.Clear()
+        info.Attachments.AddRange(_anexos)
+
+        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(info))
     End Function
 
     Public Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,

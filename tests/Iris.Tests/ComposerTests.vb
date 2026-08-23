@@ -604,6 +604,132 @@ Public Class ComposerTests
         Assert.IsTrue(vm.IsDirty)
     End Sub
 
+
+    ' ================================================================
+    ' Ciclo de vida e estados de envio
+    ' ================================================================
+
+    ''' <summary>
+    ''' Depois de um envio AMBIGUO o rascunho e a evidencia: o usuario vai
+    ''' compara-lo com os Itens Enviados para decidir se a mensagem saiu.
+    ''' Gravar por cima destroi exatamente o que ele precisa.
+    '''
+    ''' A edicao continua sendo REGISTRADA — o texto esta na tela e o
+    ''' compositor sabe que ha coisa por salvar. So nao grava sozinho.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Depois_de_envio_ambiguo_o_rascunho_nao_e_regravado()
+        Dim broker As New FakeBroker With {.ResultadoDoEnvio = ErrorKind.Ambiguous}
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+        Aguardar(vm.ConfirmSendCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(ComposerState.SendUnknown, vm.State)
+
+        Dim gravacoesAntes = ContarChamadas(broker, "update")
+        vm.UserText = "mexido depois do envio ambiguo"
+
+        ' Bem mais que o debounce: se fosse armar, ja teria gravado.
+        BombearPor(DebounceDeTeste * 6)
+
+        Assert.AreEqual(gravacoesAntes, ContarChamadas(broker, "update"),
+            "Gravar por cima do rascunho ambiguo apaga a evidencia da reconciliacao.")
+        Assert.IsTrue(vm.IsDirty, "A edicao tem de ser registrada mesmo sem gravar.")
+        Assert.AreEqual("mexido depois do envio ambiguo", vm.UserText)
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo do teste acima: no estado de edicao, a MESMA
+    ''' sequencia grava. Sem isto, um autosave quebrado passaria.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Editando_a_mesma_edicao_grava()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        Dim gravacoesAntes = ContarChamadas(broker, "update")
+        vm.UserText = "mexido durante a edicao"
+        BombearPor(DebounceDeTeste * 6)
+
+        Assert.IsTrue(ContarChamadas(broker, "update") > gravacoesAntes)
+        Assert.IsFalse(vm.IsDirty)
+    End Sub
+
+    ''' <summary>
+    ''' Fechar a janela durante o envio nao pode desmontar o compositor: a
+    ''' continuacao do Send voltaria para um objeto sem chave e sem estado,
+    ''' e um resultado AMBIGUO nao teria para quem ser contado. E o unico
+    ''' momento do Iris em que a resposta certa e "espere".
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Fechar_a_janela_durante_o_envio_e_recusado()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+
+        broker.TravaDoSend = New TaskCompletionSource(Of Boolean)()
+        Dim enviando = vm.ConfirmSendCommand.ExecuteAsync(Nothing)
+        AguardarChamadas(broker, "send", 1)
+        Assert.AreEqual(ComposerState.Sending, vm.State)
+
+        Assert.IsFalse(vm.RequestCloseFromWindow(), "Fechar durante o envio desmontaria o compositor.")
+        Assert.IsTrue(vm.IsOpen)
+
+        broker.TravaDoSend.SetResult(True)
+        broker.TravaDoSend = Nothing
+        Aguardar(enviando)
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: parado e sem sujeira, a janela fecha.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Fechar_a_janela_com_compositor_limpo_e_permitido()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        Assert.IsTrue(vm.RequestCloseFromWindow())
+        Assert.IsFalse(vm.IsOpen)
+    End Sub
+
+    ''' <summary>
+    ''' O compositor foi encerrado enquanto uma operacao estava em voo. A
+    ''' continuacao NAO pode escrever o resultado: instalaria previa, chave
+    ''' e estado num rascunho que ja nao existe — o compositor voltaria
+    ''' sozinho para a tela de confirmacao depois de fechado.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Resultado_que_volta_depois_do_fechamento_e_descartado()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+
+        broker.TravaDoPrepare = New TaskCompletionSource(Of Boolean)()
+        Dim conferindo = vm.RequestSendCommand.ExecuteAsync(Nothing)
+        AguardarChamadas(broker, "prepare", 1)
+
+        ' Fecha por baixo, com a previa ainda em voo.
+        vm.CloseCommand.Execute(Nothing)
+        Assert.AreEqual(ComposerState.Closed, vm.State)
+
+        broker.TravaDoPrepare.SetResult(True)
+        broker.TravaDoPrepare = Nothing
+        Aguardar(conferindo)
+
+        Assert.AreEqual(ComposerState.Closed, vm.State,
+            "O compositor nao pode reabrir sozinho depois de fechado.")
+        Assert.IsNull(vm.Preview)
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================
@@ -654,6 +780,18 @@ Public Class ComposerTests
                 Assert.Fail($"Esperava {quantas} chamada(s) de '{nome}' em {limiteMs} ms; " &
                             $"vieram {ContarChamadas(broker, nome)}.")
             End If
+            Bombear()
+        End While
+    End Sub
+
+    ''' <summary>
+    ''' Bombeia por um tempo, sem esperar condicao nenhuma. Serve para
+    ''' provar que algo NAO acontece: dar tempo de sobra e ver que nada
+    ''' veio.
+    ''' </summary>
+    Private Shared Sub BombearPor(ms As Integer)
+        Dim relogio = Stopwatch.StartNew()
+        While relogio.ElapsedMilliseconds < ms
             Bombear()
         End While
     End Sub

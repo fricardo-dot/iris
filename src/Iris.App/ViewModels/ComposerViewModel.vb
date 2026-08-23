@@ -102,6 +102,25 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private _envioComecou As Integer
 
+        ''' <summary>
+        ''' Sobe a cada Encerrar. Toda continuação que volta de um Await
+        ''' compara com o que fotografou antes: se mudou, o compositor que
+        ''' pediu aquela operação não existe mais, e escrever o resultado
+        ''' significaria ressuscitar estado de um rascunho já fechado.
+        ''' </summary>
+        Private _geracao As Long
+
+        ''' <summary>
+        ''' Uma descarga por vez.
+        '''
+        ''' _saveTask NÃO servia de trava: dois chamadores — anexar e
+        ''' conferir o envio são comandos independentes — passavam os dois
+        ''' pelo teste, atribuíam os dois a _saveTask e disparavam duas
+        ''' gravações com a MESMA chave. A primeira trocava o EntryID e a
+        ''' segunda voltava NotFound.
+        ''' </summary>
+        Private ReadOnly _descarga As New SemaphoreSlim(1, 1)
+
         Private _carregando As Boolean
         Private _disposed As Boolean
 
@@ -125,8 +144,16 @@ Namespace Global.Iris.App.ViewModels
 
             AttachCommand = New AsyncRelayCommand(AddressOf AnexarAsync, Function() PodeEditar)
             RequestSendCommand = New AsyncRelayCommand(AddressOf PedirEnvioAsync, Function() PodeEditar)
+            ' AllowConcurrentExecutions de propósito. O padrão do toolkit
+            ' já barraria a segunda execução, e era exatamente isso o
+            ' problema: a proteção contra envio duplo ficava sendo um efeito
+            ' colateral de opção de biblioteca, e o teste que eu escrevi
+            ' passava verde mesmo sem a trava existir. Deixando o comando
+            ' permitir concorrência, quem segura é _envioComecou — que é o
+            ' que o código diz que segura.
             ConfirmSendCommand = New AsyncRelayCommand(AddressOf ConfirmarEnvioAsync,
-                                                       Function() State = ComposerState.ConfirmingSend)
+                                                       Function() State = ComposerState.ConfirmingSend,
+                                                       AsyncRelayCommandOptions.AllowConcurrentExecutions)
             CancelSendCommand = New RelayCommand(Sub() State = ComposerState.Editing,
                                                  Function() State = ComposerState.ConfirmingSend)
             CloseCommand = New RelayCommand(AddressOf Fechar)
@@ -154,6 +181,11 @@ Namespace Global.Iris.App.ViewModels
             End Get
             Private Set(value As ComposerState)
                 If SetProperty(_state, value) Then
+                    ' Sair da edição desarma o timer na hora. Um tick que já
+                    ' estava a caminho gravaria durante o envio ou por cima
+                    ' de um rascunho ambíguo.
+                    If value <> ComposerState.Editing Then _autosave.Stop()
+
                     OnPropertyChanged(NameOf(IsOpen))
                     OnPropertyChanged(NameOf(PodeEditar))
                     OnPropertyChanged(NameOf(IsConfirmingSend))
@@ -330,6 +362,7 @@ Namespace Global.Iris.App.ViewModels
                 If SetProperty(_preview, value) Then
                     OnPropertyChanged(NameOf(PreviewRecipients))
                     OnPropertyChanged(NameOf(PreviewAccount))
+                    OnPropertyChanged(NameOf(PreviewAccountUnknown))
                     OnPropertyChanged(NameOf(PreviewAttachments))
                     OnPropertyChanged(NameOf(HasPreviewAttachments))
                 End If
@@ -374,6 +407,24 @@ Namespace Global.Iris.App.ViewModels
                 End If
 
                 Return _preview.SendingAccount
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' A conta não pôde ser determinada — caixa compartilhada, envio
+        ''' delegado, store sem conta correspondente.
+        '''
+        ''' Não bloqueia: bloquear tornaria o Iris inútil em configurações
+        ''' que ele não consegue inspecionar, e o Outlook vai mandar pela
+        ''' conta certa de qualquer jeito. Mas também não passa como texto
+        ''' comum: a tela existe para confirmar POR QUAL CONTA, e uma
+        ''' propriedade crítica que ficou por confirmar tem de estar
+        ''' visualmente marcada, não diluída no meio dos outros campos.
+        ''' </summary>
+        Public ReadOnly Property PreviewAccountUnknown As Boolean
+            Get
+                Return _preview IsNot Nothing AndAlso
+                       String.IsNullOrWhiteSpace(_preview.SendingAccount)
             End Get
         End Property
 
@@ -525,13 +576,23 @@ Namespace Global.Iris.App.ViewModels
             If _carregando Then Return
             If Not IsOpen Then Return
 
-            ' NÃO filtra por PodeEditar. Desabilitar o campo é coisa da
-            ' tela, e entre marcar o estado e o WPF desabilitar de fato
-            ' ainda cabe uma tecla que já estava na fila de entrada.
-            ' Ignorá-la aqui mudaria o texto sem marcar nada como sujo — e
-            ' aí o caractere existiria na tela e em lugar nenhum mais.
+            ' REGISTRAR a edição e ARMAR o autosave são coisas diferentes,
+            ' e confundi-las custou caro nos dois sentidos.
+            '
+            ' Registrar vale em qualquer estado: desabilitar o campo é coisa
+            ' da tela, e entre marcar o estado e o WPF desabilitar de fato
+            ' ainda cabe uma tecla que já estava na fila de entrada. Ignorá-la
+            ' mudaria o texto sem marcar nada como sujo, e o caractere
+            ' existiria na tela e em lugar nenhum mais.
             Interlocked.Increment(_edicoes)
             IsDirty = True
+
+            ' Armar, não. Gravar durante o envio enfileiraria um Update atrás
+            ' de um Send, contra um item que está saindo. E gravar depois de
+            ' um envio AMBÍGUO é pior: o rascunho é a evidência que o usuário
+            ' vai comparar com os Itens Enviados, e sobrescrevê-lo destrói
+            ' justamente o que ele precisa para decidir.
+            If Not PodeEditar Then Return
 
             ' Reiniciar: o debounce conta a partir da ÚLTIMA tecla, não da
             ' primeira. Sem o Stop, o timer do WPF continua o ciclo antigo e
@@ -561,8 +622,20 @@ Namespace Global.Iris.App.ViewModels
             Return _saveTask
         End Function
 
-        Private Async Function GravarAteEstabilizarAsync() As Task
+        ''' <summary>
+        ''' <paramref name="orcamento"/> limita as voltas do laço interno.
+        ''' Sem ele, "teto de três rodadas" era só o laço de FORA: uma tecla
+        ''' durante a gravação marca _savePendente e dá mais uma volta aqui
+        ''' dentro, sem passar pelo teto nenhuma vez.
+        ''' </summary>
+        Private Async Function GravarAteEstabilizarAsync(
+            Optional orcamento As Integer = MaxGravacoesPorDescarga) As Task
+
+            Dim voltas = 0
             Do
+                voltas += 1
+                If voltas > orcamento Then Return
+
                 _savePendente = False
 
                 ' Fotografa o contador ANTES da chamada. O que for digitado
@@ -602,6 +675,9 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private Const MaxRodadasDeDescarga As Integer = 3
 
+        ''' <summary>Voltas do laço interno, por chamada.</summary>
+        Private Const MaxGravacoesPorDescarga As Integer = 3
+
         ''' <summary>
         ''' Garante que o store tem exatamente o que está na tela.
         '''
@@ -616,28 +692,49 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         ''' <returns>True se o store bate com a tela.</returns>
         Private Async Function DescarregarAsync() As Task(Of Boolean)
-            _autosave.Stop()
+            Dim marca = Interlocked.Read(_geracao)
 
-            If _saveTask IsNot Nothing AndAlso Not _saveTask.IsCompleted Then
-                Await _saveTask
-            End If
+            ' Serializa de verdade. Ver o comentário de _descarga: o campo
+            ' _saveTask sozinho deixava dois chamadores entrarem juntos.
+            Await _descarga.WaitAsync()
+            Try
+                If Not GeracaoValida(marca) Then Return False
 
-            Dim rodadas = 0
-            Do While IsDirty
-                rodadas += 1
-                If rodadas > MaxRodadasDeDescarga Then Return False
+                _autosave.Stop()
 
-                Dim antes = Interlocked.Read(_edicoes)
-                _saveTask = GravarAteEstabilizarAsync()
-                Await _saveTask
+                If _saveTask IsNot Nothing AndAlso Not _saveTask.IsCompleted Then
+                    Await _saveTask
+                End If
 
-                ' Continuar sujo SEM edição nova quer dizer que a gravação
-                ' falhou. Insistir só repetiria a falha; o Status já explica
-                ' o que houve, e o autosave tenta de novo na próxima tecla.
-                If IsDirty AndAlso Interlocked.Read(_edicoes) = antes Then Return False
-            Loop
+                Dim rodadas = 0
+                Do While IsDirty
+                    rodadas += 1
+                    If rodadas > MaxRodadasDeDescarga Then Return False
 
-            Return True
+                    Dim antes = Interlocked.Read(_edicoes)
+                    _saveTask = GravarAteEstabilizarAsync(MaxGravacoesPorDescarga)
+                    Await _saveTask
+
+                    If Not GeracaoValida(marca) Then Return False
+
+                    ' Continuar sujo SEM edição nova quer dizer que a gravação
+                    ' falhou. Insistir só repetiria a falha; o Status já
+                    ' explica o que houve, e o autosave tenta de novo na
+                    ' próxima tecla.
+                    If IsDirty AndAlso Interlocked.Read(_edicoes) = antes Then Return False
+                Loop
+
+                Return True
+            Finally
+                _descarga.Release()
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' A continuação que voltou ainda pertence ao rascunho que a pediu?
+        ''' </summary>
+        Private Function GeracaoValida(marca As Long) As Boolean
+            Return Interlocked.Read(_geracao) = marca
         End Function
 
         ' ================================================================
@@ -647,6 +744,8 @@ Namespace Global.Iris.App.ViewModels
         Private Async Function AnexarAsync() As Task
             Dim escolhido = _pickFile.AskWhichFileToAttach()
             If String.IsNullOrEmpty(escolhido) Then Return
+
+            Dim marca = Interlocked.Read(_geracao)
 
             ' Descarrega ANTES de anexar. Anexar usa a chave, e uma gravação
             ' em voo pode trocá-la no meio do caminho: a anexação sairia com
@@ -658,6 +757,12 @@ Namespace Global.Iris.App.ViewModels
             End If
 
             Dim resultado = Await _broker.AddDraftAttachmentAsync(_key, escolhido, CancellationToken.None)
+
+            ' O compositor pode ter sido encerrado enquanto o anexo subia.
+            ' Aplicar o resultado agora instalaria chave e anexos num
+            ' rascunho que já não está aberto.
+            If Not GeracaoValida(marca) Then Return
+
             If resultado.Succeeded Then
                 ' Anexar SALVA, e todo Save pode mudar o EntryID. Aplicar
                 ' instala a chave nova e sincroniza a lista de anexos.
@@ -679,6 +784,7 @@ Namespace Global.Iris.App.ViewModels
         Private Async Function PedirEnvioAsync() As Task
             If State = ComposerState.SendUnknown Then Return
 
+            Dim marca = Interlocked.Read(_geracao)
             Status = "Conferindo destinatários…"
 
             ' A confirmação tem de descrever o que vai sair AGORA. Conferir
@@ -692,9 +798,14 @@ Namespace Global.Iris.App.ViewModels
             ' Fotografa o que ACABOU de ser gravado. A descarga só devolve
             ' True com IsDirty falso, então neste instante o número
             ' corresponde ao que está no store.
-            _edicoesNaPrevia = Interlocked.Read(_edicoes)
+            ' Interlocked na escrita também, e não "=" simples: misturar
+            ' escrita comum com Interlocked.Read anuncia uma garantia que o
+            ' modelo de memória não dá.
+            Interlocked.Exchange(_edicoesNaPrevia, Interlocked.Read(_edicoes))
 
             Dim resultado = Await _broker.PrepareSendAsync(_key, CancellationToken.None)
+            If Not GeracaoValida(marca) Then Return
+
             If Not resultado.Succeeded Then
                 Status = "Não foi possível conferir o envio. " & Traduzir(resultado.Kind)
                 Return
@@ -706,7 +817,7 @@ Namespace Global.Iris.App.ViewModels
             ' outra versão. Mostrá-la faria o usuário aprovar um texto e o
             ' Outlook mandar outro — que é exatamente o erro que esta tela
             ' existe para impedir.
-            If Interlocked.Read(_edicoes) <> _edicoesNaPrevia Then
+            If Interlocked.Read(_edicoes) <> Interlocked.Read(_edicoesNaPrevia) Then
                 Status = "A mensagem mudou enquanto o envio era conferido. Confira de novo."
                 Return
             End If
@@ -750,8 +861,8 @@ Namespace Global.Iris.App.ViewModels
             ' Última conferência antes do irreversível: se a mensagem mudou
             ' depois de o usuário aprovar a lista, o que sairia não é o que
             ' ele aprovou.
-            If Interlocked.Read(_edicoes) <> _edicoesNaPrevia Then
-                State = ComposerState.Editing
+            If Interlocked.Read(_edicoes) <> Interlocked.Read(_edicoesNaPrevia) Then
+                VoltarAEditar()
                 Status = "A mensagem mudou depois da confirmação. Confira de novo."
                 Return
             End If
@@ -783,7 +894,7 @@ Namespace Global.Iris.App.ViewModels
             ' é seguro e a trava volta. Ambiguous não passa por aqui — ele
             ' já saiu acima, e de lá não se volta.
             Volatile.Write(_envioComecou, 0)
-            State = ComposerState.Editing
+            VoltarAEditar()
             Status = "Não foi possível enviar. " & Traduzir(resultado.Kind) &
                      " A mensagem continua aqui como rascunho."
         End Function
@@ -808,11 +919,23 @@ Namespace Global.Iris.App.ViewModels
         Public Function RequestCloseFromWindow() As Boolean
             If Not IsOpen Then Return True
 
+            ' Durante o envio, NÃO. Fechar aqui chamaria Encerrar, que zera a
+            ' chave e o estado enquanto o Send ainda está em voo — e a
+            ' continuação voltaria para um compositor desmontado, sem
+            ' ninguém para receber um resultado ambíguo. Este é o único
+            ' momento do Iris em que a resposta certa é "espere".
+            If State = ComposerState.Sending Then
+                Status = "Enviando. Aguarde o envio terminar."
+                Return False
+            End If
+
             Fechar()
             Return Not IsOpen
         End Function
 
         Private Sub Fechar()
+            If State = ComposerState.Sending Then Return
+
             If State = ComposerState.SendUnknown Then
                 ' Já é terminal: o rascunho fica no Outlook, intocado, para
                 ' o usuário reconciliar.
@@ -884,7 +1007,12 @@ Namespace Global.Iris.App.ViewModels
             _key = Nothing
             _saveTask = Nothing
             _savePendente = False
-            _edicoesNaPrevia = 0
+
+            ' Sobe a geração ANTES de zerar o resto: qualquer continuação em
+            ' voo que volte daqui em diante descobre que o rascunho dela
+            ' acabou e larga o resultado.
+            Interlocked.Increment(_geracao)
+            Interlocked.Exchange(_edicoesNaPrevia, 0)
             Volatile.Write(_envioComecou, 0)
             IsDirty = False
             State = ComposerState.Closed
@@ -899,6 +1027,19 @@ Namespace Global.Iris.App.ViewModels
         Private Sub AvisarDescargaIncompleta()
             If HasStatus AndAlso Not Status.EndsWith("…", StringComparison.Ordinal) Then Return
             Status = "Ainda há alterações por salvar. Aguarde um instante e tente de novo."
+        End Sub
+
+        ''' <summary>
+        ''' Volta para a edição e rearma o autosave se ficou coisa por
+        ''' salvar. Sem rearmar, o texto digitado durante um envio que
+        ''' falhou ficaria esperando a próxima tecla para ser gravado.
+        ''' </summary>
+        Private Sub VoltarAEditar()
+            State = ComposerState.Editing
+            If IsDirty Then
+                _autosave.Stop()
+                _autosave.Start()
+            End If
         End Sub
 
         Private Sub NotificarComandos()
@@ -925,6 +1066,7 @@ Namespace Global.Iris.App.ViewModels
             _disposed = True
             _autosave.Stop()
             RemoveHandler _autosave.Tick, AddressOf OnAutosaveTick
+            _descarga.Dispose()
         End Sub
 
     End Class

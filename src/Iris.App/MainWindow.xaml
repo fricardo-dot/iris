@@ -827,7 +827,37 @@
                             <TextBlock Style="{StaticResource Input.Label}" Text="ENVIANDO PELA CONTA"
                                        Margin="0,18,0,4" />
                             <TextBlock Text="{Binding Composer.PreviewAccount}"
-                                       Style="{StaticResource Text.Body}" TextWrapping="Wrap" />
+                                       TextWrapping="Wrap">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Body}">
+                                        <Style.Triggers>
+                                            <!-- Conta não determinada não pode
+                                                 se parecer com conta
+                                                 confirmada: esta tela existe
+                                                 para confirmar POR QUAL CONTA,
+                                                 e uma propriedade crítica que
+                                                 ficou sem resposta tem de
+                                                 aparecer como tal. -->
+                                            <DataTrigger Binding="{Binding Composer.PreviewAccountUnknown}"
+                                                         Value="True">
+                                                <Setter Property="Foreground"
+                                                        Value="{DynamicResource Brush.Warning}" />
+                                                <Setter Property="FontStyle" Value="Italic" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <Border Background="{DynamicResource Brush.Surface.2}"
+                                    BorderBrush="{DynamicResource Brush.Warning}"
+                                    BorderThickness="1,0,0,0"
+                                    Padding="10,7" Margin="0,8,0,0"
+                                    Visibility="{Binding Composer.PreviewAccountUnknown,
+                                                 Converter={StaticResource BoolToVis}}">
+                                <TextBlock Style="{StaticResource Text.Secondary}" TextWrapping="Wrap"
+                                           Text="O Outlook vai escolher a conta sozinho. Se você usa caixa compartilhada ou envio delegado, confira o remetente pelo Outlook antes de enviar por aqui." />
+                            </Border>
 
                             <TextBlock Style="{StaticResource Input.Label}" Text="ASSUNTO"
                                        Margin="0,14,0,4" />

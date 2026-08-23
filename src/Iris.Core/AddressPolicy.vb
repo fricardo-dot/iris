@@ -41,6 +41,12 @@ Namespace Global.Iris.Core
             ' Endereço Exchange legado, no formato X.500.
             If limpo.StartsWith("/", StringComparison.Ordinal) Then Return False
 
+            ' Espaço no meio não é endereço. Sem isto, "Fulano de Tal
+            ' @empresa.com" passava — tinha arroba e domínio com ponto.
+            For Each c In limpo
+                If Char.IsWhiteSpace(c) Then Return False
+            Next
+
             ' Precisa de arroba, com algo antes e algo depois.
             Dim arroba = limpo.IndexOf("@"c)
             If arroba <= 0 OrElse arroba = limpo.Length - 1 Then Return False
@@ -49,7 +55,17 @@ Namespace Global.Iris.Core
             If limpo.IndexOf("@"c, arroba + 1) >= 0 Then Return False
 
             ' Domínio com ponto, com algo antes e algo depois dele.
+            '
+            ' Isto REPROVA domínio de rótulo único, como "fulano@intranet",
+            ' que existe em rede interna e é endereço válido. É deliberado:
+            ' a regra não decide se o e-mail funciona, decide se o usuário
+            ' consegue CONFERIR para onde vai. Errar para o lado de bloquear
+            ' custa um envio a mais pelo Outlook; errar para o outro custa
+            ' uma mensagem na caixa de quem não devia. Registrado como
+            ' dívida na FASE1, seção 11.
             Dim dominio = limpo.Substring(arroba + 1)
+            If dominio.IndexOf("..", StringComparison.Ordinal) >= 0 Then Return False
+
             Dim ponto = dominio.IndexOf("."c)
             Return ponto > 0 AndAlso ponto < dominio.Length - 1
         End Function
