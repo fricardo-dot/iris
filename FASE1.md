@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 4 — marcos 1.1 a 1.5 concluídos; dívida registrada na seção 11.
+**Versão:** 5 — marcos 1.1 a 1.5 concluídos e revisados; dívida na seção 11.
 
 ---
 
@@ -400,10 +400,12 @@ extrapolação nem por semelhança com outra medição.
 
 - **WebView2 para corpo HTML: NÃO feito.** O corpo é texto puro. A seção 9
   descreve a configuração endurecida, e ela continua valendo.
-- **Endereços Exchange legados.** `SenderEmailAddress` e `Recipient.Address`
-  podem devolver `/O=...` em vez de SMTP. Aceitável para exibir; **não**
-  aceitável para a confirmação de envio do 1.5, que precisa resolver
-  `AddressEntry`/`ExchangeUser.PrimarySmtpAddress`.
+- **Endereços Exchange legados: RESOLVIDO no 1.5.** `AddressPolicy`, no
+  Core, decide o que é endereço conferível; `/O=...` não é. A leitura tenta
+  `ExchangeUser`, `ExchangeDistributionList` e `PR_SMTP_ADDRESS`, e o que
+  sobrar sem SMTP **bloqueia o envio** — mesmo que o Outlook diga que
+  resolveu. Continua aceitável para EXIBIR na leitura, que é outro
+  contexto: ali ninguém vai mandar nada.
 - **Corpos grandes: não medidos na UI.** Os 51 ms medidos são de uma
   mensagem comum. Corpos de 100 KB e de 512 KB precisam de medição própria
   antes de o teto ser considerado seguro.
@@ -424,17 +426,45 @@ extrapolação nem por semelhança com outra medição.
   rascunhos que ele mesmo criou na sessão. Abrir um rascunho antigo da
   pasta Rascunhos cai no palpite conservador do leitor — corpo inteiro
   vira citação — e ainda não foi exercitado.
+- **Conta remetente pode não ser determinável.** Quando não há
+  `SendUsingAccount` e nenhuma conta entrega no store do rascunho — caixa
+  compartilhada, envio delegado, `SentOnBehalfOf` —, a confirmação diz
+  "não foi possível identificar a conta" em vez de adivinhar. É honesto e
+  **não** bloqueia o envio: bloquear tornaria o Iris inutilizável em
+  configurações que ele não consegue inspecionar. Quem trabalha em caixa
+  compartilhada precisa saber disso.
 - **Envio ambíguo: caminho NÃO exercitado.** O estado terminal está
   testado contra o broker de mentira. Contra o Outlook de verdade não foi
   provocado, porque provocá-lo exigiria fazer um `Send` real falhar no
   meio.
 - **Anexos grandes não medidos.** Anexar foi verificado com o diálogo,
   não com arquivo de dezenas de MB, que ocupa a fila única da STA.
+- **Anexar pelo diálogo real não foi automatizado.** O `OpenFileDialog` é
+  janela do sistema e a automação da verificação não passa por ele. A
+  lógica de anexar está coberta por teste contra o duplo, incluindo a
+  troca de chave; o diálogo em si depende de conferência manual.
 - **O que FOI verificado com Outlook aberto:** criar rascunho, autosave
   gravando, chave relida a cada Save, confirmação com conta remetente e
   destinatário resolvido em SMTP, pergunta de fechamento e descarte. O
   envio em si não foi disparado — a Fase 0 já provou o `Send` no critério
   C2, e repetir aqui mandaria mensagem de verdade sem necessidade.
+
+### Revisão externa do 1.5
+
+O marco passou por avaliação técnica externa depois de pronto. Nove
+defeitos vieram de lá e foram corrigidos no commit `60a1f30`: corrida
+entre digitação e confirmação, chave não relida ao anexar, `/O=` aceito
+como resolvido, conta remetente chutada, anexos ausentes da confirmação,
+falta de trava explícita de envio, `PrepareSend` classificado como
+leitura, fechamento da janela sem pergunta, e testes cujo nome prometia
+mais do que a evidência sustentava.
+
+Vale registrar o que isso diz do processo: o teste que peguei sozinho
+cobria a corrida DURANTE a gravação, e passei a acreditar que a família
+toda estava coberta. A que sobrou — digitar DEPOIS da gravação e ANTES
+da prévia ficar pronta — só apareceu quando alguém de fora olhou. Um
+teste que passa não é prova de que a propriedade vale; é prova de que
+aquele caminho vale.
 
 ### Geral
 
