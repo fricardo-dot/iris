@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 3 — quatro bloqueantes da revisão da v2 corrigidos.
+**Versão:** 4 — a invariante da associação item–pasta propagada para o desenho.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -95,8 +95,10 @@ Consequências no desenho:
 - **Presença pertence à relação item–pasta**, não ao item. "Remoção
   confirmada" quer dizer *removido desta pasta*, e nunca *mensagem
   excluída*.
-- Um item Iris tem um localizador atual e uma ou mais associações a
-  pastas. São coisas separadas no modelo.
+- Um item Iris tem um localizador atual e **uma ou mais associações a
+  pastas**. São coisas separadas no modelo, e a consequência aparece em
+  3.7 (a geração marca associações), 3.8 (o estado é da associação) e na
+  seção 7 (cada linha da lista é uma associação).
 - **É resultado aceitável da Q5 concluir "indistinguível pelo OOM".** Se
   for, a política fica conservadora — e o plano não promete uma distinção
   que o Object Model talvez não permita.
@@ -121,22 +123,46 @@ aceitável, porque não é.
 
 ### 3.7 Varredura por geração (mark-and-sweep)
 
-1. Inicia geração N.
-2. Marca cada item visto com N.
-3. **Só depois de todas as páginas concluírem com sucesso**, itens não
-   vistos viram ausentes.
-4. Cancelamento, erro, ou Outlook indisponível no meio: a geração inteira
-   **não pode confirmar exclusão nenhuma**.
+**A geração é de uma PASTA, e o que ela marca são ASSOCIAÇÕES
+item–pasta** — não itens. Varrer a Caixa de Entrada não diz nada sobre a
+presença do mesmo item em Arquivo Morto.
+
+1. Inicia geração N **da pasta P**, sob um universo declarado (ver 3.5).
+2. Marca cada **associação (item, P)** vista com N.
+3. **Só depois de todas as páginas de P concluírem com sucesso**, e a
+   geração satisfazer o critério de consistência de 3.6, as associações
+   (item, P) não vistas viram ausentes **daquela pasta**.
+4. Cancelamento, erro, universo alterado, ou Outlook indisponível no meio:
+   a geração **não confirma ausência nenhuma**.
+
+Um item cuja associação foi removida de TODAS as pastas conhecidas
+continua não sendo prova de exclusão: pode estar numa pasta que o Iris
+não varre. Ver 3.8.
 
 Sem isto, uma falha no meio apaga metade do cache — o R2-H.
 
-### 3.8 Estado de presença por item
+### 3.8 Estado de presença por ASSOCIAÇÃO item–pasta
+
+O estado não é do item. É de cada par (item, pasta), e o mesmo item pode
+estar `Presente` numa pasta e `Ausente` de outra ao mesmo tempo — que é o
+caso normal, não a exceção.
 
 Quatro estados, não dois:
 
-`Presente` · `Não verificado` · `Suspeito de remoção` · `Remoção confirmada`
+| Estado | Significa |
+|---|---|
+| `Presente` | Visto nesta pasta na última geração válida |
+| `Não verificado` | Nunca varrido, ou a última geração não foi válida |
+| `Suspeito de ausência` | Não visto, mas a geração não permite confirmar |
+| `Ausente da pasta` | Não visto numa geração válida e consistente |
 
 "Não verificado" é o que impede o cache de afirmar o que não sabe.
+
+**Nenhum destes estados é "mensagem excluída".** O item que não está em
+nenhuma pasta conhecida do Iris ganha, no máximo, um estado derivado —
+`Sem localização conhecida` — que a UI apresenta como *"não encontrado"*, e
+nunca como *"excluído"*. A diferença importa: excluir é um fato sobre o
+mundo, e o Iris não tem como estabelecê-lo.
 
 ### 3.9 Lotes interrompíveis
 
@@ -396,13 +422,17 @@ propósito, e esta seção não pode pressupor o resultado.
 Assumindo que a lista venha do cache:
 
 - A lista abre na hora, com o cache.
-- Cada item carrega `LastVerifiedAt` e estado de presença.
-- Selecionar a pasta dispara reconciliação prioritária.
+- **Cada LINHA é uma associação (item, pasta)**, e carrega o
+  `LastVerifiedAt` e o estado de presença DAQUELA associação — não do
+  item.
+- Selecionar a pasta dispara reconciliação prioritária **daquela pasta**.
 - Até ela terminar, o cache é **snapshot**, não verdade atual.
-- Ausência só é confirmada após varredura completa.
-- Ao abrir item ausente, tentar correlação **controlada** para detectar
-  movimento. Sem correspondência inequívoca: *"não está mais disponível no
-  Outlook"*.
+- Ausência da pasta só é confirmada após geração completa e consistente.
+- Ao abrir uma linha ausente, tentar correlação **controlada** para
+  detectar movimento — o item pode ter ido para outra pasta, e aí a
+  associação nova é criada em vez de o registro morrer.
+- Sem correspondência inequívoca: *"não encontrado no Outlook"*, e **não**
+  *"excluído"*. O Iris não sabe se foi excluído.
 - **Nunca** atribuir o registro a outro item só por Message-ID.
 - Frescor no nível da PASTA — "atualizado em…" — e não um aviso por linha.
 
