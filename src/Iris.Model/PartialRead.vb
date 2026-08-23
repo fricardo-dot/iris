@@ -84,9 +84,11 @@ Namespace Global.Iris.Model
         ''' </summary>
         Public Shared Function IncompleteWith(expected As Integer, obtained As Integer,
                                               reason As ErrorKind) As PartStatus
-            If obtained < 0 OrElse expected < obtained Then
+            ' Menor ESTRITAMENTE. "Incompleto 3 de 3" é uma contradição
+            ' que passaria a existir na tela como aviso sem falta nenhuma.
+            If obtained < 0 OrElse obtained >= expected Then
                 Throw New ArgumentOutOfRangeException(NameOf(obtained),
-                    "Obtido tem de estar entre zero e o esperado.")
+                    "Incompleto exige obtido menor que o esperado.")
             End If
             If reason = ErrorKind.None Then
                 Throw New ArgumentException("Leitura incompleta precisa de motivo.", NameOf(reason))
@@ -113,6 +115,12 @@ Namespace Global.Iris.Model
         ''' </summary>
         Public Shared Function FromCounts(esperadoAntes As Integer, esperadoDepois As Integer,
                                           obtidos As Integer, ultimaFalha As ErrorKind) As PartStatus
+            ' Contagem negativa não é "nenhum item": é a leitura do próprio
+            ' Count tendo falhado, e nesse caso não se sabe nada.
+            If esperadoAntes < 0 OrElse esperadoDepois < 0 OrElse obtidos < 0 Then
+                Return Missing(If(ultimaFalha = ErrorKind.None, ErrorKind.Unexpected, ultimaFalha))
+            End If
+
             If esperadoAntes <> esperadoDepois Then
                 Return Missing(If(ultimaFalha = ErrorKind.None, ErrorKind.Stale, ultimaFalha))
             End If

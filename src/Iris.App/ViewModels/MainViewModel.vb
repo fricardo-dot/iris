@@ -201,8 +201,9 @@ Namespace Global.Iris.App.ViewModels
 
             _watcher.OnSessionReplaced()
 
-            ' Guarda ANTES do Clear, que zera a seleção.
-            Dim anterior = If(Folders.Selected Is Nothing, Nothing, Folders.Selected.Key)
+            ' Guarda o CAMINHO antes do Clear, que zera a seleção. A
+            ' chave sozinha só reencontraria pasta de topo.
+            Dim anterior = FolderTreeViewModel.CaminhoDe(Folders.Selected)
 
             Folders.Clear()
             Messages.Clear()
@@ -225,11 +226,11 @@ Namespace Global.Iris.App.ViewModels
         ''' Reselecionar dispara o fluxo normal — mostrar a pasta e assiná-la
         ''' — em vez de duplicar essa lógica aqui.
         ''' </summary>
-        Private Async Function RecarregarERestaurarAsync(anterior As FolderKey) As Task
+        Private Async Function RecarregarERestaurarAsync(anterior As List(Of FolderKey)) As Task
             Await Folders.ReloadAsync()
 
-            If anterior Is Nothing Then Return
-            If Folders.TrySelect(anterior) Then Return
+            If anterior Is Nothing OrElse anterior.Count = 0 Then Return
+            If Await Folders.TrySelectAsync(anterior) Then Return
 
             ' Não achou: era subpasta, ou a pasta não existe mais nesta
             ' sessão. Ficar sem seleção é o comportamento honesto — melhor

@@ -196,31 +196,55 @@ Namespace Global.Iris.App.ViewModels
         End Sub
 
         ''' <summary>
-        ''' Tenta reselecionar uma pasta pela chave, depois de a árvore ter
-        ''' sido reconstruída.
-        '''
-        ''' Procura só nas RAÍZES, e isso é uma limitação consciente: os
-        ''' filhos são materializados sob demanda, ao expandir, então depois
-        ''' de um Clear não existe nó de subpasta para achar. Restaurar uma
-        ''' subpasta exigiria guardar o caminho e reexpandi-lo, e isso não
-        ''' está feito — está registrado como dívida.
-        '''
-        ''' Na prática cobre o caso comum: Caixa de Entrada, Rascunhos,
-        ''' Itens Enviados e as demais pastas de topo.
+        ''' O caminho da raiz até este nó. Vazio se o nó for Nothing.
         ''' </summary>
-        ''' <returns>True se achou e selecionou.</returns>
-        Public Function TrySelect(key As FolderKey) As Boolean
-            If key Is Nothing Then Return False
+        Public Shared Function CaminhoDe(node As FolderNodeViewModel) As List(Of FolderKey)
+            Dim caminho As New List(Of FolderKey)()
+            Dim atual = node
+            While atual IsNot Nothing
+                caminho.Insert(0, atual.Key)
+                atual = atual.Parent
+            End While
+            Return caminho
+        End Function
 
-            For Each raiz In Roots
-                If key.Equals(raiz.Key) Then
-                    Selected = raiz
-                    raiz.IsSelected = True
-                    Return True
+        ''' <summary>
+        ''' Reselecionar uma pasta depois de a árvore ter sido reconstruída,
+        ''' descendo pelo caminho e expandindo o que for preciso.
+        '''
+        ''' A versão anterior procurava só nas RAÍZES, e por isso perdia
+        ''' qualquer subpasta: os filhos são materializados ao expandir, e
+        ''' depois de um Clear não existe nó de subpasta para achar. Com o
+        ''' caminho guardado antes, dá para descer nível a nível.
+        '''
+        ''' Não achar é resposta legítima: a pasta pode não existir mais
+        ''' nesta sessão. Ficar sem seleção é melhor que escolher outra
+        ''' pasta por conta própria.
+        ''' </summary>
+        ''' <returns>True se chegou até o fim do caminho.</returns>
+        Public Async Function TrySelectAsync(caminho As List(Of FolderKey)) As Task(Of Boolean)
+            If caminho Is Nothing OrElse caminho.Count = 0 Then Return False
+
+            Dim nivel As IEnumerable(Of FolderNodeViewModel) = Roots
+            Dim node As FolderNodeViewModel = Nothing
+
+            For Each chave In caminho
+                node = nivel.FirstOrDefault(Function(n) chave.Equals(n.Key))
+                If node Is Nothing Then Return False
+
+                ' Só desce se ainda houver caminho pela frente.
+                If Not chave.Equals(caminho(caminho.Count - 1)) Then
+                    Await node.EnsureChildrenAsync()
+                    node.IsExpanded = True
+                    nivel = node.Children
                 End If
             Next
 
-            Return False
+            If node Is Nothing Then Return False
+
+            Selected = node
+            node.IsSelected = True
+            Return True
         End Function
 
         Private Function Atual(geracao As Integer) As Boolean

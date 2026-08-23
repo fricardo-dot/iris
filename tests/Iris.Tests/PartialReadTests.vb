@@ -202,7 +202,42 @@ Public Class PartialReadTests
     Public Sub Status_ausente_nao_e_confiavel()
         Assert.IsFalse(ReplyReadiness.CanReply(Nothing))
         Assert.IsFalse(ReplyReadiness.CanForward(Nothing))
-        Assert.AreEqual("", ReplyReadiness.DescribeBlock("os anexos", Nothing))
+    End Sub
+
+    ''' <summary>
+    ''' E status ausente EXPLICA, nao so bloqueia.
+    '''
+    ''' Devolver vazio aqui deixava o pior caso calado: um produtor que
+    ''' esqueceu de preencher desabilitava responder e encaminhar sem a tela
+    ''' dizer por que — e bloqueio sem explicacao e o usuario achando que o
+    ''' Iris quebrou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Status_ausente_explica_em_vez_de_ficar_calado()
+        Dim texto = ReplyReadiness.DescribeBlock("os anexos", Nothing)
+
+        Assert.AreNotEqual("", texto)
+        StringAssert.Contains(texto, "anexos")
+    End Sub
+
+    ''' <summary>
+    ''' "Incompleto 3 de 3" e contradicao: apareceria na tela como aviso sem
+    ''' falta nenhuma.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Incompleto_exige_falta_de_verdade()
+        Assert.ThrowsException(Of ArgumentOutOfRangeException)(
+            Function() PartStatus.IncompleteWith(3, 3, ErrorKind.Denied))
+    End Sub
+
+    ''' <summary>
+    ''' Contagem negativa nao e "nenhum item": e a leitura do proprio Count
+    ''' tendo falhado, e ai nao se sabe nada.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Contagem_negativa_e_indisponivel()
+        Assert.AreEqual(PartState.Unavailable,
+                        PartStatus.FromCounts(-1, -1, 0, ErrorKind.None).State)
     End Sub
 
 End Class

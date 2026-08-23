@@ -67,7 +67,17 @@ Namespace Global.Iris.Core
         ''' explicação é frustração.
         ''' </summary>
         Public Shared Function DescribeBlock(part As String, status As PartStatus) As String
-            If status Is Nothing OrElse status.IsTrustworthy Then Return ""
+            ' Nothing produz a MESMA mensagem que indisponível.
+            '
+            ' Devolver vazio aqui deixava o pior dos casos calado: um
+            ' produtor que esqueceu de preencher bloqueia responder e
+            ' encaminhar, e a tela não diz por quê. Bloqueio sem explicação
+            ' é o usuário achando que o Iris quebrou.
+            If status Is Nothing Then
+                Return $"Não foi possível confirmar se {part} desta mensagem foram lidos por inteiro."
+            End If
+
+            If status.IsTrustworthy Then Return ""
 
             If status.State = PartState.Unavailable Then
                 Return $"Não foi possível ler {part} desta mensagem."

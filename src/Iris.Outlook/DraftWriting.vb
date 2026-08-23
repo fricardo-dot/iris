@@ -365,7 +365,12 @@ Namespace Global.Iris.Outlook
                         If candidatos.Count = 0 Then
                             Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "anexo")
                         End If
-                        Return OperationResult(Of DraftInfo).Fail(ErrorKind.Ambiguous,
+                        ' Stale, e NÃO Ambiguous. Neste projeto Ambiguous
+                        ' significa "pode ter surtido efeito, nunca repetir",
+                        ' e aqui nada aconteceu: a remoção foi recusada ANTES
+                        ' do Delete. O que envelheceu foi a chave, e reler o
+                        ' rascunho resolve.
+                        Return OperationResult(Of DraftInfo).Fail(ErrorKind.Stale,
                                                                   "anexo ambiguo")
                     End If
 
@@ -456,7 +461,9 @@ Namespace Global.Iris.Outlook
 
                 Dim recipients As OL.Recipients = Nothing
                 Dim esperados = 0
-                Dim ultimaFalha = ErrorKind.Unexpected
+                Dim esperadoDepois = -1
+                Dim obtidos = 0
+                Dim ultimaFalha = ErrorKind.None
                 Try
                     recipients = item.Recipients
                     ' ResolveAll ANTES de listar: sem isso, "Resolved" seria
@@ -479,6 +486,7 @@ Namespace Global.Iris.Outlook
                                 .Kind = TipoDeDestinatario(r),
                                 .Resolved = Booleano(Function() r.Resolved) AndAlso EhSmtp(endereco)
                             })
+                            obtidos += 1
                         Catch ex As COMException
                             ' Um destinatário que não se deixa ler não pode
                             ' virar silêncio: a confirmação mostraria uma
@@ -492,11 +500,14 @@ Namespace Global.Iris.Outlook
                         End Try
                     Next
 
-                    previa.RecipientsStatus = If(previa.Recipients.Count = esperados,
-                                                 PartStatus.CompleteWith(esperados),
-                                                 PartStatus.IncompleteWith(esperados,
-                                                                           previa.Recipients.Count,
-                                                                           ultimaFalha))
+                    ' Conta de novo: a coleção pode ter mudado durante o
+                    ' percurso, e um snapshot que não vale não pode ser
+                    ' apresentado como a lista inteira. Mesmo tratamento que
+                    ' MessageReading e LerAnexos — este ponto tinha ficado de
+                    ' fora, justamente na tela que confere o envio.
+                    esperadoDepois = recipients.Count
+                    previa.RecipientsStatus = PartStatus.FromCounts(
+                        esperados, esperadoDepois, obtidos, ultimaFalha)
                 Catch ex As COMException
                     previa.RecipientsStatus = PartStatus.Missing(
                         OutlookFailurePolicy.ClassifyFailure(ex.HResult, isMutation:=False,

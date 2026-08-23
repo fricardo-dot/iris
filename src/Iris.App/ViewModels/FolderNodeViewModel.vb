@@ -38,8 +38,10 @@ Namespace Global.Iris.App.ViewModels
         Private _itemCount As Integer
         Private _hasUnrealizedChildren As Boolean
 
-        Public Sub New(info As FolderInfo, context As FolderTreeContext)
+        Public Sub New(info As FolderInfo, context As FolderTreeContext,
+                       Optional parent As FolderNodeViewModel = Nothing)
             _context = context
+            Me.Parent = parent
 
             Key = info.Key
             Name = info.Name
@@ -47,6 +49,16 @@ Namespace Global.Iris.App.ViewModels
             _itemCount = info.ItemCount
             _hasUnrealizedChildren = info.HasChildren
         End Sub
+
+        ''' <summary>
+        ''' O nó de cima, ou Nothing na raiz.
+        '''
+        ''' Existe para reconstruir o CAMINHO de uma pasta. Depois de uma
+        ''' troca de sessão a árvore é refeita do zero, e sem o caminho só dá
+        ''' para reencontrar pasta de topo — subpasta é materializada ao
+        ''' expandir, então nem existe como nó para procurar.
+        ''' </summary>
+        Public ReadOnly Property Parent As FolderNodeViewModel
 
         Public ReadOnly Property Key As FolderKey
         Public ReadOnly Property Name As String
@@ -147,6 +159,33 @@ Namespace Global.Iris.App.ViewModels
         ' Carregamento
         ' ===================================================================
 
+        ''' <summary>
+        ''' Garante os filhos carregados e DÁ PARA ESPERAR.
+        '''
+        ''' O caminho normal — expandir com o mouse — dispara e esquece,
+        ''' porque a UI não pode travar. Restaurar um caminho precisa do
+        ''' contrário: só dá para procurar no nível seguinte depois que o
+        ''' atual terminou de carregar.
+        ''' </summary>
+        Public Async Function EnsureChildrenAsync() As Task
+            If Not CanExpand Then Return
+
+            Dim geracao As Integer
+            SyncLock _gate
+                If _state = NodeLoadState.Loaded Then Return
+                If _state = NodeLoadState.Loading Then
+                    ' Alguém já está carregando. Esperar a Task dele exigiria
+                    ' guardá-la; aqui basta não disparar uma segunda carga.
+                    Return
+                End If
+                _state = NodeLoadState.Loading
+                _loadGeneration += 1
+                geracao = _loadGeneration
+            End SyncLock
+
+            Await LoadChildrenAsync(geracao)
+        End Function
+
         Private Sub BeginLoadChildren()
             Dim geracao As Integer
 
@@ -189,7 +228,7 @@ Namespace Global.Iris.App.ViewModels
                         If Not Atual(geracao) Then Return
                         Children.Clear()
                         For Each f In visiveis
-                            Children.Add(New FolderNodeViewModel(f, _context))
+                            Children.Add(New FolderNodeViewModel(f, _context, Me))
                         Next
                         HasUnrealizedChildren = False
                         OnPropertyChanged(NameOf(CanExpand))

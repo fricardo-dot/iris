@@ -68,6 +68,51 @@ Public Class ArchitectureTests
             "A fase da operação virou campo do broker de novo: " & String.Join(", ", campos) &
             ". Operações concorrentes passam a compartilhar a fase, e a defesa " &
             "contra reenviar uma mensagem que talvez tenha saido deixa de valer.")
+
+        ' O campo removido chamava-se _effectStarted e era Integer. Procurar
+        ' so por campo do TIPO da fase deixaria alguem reintroduzi-lo com
+        ' outro tipo — que foi exatamente a forma original do defeito.
+        Dim suspeitos = broker.GetFields(BindingFlags.Instance Or BindingFlags.Static Or
+                                         BindingFlags.NonPublic Or BindingFlags.Public).
+                               Where(Function(f) f.Name.IndexOf("effect", StringComparison.OrdinalIgnoreCase) >= 0 OrElse
+                                                 f.Name.IndexOf("mutation", StringComparison.OrdinalIgnoreCase) >= 0).
+                               Select(Function(f) f.Name).
+                               ToList()
+
+        Assert.AreEqual(0, suspeitos.Count,
+            "Campo com cara de fase de mutacao voltou ao broker: " & String.Join(", ", suspeitos))
+    End Sub
+
+    ''' <summary>
+    ''' A fase e criada DENTRO de RunAsync, uma por invocacao.
+    '''
+    ''' O teste anterior provava que nao existe CAMPO. Este prova que existe
+    ''' criacao — sem ele, remover a instanciacao e nunca marcar a fase
+    ''' passaria: nao haveria campo, e a classificacao nunca veria mutacao
+    ''' iniciada, ou seja, o Send ambiguo voltaria a ser retentavel.
+    ''' </summary>
+    <TestMethod>
+    Public Sub RunAsync_instancia_a_fase_a_cada_invocacao()
+        Dim broker = GetType(Iris.Outlook.OutlookBroker)
+
+        Dim fase = broker.GetNestedTypes(BindingFlags.NonPublic).
+                          FirstOrDefault(Function(t) t.Name.Contains("Fase"))
+        Assert.IsNotNull(fase)
+
+        ' O construtor da fase precisa ser alcancavel: se ninguem instancia,
+        ' a protecao nao existe, por mais que a classe esteja la.
+        Dim ctor = fase.GetConstructors(BindingFlags.Instance Or BindingFlags.Public Or
+                                        BindingFlags.NonPublic)
+        Assert.IsTrue(ctor.Length > 0, "A classe de fase nao pode ser instanciada.")
+
+        ' E ela precisa expor o que a classificacao consome.
+        Dim marcar = fase.GetMethod("Marcar", BindingFlags.Instance Or BindingFlags.Public Or
+                                              BindingFlags.NonPublic)
+        Dim iniciou = fase.GetProperty("Iniciou", BindingFlags.Instance Or BindingFlags.Public Or
+                                                  BindingFlags.NonPublic)
+
+        Assert.IsNotNull(marcar, "Sem Marcar, a fase nunca e sinalizada.")
+        Assert.IsNotNull(iniciou, "Sem Iniciou, a classificacao nao tem o que ler.")
     End Sub
 
     ''' <summary>
