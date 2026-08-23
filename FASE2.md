@@ -1,8 +1,9 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 10 — Q1 fechada (seção 9). Q2 na parte de leitura, 2ª versão
-depois do Codex (seção 10). Falta o teste de `Move`, que é o experimento
-decisivo e depende de autorização.
+**Versão:** 11 — Q1 fechada (seção 9). Q2 na parte de leitura, 3ª versão
+depois de duas rodadas de Codex (seção 10). Falta o teste de `Move` com
+`Copy` como controle negativo: é o experimento decisivo e depende de
+autorização do usuário.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -684,8 +685,8 @@ funciona — e traz junto as três armadilhas acima, que precisam ir com ele.
 
 ## 10. Q2 — parte de LEITURA respondida
 
-**Esta seção está na 2ª versão.** A 1ª foi ao Codex e voltou com defeitos
-que os dados confirmaram. O que mudou está em 10.9.
+**Esta seção está na 3ª versão.** Duas rodadas de Codex, e as duas
+derrubaram conclusões minhas. O que mudou está em 10.9.
 
 Corpus: **2.281 itens em 127 pastas**, um store. Nada foi criado, movido
 ou apagado.
@@ -726,8 +727,9 @@ truth de identidade de item.
 | `PR_SOURCE_KEY` | **0%** | — | — |
 
 `PR_SOURCE_KEY` (`0x65E00102`), sugerida pelo Codex por ser a identidade
-dos mecanismos de sincronização do Exchange, **volta nula nos 2.281**.
-Medida, não suposta.
+dos mecanismos de sincronização do Exchange: a coluna é **aceita** pela
+`Table` e o valor **volta nulo nos 2.281**; pelo `PropertyAccessor` dá
+**erro de leitura**. Não está disponível por nenhum dos dois caminhos.
 
 Message-ID falta em **313** itens, **todos `IPM.Note`**. Compromissos
 (`IPM.Appointment`, 490) têm. E **30 dos 68 rascunhos têm Message-ID** —
@@ -739,7 +741,7 @@ outros não continua **não explicado**.
 
 | | par 1 | pares 2 e 3 | par 4 |
 |---|---|---|---|
-| **o que é** | enviado x recebido (auto-endereçado, artefato meu da Fase 0) | conflito de sincronização: Conflitos x Lixo Eletrônico | duas entregas do mesmo Message-ID, Lixo Eletrônico |
+| **o que é** | enviado x recebido (auto-endereçado, artefato meu da Fase 0) | conflito de sincronização: Conflitos x Lixo Eletrônico | consistente com duas entregas do mesmo Message-ID |
 | Message-ID | **igual** | **igual** | **igual** |
 | `PR_SEARCH_KEY` | **igual** | **igual** | **diferente** |
 | `ConversationIndex` | **igual** | **igual** | diferente |
@@ -754,37 +756,99 @@ outros não continua **não explicado**.
   conteúdo. `MsgFlags` 1 = `READ`; 34 = `0x22` = `FROMME|UNMODIFIED`. Um
   foi submetido, o outro **entregue**: 4.615 caracteres de cabeçalho que só
   o transporte escreve.
-- **Pares 2 e 3** — o caso que faltava no corpus: **duas manifestações do
-  mesmo item**, criadas pelo próprio Outlook ao resolver conflito. Aqui
-  unir é defensável, e nenhuma chave atribuída pelo store as une.
-- **Par 4** — **falso positivo natural** do Message-ID, não fabricado por
-  mim: duas entregas distintas com o mesmo `Message-ID`, 10 segundos de
-  diferença. `SearchKey` as separa.
+- **Pares 2 e 3** — eu escrevi que eram "duas manifestações do mesmo item"
+  e chamei isso do caso positivo que faltava. **Está errado, e ver 10.3.1.**
+- **Par 4** — falso positivo do Message-ID que eu não fabriquei: dois itens
+  com o mesmo `Message-ID`, 10 segundos de diferença, cabeçalhos de
+  transporte de tamanhos diferentes. **Consistente com** duas entregas
+  distintas; provar exigiria ler os cabeçalhos `Received`. `SearchKey` os
+  separa.
 
-**`SearchKey` erra nas duas direções**: une o par 1 (itens distintos) e
-separa o par 4 (mesma mensagem). Não é derivada só do conteúdo nem só do
-item.
+`SearchKey` **muda de comportamento conforme o alvo**, e na 2ª versão eu
+chamei os dois casos de "erro", o que troca o alvo no meio do argumento:
+
+- para identidade de **item**, o par 1 é erro (une dois objetos) e o par 4
+  está **certo** (separa dois objetos);
+- para identidade de **mensagem**, o par 4 é que é erro.
+
+Em nenhum dos dois alvos ela acerta sempre.
+
+#### 10.3.1 Os pares de conflito NÃO são o mesmo item
+
+Retração. Um item de conflito é um **objeto MAPI novo**: quando a versão
+local e a do servidor divergem, o Outlook preserva a perdedora como cópia
+em `Problemas de Sincronização\Conflitos`. Os dois coexistem, aparecem
+separados, e têm `EntryID`, `RecordKey`, `ChangeKey` e estado próprios.
+`RecordKey` diferente aí é **evidência de objeto novo**, não deficiência da
+chave.
+
+Verifiquei em vez de aceitar, com `tools/q2-conflito.ps1`, e o vínculo está
+**provado nos dois sentidos**: o `PR_CONFLICT_ITEMS` de cada um aponta para
+o outro, nos 2 pares. O controle negativo ("algum aponta para si mesmo")
+dá não, então o teste discrimina.
+
+Mas o que está provado é **linhagem**, não continuidade:
+
+> O próprio provider registra a relação, e ela é uma **aresta tipada entre
+> dois objetos** — `VarianteDeConflitoDe` —, não uma identidade
+> compartilhada. Unir os dois numa identidade só seria **política do
+> Iris**, e a política correta é não unir: o usuário pode abrir e apagar
+> cada um.
+
+**Consequência:** o corpus **continua sem um positivo demonstrado** de
+continuidade de item. O único jeito de obter um é a observação
+longitudinal antes/depois de um `Move`.
+
+`PR_RESOLVE_METHOD` e `PR_SOURCE_KEY` dão **erro de leitura** também pelo
+`PropertyAccessor`, não só nulo pela `Table`.
 
 ### 10.4 A resposta da Q2
 
-> As evidências se dividem em **duas famílias**, e nenhuma tem as duas
-> propriedades de que o Iris precisa ao mesmo tempo.
->
-> **Derivadas do conteúdo** — Message-ID, `PR_SEARCH_KEY`,
-> `ConversationIndex`. Identificam a **mensagem**. Não distinguem o
-> enviado do recebido (par 1) e nem sempre distinguem entregas distintas
-> (par 4). **Únicas: não. Estáveis sob movimentação: provavelmente sim.**
->
-> **Atribuídas pelo store** — `EntryID`, `PR_RECORD_KEY`,
-> `PR_CHANGE_KEY`. Únicas em 2.281 de 2.281, e separam todos os quatro
-> pares. **Únicas: sim. Estáveis: NÃO MEDIDO.**
->
-> Se nenhuma família for simultaneamente única e estável, **não existe
-> identidade de item obtenível pelo OOM**, e o 2.1 tem de ser desenhado
-> em cima de correlação explícita e reversível — ou de não correlacionar.
+Minha 2ª versão dizia "duas famílias" e concluia que **não existe
+identidade de item obtenível pelo OOM**. As duas coisas estão erradas: a
+partição misturava origem com função, e a conclusão não decorre dos dados.
 
-Isso torna o teste de `Move` **o experimento decisivo da Q2**, não um
-complemento.
+**Cinco papeis, não duas famílias:**
+
+| Papel | Propriedades | Única? | Estável sob `Move`? |
+|---|---|---|---|
+| Identidade do objeto no store | `PR_RECORD_KEY`, `EntryID` | **sim**, 2.281/2.281 | **NÃO MEDIDO** |
+| Linhagem copiada junto | Message-ID, `PR_SEARCH_KEY`, `ConversationIndex` | não | provavelmente, **e não medido** |
+| Versão / causalidade | `PR_CHANGE_KEY`, `PR_PREDECESSOR_CHANGE_LIST` | sim, **e irrelevante** | não, **por desenho** |
+| Localização | `StoreID`, pasta pai | — | não, por definição |
+| Relação entre objetos | `PR_CONFLICT_ITEMS` | — | — |
+
+`PR_CHANGE_KEY` estava na família errada. Ela é um **token de versão**:
+muda quando o objeto muda. Ser única em 2.281 de 2.281 é consequência
+disso, e não a torna candidata a identidade — pelo contrário, garante que
+não é. O que ela serve é para a **Q3**.
+
+E `PR_SEARCH_KEY` não é "derivada do conteúdo": é uma propriedade de
+correlação controlada pelo provider, que costuma ser **copiada junto** com
+a mensagem. O valor não precisa ser função do conteúdo — e o par 4, com
+`SearchKey` diferente para o mesmo Message-ID, mostra que não é.
+
+**A conclusão defensável:**
+
+> Entre as propriedades **preexistentes** medidas, nenhuma foi ainda
+> demonstrada **simultaneamente** única no escopo necessário e estável sob
+> `Move`.
+
+Não "não existe identidade obtenível pelo OOM". Há pelo menos duas saídas
+que eu não tinha considerado:
+
+1. **Combinação ou estratégia com estado** pode funcionar onde nenhuma
+   propriedade isolada funciona.
+2. **Propriedade nomeada escrita pelo próprio Iris.** O projeto **já faz
+   isso** — o marcador `IrisDraft` da Fase 1. Exige escrita, uma cópia
+   duplicaria o valor, e a Fase 1 registra que a política do tenant pode
+   impedir a gravação; nada disso a elimina como via.
+
+E se a `RecordKey` sobreviver ao `Move`, a condição nem se materializa.
+
+De qualquer forma, o teste de `Move` é **o experimento decisivo da Q2** —
+com `Copy` como **controle negativo**, porque uma chave que sobrevive ao
+`Move` mas também é duplicada numa cópia não serve como identidade.
 
 ### 10.5 `PR_RECORD_KEY`: eu a descartei errado
 
@@ -798,16 +862,33 @@ qualquer posição. Eu tinha olhado um par e comparado de olho.
 Segundo, mesmo que compartilhassem bytes, isso não provaria equivalência
 semântica.
 
-E a decomposição diz o contrário do que eu concluí. Comparando as 18
-pastas com 5+ itens, **os bytes 0–38 e 44–45 são idênticos em todas as
-pastas**; só os bytes **39–43** variam de item para item. **Não há
-identificador de pasta dentro da `RecordKey`** — que é justamente a
-precondição estrutural para sobreviver a um `Move`. Nos pares de conflito,
-as duas `RecordKey` diferem em **2 bytes** (42 e 43), valores vizinhos de
-um contador.
+**O argumento que eu usei também era fraco.** Eu comparei byte a byte as
+18 pastas com 5+ itens, vi que nenhum byte era constante-por-pasta, e
+concluí que "não há identificador de pasta dentro da `RecordKey`". O
+método não sustenta isso: um identificador de pasta pode estar misturado
+ao contador nos mesmos bytes, desalinhado em bits, ou passado por hash —
+`H(pasta || item)` faria todos os bytes variarem com a pasta participando
+inteira. E foram 18 das 127 pastas, escolhidas por terem 5+ itens.
 
-Isso **não prova** que ela sobrevive: o store pode alocar outra no `Move`.
-Prova que o motivo pelo qual eu a descartei não existia.
+**O argumento bom veio de outro lugar.** O blob de `PR_CONFLICT_ITEMS`
+(10.3.1) revela o formato, porque ele carrega dois pares e a `RecordKey`
+carrega um:
+
+```
+PR_CONFLICT_ITEMS  cabecalho | GUID+contador da PASTA | GUID+contador da MENSAGEM
+PR_RECORD_KEY      cabecalho |                          GUID+contador da MENSAGEM
+```
+
+`4 + 16 (GUID do store) + 2 + 16 (GUID de réplica) + 8 (contador) = 46`
+bytes, e **nenhum par de pasta**. É argumento de **formato**, verificado
+contra um valor em que as duas partes aparecem lado a lado — muito melhor
+que a constância de bytes.
+
+Ainda assim, isso **não prova estabilidade**, e não é nem "precondição
+estrutural" como eu escrevi: uma chave pode conter a pasta e ainda ser
+preservada, e pode não conter pasta nenhuma e o provider substituí-la no
+`Move` assim mesmo. Só o teste decide. O que está estabelecido é que **o
+motivo pelo qual eu a descartei não existia**.
 
 ### 10.6 O que heurística funde
 
@@ -834,13 +915,15 @@ correlacionado". Existe: os pares 2 e 3.
 
 ### 10.7 Confiabilidade da medição
 
-- **Marshaling.** Tudo sai de `Table.GetArray` com colunas de proptag
-  binário. Conferido contra `PropertyAccessor.GetProperty`: **183 valores,
-  0 divergências**. Valores que não voltam como `byte[]` ou `String` são
+- **Marshaling.** Conferi `SearchKey`, `RecordKey` e Message-ID de
+  `Table.GetArray` contra `PropertyAccessor.GetProperty`: **183 valores,
+  0 divergências**, em 4 pastas. `ChangeKey` **não** foi conferida pelos
+  dois caminhos. Valores que não voltam como `byte[]` ou `String` são
   contados como anomalia, não como presença — nenhuma ocorreu.
 - **Deriva.** `Table` não é snapshot. Duas leituras seguidas de Entrada
   (1003) e Excluídos (141): **0 itens surgiram, 0 sumiram, 0 chaves
-  mudaram**.
+  mudaram**. Isso **não** demonstra ausência de deriva durante a varredura
+  das 127 pastas, que é muito mais longa.
 - `q2-pares.ps1` cobre **1.789** itens, não 2.281: 15 pastas de Contatos
   recusam a coluna `SenderName`. Não afeta os grupos de colisão, que saem
   de `q2-chaves.ps1` sobre os 2.281.
@@ -849,8 +932,9 @@ correlacionado". Existe: os pares 2 e 3.
 
 - **Sobrevivência a `Move`** de `RecordKey`, `SearchKey` e `EntryID` — o
   experimento decisivo. **Escreve na caixa; depende de autorização.**
-- **`Copy`**: se a `RecordKey` muda numa cópia (esperado, pelos pares de
-  conflito), `Copy` cria identidade nova. Não medido.
+- **`Copy`** — controle negativo obrigatório do teste de `Move`. Os pares
+  de conflito **não** demonstram o comportamento de `MailItem.Copy`: um
+  item de conflito é criado pelo servidor, não por `Copy`.
 - **Rascunho antes/depois de enviar**, **encaminhar/reenviar** — exigem
   enviar, proibido fora do C2.
 - **Entre stores** — um store nesta máquina.
@@ -860,7 +944,7 @@ correlacionado". Existe: os pares 2 e 3.
   de Enviados não colidirem **não prova nada**.
 - **Por que 30 rascunhos têm Message-ID e 38 não.**
 
-### 10.9 Quatro erros meus nesta rodada
+### 10.9 Erros meus nestas duas rodadas
 
 1. **Escopo inventado.** Li 4 pastas e escrevi "a caixa". São 127 pastas e
    2.281 itens — eu tinha visto 58% e relatado 100%.
@@ -877,6 +961,23 @@ correlacionado". Existe: os pares 2 e 3.
 
 Os três scripts da 1ª rodada foram **removidos**, não corrigidos: um
 script com escopo errado convida a ser reusado.
+
+Na 3ª rodada, mais três — e os três são **a mesma falha**: eu comparei
+coisas de tipos diferentes e li o resultado como achado.
+
+5. **Interpretação além do dado.** Chamei os itens de conflito de "duas
+   manifestações do mesmo item" e de "o caso positivo que faltava". São
+   objetos novos com vínculo registrado. Eu tinha inventado o positivo que
+   o corpus não tem.
+6. **`PT_MV_BINARY` marshalado errado.** `PR_CONFLICT_ITEMS` volta como
+   array **de** arrays; meu `Hex()` devolveu a string `"System.Byte[]"`, o
+   teste de vínculo deu "não", e aquele "não" **parecia resultado**.
+7. **Comparei ID de curto prazo com ID de longo prazo**, e depois comparei
+   por igualdade um blob que é composto. Duas vezes o teste disse "não
+   há vínculo" quando havia. Só apareceu porque eu fui olhar os bytes.
+
+Um teste que devolve "não" por defeito próprio é pior que um que quebra:
+o que quebra eu conserto, o que devolve "não" eu **publico**.
 
 ### 10.10 Duas armadilhas de PowerShell, para não repetir
 

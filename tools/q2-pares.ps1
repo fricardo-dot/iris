@@ -12,8 +12,12 @@
 #   3. q2-par.ps1 selecionava por PREFIXO DE ASSUNTO, achou 13 itens, ficou
 #      com 2 e sobrescreveu os outros 11 em silencio. Os dois que sobraram
 #      por acaso eram os certos. Agora a selecao e pelo EntryID do grupo de
-#      colisao de fato encontrado, e o script PARA se o grupo nao tiver
-#      exatamente os itens esperados.
+#      colisao de fato encontrado.
+#
+#      ATENCAO: este script imprime os DOIS PRIMEIROS itens de cada grupo.
+#      Uma versao anterior deste comentario prometia que ele "PARA se o
+#      grupo nao tiver exatamente os itens esperados". Nao para, e nunca
+#      parou. Grupo com 3+ itens e AVISADO abaixo, mas nao interrompe.
 #   4. O comentario dizia que o discriminador era "enviado tem SubmitTime e
 #      nao tem DeliveryTime". Os dados desmentem: as duas propriedades
 #      aparecem nos DOIS itens do par. Quem discrimina e
@@ -112,7 +116,7 @@ for ($s = 1; $s -le $stores.Count; $s++) {
     $store = $stores.Item($s)
     $raiz = $null
     try { $raiz = $store.GetRootFolder(); Varrer $raiz $store.DisplayName 0 }
-    catch { }
+    catch { Write-Host "STORE INACESSIVEL: $($_.Exception.Message)" }
     finally {
         if ($raiz) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($raiz) }
         [void][Runtime.InteropServices.Marshal]::ReleaseComObject($store)
@@ -190,6 +194,9 @@ foreach ($g in $grupos) {
     }
 
     if ($colunas.Count -lt 2) { Write-Host "  (menos de 2 itens legiveis)"; continue }
+    if ($colunas.Count -gt 2) {
+        Write-Host ("  AVISO: grupo tem {0} itens; a tabela mostra so os 2 primeiros." -f $colunas.Count)
+    }
 
     $chaves = @("Pasta","Assunto","Remet","Classe","Tamanho") + @($detalhe.Keys)
     Write-Host ("{0,-14} | {1,-34} | {2,-34} | igual?" -f "propriedade", "A", "B")
