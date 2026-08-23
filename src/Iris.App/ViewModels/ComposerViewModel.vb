@@ -765,6 +765,7 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         Private Function GeracaoValida(marca As Long) As Boolean
+            If _disposed Then Return False
             Return Interlocked.Read(_geracao) = marca
         End Function
 
@@ -783,7 +784,7 @@ Namespace Global.Iris.App.ViewModels
             ' a chave velha e voltaria NotFound. Esperar também garante que
             ' as duas mutações não disputem a fila única da STA.
             If Not Await DescarregarSemTravaAsync() Then
-                AvisarDescargaIncompleta()
+                TratarDescargaIncompleta(marca, retomarEdicao:=False)
                 Return
             End If
 
@@ -822,7 +823,7 @@ Namespace Global.Iris.App.ViewModels
             ' com o store atrasado faria o usuário aprovar uma versão e o
             ' Outlook mandar outra.
             If Not Await DescarregarSemTravaAsync() Then
-                AvisarDescargaIncompleta()
+                TratarDescargaIncompleta(marca, retomarEdicao:=False)
                 Return
             End If
 
@@ -988,6 +989,19 @@ Namespace Global.Iris.App.ViewModels
             Encerrar()
         End Sub
 
+        ''' <summary>
+        ''' Trata uma descarga que não convergiu, SÓ se o rascunho ainda for
+        ''' o mesmo. Sem a conferência, avisar ou voltar a editar depois de
+        ''' o compositor ter sido encerrado seria ressuscitá-lo.
+        ''' </summary>
+        ' O parametro NAO pode se chamar "voltarAEditar": VB e
+        ' case-insensitive e o nome eclipsaria o metodo VoltarAEditar().
+        Private Sub TratarDescargaIncompleta(marca As Long, retomarEdicao As Boolean)
+            If Not GeracaoValida(marca) Then Return
+            AvisarDescargaIncompleta()
+            If retomarEdicao Then VoltarAEditar()
+        End Sub
+
         Private Async Function SalvarEFecharAsync() As Task
             ' NÃO passa por Editing antes de salvar.
             '
@@ -999,6 +1013,7 @@ Namespace Global.Iris.App.ViewModels
             ' ter clicado justamente em "Salvar e fechar".
             '
             ' O estado fica em ConfirmingClose até o resultado ser conhecido.
+            Dim marca = Interlocked.Read(_geracao)
             Status = "Salvando…"
 
             If Not Await DescarregarSemTravaAsync() Then
@@ -1007,8 +1022,7 @@ Namespace Global.Iris.App.ViewModels
                 ' está guardado. AGORA sim volta a editar — e aí a janela
                 ' larga a intenção de fechar, corretamente, porque o
                 ' fechamento não aconteceu.
-                AvisarDescargaIncompleta()
-                VoltarAEditar()
+                TratarDescargaIncompleta(marca, retomarEdicao:=True)
                 Return
             End If
 
@@ -1030,7 +1044,11 @@ Namespace Global.Iris.App.ViewModels
             ' NotFound é sucesso disfarçado: o rascunho já não está lá, que
             ' é exatamente o que se queria.
             If Not resultado.Succeeded AndAlso resultado.Kind <> ErrorKind.NotFound Then
-                State = ComposerState.Editing
+                ' VoltarAEditar, e não State = Editing: se havia texto por
+                ' salvar, ele continuaria sujo e sem timer, esperando uma
+                ' próxima tecla que pode não vir. Mesmo motivo de
+                ' "Continuar editando" e "Voltar" do envio.
+                VoltarAEditar()
                 Status = "Não foi possível descartar o rascunho. " & Traduzir(resultado.Kind)
                 Return
             End If
@@ -1111,6 +1129,17 @@ Namespace Global.Iris.App.ViewModels
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True
+
+            ' Sobe a geração ANTES de qualquer outra coisa.
+            '
+            ' Sem isto havia um furo que a própria documentação do AbrirAsync
+            ' dizia estar coberto e não estava: com a CRIAÇÃO do rascunho em
+            ' voo o estado ainda é Closed, então fechar a janela não passava
+            ' por Encerrar, a geração não mudava, e a continuação da criação
+            ' voltava, achava tudo em ordem e abria um compositor num
+            ' ViewModel já morto.
+            Interlocked.Increment(_geracao)
+
             _autosave.Stop()
             RemoveHandler _autosave.Tick, AddressOf OnAutosaveTick
 

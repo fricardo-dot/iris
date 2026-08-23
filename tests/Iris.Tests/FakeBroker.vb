@@ -57,6 +57,7 @@ Friend NotInheritable Class FakeBroker
     ''' </summary>
     Friend TravaDoUpdate As TaskCompletionSource(Of Boolean)
     Friend TravaDoAttach As TaskCompletionSource(Of Boolean)
+    Friend TravaDoCreate As TaskCompletionSource(Of Boolean)
     Friend TravaDoPrepare As TaskCompletionSource(Of Boolean)
     Friend TravaDoSend As TaskCompletionSource(Of Boolean)
 
@@ -64,6 +65,7 @@ Friend NotInheritable Class FakeBroker
     Friend FalhaAoGravar As ErrorKind = ErrorKind.None
     Friend FalhaAoPreparar As ErrorKind = ErrorKind.None
     Friend ResultadoDoEnvio As ErrorKind = ErrorKind.None
+    Friend FalhaAoDescartar As ErrorKind = ErrorKind.None
     Friend Modo As ModoDeDestinatario = ModoDeDestinatario.Smtp
 
     ''' <summary>O que foi de fato enviado, para o teste conferir.</summary>
@@ -112,14 +114,18 @@ Friend NotInheritable Class FakeBroker
 
     ' ---- Rascunhos ------------------------------------------------------
 
-    Public Function CreateDraftAsync(content As DraftContent, cancel As CancellationToken) _
+    Public Async Function CreateDraftAsync(content As DraftContent, cancel As CancellationToken) _
         As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.CreateDraftAsync
 
         Chamadas.Add("create")
+
+        Dim trava = TravaDoCreate
+        If trava IsNot Nothing Then Await trava.Task
+
         If FalhaAoCriar <> ErrorKind.None Then
-            Return Task.FromResult(OperationResult(Of DraftInfo).Fail(FalhaAoCriar, "teste"))
+            Return OperationResult(Of DraftInfo).Fail(FalhaAoCriar, "teste")
         End If
-        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(Salvar()))
+        Return OperationResult(Of DraftInfo).Ok(Salvar())
     End Function
 
     Public Function CreateReplyDraftAsync(item As ItemKey, replyAll As Boolean,
@@ -297,6 +303,11 @@ Friend NotInheritable Class FakeBroker
 
         Chamadas.Add("delete")
         ChavesRecebidas.Add(draft)
+
+        If FalhaAoDescartar <> ErrorKind.None Then
+            Return Task.FromResult(OperationResult(Of Boolean).Fail(FalhaAoDescartar, "teste"))
+        End If
+
         _existe = False
         Return Task.FromResult(OperationResult(Of Boolean).Ok(True))
     End Function

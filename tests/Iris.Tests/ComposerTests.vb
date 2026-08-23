@@ -964,6 +964,84 @@ Public Class ComposerTests
         Assert.IsFalse(vm.IsDirty)
     End Sub
 
+
+    ''' <summary>
+    ''' A janela fechou com a CRIACAO do rascunho ainda em voo.
+    '''
+    ''' Era um furo que a propria documentacao do AbrirAsync dizia estar
+    ''' coberto e nao estava: enquanto o rascunho e criado o estado ainda e
+    ''' Closed, entao fechar nao passava por Encerrar, a geracao nao mudava,
+    ''' e a continuacao voltava e abria um compositor num ViewModel morto.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Criacao_que_termina_depois_do_descarte_nao_abre_o_compositor()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+
+        broker.TravaDoCreate = New TaskCompletionSource(Of Boolean)()
+        Dim abrindo = vm.NewMessageAsync()
+        AguardarChamadas(broker, "create", 1)
+        Assert.AreEqual(ComposerState.Closed, vm.State, "ainda criando")
+
+        ' A janela fecha: o ViewModel e descartado com a criacao em voo.
+        vm.Dispose()
+
+        broker.TravaDoCreate.SetResult(True)
+        broker.TravaDoCreate = Nothing
+        Aguardar(abrindo)
+
+        Assert.AreEqual(ComposerState.Closed, vm.State,
+            "O compositor nao pode abrir num ViewModel ja descartado.")
+        Assert.IsFalse(vm.IsOpen)
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: sem o descarte, a mesma criacao ABRE. Sem isto,
+    ''' um AbrirAsync quebrado passaria no teste de cima.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Criacao_que_termina_normalmente_abre_o_compositor()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+
+        broker.TravaDoCreate = New TaskCompletionSource(Of Boolean)()
+        Dim abrindo = vm.NewMessageAsync()
+        AguardarChamadas(broker, "create", 1)
+
+        broker.TravaDoCreate.SetResult(True)
+        broker.TravaDoCreate = Nothing
+        Aguardar(abrindo)
+
+        Assert.AreEqual(ComposerState.Editing, vm.State)
+    End Sub
+
+    ''' <summary>
+    ''' Descarte que falha volta a editar E rearma o autosave. O texto
+    ''' continua na tela, e continuar sujo sem timer o deixaria esperando
+    ''' uma proxima tecla que pode nao vir.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Descarte_que_falha_volta_a_gravar_o_que_estava_pendente()
+        Dim broker As New FakeBroker With {.FalhaAoDescartar = ErrorKind.Denied}
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.UserText = "texto que o descarte nao levou"
+        vm.CloseCommand.Execute(Nothing)
+        Assert.AreEqual(ComposerState.ConfirmingClose, vm.State)
+
+        Dim gravacoesAntes = ContarChamadas(broker, "update")
+        Aguardar(vm.DiscardCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.Editing, vm.State)
+        Assert.IsTrue(vm.IsOpen, "O rascunho nao foi apagado; a mensagem continua aqui.")
+        Assert.IsTrue(vm.HasStatus)
+
+        BombearPor(DebounceDeTeste * 6)
+        Assert.IsTrue(ContarChamadas(broker, "update") > gravacoesAntes,
+            "Voltar a editar depois de um descarte que falhou tem de rearmar o autosave.")
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================
