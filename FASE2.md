@@ -1,8 +1,8 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 16 — Q1 e **Q2 fechadas** (seções 9 a 11). Melhoria da Fase 1
-aplicada e revisada duas vezes (seção 12). Q4: custo **remedido** com a
-chave certa (seção 13).
+**Versão:** 17 — Q1 e **Q2 fechadas** (seções 9 a 11). Melhoria da Fase 1
+aplicada (12). Q4: custo remedido (13). **Gate arquitetural da Q2 (14)** —
+o que o 2.1 fica proibido de fazer.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -1500,3 +1500,115 @@ implementação, é requisito — e é o item 8 do critério de pronto (§8).
 criado, removido e movido entre duas pastas **durante** a enumeração, falha
 COM no meio, cancelamento no meio, Outlook reiniciado no meio. Essa parte
 escreve na caixa.
+
+---
+
+## 14. O gate arquitetural que a Q2 impõe
+
+Esta seção existe porque eu tratei a Q2 como **pergunta fechada**. Ela
+fechou como medição e **abriu a decisão mais perigosa da fase**.
+
+O risco concreto: dá para executar Q3, Q4, Q5 e Q6 de forma impecável e
+**ainda assim construir o banco errado**. A §11.4 já dizia que
+reversibilidade precisa ser **estrutural** — se duas encarnações forem
+fundidas fisicamente numa linha, desfazer depois não recupera a separação.
+Mas dizer isso numa seção de conclusão não é gate. Gate é proibição
+verificável.
+
+O 2.0 **não** escolhe aqui o algoritmo final de correlação — isso é do 2.1,
+e as saídas estão na §11.4. O que o 2.0 faz é fechar as portas por onde a
+escolha errada entraria sem ninguém notar.
+
+### 14.1 As cinco coisas que o schema tem de separar
+
+A Q2 provou que **nenhuma propriedade medida é ao mesmo tempo única e
+estável**. Isso obriga a distinguir coisas que seria natural juntar:
+
+| # | O que é | Exemplos | Vive quanto |
+|---|---|---|---|
+| 1 | **Identidade interna do Iris** | um id próprio, opaco | para sempre |
+| 2 | **Encarnação / localizador do provider** | `EntryID`, `PR_RECORD_KEY`, `PR_LONGTERM_ENTRYID_FROM_TABLE` | até o próximo `Move` |
+| 3 | **Pasta interna e seus localizadores** | mesmo tratamento do item | §6a mede |
+| 4 | **Associação item–pasta** | presença, por geração (§3.8) | enquanto observada |
+| 5 | **Arestas de correlação** | "é a mesma coisa que", "é cópia de", "é variante de conflito de" | removível |
+
+O erro que isso previne é específico e fácil de cometer: usar o `EntryID`
+como chave primária da linha de mensagem. É o desenho óbvio, funciona no
+primeiro dia, e **quebra no primeiro `Move`** — com o agravante de que a
+§11.3 mostrou que a quebra não produz erro, produz uma linha nova.
+
+### 14.2 As proibições
+
+Escritas como proibição, e não como recomendação, porque recomendação não
+dá para verificar. Cada uma vem com **o que um schema que a viola parece**,
+que é o que torna a revisão possível.
+
+**I1 — Nenhum identificador do provider é chave primária de nada.**
+Violação: `CREATE TABLE mensagem (entry_id TEXT PRIMARY KEY, ...)`.
+Eles são **atributos observados** de uma encarnação, e mudam.
+
+**I2 — Estado do usuário pende da identidade interna, nunca da
+encarnação.** Lido, triado, vínculo com resumo da IA, decisões tomadas.
+Violação: coluna `triado` na mesma linha que guarda o `EntryID` atual.
+Senão um `Move` — arrastar uma mensagem entre pastas — apaga o trabalho do
+usuário, silenciosamente.
+
+**I3 — Unir é uma ARESTA, nunca uma reescrita.** Violação: `UPDATE` que
+troca o id interno de uma linha pelo de outra, ou `DELETE` da linha
+"perdedora". Depois de reescrever, desfazer é impossível — e a Q2 garante
+que vaí haver união errada, porque nenhuma evidência é suficiente sozinha.
+
+**I4 — Toda aresta carrega procedência, confiança e geração.** Qual
+evidência sustentou, quão forte, e quando. Violação: tabela de ligação com
+duas colunas de id e mais nada. Sem procedência não dá para reavaliar
+quando a regra melhorar, e a §10.6 mostrou que as regras erram muito.
+
+**I5 — "Não unido" é o estado barato e o padrão.** É a §3.1 — na dúvida,
+não unir — virada requisito de schema. Violação: desenho em que deixar
+separado exige linha extra e unir é só preencher um campo. O caminho
+barato precisa ser o conservador, senão a pressão de implementação empurra
+para o lado errado.
+
+**I6 — Ausência é estado da ASSOCIAÇÃO, e tem estado transitório.** Já está
+na §3.4 e na §11.3. Violação: `DELETE FROM mensagem WHERE ...` porque uma
+varredura não viu o item. Precisa existir `ausente, aguardando
+reconciliação` como valor, não como ausência de linha.
+
+**I7 — O universo faz parte da identidade da geração.** Store, pasta,
+filtro e — quando existir — **o cutoff de retenção**. Violação: comparar
+uma geração de 90 dias com uma de 180 e concluir que 12 mil itens sumiram.
+Corolário: **"saiu da janela" tem de ser distinguível de "ausente no
+Outlook"** — e o cutoff tem de ser **congelado** por geração, senão uma
+janela móvel move o chão durante a varredura.
+
+**I8 — Evidência igual em itens COEXISTENTES obriga bifurcar, nunca
+fundir.** É o `Copy` da §11.1: ele duplica `SearchKey` e Message-ID. Se os
+dois estão lá ao mesmo tempo, são dois. Violação: dedup por `SearchKey`
+sem checar coexistência. Vale também para a propriedade nomeada que o Iris
+venha a escrever — a §11.4 registra que o `Copy` a duplicaria igual.
+
+### 14.3 O que este gate NÃO decide
+
+- **Qual das quatro saídas da §11.4** o 2.1 escolhe. Todas as quatro são
+  compatíveis com I1–I8, e é essa a intenção: o gate proíbe o desenho
+  irreversível, não escolhe o algoritmo.
+- **Tecnologia de armazenamento.** A §3.10 já decidiu, e I1–I8 não dependem
+  disso.
+- **Se vai haver correlação automática.** "Não correlacionar" continua
+  resultado aceitável, e satisfaz o gate trivialmente.
+
+### 14.4 Como este gate é verificado
+
+Não por leitura. O critério de pronto do 2.1 passa a incluir, para cada
+invariante, **um teste que falha se ele for violado** — no espírito do que
+a §12.6 fez com o gate de proteção, onde desfazer a correção derruba 2 dos
+4 testes.
+
+Os mais fáceis de testar são I1, I3 e I6, porque são afirmações sobre a
+forma do schema e dá para inspecioná-lo. I5 e I8 exigem teste de
+comportamento. I7 exige que a geração carregue o universo, o que é
+inspecionável.
+
+**Sem esses testes, I1–I8 são comentário.** E este projeto já tem o
+precedente: a regra do `Permission` estava escrita e mesmo assim o gate
+falhava aberto por três marcos.
