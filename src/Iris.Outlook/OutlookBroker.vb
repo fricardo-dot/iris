@@ -542,29 +542,51 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
-        Public Function CreateDraftAsync(content As DraftContent, cancel As CancellationToken) _
-            As Task(Of OperationResult(Of DraftKey)) Implements IOutlookBroker.CreateDraftAsync
-            Return Pendente(Of DraftKey)("1.5")
+        ' Criar um rascunho GRAVA no store: vai por MutateAsync, com o
+        ' retry do message filter desligado. Um retry aqui criaria dois
+        ' rascunhos.
+
+        Public Async Function CreateDraftAsync(content As DraftContent, cancel As CancellationToken) _
+            As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.CreateDraftAsync
+
+            Return Await MutateAsync(Of DraftInfo)(
+                "outlook.createDraft",
+                Function(app, ns) DraftWriting.CreateNew(app, ns), cancel)
         End Function
 
-        Public Function CreateReplyDraftAsync(item As ItemKey, replyAll As Boolean, cancel As CancellationToken) _
-            As Task(Of OperationResult(Of DraftKey)) Implements IOutlookBroker.CreateReplyDraftAsync
-            Return Pendente(Of DraftKey)("1.5")
+        Public Async Function CreateReplyDraftAsync(item As ItemKey, replyAll As Boolean,
+                                                    cancel As CancellationToken) _
+            As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.CreateReplyDraftAsync
+
+            Return Await MutateAsync(Of DraftInfo)(
+                "outlook.createReplyDraft",
+                Function(app, ns) DraftWriting.CreateReply(ns, item, replyAll), cancel)
         End Function
 
-        Public Function CreateForwardDraftAsync(item As ItemKey, cancel As CancellationToken) _
-            As Task(Of OperationResult(Of DraftKey)) Implements IOutlookBroker.CreateForwardDraftAsync
-            Return Pendente(Of DraftKey)("1.5")
+        Public Async Function CreateForwardDraftAsync(item As ItemKey, cancel As CancellationToken) _
+            As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.CreateForwardDraftAsync
+
+            Return Await MutateAsync(Of DraftInfo)(
+                "outlook.createForwardDraft",
+                Function(app, ns) DraftWriting.CreateForward(ns, item), cancel)
         End Function
 
-        Public Function UpdateDraftAsync(draft As DraftKey, content As DraftContent, cancel As CancellationToken) _
-            As Task(Of OperationResult(Of DraftKey)) Implements IOutlookBroker.UpdateDraftAsync
-            Return Pendente(Of DraftKey)("1.5")
+        Public Async Function UpdateDraftAsync(draft As DraftKey, content As DraftContent,
+                                               cancel As CancellationToken) _
+            As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.UpdateDraftAsync
+
+            Return Await MutateAsync(Of DraftInfo)(
+                "outlook.updateDraft",
+                Function(app, ns) DraftWriting.Update(ns, draft, content), cancel)
         End Function
 
-        Public Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String, cancel As CancellationToken) _
+        Public Async Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String,
+                                                      cancel As CancellationToken) _
             As Task(Of OperationResult(Of AttachmentInfo)) Implements IOutlookBroker.AddDraftAttachmentAsync
-            Return Pendente(Of AttachmentInfo)("1.5")
+
+            Return Await MutateAsync(Of AttachmentInfo)(
+                "outlook.addDraftAttachment",
+                Function(app, ns) DraftWriting.AddAttachment(ns, draft, filePath), cancel)
         End Function
 
         Public Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
@@ -573,19 +595,41 @@ Namespace Global.Iris.Outlook
             Return Pendente(Of Boolean)("1.5")
         End Function
 
-        Public Function PrepareSendAsync(draft As DraftKey, cancel As CancellationToken) _
+        ''' <summary>
+        ''' Descobre para quem a mensagem vai e por qual conta. NÃO envia.
+        ''' Vai por ReadAsync mesmo mexendo em Recipients: ResolveAll é
+        ''' idempotente — resolver duas vezes dá o mesmo resultado — e um
+        ''' retry aqui não produz efeito nenhum no mundo. Marcar como
+        ''' mutação faria uma falha virar Ambiguous, e aí o usuário não
+        ''' conseguiria nem revisar o envio de novo.
+        ''' </summary>
+        Public Async Function PrepareSendAsync(draft As DraftKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of SendPreview)) Implements IOutlookBroker.PrepareSendAsync
-            Return Pendente(Of SendPreview)("1.5")
+
+            Return Await ReadAsync(Of SendPreview)(
+                "outlook.prepareSend",
+                Function(app, ns) DraftWriting.PrepareSend(ns, draft), cancel)
         End Function
 
-        Public Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
+        ''' <summary>
+        ''' Envia. Falha depois de o Send() começar vira Ambiguous pelo
+        ''' classificador, e Ambiguous NUNCA é retentável — reenviar no
+        ''' escuro é o único erro irreversível deste projeto.
+        ''' </summary>
+        Public Async Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.SendDraftAsync
-            Return Pendente(Of Boolean)("1.5")
+
+            Return Await MutateAsync(Of Boolean)(
+                "outlook.sendDraft",
+                Function(app, ns) DraftWriting.Send(ns, draft), cancel)
         End Function
 
-        Public Function DeleteDraftAsync(draft As DraftKey, cancel As CancellationToken) _
+        Public Async Function DeleteDraftAsync(draft As DraftKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.DeleteDraftAsync
-            Return Pendente(Of Boolean)("1.5")
+
+            Return Await MutateAsync(Of Boolean)(
+                "outlook.deleteDraft",
+                Function(app, ns) DraftWriting.Delete(ns, draft), cancel)
         End Function
 
         Public Async Function SubscribeFolderAsync(folder As FolderKey, cancel As CancellationToken) _

@@ -110,7 +110,7 @@ Namespace Global.Iris.Core
         ''' independentemente da pasta — descoberta da Fase 0.
         ''' </summary>
         Function CreateDraftAsync(content As DraftContent, cancel As CancellationToken) _
-            As Task(Of OperationResult(Of DraftKey))
+            As Task(Of OperationResult(Of DraftInfo))
 
         ''' <summary>
         ''' Usa Reply/ReplyAll do próprio Outlook. Responder NÃO é "mensagem
@@ -119,15 +119,15 @@ Namespace Global.Iris.Core
         ''' </summary>
         Function CreateReplyDraftAsync(item As ItemKey, replyAll As Boolean,
                                        cancel As CancellationToken) _
-            As Task(Of OperationResult(Of DraftKey))
+            As Task(Of OperationResult(Of DraftInfo))
 
         ''' <summary>Usa Forward do próprio Outlook, preservando anexos.</summary>
         Function CreateForwardDraftAsync(item As ItemKey, cancel As CancellationToken) _
-            As Task(Of OperationResult(Of DraftKey))
+            As Task(Of OperationResult(Of DraftInfo))
 
         Function UpdateDraftAsync(draft As DraftKey, content As DraftContent,
                                   cancel As CancellationToken) _
-            As Task(Of OperationResult(Of DraftKey))
+            As Task(Of OperationResult(Of DraftInfo))
 
         Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String,
                                          cancel As CancellationToken) _

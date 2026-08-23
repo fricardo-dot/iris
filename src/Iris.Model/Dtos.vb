@@ -168,13 +168,54 @@ Namespace Global.Iris.Model
         Public Property At As DateTimeOffset
     End Class
 
-    ''' <summary>Conteúdo editável de um rascunho.</summary>
+    ''' <summary>
+    ''' O que o usuário edita num rascunho.
+    '''
+    ''' <see cref="UserText"/> é SÓ o que ele digitou. A citação e a
+    ''' assinatura que o Outlook gerou não passam por aqui — elas ficam
+    ''' intactas do outro lado, em <see cref="DraftInfo.QuotedBody"/>.
+    ''' Trafegar o corpo inteiro como texto editável destruiria a formatação
+    ''' corporativa a cada salvamento.
+    ''' </summary>
     Public NotInheritable Class DraftContent
         Public Property Subject As String = ""
-        Public Property Body As String = ""
-        Public Property To_ As New List(Of String)()
-        Public Property Cc As New List(Of String)()
-        Public Property AttachmentPaths As New List(Of String)()
+        Public Property UserText As String = ""
+        ''' <summary>Endereços separados por ponto e vírgula, como digitados.</summary>
+        Public Property ToLine As String = ""
+        Public Property CcLine As String = ""
+    End Class
+
+    ''' <summary>
+    ''' Um rascunho aberto no compositor.
+    '''
+    ''' O rascunho é criado e salvo no Outlook ao ABRIR o compositor, não na
+    ''' primeira edição: assim ele sobrevive a um fechamento acidental e tem
+    ''' chave estável desde o começo.
+    ''' </summary>
+    Public NotInheritable Class DraftInfo
+        Public Property Key As DraftKey
+        Public Property Subject As String = ""
+        Public Property ToLine As String = ""
+        Public Property CcLine As String = ""
+
+        ''' <summary>O que o usuário digitou. Vazio num rascunho recém-criado.</summary>
+        Public Property UserText As String = ""
+
+        ''' <summary>
+        ''' O corpo que o Outlook gerou — citação da mensagem original e
+        ''' assinatura. Preservado INTACTO: o Iris nunca o reescreve, só
+        ''' escreve acima dele.
+        ''' </summary>
+        Public Property QuotedBody As String = ""
+        Public Property Format As BodyFormat = BodyFormat.PlainText
+
+        Public Property Attachments As New List(Of AttachmentInfo)()
+
+        ''' <summary>
+        ''' Conta que o Outlook vai usar para enviar. Aparece na confirmação
+        ''' porque delegação e múltiplas contas tornam isso não óbvio (F1-L).
+        ''' </summary>
+        Public Property SendingAccount As String = ""
     End Class
 
     ''' <summary>
