@@ -28,6 +28,25 @@ nomes para as duas coisas.
 Quando a mensagem do compilador não fizer sentido nenhuma no ponto em que
 aparece, suspeite disto antes de suspeitar do resto.
 
+### Palavra reservada como nome de membro
+
+Parente próximo, e o sintoma é igual: a mensagem aponta para longe.
+
+| Nome | Onde | Erro que apareceu |
+|---|---|---|
+| `Partial` | membro de enum | "tipo não pode ser inferido", no arquivo todo |
+| `Protected` | membro de enum | "Enum must end with a matching End Enum" |
+
+Foram renomeados para `Incomplete` e `Restricted`. Colchetes (`[Protected]`)
+resolvem o compilador e não resolvem a leitura — quem lê depois tropeça no
+mesmo lugar.
+
+### PowerShell tem a mesma doença
+
+O `tools/` é PowerShell, e lá também: `$pid` é somente-leitura (é o PID do
+processo) e o PowerShell também é case-insensitive, então
+`foreach ($pid in ...)` aborta a execução.
+
 ## RCW: nunca encadeie expressões COM
 
 Cada acesso que **devolve outro objeto COM** pode criar um RCW

@@ -49,7 +49,7 @@ Namespace Global.Iris.Outlook
                     .SenderName = Texto(Function() mail.SenderName),
                     .SenderAddress = Texto(Function() mail.SenderEmailAddress),
                     .ReceivedTime = Data(Function() mail.ReceivedTime),
-                    .IsProtected = Numero(Function() CInt(mail.Permission)) <> 0
+                    .Protection = LerProtecao(mail)
                 }
 
                 detalhe.RecipientsStatus = LerDestinatarios(mail, detalhe.Recipients)
@@ -63,13 +63,33 @@ Namespace Global.Iris.Outlook
         End Function
 
         ''' <summary>
+        ''' Permission NAO pode passar pelo helper Numero: ele converte
+        ''' excecao em zero, e zero aqui significa "nao e protegida". Uma
+        ''' falha de leitura viraria permissao para ler o corpo.
+        ''' </summary>
+        Private Function LerProtecao(mail As OL.MailItem) As ProtectionState
+            Try
+                Return If(CInt(mail.Permission) <> 0,
+                          ProtectionState.Restricted, ProtectionState.Unprotected)
+            Catch ex As Runtime.InteropServices.COMException
+                Return ProtectionState.Unknown
+            Catch ex As InvalidCastException
+                Return ProtectionState.Unknown
+            End Try
+        End Function
+
+        ''' <summary>
         ''' Só depois de ler é que se sabe se dava para ler.
         ''' </summary>
         Private Sub LerCorpo(mail As OL.MailItem, detalhe As MessageDetail)
             ' Mensagem protegida por IRM não tem corpo entregue por aqui, e
             ' insistir só produz erro. R11: conteúdo protegido também não vai
             ' para log nem para IA.
-            If detalhe.IsProtected Then
+            '
+            ' Unknown bloqueia JUNTO com Protected. Antes, falha ao ler
+            ' Permission virava zero e o corpo era lido — o gate falhava
+            ' ABERTO, que e o unico jeito errado de um gate falhar.
+            If Not ProtectionPolicy.CanReadBody(detalhe.Protection) Then
                 detalhe.Content = ContentState.MetadataOnly
                 detalhe.BodyError = ErrorKind.Denied
                 Return

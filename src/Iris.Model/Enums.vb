@@ -111,4 +111,28 @@ Namespace Global.Iris.Model
         SenderAsc
     End Enum
 
+
+    ''' <summary>
+    ''' Se a mensagem esta protegida por IRM/rotulo.
+    '''
+    ''' TRES estados, e o terceiro e o que importa. Antes isto era um
+    ''' Boolean preenchido por um helper que convertia QUALQUER excecao em
+    ''' zero, entao "nao consegui determinar" virava "nao e protegida" e o
+    ''' corpo era lido em seguida. Gate de seguranca que falha ABERTO.
+    '''
+    ''' Unknown existe para o codigo ser obrigado a decidir o que fazer com
+    ''' ele, e a decisao esta em MessageReading: Unknown bloqueia igual a
+    ''' Protected. Ver R11.
+    ''' </summary>
+    Public Enum ProtectionState
+        ''' <summary>Nao foi possivel determinar. Trata-se como protegida.</summary>
+        Unknown
+        Unprotected
+
+        ' NAO se chama Protected: e palavra reservada do VB, e o erro
+        ' aparece como "Enum must end with a matching End Enum" na linha
+        ' ERRADA. Mesma classe do Partial que ja custou tempo aqui.
+        Restricted
+    End Enum
+
 End Namespace

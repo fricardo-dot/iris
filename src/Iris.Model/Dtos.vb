@@ -120,7 +120,11 @@ Namespace Global.Iris.Model
         ''' IRM ou rótulo de sensibilidade. Ver R11: item protegido fica fora
         ''' do escopo da IA, e não entra em log.
         ''' </summary>
-        Public Property IsProtected As Boolean
+        ''' <summary>
+        ''' Unknown por ser o PRIMEIRO valor do enum, e isso e deliberado: um
+        ''' produtor que esqueca de preencher fecha o gate em vez de abrir.
+        ''' </summary>
+        Public Property Protection As ProtectionState
         Public Property BodyError As ErrorKind
     End Class
 
