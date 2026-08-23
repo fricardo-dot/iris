@@ -30,6 +30,77 @@ Public Class ArchitectureTests
     End Function
 
     ' ===================================================================
+    ' Fase da operação (F1-N)
+    ' ===================================================================
+
+    ''' <summary>
+    ''' A fase de uma operação NÃO pode ser estado compartilhado do broker.
+    '''
+    ''' Isto não prova comportamento sob concorrência — para isso seria
+    ''' preciso Outlook real e duas operações sobrepostas de verdade. Prova a
+    ''' propriedade ESTRUTURAL que garante o comportamento: se cada
+    ''' invocação instancia a sua fase e não existe campo guardando essa
+    ''' fase, não há o que compartilhar.
+    '''
+    ''' Existe porque o defeito original era exatamente esse campo. Ele foi
+    ''' removido, e alguém "simplificando" um dia pode trazê-lo de volta sem
+    ''' perceber o que está desfazendo: uma operação concorrente zerando a
+    ''' fase entre a falha de um Send e a classificação dela faz o envio que
+    ''' talvez tenha saído voltar como retentável.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_broker_nao_guarda_fase_de_operacao_em_campo()
+        Dim broker = GetType(Iris.Outlook.OutlookBroker)
+
+        Dim fase = broker.GetNestedTypes(BindingFlags.NonPublic).
+                          FirstOrDefault(Function(t) t.Name.Contains("Fase"))
+
+        Assert.IsNotNull(fase,
+            "A classe de fase por invocação sumiu — a proteção pode ter voltado a ser campo.")
+
+        Dim campos = broker.GetFields(BindingFlags.Instance Or BindingFlags.Static Or
+                                      BindingFlags.NonPublic Or BindingFlags.Public).
+                            Where(Function(f) f.FieldType Is fase).
+                            Select(Function(f) f.Name).
+                            ToList()
+
+        Assert.AreEqual(0, campos.Count,
+            "A fase da operação virou campo do broker de novo: " & String.Join(", ", campos) &
+            ". Operações concorrentes passam a compartilhar a fase, e a defesa " &
+            "contra reenviar uma mensagem que talvez tenha saido deixa de valer.")
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo do teste acima: ele SABE achar campo do tipo que
+    ''' procura. Sem esta conferência, um teste que nunca encontra nada
+    ''' passaria para sempre, inclusive depois de o campo voltar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_busca_por_campo_de_fase_realmente_encontra_campos()
+        Dim exemplo = GetType(ClasseComCampoDeFase)
+
+        Dim achados = exemplo.GetFields(BindingFlags.Instance Or BindingFlags.NonPublic).
+                              Where(Function(f) f.FieldType Is GetType(FaseDeMentira)).
+                              Count()
+
+        Assert.AreEqual(1, achados,
+            "A técnica de reflexão do teste anterior não acha nada — ele passaria de graça.")
+    End Sub
+
+    Private NotInheritable Class FaseDeMentira
+    End Class
+
+    Private NotInheritable Class ClasseComCampoDeFase
+        Private ReadOnly _fase As New FaseDeMentira()
+
+        Public ReadOnly Property Fase As FaseDeMentira
+            Get
+                Return _fase
+            End Get
+        End Property
+    End Class
+
+    ' ===================================================================
     ' Referências
     ' ===================================================================
 

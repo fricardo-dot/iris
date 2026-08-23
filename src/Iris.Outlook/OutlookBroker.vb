@@ -55,7 +55,6 @@ Namespace Global.Iris.Outlook
 
         ' 1 = o delegate da operacao ja comecou, logo pode ter surtido
         ' efeito. Serializado pela thread do broker.
-        Private _effectStarted As Integer = 0
 
         ''' <summary>
         ''' Assinaturas ativas, por id. Só podem ser tocadas na thread do
@@ -207,15 +206,30 @@ Namespace Global.Iris.Outlook
             End If
 
             Dim inicio = DateTime.UtcNow
-            Volatile.Write(_effectStarted, 0)
+
+            ' A fase é LOCAL a esta invocação, e isso é a correção de F1-N.
+            '
+            ' Era um campo do broker: zerado na thread do CHAMADOR antes de
+            ' postar, marcado na STA, e lido no Catch depois do Await. Uma
+            ' operação concorrente — uma recarga de pasta disparada por
+            ' evento, por exemplo — zerava o campo entre a falha de um Send e
+            ' a classificação dela. O envio que talvez tivesse saído voltava
+            ' como NotConnected, que é retentável.
+            '
+            ' A regra estava certa e lia estado errado.
+            Dim fase As New FaseDaOperacao()
+
             Try
                 Dim resultado = Await InvokeAsync(
                     Function()
                         If _application Is Nothing OrElse _namespace Is Nothing Then
                             Return OperationResult(Of T).Fail(ErrorKind.NotConnected, "sem sessão")
                         End If
+                        ' AllowRetry continua no filtro, que é do broker: ele
+                        ' é lido e escrito só aqui dentro, na STA, que roda
+                        ' uma operação por vez.
                         _filter.AllowRetry = allowRetry
-                        Volatile.Write(_effectStarted, 1)
+                        fase.Marcar()
                         Try
                             Return work(_application, _namespace)
                         Finally
@@ -231,35 +245,53 @@ Namespace Global.Iris.Outlook
                 Return resultado
 
             Catch ex As COMException
-                Dim kind = ClassifyFailure(ex.HResult, isMutation, operation)
+                Dim kind = ClassificarERegistrar(ex.HResult, isMutation, fase, operation)
                 Return OperationResult(Of T).Fail(kind, $"0x{ex.HResult:X8}")
             Catch ex As Exception
-                Dim kind = ClassifyFailure(Nothing, isMutation, operation)
+                Dim kind = ClassificarERegistrar(Nothing, isMutation, fase, operation)
                 _log.Write(LogLevel.Error, operation, ex.GetType().Name)
                 Return OperationResult(Of T).Fail(kind, ex.GetType().Name)
             End Try
         End Function
 
         ''' <summary>
-        ''' O contrato diz que falha DEPOIS de uma mutação começar é
-        ''' Ambiguous. A versão anterior usava a mesma classificação para
-        ''' leitura e mutação, então um Send() que estourasse com
-        ''' RPC_E_DISCONNECTED depois de a mensagem sair virava NotConnected
-        ''' — cujo IsRetryable é True. Ou seja: o código convidava a
-        ''' reenviar exatamente no caso em que reenviar duplica.
+        ''' Fase de UMA invocação. Objeto, e não campo do broker, porque cada
+        ''' chamada precisa da sua — ver o comentário em RunAsync.
         ''' </summary>
-        Private Function ClassifyFailure(hresult As Integer?, isMutation As Boolean,
-                                         operation As String) As ErrorKind
-            If isMutation AndAlso Volatile.Read(_effectStarted) = 1 Then
+        Private NotInheritable Class FaseDaOperacao
+            Private _iniciou As Integer
+
+            ''' <summary>Chamado na STA; lido na thread do chamador.</summary>
+            Public Sub Marcar()
+                Volatile.Write(_iniciou, 1)
+            End Sub
+
+            Public ReadOnly Property Iniciou As Boolean
+                Get
+                    Return Volatile.Read(_iniciou) = 1
+                End Get
+            End Property
+        End Class
+
+        ''' <summary>
+        ''' Decide pela política e registra. A REGRA mora em
+        ''' <see cref="OutlookFailurePolicy"/>, no Core, onde teste alcança;
+        ''' aqui fica o que é do broker: observar a fase e escrever o log.
+        ''' </summary>
+        Private Function ClassificarERegistrar(hresult As Integer?, isMutation As Boolean,
+                                               fase As FaseDaOperacao,
+                                               operation As String) As ErrorKind
+
+            Dim kind = OutlookFailurePolicy.ClassifyFailure(hresult, isMutation, fase.Iniciou)
+
+            If kind = ErrorKind.Ambiguous Then
                 _log.Write(LogLevel.Warn, operation,
-                           $"AMBIGUO apos iniciar mutacao" &
+                           "AMBIGUO apos iniciar mutacao" &
                            If(hresult.HasValue, $" (0x{hresult.Value:X8})", ""))
-                Return ErrorKind.Ambiguous
+            ElseIf hresult.HasValue Then
+                _log.Write(LogLevel.Warn, operation, $"HRESULT 0x{hresult.Value:X8} -> {kind}")
             End If
 
-            If Not hresult.HasValue Then Return ErrorKind.Unexpected
-            Dim kind = Classify(hresult.Value)
-            _log.Write(LogLevel.Warn, operation, $"HRESULT 0x{hresult.Value:X8} -> {kind}")
             Return kind
         End Function
 
@@ -277,12 +309,8 @@ Namespace Global.Iris.Outlook
         End Function
 
         Private Shared Function Classify(hresult As Integer) As ErrorKind
-            Select Case hresult
-                Case &H80010001, &H8001010A : Return ErrorKind.Busy
-                Case &H80010108, &H800706BA, &H800401FD : Return ErrorKind.NotConnected
-                Case &H80070005 : Return ErrorKind.Denied
-                Case Else : Return ErrorKind.Unexpected
-            End Select
+            Return OutlookFailurePolicy.ClassifyFailure(hresult, isMutation:=False,
+                                                        mutationAttemptStarted:=False)
         End Function
 
         ' ===================================================================
