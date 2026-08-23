@@ -195,6 +195,34 @@ Namespace Global.Iris.App.ViewModels
             ErrorMessage = ""
         End Sub
 
+        ''' <summary>
+        ''' Tenta reselecionar uma pasta pela chave, depois de a árvore ter
+        ''' sido reconstruída.
+        '''
+        ''' Procura só nas RAÍZES, e isso é uma limitação consciente: os
+        ''' filhos são materializados sob demanda, ao expandir, então depois
+        ''' de um Clear não existe nó de subpasta para achar. Restaurar uma
+        ''' subpasta exigiria guardar o caminho e reexpandi-lo, e isso não
+        ''' está feito — está registrado como dívida.
+        '''
+        ''' Na prática cobre o caso comum: Caixa de Entrada, Rascunhos,
+        ''' Itens Enviados e as demais pastas de topo.
+        ''' </summary>
+        ''' <returns>True se achou e selecionou.</returns>
+        Public Function TrySelect(key As FolderKey) As Boolean
+            If key Is Nothing Then Return False
+
+            For Each raiz In Roots
+                If key.Equals(raiz.Key) Then
+                    Selected = raiz
+                    raiz.IsSelected = True
+                    Return True
+                End If
+            Next
+
+            Return False
+        End Function
+
         Private Function Atual(geracao As Integer) As Boolean
             Return Volatile.Read(_generation) = geracao
         End Function

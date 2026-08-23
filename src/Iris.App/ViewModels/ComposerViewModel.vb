@@ -177,10 +177,23 @@ Namespace Global.Iris.App.ViewModels
             CancelSendCommand = New RelayCommand(AddressOf VoltarAEditar,
                                                  Function() State = ComposerState.ConfirmingSend)
             CloseCommand = New RelayCommand(AddressOf Fechar)
+            ' Salvar e descartar TAMBÉM gravam no store, e eu tinha
+            ' deixado os dois de fora da trava de sessão. Depois de a sessão
+            ' trocar, "Salvar e fechar" chamava Update com a chave vencida e
+            ' "Descartar" chamava Delete com ela — e apagar por uma chave que
+            ' voltou a resolver na sessão nova é a pior das duas.
             SaveAndCloseCommand = New AsyncRelayCommand(
-                Function() ExclusivoAsync(AddressOf SalvarEFecharAsync))
+                Function() ExclusivoAsync(AddressOf SalvarEFecharAsync),
+                Function() Not _sessaoSubstituida)
             DiscardCommand = New AsyncRelayCommand(
-                Function() ExclusivoAsync(AddressOf DescartarAsync))
+                Function() ExclusivoAsync(AddressOf DescartarAsync),
+                Function() Not _sessaoSubstituida)
+
+            ' A saída que sobra quando a sessão trocou. NÃO se chama
+            ' "descartar": ela não apaga nada no Outlook, e prometer que
+            ' apaga seria mentir sobre o que acontece com o rascunho.
+            CloseLocallyCommand = New RelayCommand(AddressOf Encerrar,
+                                                   Function() _sessaoSubstituida)
             KeepEditingCommand = New RelayCommand(AddressOf VoltarAEditar)
         End Sub
 
@@ -192,6 +205,7 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property SaveAndCloseCommand As IAsyncRelayCommand
         Public ReadOnly Property DiscardCommand As IAsyncRelayCommand
         Public ReadOnly Property KeepEditingCommand As IRelayCommand
+        Public ReadOnly Property CloseLocallyCommand As IRelayCommand
 
         Public ReadOnly Property Attachments As New ObservableCollection(Of AttachmentInfo)()
 
@@ -535,6 +549,13 @@ Namespace Global.Iris.App.ViewModels
             Status = "Criando rascunho…"
 
             Dim marca = Interlocked.Read(_geracao)
+
+            ' Época ANTES de criar. Se ela mudar durante a criação, não dá
+            ' para saber em qual sessão o rascunho nasceu — e adotar a época
+            ' NOVA rotularia uma chave velha como boa, que é o oposto do que
+            ' a época existe para fazer.
+            Dim epocaAntes = _broker.SessionEpoch
+
             Dim resultado = Await criar(CancellationToken.None)
 
             ' A janela pode ter fechado enquanto o rascunho era criado.
@@ -547,8 +568,15 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End If
 
+            If _broker.SessionEpoch <> epocaAntes Then
+                State = ComposerState.Closed
+                Status = "A conexão com o Outlook mudou enquanto o rascunho era criado. " &
+                         "Tente de novo."
+                Return
+            End If
+
             Aplicar(resultado.Value, primeiraVez:=True)
-            _epocaDoRascunho = _broker.SessionEpoch
+            _epocaDoRascunho = epocaAntes
             _sessaoSubstituida = False
             Status = ""
             IsDirty = False
@@ -1035,7 +1063,22 @@ Namespace Global.Iris.App.ViewModels
             If retomarEdicao Then VoltarAEditar()
         End Sub
 
+        ''' <summary>
+        ''' Segunda barreira, além do CanExecute.
+        '''
+        ''' CanExecute governa o botão; ele não governa quem chama o comando
+        ''' por fora. Para operação que escreve no store de outra sessão, a
+        ''' recusa tem de estar no caminho, não só no habilitar do botão.
+        ''' </summary>
+        Private Function RecusarPorSessao() As Boolean
+            If Not _sessaoSubstituida Then Return False
+            Status = "A sessão do Outlook mudou. Este rascunho é da anterior, " &
+                     "e já está salvo em Rascunhos."
+            Return True
+        End Function
+
         Private Async Function SalvarEFecharAsync() As Task
+            If RecusarPorSessao() Then Return
             ' NÃO passa por Editing antes de salvar.
             '
             ' Passava, e isso quebrava o fechamento da janela: o
@@ -1068,6 +1111,8 @@ Namespace Global.Iris.App.ViewModels
         ''' na pergunta de fechamento.
         ''' </summary>
         Private Async Function DescartarAsync() As Task
+            If RecusarPorSessao() Then Return
+
             _autosave.Stop()
 
             Dim marca = Interlocked.Read(_geracao)
@@ -1173,6 +1218,9 @@ Namespace Global.Iris.App.ViewModels
             RequestSendCommand.NotifyCanExecuteChanged()
             ConfirmSendCommand.NotifyCanExecuteChanged()
             CancelSendCommand.NotifyCanExecuteChanged()
+            SaveAndCloseCommand.NotifyCanExecuteChanged()
+            DiscardCommand.NotifyCanExecuteChanged()
+            CloseLocallyCommand.NotifyCanExecuteChanged()
         End Sub
 
         Private Shared Function Traduzir(kind As ErrorKind) As String

@@ -1149,6 +1149,116 @@ Public Class ComposerTests
         Assert.IsFalse(vm.IsDirty)
     End Sub
 
+
+    ''' <summary>
+    ''' O furo que eu tinha deixado aberto depois de dizer que estava
+    ''' fechado: "Salvar e fechar" e "Descartar" TAMBÉM gravam no store, e
+    ''' ficaram de fora da trava de sessão.
+    '''
+    ''' Descartar é o pior dos dois: apagar por uma chave que voltou a
+    ''' resolver na sessão nova pode apagar o que não devia.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Sessao_substituida_bloqueia_salvar_e_descartar()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.UserText = "texto por salvar"
+        broker.SubstituirSessao()
+        vm.OnSessionReplaced(broker.SessionEpoch)
+
+        vm.CloseCommand.Execute(Nothing)
+        Assert.AreEqual(ComposerState.ConfirmingClose, vm.State)
+
+        Assert.IsFalse(vm.SaveAndCloseCommand.CanExecute(Nothing),
+            "Salvar usaria a chave da sessão anterior.")
+        Assert.IsFalse(vm.DiscardCommand.CanExecute(Nothing),
+            "Descartar apagaria por uma chave que já não identifica este rascunho.")
+
+        ' E se alguém chamar por fora, nada sai daqui.
+        Dim gravacoes = ContarChamadas(broker, "update")
+        Aguardar(vm.SaveAndCloseCommand.ExecuteAsync(Nothing))
+        Aguardar(vm.DiscardCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(gravacoes, ContarChamadas(broker, "update"))
+        Assert.AreEqual(0, ContarChamadas(broker, "delete"))
+        Assert.IsTrue(vm.IsOpen, "O rascunho não pode fechar por uma operação que foi recusada.")
+    End Sub
+
+    ''' <summary>
+    ''' A saída que sobra: fechar SEM tocar no rascunho do Outlook. Não se
+    ''' chama descartar porque não apaga nada — e prometer que apaga seria
+    ''' mentir sobre o que acontece com a mensagem.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Fechar_localmente_nao_toca_no_rascunho_do_Outlook()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.UserText = "texto"
+        broker.SubstituirSessao()
+        vm.OnSessionReplaced(broker.SessionEpoch)
+        vm.CloseCommand.Execute(Nothing)
+
+        Assert.IsTrue(vm.CloseLocallyCommand.CanExecute(Nothing))
+        vm.CloseLocallyCommand.Execute(Nothing)
+
+        Assert.AreEqual(ComposerState.Closed, vm.State)
+        Assert.AreEqual(0, ContarChamadas(broker, "delete"),
+            "Fechar localmente não apaga o rascunho que já está no Outlook.")
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: em sessão normal os três botões continuam
+    ''' valendo. Sem isto, um compositor que bloqueasse salvar e descartar
+    ''' SEMPRE passaria nos dois testes acima.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Sem_troca_de_sessao_salvar_e_descartar_continuam_valendo()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.UserText = "texto"
+        vm.CloseCommand.Execute(Nothing)
+
+        Assert.IsTrue(vm.SaveAndCloseCommand.CanExecute(Nothing))
+        Assert.IsTrue(vm.DiscardCommand.CanExecute(Nothing))
+        Assert.IsFalse(vm.CloseLocallyCommand.CanExecute(Nothing),
+            "A saída local só existe quando a sessão trocou.")
+
+        Aguardar(vm.DiscardCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(1, ContarChamadas(broker, "delete"))
+    End Sub
+
+    ''' <summary>
+    ''' A sessão trocou ENQUANTO o rascunho era criado.
+    '''
+    ''' Não dá para saber em qual sessão ele nasceu, e adotar a época NOVA
+    ''' rotularia uma chave possivelmente velha como boa — o oposto do que a
+    ''' época existe para fazer. Não abrir é a resposta honesta.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Troca_de_sessao_durante_a_criacao_nao_abre_o_compositor()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+
+        broker.TravaDoCreate = New TaskCompletionSource(Of Boolean)()
+        Dim abrindo = vm.NewMessageAsync()
+        AguardarChamadas(broker, "create", 1)
+
+        broker.SubstituirSessao()
+
+        broker.TravaDoCreate.SetResult(True)
+        broker.TravaDoCreate = Nothing
+        Aguardar(abrindo)
+
+        Assert.AreEqual(ComposerState.Closed, vm.State)
+        Assert.IsTrue(vm.HasStatus, "O usuário precisa saber por que não abriu.")
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================

@@ -159,9 +159,44 @@ Namespace Global.Iris.Outlook
         Private Sub OnWatchdogTick(sender As Object, e As EventArgs)
             Dim antes = State
             Dim agora = ProbeCore()
+
+            ' Depois de a aquisição terminar, nunca dentro dela.
+            PublicarSessaoSeHouver()
             _watchdog.Interval = TimeSpan.FromMilliseconds(
                 If(agora = SessionState.Connected, ProbeConnectedMs, ProbeSearchingMs))
             If agora <> antes Then SetState(agora)
+        End Sub
+
+        ''' <summary>
+        ''' Época adquirida e ainda não anunciada. Existe para separar
+        ''' ADQUIRIR de PUBLICAR: ver o comentário em ConnectCore.
+        ''' </summary>
+        Private _epocaAPublicar As Long = 0
+
+        ''' <summary>
+        ''' Anuncia a sessão nova, se houver.
+        '''
+        ''' Cada assinante é chamado dentro do seu próprio Try. Um handler
+        ''' que estoure não pode derrubar os outros nem fazer uma aquisição
+        ''' que deu certo parecer que falhou — e assinante é código de fora,
+        ''' então isso não é hipótese remota.
+        ''' </summary>
+        Private Sub PublicarSessaoSeHouver()
+            Dim epoca = _epocaAPublicar
+            If epoca = 0 Then Return
+            _epocaAPublicar = 0
+
+            Dim inscritos = SessionReplacedEvent
+            If inscritos Is Nothing Then Return
+
+            For Each alvo In inscritos.GetInvocationList()
+                Try
+                    CType(alvo, EventHandler(Of Long)).Invoke(Me, epoca)
+                Catch ex As Exception
+                    _log.Write(LogLevel.Error, "broker.session",
+                               $"assinante falhou: {ex.GetType().Name}")
+                End Try
+            Next
         End Sub
 
         Private Sub SetState(novo As SessionState)
@@ -340,14 +375,24 @@ Namespace Global.Iris.Outlook
 
         Public Async Function ConnectAsync(cancel As CancellationToken) As Task(Of SessionState) _
             Implements IOutlookBroker.ConnectAsync
-            Dim resultado = Await InvokeAsync(Function() ConnectCore())
+            Dim resultado = Await InvokeAsync(
+                Function()
+                    Dim r = ConnectCore()
+                    PublicarSessaoSeHouver()
+                    Return r
+                End Function)
             SetState(resultado)
             Return resultado
         End Function
 
         Public Async Function ProbeAsync(cancel As CancellationToken) As Task(Of SessionState) _
             Implements IOutlookBroker.ProbeAsync
-            Dim resultado = Await InvokeAsync(Function() ProbeCore())
+            Dim resultado = Await InvokeAsync(
+                Function()
+                    Dim r = ProbeCore()
+                    PublicarSessaoSeHouver()
+                    Return r
+                End Function)
             SetState(resultado)
             Return resultado
         End Function
@@ -390,12 +435,17 @@ Namespace Global.Iris.Outlook
                 ' Sessão NOVA. Tudo o que a anterior entregou — chaves,
                 ' tokens de assinatura — deixou de valer neste instante, e as
                 ' assinaturas em si já foram embora no ReleaseSessionCore.
-                ' Quem depende disso precisa saber AGORA, e não quando
-                ' tentar usar uma chave morta.
+                '
+                ' ANOTA e não publica. Publicar daqui rodaria código de
+                ' assinante dentro da rotina que acabou de instalar
+                ' _application e _namespace: um assinante que bloqueasse
+                ' esperando o broker, ou que usasse Dispatcher.Invoke,
+                ' travaria a aquisição; e uma exceção dele faria uma conexão
+                ' bem-sucedida parecer falha.
                 Dim nova = Interlocked.Increment(_epoca)
+                _epocaAPublicar = nova
                 _probesDesconhecidos = 0
                 _log.Write(LogLevel.Info, "broker.session", $"epoca {nova}")
-                RaiseEvent SessionReplaced(Me, nova)
 
                 Return SessionState.Connected
 

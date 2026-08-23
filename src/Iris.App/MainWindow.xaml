@@ -977,27 +977,60 @@
                             VerticalAlignment="Center" HorizontalAlignment="Center"
                             Visibility="{Binding Composer.IsConfirmingClose, Converter={StaticResource BoolToVis}}">
                         <StackPanel>
-                            <TextBlock Text="Há alterações não salvas"
-                                       Style="{StaticResource Text.Title}" />
-                            <TextBlock Style="{StaticResource Text.Secondary}"
-                                       TextWrapping="Wrap" Margin="0,10,0,0"
-                                       Text="Salvar guarda o rascunho no Outlook. Descartar apaga a mensagem inteira, e não dá para desfazer." />
+                            <!-- Sessão normal: salvar, descartar, continuar. -->
+                            <StackPanel Visibility="{Binding Composer.SessaoSubstituida,
+                                                     Converter={StaticResource NotBoolToVis}}">
+                                <TextBlock Text="Há alterações não salvas"
+                                           Style="{StaticResource Text.Title}" />
+                                <TextBlock Style="{StaticResource Text.Secondary}"
+                                           TextWrapping="Wrap" Margin="0,10,0,0"
+                                           Text="Salvar guarda o rascunho no Outlook. Descartar apaga a mensagem inteira, e não dá para desfazer." />
 
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
-                                        Margin="0,22,0,0">
-                                <Button Style="{StaticResource Composer.Action}"
-                                        Content="Continuar editando"
-                                        Command="{Binding Composer.KeepEditingCommand}"
-                                        IsCancel="True"
-                                        AutomationProperties.Name="Continuar editando" />
-                                <Button Style="{StaticResource Composer.Action}"
-                                        Content="Descartar"
-                                        Command="{Binding Composer.DiscardCommand}"
-                                        AutomationProperties.Name="Descartar rascunho" />
-                                <Button Style="{StaticResource Button.Primary}"
-                                        Content="Salvar e fechar"
-                                        Command="{Binding Composer.SaveAndCloseCommand}"
-                                        AutomationProperties.Name="Salvar e fechar" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            Margin="0,22,0,0">
+                                    <Button Style="{StaticResource Composer.Action}"
+                                            Content="Continuar editando"
+                                            Command="{Binding Composer.KeepEditingCommand}"
+                                            IsCancel="True"
+                                            AutomationProperties.Name="Continuar editando" />
+                                    <Button Style="{StaticResource Composer.Action}"
+                                            Content="Descartar"
+                                            Command="{Binding Composer.DiscardCommand}"
+                                            AutomationProperties.Name="Descartar rascunho" />
+                                    <Button Style="{StaticResource Button.Primary}"
+                                            Content="Salvar e fechar"
+                                            Command="{Binding Composer.SaveAndCloseCommand}"
+                                            AutomationProperties.Name="Salvar e fechar" />
+                                </StackPanel>
+                            </StackPanel>
+
+                            <!--
+                                Sessao substituida: nem salvar nem descartar
+                                sao possiveis, porque a chave e da sessao
+                                anterior. Oferecer "Descartar" aqui seria
+                                prometer que apaga o rascunho, e ele nao
+                                apaga nada.
+                            -->
+                            <StackPanel Visibility="{Binding Composer.SessaoSubstituida,
+                                                     Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="A conexão com o Outlook mudou"
+                                           Style="{StaticResource Text.Title}" />
+                                <TextBlock Style="{StaticResource Text.Secondary}"
+                                           TextWrapping="Wrap" Margin="0,10,0,0"
+                                           Text="O que você escreveu até a última gravação já está salvo em Rascunhos, no Outlook. O que veio depois não foi salvo — copie antes de fechar." />
+
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                            Margin="0,22,0,0">
+                                    <Button Style="{StaticResource Composer.Action}"
+                                            Content="Voltar e copiar"
+                                            Command="{Binding Composer.KeepEditingCommand}"
+                                            IsCancel="True"
+                                            AutomationProperties.Name="Voltar e copiar" />
+                                    <Button Style="{StaticResource Button.Primary}"
+                                            Content="Fechar sem alterar o rascunho"
+                                            Command="{Binding Composer.CloseLocallyCommand}"
+                                            AutomationProperties.Name="Fechar sem alterar o rascunho" />
+                                </StackPanel>
                             </StackPanel>
                         </StackPanel>
                     </Border>

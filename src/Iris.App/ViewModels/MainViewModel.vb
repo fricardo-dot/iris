@@ -168,14 +168,40 @@ Namespace Global.Iris.App.ViewModels
 
             _watcher.OnSessionReplaced()
 
+            ' Guarda ANTES do Clear, que zera a seleção.
+            Dim anterior = If(Folders.Selected Is Nothing, Nothing, Folders.Selected.Key)
+
             Folders.Clear()
             Messages.Clear()
             Detail.Clear()
 
-            If Connection.State = SessionState.Connected Then
-                Connection.Observe(Folders.ReloadAsync(), "folders.reload")
-            End If
+            If Connection.State <> SessionState.Connected Then Return
+
+            Connection.Observe(RecarregarERestaurarAsync(anterior), "folders.reload")
         End Sub
+
+        ''' <summary>
+        ''' Recarrega a árvore e devolve o usuário à pasta em que ele estava.
+        '''
+        ''' Sem isto, reconectar deixava a árvore certa e a seleção vazia: a
+        ''' pasta aberta parava de ser observada e só voltava a atualizar
+        ''' quando o usuário clicasse nela de novo, sem nada indicar que
+        ''' precisava. Não é a falha silenciosa permanente de antes, mas
+        ''' continua sendo atualização que some sem avisar.
+        '''
+        ''' Reselecionar dispara o fluxo normal — mostrar a pasta e assiná-la
+        ''' — em vez de duplicar essa lógica aqui.
+        ''' </summary>
+        Private Async Function RecarregarERestaurarAsync(anterior As FolderKey) As Task
+            Await Folders.ReloadAsync()
+
+            If anterior Is Nothing Then Return
+            If Folders.TrySelect(anterior) Then Return
+
+            ' Não achou: era subpasta, ou a pasta não existe mais nesta
+            ' sessão. Ficar sem seleção é o comportamento honesto — melhor
+            ' que escolher outra pasta por conta própria.
+        End Function
 
         Public Async Function InitializeAsync() As Task
             Await Connection.InitializeAsync()
