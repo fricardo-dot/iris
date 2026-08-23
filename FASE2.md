@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 5 — invariante da associação propagada, inclusive nos resíduos de linguagem.
+**Versão:** 6 — Q1 RESPONDIDA. Resultado na seção 9.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -461,3 +461,98 @@ Assumindo que a lista venha do cache:
    meio.
 10. Prova de que uma reconciliação antiga **não sobrescreve** resultado de
     geração mais nova.
+
+---
+
+## 9. Q1 — RESPONDIDA
+
+Medido em 2026-08-23, na Caixa de Entrada real (1.003 itens, Exchange
+cached). Somente leitura. Scripts em `tools/q1-*.ps1`.
+
+### O resultado
+
+| Caminho | ms/item | Caixa inteira | Página de 50 |
+|---|---|---|---|
+| Iteração (`Items.Item(i)`) — o atual | 11–13 | ~12 s | ~570 ms |
+| `Table` + cursor | **0,66** | **666 ms** | **~27 ms** |
+
+**~20x, e constante com a profundidade.** As 21 páginas custaram entre 26 e
+29 ms cada; a última página sai pelo mesmo preço da primeira.
+
+### As colunas
+
+Todas as do `MailSummary` vêm em lote, e três delas eram as que mais
+importavam:
+
+| Coluna | Como |
+|---|---|
+| EntryID, Subject, MessageClass, LastModificationTime | tabela padrão |
+| SenderName, ReceivedTime, Size, UnRead | `Columns.Add` pelo nome |
+| **HasAttachment** | `PR_HASATTACH` (0x0E1B000B) — **sem abrir `Attachments`** |
+| **SearchKey** | `PR_SEARCH_KEY` (0x300B0102) |
+| **InternetMessageId** | `PR_INTERNET_MESSAGE_ID` (0x1035001E) |
+
+As duas últimas mudam a Q2: as evidências de correlação vêm **de graça,
+junto com a listagem**, e não custam uma passada extra.
+
+### O que NÃO vem, e um falso positivo que eu produzi
+
+`Permission` — o `IsProtected` do DTO — **não foi obtido em lote**.
+
+E eu quase registrei que sim: testei com o proptag `0x0E01000B`, que é
+`PR_DELETE_AFTER_SUBMIT`, não permissão. A coluna foi **aceita** e devolveu
+nulo. É a armadilha exata que a revisão do plano tinha previsto — coluna
+ausente volta vazia em vez de dar erro — e ela me pegou na primeira
+tentativa.
+
+Pior: **esta caixa não tem mensagem protegida** (0 em 30 itens abertos,
+nenhuma classe protegida em 400). Então nem dá para validar a hipótese de
+derivar proteção de `MessageClass` (`IPM.Note.rpmsg.Message`,
+`IPM.Note.SMIME*`). Fica **NÃO VALIDADO**, e é decisão pendente: derivar de
+`MessageClass` e aceitar o risco, ou abrir o item.
+
+### Duas armadilhas que perdem mensagem em silêncio
+
+Achadas medindo, e as duas custariam caro em produção.
+
+**1. O filtro DASL de data é UTC; o `ReceivedTime` da tabela é LOCAL.**
+
+Paginar com a hora local no filtro pulava uma janela do tamanho do offset
+do fuso em **cada** fronteira. Resultado: **803 de 1.003 itens**, 20%
+perdidos — e a paginação **terminava cedo, parecendo ter acabado**.
+
+Medido isoladamente numa fronteira: string local devolveu 938, string UTC
+devolveu 953, e a contagem manual dava 953.
+
+**2. `ReceivedTime` não é ordem total.**
+
+Cinco grupos de itens compartilham o mesmo segundo nesta caixa; um filtro
+`<` estrito pularia 6 deles. A saída é `<=` com deduplicação por `EntryID`,
+aceitando reler alguns — nesta caixa o custo foi zero releituras, porque
+nenhum empate caiu numa fronteira de página, mas o mecanismo precisa
+existir.
+
+Com as duas corrigidas: **1.003 de 1.003**.
+
+### O que isto decide
+
+**A listagem NÃO precisa de cache para ser rápida.** 27 ms por página é
+instantâneo. A decisão que a seção 2 tinha reaberto está respondida:
+**listar continua lendo do Outlook**, por `Table` + cursor.
+
+O cache continua necessário para busca, estado local de triagem, frescor e
+o que a Fase 4 indexar. O que ele deixa de ser é **acelerador de lista**.
+
+**Consequência para a Fase 1:** `MessagePaging.ReadPage` usa iteração e
+paginação por offset. Trocar por `Table` + cursor é uma melhoria de ~20x
+num código que já funciona — decisão de quando fazer, não de se fazer.
+
+### Limitações desta medição
+
+- Uma pasta (Caixa de Entrada), um store, Exchange **cached**, uma máquina.
+- Medido por PowerShell, não pelo broker: serve para comparar caminhos, não
+  como latência ponta a ponta.
+- `GetArray` foi usado com páginas de 50. Arrays grandes monopolizando a
+  STA continuam não medidos.
+- A tabela devolve o que não é `MailItem` — 6 em 400 eram convite ou
+  resposta de reunião. Filtrar é responsabilidade de quem converte.

@@ -1,4 +1,4 @@
-# Mede o custo REAL de uma pagina, do jeito que o broker faz.
+﻿# Mede o custo REAL de uma pagina, do jeito que o broker faz.
 #
 # SOMENTE LEITURA: nao cria, nao move, nao apaga nada.
 #
