@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 4 — a invariante da associação item–pasta propagada para o desenho.
+**Versão:** 5 — invariante da associação propagada, inclusive nos resíduos de linguagem.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -78,8 +78,9 @@ Fase 1; passa a valer também para o cache.
 
 - **Incremental é ACELERADOR, nunca prova de ausência.**
 - **Reconciliação completa periódica é obrigatória.**
-- **Remoção no cache só é confirmada depois de uma varredura completa e
-  BEM-SUCEDIDA.**
+- **Ausência de uma associação item–pasta só é confirmada depois de uma
+  varredura completa e BEM-SUCEDIDA daquela pasta.** O cache nunca
+  confirma "removido"; confirma, no máximo, "ausente desta pasta".
 
 ### 3.4 O que uma ausência prova
 
@@ -92,9 +93,8 @@ mudar o filtro ou o universo varrido, e provider indisponível.
 
 Consequências no desenho:
 
-- **Presença pertence à relação item–pasta**, não ao item. "Remoção
-  confirmada" quer dizer *removido desta pasta*, e nunca *mensagem
-  excluída*.
+- **Presença pertence à relação item–pasta**, não ao item. O estado
+  terminal chama-se `Ausente da pasta`, e nunca *mensagem excluída*.
 - Um item Iris tem um localizador atual e **uma ou mais associações a
   pastas**. São coisas separadas no modelo, e a consequência aparece em
   3.7 (a geração marca associações), 3.8 (o estado é da associação) e na
@@ -303,7 +303,8 @@ pasta, pelo caminho que a Q1 indicar.
 - Outlook reiniciado no meio.
 
 A pergunta é *"como sei que esta varredura foi completa o bastante para
-confirmar remoções?"*
+confirmar AUSÊNCIA DA PASTA?"* — e não "para confirmar remoção", que é uma
+afirmação sobre o mundo que o Iris não tem como fazer.
 
 **O que a Q4 calibra, e não decide:** encontrar enumeração afetada por
 mutação concorrente é esperado, não é surpresa. As opções de política já
@@ -311,8 +312,8 @@ estão na mesa, e o spike escolhe entre elas com dado:
 
 1. descartar a geração e repetir;
 2. exigir **duas** observações completas e compatíveis antes de confirmar;
-3. manter os candidatos em `Suspeito de remoção` até verificação
-   individual.
+3. manter as associações candidatas em `Suspeito de ausência` até
+   verificação individual.
 
 O que **não** está em discussão é aceitar exclusão falsa.
 
