@@ -11,9 +11,14 @@
 #      terminava cedo, parecendo ter acabado.
 #
 #   2. EMPATE. O filtro estrito "<" pula itens com o MESMO segundo do
-#      ultimo da pagina anterior. Aqui sao poucos (6 em 1003), mas "poucos"
-#      nao e "nenhum", e uma mensagem sumida e uma mensagem sumida.
-#      A saida e "<=" com deduplicacao por EntryID, aceitando reler alguns.
+#      ultimo da pagina anterior. E "<=" com deduplicacao NAO basta: se o
+#      grupo empatado for maior que a pagina, a consulta seguinte pode
+#      devolver os MESMOS itens, nenhum ser novo, e a paginacao declarar
+#      fim — perdendo o resto do grupo em silencio.
+#
+#      A saida e DRENAR o grupo da fronteira antes de avancar. Testado
+#      contra tabela sintetica em q1-cursor-teste.ps1: sem drenar, o
+#      cenario "tudo no mesmo segundo" perde 150 de 200.
 #
 # ReceivedTime nao e ordem total. Como cursor, ele precisa de desempate.
 
@@ -58,20 +63,29 @@ for ($p = 1; $p -le $MaxPaginas; $p++) {
     foreach ($c in $colunas) { [void]$t.Columns.Add($c) }
     $t.Sort("ReceivedTime", $true)
 
-    $linhas = $t.GetArray($TamanhoDaPagina)
-    $novos = 0; $repetidos = 0; $ultima = $null
-
-    if ($linhas) {
+    # SomenteInstante: durante a drenagem, so consome linhas do grupo
+    # empatado. Sem isso a drenagem marcava como vistos itens de FORA do
+    # grupo e os descartava — a pagina seguinte os encontrava repetidos,
+    # concluia que nao havia nada novo e parava com 50 de 1003.
+    function Consumir($linhas, $SomenteInstante) {
+        $res = @{ Novos = 0; Repetidos = 0; Ultima = $null; Qtd = 0; Saiu = $false }
+        if (-not $linhas) { return $res }
         for ($r = $linhas.GetLowerBound(0); $r -le $linhas.GetUpperBound(0); $r++) {
+            $quando = $linhas.GetValue($r, 3)
+            if ($null -ne $SomenteInstante -and $quando -ne $SomenteInstante) {
+                $res.Saiu = $true
+                break
+            }
+            $res.Qtd++
             $id = "$($linhas.GetValue($r, 0))"
-            $ultima = $linhas.GetValue($r, 3)
-            if ($vistos.ContainsKey($id)) { $repetidos++; continue }
+            $res.Ultima = $quando
+            if ($vistos.ContainsKey($id)) { $res.Repetidos++; continue }
             $vistos[$id] = $true
             $null = [pscustomobject]@{
                 EntryID   = $id
                 Subject   = $linhas.GetValue($r, 1)
                 Sender    = $linhas.GetValue($r, 2)
-                Recebido  = $ultima
+                Recebido  = $res.Ultima
                 Tamanho   = $linhas.GetValue($r, 4)
                 NaoLida   = $linhas.GetValue($r, 5)
                 Classe    = $linhas.GetValue($r, 6)
@@ -80,15 +94,34 @@ for ($p = 1; $p -le $MaxPaginas; $p++) {
                 SearchKey = $linhas.GetValue($r, 9)
                 MsgId     = $linhas.GetValue($r, 10)
             }
-            $novos++
+            $res.Novos++
+        }
+        return $res
+    }
+
+    $res = Consumir $t.GetArray($TamanhoDaPagina) $null
+    $novos = $res.Novos; $repetidos = $res.Repetidos; $ultima = $res.Ultima
+
+    # DRENA o grupo da fronteira: enquanto as linhas seguintes tiverem o
+    # MESMO instante, elas fazem parte do grupo que a pagina cortou ao
+    # meio. Avancar a fronteira sem esvaziar o grupo perde o resto dele.
+    $drenou = $false
+    if ($null -ne $ultima) {
+        while ($true) {
+            $extra = Consumir $t.GetArray($TamanhoDaPagina) $ultima
+            $novos += $extra.Novos; $repetidos += $extra.Repetidos
+            if ($extra.Novos -gt 0) { $drenou = $true }
+
+            # Saiu do grupo, ou a tabela acabou.
+            if ($extra.Saiu -or $extra.Qtd -eq 0) { break }
         }
     }
+
     [void][Runtime.InteropServices.Marshal]::ReleaseComObject($t)
     $ms = $sw.Elapsed.TotalMilliseconds
     $totalMs += $ms
 
-    # Nenhum item novo com a fronteira andando significa fim de verdade.
-    if ($novos -eq 0) { Write-Output "  (fim)"; break }
+    if ($novos -eq 0 -and -not $drenou) { Write-Output "  (fim)"; break }
 
     $novosTotal += $novos; $repetidosTotal += $repetidos
     "{0,6} | {1,5} | {2,9} | {3,3} | {4,7}" -f $p, $novos, $repetidos, [int]$ms, `

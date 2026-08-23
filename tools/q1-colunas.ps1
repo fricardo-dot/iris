@@ -46,7 +46,7 @@ $alvos = [ordered]@{
     "Permission"    = @("Permission",
                         "http://schemas.microsoft.com/mapi/proptag/0x0E01000B")
     "LastModified"  = @("LastModificationTime",
-                        "urn:schemas:httpmail:datereceived")
+                        "http://schemas.microsoft.com/mapi/proptag/0x30080040")
     "SearchKey"     = @("http://schemas.microsoft.com/mapi/proptag/0x300B0102")
     "InternetMsgId" = @("http://schemas.microsoft.com/mapi/proptag/0x1035001E",
                         "urn:schemas:httpmail:message-id")
@@ -63,16 +63,28 @@ foreach ($nome in $alvos.Keys) {
             $tab = $pasta.GetTable()
             [void]$tab.Columns.Add($candidato)
 
-            # Adicionar pode aceitar e a leitura falhar. So conta se ler.
-            if (-not $tab.EndOfTable) {
+            # Adicionar pode aceitar E A COLUNA NAO EXISTIR: o valor volta
+            # nulo em vez de dar erro. Foi assim que eu marquei Permission
+            # como disponivel usando um proptag que nao e permissao.
+            #
+            # Entao: procurar em VARIOS itens, e so contar se ALGUM devolver
+            # valor. Tudo nulo em 40 itens nao prova ausencia, mas e o
+            # sinal honesto de que a coluna nao esta entregando nada.
+            $achou = $false
+            $n = 0
+            while (-not $tab.EndOfTable -and $n -lt 40 -and -not $achou) {
                 $linha = $tab.GetNextRow()
                 $v = $linha.Item($candidato)
-                $amostra = if ($null -eq $v) { "(nulo)" } else {
+                $n++
+                if ($null -ne $v -and "$v" -ne "") {
+                    $achou = $true
                     $texto = "$v"
-                    if ($texto.Length -gt 22) { $texto.Substring(0, 22) + "…" } else { $texto }
+                    $amostra = if ($texto.Length -gt 22) { $texto.Substring(0, 22) + "…" } else { $texto }
                 }
-            } else {
-                $amostra = "(pasta vazia)"
+            }
+            if (-not $achou) {
+                $amostra = "todos nulos em $n itens"
+                throw "coluna sem valor"
             }
             $ok = $true
             $usado = $candidato
@@ -85,7 +97,9 @@ foreach ($nome in $alvos.Keys) {
     }
 
     $marca = if ($ok) { "SIM" } else { "NAO" }
-    $detalhe = if ($ok) { "$amostra" } else { "nenhum candidato serviu" }
+    $detalhe = if ($ok) { "$amostra" } else {
+        if ($amostra) { $amostra } else { "nenhum candidato serviu" }
+    }
     "{0,-31} | {1,-3} | {2}" -f $nome, $marca, $detalhe
     if ($ok -and $usado -ne $nome) { "{0,-31} |     | via: {1}" -f "", $usado }
 }

@@ -469,90 +469,146 @@ Assumindo que a lista venha do cache:
 Medido em 2026-08-23, na Caixa de Entrada real (1.003 itens, Exchange
 cached). Somente leitura. Scripts em `tools/q1-*.ps1`.
 
-### O resultado
+**Esta seção está na 2ª versão.** A primeira foi revisada e tinha três
+problemas: uma comparação que não era equivalente, uma paginação que ainda
+perdia mensagem, e uma conclusão mais larga que a evidência.
 
-| Caminho | ms/item | Caixa inteira | Página de 50 |
+### O ganho, com as comparações separadas
+
+| Comparação | Iteração | `Table` | Ganho |
 |---|---|---|---|
-| Iteração (`Items.Item(i)`) — o atual | 11–13 | ~12 s | ~570 ms |
-| `Table` + cursor | **0,66** | **666 ms** | **~27 ms** |
+| **Mesmo trabalho** — 8 escalares, sem `Permission`, sem abrir `Attachments` | 7,80 | 0,98 | **7,9x** |
+| **DTO atual completo** — medido direto | 11–13 | 0,63 | **~18x** |
 
-**~20x, e constante com a profundidade.** As 21 páginas custaram entre 26 e
-29 ms cada; a última página sai pelo mesmo preço da primeira.
+(ms/item, página de 50)
+
+O que torna a iteração cara não são as propriedades escalares — é o que
+exige tocar em objeto:
+
+| Extra, na iteração | Custo marginal |
+|---|---|
+| abrir `Attachments` e ler `Count` | 5,25 ms/item |
+| ler `Permission` | 3,96 ms/item |
+| **na `Table`: 3 colunas a mais** | **~0** |
+
+Somar os componentes daria 27x, mas essa soma infla — cada medição
+carrega overhead próprio. **O número defensável é ~18x**, da medição
+direta do DTO completo.
+
+**Travessia completa:** 1.003 itens em **742 ms** por `Table` + cursor. Os
+~12 s do caminho atual são extrapolação de páginas amostradas, não uma
+travessia medida — e estão rotulados como tal.
 
 ### As colunas
 
-Todas as do `MailSummary` vêm em lote, e três delas eram as que mais
-importavam:
+Todas as do `MailSummary` vêm em lote, **menos uma**:
 
 | Coluna | Como |
 |---|---|
 | EntryID, Subject, MessageClass, LastModificationTime | tabela padrão |
 | SenderName, ReceivedTime, Size, UnRead | `Columns.Add` pelo nome |
-| **HasAttachment** | `PR_HASATTACH` (0x0E1B000B) — **sem abrir `Attachments`** |
+| **HasAttachment** | `PR_HASATTACH` (0x0E1B000B) — sem abrir `Attachments` |
 | **SearchKey** | `PR_SEARCH_KEY` (0x300B0102) |
 | **InternetMessageId** | `PR_INTERNET_MESSAGE_ID` (0x1035001E) |
+| **Permission** | **NÃO vem** |
 
-As duas últimas mudam a Q2: as evidências de correlação vêm **de graça,
-junto com a listagem**, e não custam uma passada extra.
+As duas do meio mudam a Q2: as evidências de correlação vêm **de graça,
+junto com a listagem**.
 
-### O que NÃO vem, e um falso positivo que eu produzi
+### `Permission`: não vem, e eu quase registrei que vinha
 
-`Permission` — o `IsProtected` do DTO — **não foi obtido em lote**.
+Testei com o proptag `0x0E01000B`, que é `PR_DELETE_AFTER_SUBMIT`. A coluna
+foi **aceita** e devolveu nulo — e meu script marcava como sucesso qualquer
+coluna que não lançasse exceção. Falso positivo produzido por mim, na
+primeira tentativa, exatamente na armadilha que a revisão do plano tinha
+previsto.
 
-E eu quase registrei que sim: testei com o proptag `0x0E01000B`, que é
-`PR_DELETE_AFTER_SUBMIT`, não permissão. A coluna foi **aceita** e devolveu
-nulo. É a armadilha exata que a revisão do plano tinha previsto — coluna
-ausente volta vazia em vez de dar erro — e ela me pegou na primeira
-tentativa.
+Corrigido: o teste agora procura em 40 itens e exige **ao menos um valor
+não nulo**. Com isso, `Permission` aparece corretamente como **NÃO**.
+(Corrigi também um segundo erro do mesmo script: o fallback de
+`LastModificationTime` apontava para `datereceived`, e teria declarado
+sucesso para a propriedade errada.)
 
-Pior: **esta caixa não tem mensagem protegida** (0 em 30 itens abertos,
-nenhuma classe protegida em 400). Então nem dá para validar a hipótese de
-derivar proteção de `MessageClass` (`IPM.Note.rpmsg.Message`,
-`IPM.Note.SMIME*`). Fica **NÃO VALIDADO**, e é decisão pendente: derivar de
-`MessageClass` e aceitar o risco, ou abrir o item.
+**Não há substituto exato em tabela.** `MessageClass` (`IPM.Note.rpmsg.*`,
+`IPM.Note.SMIME*`) classifica famílias conhecidas, mas IRM, S/MIME e
+rótulos de sensibilidade não são o mesmo conceito, e nada disso é
+equivalente a `mail.Permission <> 0`.
 
-### Duas armadilhas que perdem mensagem em silêncio
+E **esta caixa não tem mensagem protegida** — 0 em 30 itens abertos,
+nenhuma classe protegida em 400 — então a hipótese do `MessageClass` nem dá
+para validar aqui.
 
-Achadas medindo, e as duas custariam caro em produção.
+**Decisão pendente**, com as opções na mesa: tirar `IsProtected` do resumo e
+obtê-lo no detalhe; torná-lo tri-state (`Desconhecido`/`Não`/`Sim`); ou
+abrir o item quando `MessageClass` levantar suspeita. O que **não** serve é
+`False` significando "não medi".
+
+### Três armadilhas que perdem mensagem em silêncio
 
 **1. O filtro DASL de data é UTC; o `ReceivedTime` da tabela é LOCAL.**
 
-Paginar com a hora local no filtro pulava uma janela do tamanho do offset
-do fuso em **cada** fronteira. Resultado: **803 de 1.003 itens**, 20%
-perdidos — e a paginação **terminava cedo, parecendo ter acabado**.
+Paginar com a hora local pulava uma janela do tamanho do fuso em **cada**
+fronteira: **803 de 1.003**, 20% perdidos — e a paginação **terminava cedo,
+parecendo ter acabado**. Isolado numa fronteira: string local devolveu 938,
+string UTC devolveu 953, e a contagem manual dava 953.
 
-Medido isoladamente numa fronteira: string local devolveu 938, string UTC
-devolveu 953, e a contagem manual dava 953.
+Regra: converter para UTC e formatar com cultura invariável. Vale para
+DASL; filtros Jet com `[Colchetes]` seguem outra regra. E conferir o `Kind`
+do `DateTime` que o COM devolve, em vez de confiar no padrão da máquina.
 
-**2. `ReceivedTime` não é ordem total.**
+**2. `ReceivedTime` não é ordem total — e `<=` com deduplicação NÃO basta.**
 
-Cinco grupos de itens compartilham o mesmo segundo nesta caixa; um filtro
-`<` estrito pularia 6 deles. A saída é `<=` com deduplicação por `EntryID`,
-aceitando reler alguns — nesta caixa o custo foi zero releituras, porque
-nenhum empate caiu numa fronteira de página, mas o mecanismo precisa
-existir.
+Foi o que eu tinha feito, e está errado. Se o grupo empatado for **maior
+que a página**, a consulta seguinte pode devolver os mesmos itens, nenhum
+ser novo, e a paginação declarar fim.
 
-Com as duas corrigidas: **1.003 de 1.003**.
+A saída é **drenar o grupo da fronteira** antes de avançar. Testado contra
+tabela sintética (`tools/q1-cursor-teste.ps1`), com controle negativo:
 
-### O que isto decide
+| Cenário | Sem drenar | Com drenagem |
+|---|---|---|
+| empate de 3 (como esta caixa) | perde 1 | OK |
+| empate de 51 (> página) | perde 25 | OK |
+| empate de 500 | **perde 450 de 900** | OK |
+| tudo no mesmo segundo | **perde 150 de 200** | OK |
 
-**A listagem NÃO precisa de cache para ser rápida.** 27 ms por página é
-instantâneo. A decisão que a seção 2 tinha reaberto está respondida:
-**listar continua lendo do Outlook**, por `Table` + cursor.
+**3. A drenagem, mal feita, quebra tudo.** Minha primeira implementação
+marcava como vistos os itens de FORA do grupo, e a página seguinte os
+achava repetidos: **50 de 1.003**. A drenagem tem de parar no primeiro item
+de instante diferente, **sem consumi-lo**.
 
-O cache continua necessário para busca, estado local de triagem, frescor e
-o que a Fase 4 indexar. O que ele deixa de ser é **acelerador de lista**.
+Com as três corrigidas: **1.003 de 1.003**.
+
+### O que isto decide, e com que alcance
+
+**No cenário medido — Exchange cached, uma pasta de mil itens — o cache
+NÃO é necessário como acelerador de listagem.** 27 ms por página é
+instantâneo. `Table` + cursor é o candidato padrão para listar.
+
+**Isto não é decisão universal.** Falta medir: modo online, caixa
+compartilhada e delegada, PST, arquivo morto online, pastas de 10 mil e 100
+mil, Outlook recém-aberto com cache frio, rede lenta ou store
+parcialmente sincronizado, e o caminho dentro da STA com o DTO real. Store
+remoto continua exigindo validação e política de fallback.
+
+O cache segue necessário para busca, estado local de triagem, frescor e o
+que a Fase 4 indexar. O que ele deixa de ser, **neste cenário**, é
+acelerador de lista.
 
 **Consequência para a Fase 1:** `MessagePaging.ReadPage` usa iteração e
-paginação por offset. Trocar por `Table` + cursor é uma melhoria de ~20x
-num código que já funciona — decisão de quando fazer, não de se fazer.
+paginação por offset. Trocar por `Table` + cursor é ~18x num código que já
+funciona — e traz junto as três armadilhas acima, que precisam ir com ele.
 
 ### Limitações desta medição
 
-- Uma pasta (Caixa de Entrada), um store, Exchange **cached**, uma máquina.
-- Medido por PowerShell, não pelo broker: serve para comparar caminhos, não
-  como latência ponta a ponta.
-- `GetArray` foi usado com páginas de 50. Arrays grandes monopolizando a
-  STA continuam não medidos.
-- A tabela devolve o que não é `MailItem` — 6 em 400 eram convite ou
-  resposta de reunião. Filtrar é responsabilidade de quem converte.
+- Uma pasta, um store, Exchange **cached**, uma máquina, uma ordenação.
+- Medido por PowerShell, não pelo broker: compara caminhos, não é latência
+  ponta a ponta.
+- Colunas validadas **individualmente** e depois usadas juntas no cursor;
+  o script de matriz sozinho não prova compatibilidade conjunta.
+- A contagem de referência do teste de fuso vem da mesma tabela — é prova
+  interna da semântica do filtro, não referência independente.
+- `$total` é lido antes da travessia: a pasta pode mudar durante.
+- A drenagem foi provada contra tabela **sintética**. O comportamento da
+  `Table` real com um grupo empatado maior que a página **não foi
+  exercitado** — esta caixa tem no máximo 3 no mesmo segundo.
