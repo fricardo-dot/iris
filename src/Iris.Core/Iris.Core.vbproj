@@ -13,4 +13,12 @@
     <ProjectReference Include="..\Iris.Model\Iris.Model.vbproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- PagingDefects e Friend de proposito: ligar um daqueles defeitos
+         perde mensagem em silencio, entao o adaptador COM nao pode nem
+         enxergar. O teste precisa, porque controle negativo anotado a
+         mao nao e regressao verificavel. -->
+    <InternalsVisibleTo Include="Iris.Tests" />
+  </ItemGroup>
+
 </Project>

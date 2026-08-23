@@ -67,7 +67,16 @@ Namespace Global.Iris.Model
         Public Property SizeBytes As Integer
         Public Property HasAttachments As Boolean
         Public Property IsUnread As Boolean
-        Public Property IsProtected As Boolean
+
+        ''' <summary>
+        ''' NAO existe IsProtected aqui, e a ausencia e deliberada.
+        '''
+        ''' A Q1 mediu que Permission nao vem por coluna de Table, e o
+        ''' caminho rapido de listagem le por Table. Preencher com False
+        ''' seria afirmar "nao e protegida" sem ter medido, e um
+        ''' consumidor futuro herdaria a mentira. O gate do R11 vive em
+        ''' MessageReading, que le o MailItem de verdade.
+        ''' </summary>
         Public Property MessageClass As String = ""
         Public Property Content As ContentState
     End Class
@@ -143,31 +152,51 @@ Namespace Global.Iris.Model
     ''' </summary>
     Public NotInheritable Class MessagePage
         Public Property Generation As Long
-        Public Property Offset As Integer
         Public Property Items As New List(Of MailSummary)()
-        ''' <summary>Total no momento da leitura. Pode já estar desatualizado.</summary>
-        Public Property TotalAtRead As Integer
-        Public Property HasMore As Boolean
 
         ''' <summary>
-        ''' Posição na coleção BRUTA onde a próxima página deve começar.
+        ''' Continuacao opaca. Nothing significa FIM.
         '''
-        ''' Existe porque contar DTOs devolvidos estava errado: o broker
-        ''' examina N posições e pode devolver menos, já que uma coleção
-        ''' Items não contém apenas MailItem e itens corrompidos são
-        ''' pulados. Usar Items.Count como próximo offset relia as posições
-        ''' puladas, duplicando linhas — e, no limite, travando o avanço.
+        ''' Nao existe um HasMore armazenado ao lado: dois campos que
+        ''' podem se contradizer sempre acabam se contradizindo.
         ''' </summary>
-        Public Property NextOffset As Integer
-
-        ''' <summary>Quantas posições da coleção foram examinadas.</summary>
-        Public Property ExaminedCount As Integer
+        Public Property NextCursor As String
 
         ''' <summary>
-        ''' Quantas foram puladas por não serem mensagem ou por erro. Fica
-        ''' visível para "28 de 30" não virar mistério.
+        ''' Total no momento em que a travessia comecou. So vem na
+        ''' PRIMEIRA pagina.
+        '''
+        ''' Antes era TotalAtRead, vinha em toda pagina e saia de
+        ''' items.Count. O caminho por Table nao tem Count barato, e
+        ''' pedir a contagem a cada pagina gastaria uma chamada COM na
+        ''' fila unica da STA para reafirmar um numero que ja estava
+        ''' desatualizado quando chegou.
+        ''' </summary>
+        Public Property TotalAtStart As Integer?
+
+        ''' <summary>
+        ''' Quantas foram descartadas por nao serem mensagem ou por erro.
+        ''' Fica visivel para "28 de 30" nao virar misterio.
         ''' </summary>
         Public Property SkippedCount As Integer
+
+        ''' <summary>
+        ''' Quantas linhas vieram da DRENAGEM do grupo empatado, alem do
+        ''' alvo pedido.
+        '''
+        ''' A pagina drenada NAO tem teto: ela vai ate o fim do grupo do
+        ''' ultimo instante, senao os empatados que ficaram para tras
+        ''' seriam pulados para sempre. Entao pedir 30 pode devolver 45,
+        ''' e isso precisa ser explicavel em vez de parecer defeito.
+        ''' Medido nesta caixa: o maior empate num mesmo segundo tem 16.
+        ''' </summary>
+        Public Property DrainedExtra As Integer
+
+        Public ReadOnly Property HasMore As Boolean
+            Get
+                Return Not String.IsNullOrEmpty(NextCursor)
+            End Get
+        End Property
     End Class
 
     ''' <summary>

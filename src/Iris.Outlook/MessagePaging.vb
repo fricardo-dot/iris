@@ -1,5 +1,7 @@
 Imports System.Collections.Generic
+Imports System.Globalization
 Imports System.Runtime.InteropServices
+Imports Iris.Core
 Imports Iris.Model
 Imports Iris.Outlook.Interop
 Imports OL = Microsoft.Office.Interop.Outlook
@@ -12,21 +14,63 @@ Namespace Global.Iris.Outlook
     ''' Tudo aqui roda DENTRO da thread do broker. As regras que a Fase 0
     ''' impôs, e que este arquivo existe para respeitar:
     '''
-    '''   • <c>Sort</c> é feito pelo OUTLOOK, nunca em laço nosso. Medido:
-    '''     ordenar 770 itens custou 3 ms lá dentro; percorrer os mesmos 770
-    '''     custou 12,8 segundos aqui.
+    '''   • A ordenação é feita pelo OUTLOOK, nunca em laço nosso.
     '''   • O corpo NÃO é lido durante a listagem. Uma leitura de corpo no
     '''     meio da paginação bloquearia a fila única da STA (F1-F).
     '''   • Toda referência COM adquirida é liberada. Encadear
     '''     <c>item.Attachments.Count</c> é o erro que já apareceu quatro
     '''     vezes neste projeto.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' DOIS CAMINHOS, e o porquê
+    '''
+    ''' <b>ReceivedDesc</b> usa <c>Table</c> + cursor: a Q1 mediu ~18x mais
+    ''' rápido no DTO completo, e plano com a profundidade (página de 50 em
+    ''' ~27 ms contra ~570 ms).
+    '''
+    ''' <b>As outras três ordenações</b> continuam na iteração com offset. A
+    ''' Q1 mediu ReceivedTime DECRESCENTE e mais nada; filtro keyset sobre
+    ''' texto traz ordenação cultural, caixa, acentuação e escaping de
+    ''' apóstrofo, que é superfície não medida. Entregar o ganho medido e
+    ''' registrar a dívida é melhor que inventar filtro que ninguém testou.
+    '''
+    ''' Os dois caminhos produzem <c>MailSummary</c> pelo MESMO significado
+    ''' de campo — é isso que impede virarem dois produtos diferentes.
     ''' </summary>
     Friend Module MessagePaging
 
+        Private Const DaslRecebido As String = "urn:schemas:httpmail:datereceived"
+        Private Const TagAnexo As String = "http://schemas.microsoft.com/mapi/proptag/0x0E1B000B"
+
         ''' <summary>
-        ''' Campo de ordenação no vocabulário do Outlook. Colchetes são a
-        ''' sintaxe que o OOM espera.
+        ''' PR_LONGTERM_ENTRYID_FROM_TABLE.
+        '''
+        ''' A coluna chamada "EntryID" da Table devolve o EntryID de CURTO
+        ''' PRAZO - 24 bytes, valido so dentro da sessao. O MailItem.EntryID
+        ''' devolve o de LONGO PRAZO, 70 bytes. Sao identificadores diferentes
+        ''' do MESMO item, e nenhum erro aparece: a listagem funciona, so nao
+        ''' casa com nada.
+        '''
+        ''' O teste de cruzamento pegou isso: os dois caminhos liam as MESMAS
+        ''' 995 mensagens em 34 paginas e ainda assim os conjuntos de chave
+        ''' davam intersecao ZERO. Guardar chave de curto prazo num cache que
+        ''' sobrevive a sessao seria pior que perder mensagem, porque so
+        ''' quebraria na sessao seguinte.
         ''' </summary>
+        Private Const TagEntryIdLongo As String = "http://schemas.microsoft.com/mapi/proptag/0x66700102"
+
+        ' Ordem das colunas pedidas à Table. Índice fixo só é seguro porque
+        ' TODAS foram confirmadas contra o Outlook real (tools/q1-colunas.ps1):
+        ' aceitas E devolvendo valor não nulo em 40 itens.
+        Private Const ColEntryId As Integer = 0
+        Private Const ColSubject As Integer = 1
+        Private Const ColSender As Integer = 2
+        Private Const ColRecebido As Integer = 3
+        Private Const ColTamanho As Integer = 4
+        Private Const ColNaoLida As Integer = 5
+        Private Const ColClasse As Integer = 6
+        Private Const ColAnexo As Integer = 7
+
         Private Function CampoDeOrdenacao(sort As MessageSort) As (Campo As String, Descendente As Boolean)
             Select Case sort
                 Case MessageSort.ReceivedAsc : Return ("[ReceivedTime]", False)
@@ -37,11 +81,24 @@ Namespace Global.Iris.Outlook
         End Function
 
         Public Function ReadPage(ns As OL.NameSpace, query As MessageQuery,
-                                 offset As Integer, count As Integer) As OperationResult(Of MessagePage)
+                                 continuation As String, targetCount As Integer) _
+            As OperationResult(Of MessagePage)
 
-            If offset < 0 OrElse count <= 0 Then
+            If targetCount <= 0 Then
                 Return OperationResult(Of MessagePage).Fail(
-                    ErrorKind.Unexpected, "offset ou count invalido")
+                    ErrorKind.Unexpected, "targetCount invalido")
+            End If
+
+            ' Cursor de outra consulta é RECUSADO, não reinterpretado. Um
+            ' cursor trocado produziria página de outra pasta sem a UI ter
+            ' como perceber.
+            Dim cursor As MessageCursor = Nothing
+            Dim primeiraPagina = String.IsNullOrEmpty(continuation)
+            If Not primeiraPagina Then
+                If Not MessageCursor.TryDecode(continuation, query, cursor) Then
+                    Return OperationResult(Of MessagePage).Fail(
+                        ErrorKind.Stale, "cursor de outra consulta ou invalido")
+                End If
             End If
 
             Dim folder As OL.MAPIFolder = Nothing
@@ -51,9 +108,8 @@ Namespace Global.Iris.Outlook
                                      OL.MAPIFolder)
                 Catch ex As COMException When EhNaoEncontrado(ex.HResult)
                     ' SO os HRESULTs que realmente significam "nao existe".
-                    ' Antes, qualquer COMException virava NotFound — inclusive
-                    ' chamada recusada e acesso negado, que sao outra coisa e
-                    ' levam a UI a decisoes opostas. As demais sobem para o
+                    ' Chamada recusada e acesso negado sao outra coisa e
+                    ' levam a UI a decisoes opostas; essas sobem para o
                     ' classificador do broker.
                     Return OperationResult(Of MessagePage).Fail(ErrorKind.NotFound, "pasta")
                 End Try
@@ -62,85 +118,181 @@ Namespace Global.Iris.Outlook
                     Return OperationResult(Of MessagePage).Fail(ErrorKind.NotFound, "pasta")
                 End If
 
-                Dim items As OL.Items = Nothing
-                Try
-                    items = folder.Items
+                Dim usaTabela = (query.Sort = MessageSort.ReceivedDesc)
+                If usaTabela AndAlso cursor IsNot Nothing AndAlso cursor.Mode <> CursorMode.ReceivedDesc Then
+                    Return OperationResult(Of MessagePage).Fail(ErrorKind.Stale, "cursor de outro modo")
+                End If
 
-                    ' Sort que falha NAO pode ser engolido. Seguir na ordem
-                    ' natural fingindo que a ordenacao foi aplicada destroi a
-                    ' coerencia dos offsets: a pagina 2 viria de uma ordem
-                    ' diferente da pagina 1. A excecao sobe para o
-                    ' classificador do broker.
-                    Dim ordenacao = CampoDeOrdenacao(query.Sort)
-                    items.Sort(ordenacao.Campo, ordenacao.Descendente)
+                Dim pagina As MessagePage
+                If usaTabela Then
+                    Try
+                        pagina = LerPorTabela(folder, query, cursor, targetCount)
+                    Catch ex As LongTermEntryIdUnavailableException
+                        ' Store sem a coluna de chave duravel. So da para cair
+                        ' para o caminho lento se a paginacao estiver no comeco:
+                        ' cursor de fronteira nao se traduz em offset, e inventar
+                        ' a traducao pularia mensagem.
+                        If cursor IsNot Nothing Then
+                            Return OperationResult(Of MessagePage).Fail(
+                                ErrorKind.Stale, "store sem chave duravel; recarregue a lista")
+                        End If
+                        pagina = LerPorIteracao(folder, query, Nothing, targetCount)
+                    End Try
+                Else
+                    pagina = LerPorIteracao(folder, query, cursor, targetCount)
+                End If
 
-                    Dim total = items.Count
-                    Dim pagina As New MessagePage With {
-                        .Generation = query.Generation,
-                        .Offset = offset,
-                        .TotalAtRead = total
-                    }
-
-                    ' Items e 1-based no OOM.
-                    Dim primeiro = offset + 1
-                    Dim ultimo = Math.Min(offset + count, total)
-                    Dim pulados = 0
-
-                    For i = primeiro To ultimo
-                        Dim bruto As Object = Nothing
-                        Try
-                            bruto = items.Item(i)
-                            Dim mail = TryCast(bruto, OL.MailItem)
-                            If mail Is Nothing Then
-                                ' Uma colecao Items nao contem apenas
-                                ' MailItem (ESCOPO.md secao 5). Convites e
-                                ' relatorios de entrega convivem ali.
-                                pulados += 1
-                                Continue For
-                            End If
-                            pagina.Items.Add(Summarize(mail, query.Folder.StoreId))
-                        Catch ex As COMException
-                            ' Item corrompido ou nao baixado nao pode
-                            ' derrubar a pagina inteira.
-                            pulados += 1
-                            Continue For
-                        Finally
-                            ComHelpers.Release(bruto)
-                        End Try
-                    Next
-
-                    ' O cursor conta POSICOES EXAMINADAS, nao DTOs devolvidos.
-                    pagina.ExaminedCount = Math.Max(0, ultimo - offset)
-                    pagina.SkippedCount = pulados
-                    pagina.NextOffset = ultimo
-                    pagina.HasMore = ultimo < total
-                    Return OperationResult(Of MessagePage).Ok(pagina)
-                Finally
-                    ComHelpers.Release(items)
-                End Try
+                If primeiraPagina Then pagina.TotalAtStart = ContarItens(folder)
+                Return OperationResult(Of MessagePage).Ok(pagina)
             Finally
                 ComHelpers.Release(folder)
             End Try
         End Function
 
-        ' MAPI_E_NOT_FOUND e o "objeto nao existe" do MAPI; E_INVALIDARG
-    ' aparece quando o EntryID nao pertence mais ao store.
-        Private Function EhNaoEncontrado(hresult As Integer) As Boolean
-            Return hresult = &H8004010F OrElse hresult = &H80070057
+        ''' <summary>
+        ''' Só na primeira página. Uma contagem por página custaria uma
+        ''' chamada COM na fila única da STA para reafirmar um número que já
+        ''' nasce desatualizado.
+        ''' </summary>
+        Private Function ContarItens(folder As OL.MAPIFolder) As Integer?
+            Dim colecao As OL.Items = Nothing
+            Try
+                colecao = folder.Items
+                Return colecao.Count
+            Catch ex As COMException
+                Return Nothing
+            Finally
+                ComHelpers.Release(colecao)
+            End Try
+        End Function
+
+        ' ==================================================================
+        ' CAMINHO RÁPIDO: Table + cursor
+        ' ==================================================================
+
+        Private Function LerPorTabela(folder As OL.MAPIFolder, query As MessageQuery,
+                                      cursor As MessageCursor, targetCount As Integer) As MessagePage
+
+            Dim fonte As New TableRowSource(folder)
+            Dim fronteira As DateTimeOffset? = If(cursor Is Nothing, Nothing, cursor.Boundary)
+
+            Dim saida = CursorPaging.ReadPage(fonte, fronteira, targetCount)
+
+            Dim pagina As New MessagePage With {
+                .Generation = query.Generation,
+                .DrainedExtra = saida.DrainedExtra
+            }
+
+            Dim descartadas = 0
+            For Each linha In saida.Rows
+                If Not EhMensagem(linha.MessageClass) Then
+                    descartadas += 1
+                    Continue For
+                End If
+                pagina.Items.Add(Resumir(linha, query.Folder.StoreId))
+            Next
+
+            pagina.SkippedCount = descartadas
+            pagina.NextCursor = If(saida.Ended, Nothing,
+                                   MessageCursor.ForBoundary(query, saida.NextBoundary.Value).Encode())
+            Return pagina
         End Function
 
         ''' <summary>
-        ''' Resumo para a lista. SEM corpo — ver F1-F.
+        ''' O caminho por iteração decidia por <c>TryCast(.., MailItem)</c>.
+        ''' A tabela não tem TryCast, então a decisão passa a ser por classe.
+        '''
+        ''' NÃO é a mesma pergunta, e a equivalência está afirmada e não
+        ''' provada — está registrada como dívida. O que se sabe desta caixa:
+        ''' 1.741 <c>IPM.Note</c>, 49 de reunião e 4 avulsos.
+        '''
+        ''' A filtragem é feita AQUI e não por restrição DASL de propósito:
+        ''' linha excluída pelo servidor não pode ser contada em
+        ''' <c>SkippedCount</c>, e "28 de 30" viraria mistério.
         ''' </summary>
-        Private Function Summarize(mail As OL.MailItem, storeId As String) As MailSummary
+        Private Function EhMensagem(classe As String) As Boolean
+            If String.IsNullOrEmpty(classe) Then Return False
+            Return classe.StartsWith("IPM.Note", StringComparison.OrdinalIgnoreCase)
+        End Function
+
+        Private Function Resumir(linha As TableRow, storeId As String) As MailSummary
+            Return New MailSummary With {
+                .Key = New ItemKey(linha.EntryId, storeId),
+                .Subject = linha.Subject,
+                .SenderName = linha.SenderName,
+                .ReceivedTime = linha.ReceivedTime,
+                .SizeBytes = linha.SizeBytes,
+                .HasAttachments = linha.HasAttachments,
+                .IsUnread = linha.IsUnread,
+                .MessageClass = linha.MessageClass,
+                .Content = ContentState.MetadataOnly
+            }
+        End Function
+
+        ' ==================================================================
+        ' CAMINHO LEGADO: iteração com offset
+        ' ==================================================================
+
+        Private Function LerPorIteracao(folder As OL.MAPIFolder, query As MessageQuery,
+                                        cursor As MessageCursor, targetCount As Integer) As MessagePage
+
+            Dim offset = If(cursor Is Nothing, 0, cursor.Offset)
+            Dim colecao As OL.Items = Nothing
+            Try
+                colecao = folder.Items
+
+                ' Sort que falha NAO pode ser engolido: seguir na ordem
+                ' natural fingindo que ordenou destroi a coerencia das
+                ' paginas. A excecao sobe para o classificador do broker.
+                Dim ordenacao = CampoDeOrdenacao(query.Sort)
+                colecao.Sort(ordenacao.Campo, ordenacao.Descendente)
+
+                Dim total = colecao.Count
+                Dim pagina As New MessagePage With {.Generation = query.Generation}
+
+                ' Items e 1-based no OOM.
+                Dim primeiro = offset + 1
+                Dim ultimo = Math.Min(offset + targetCount, total)
+                Dim descartadas = 0
+
+                For i = primeiro To ultimo
+                    Dim bruto As Object = Nothing
+                    Try
+                        bruto = colecao.Item(i)
+                        Dim mail = TryCast(bruto, OL.MailItem)
+                        If mail Is Nothing Then
+                            ' Uma colecao Items nao contem apenas MailItem
+                            ' (ESCOPO.md secao 5).
+                            descartadas += 1
+                            Continue For
+                        End If
+                        pagina.Items.Add(ResumirDoItem(mail, query.Folder.StoreId))
+                    Catch ex As COMException
+                        ' Item corrompido ou nao baixado nao derruba a pagina.
+                        descartadas += 1
+                        Continue For
+                    Finally
+                        ComHelpers.Release(bruto)
+                    End Try
+                Next
+
+                pagina.SkippedCount = descartadas
+                ' Avanca por POSICOES EXAMINADAS, nao por DTOs devolvidos:
+                ' contar DTOs relia as posicoes puladas e duplicava linha.
+                pagina.NextCursor = If(ultimo < total,
+                                       MessageCursor.ForOffset(query, ultimo).Encode(),
+                                       Nothing)
+                Return pagina
+            Finally
+                ComHelpers.Release(colecao)
+            End Try
+        End Function
+
+        Private Function ResumirDoItem(mail As OL.MailItem, storeId As String) As MailSummary
             Dim anexos = ContarAnexos(mail)
 
             ' ContentState.BodyAvailable significa "corpo LIDO", pela
-            ' definicao do proprio enum. A listagem nao le corpo nenhum, e
-            ' afirmar BodyAvailable so porque DownloadState prometeu era
-            ' contradizer a definicao — exatamente a confusao entre promessa
-            ' e fato que a Fase 0 mediu no criterio B5.
-
+            ' definicao do enum. A listagem nao le corpo nenhum.
             Return New MailSummary With {
                 .Key = New ItemKey(Texto(Function() mail.EntryID), storeId),
                 .Subject = Texto(Function() mail.Subject),
@@ -149,10 +301,15 @@ Namespace Global.Iris.Outlook
                 .SizeBytes = Numero(Function() mail.Size),
                 .HasAttachments = anexos > 0,
                 .IsUnread = Booleano(Function() mail.UnRead),
-                .IsProtected = Numero(Function() CInt(mail.Permission)) <> 0,
                 .MessageClass = Texto(Function() mail.MessageClass),
                 .Content = ContentState.MetadataOnly
             }
+        End Function
+
+        ' MAPI_E_NOT_FOUND e o "objeto nao existe" do MAPI; E_INVALIDARG
+        ' aparece quando o EntryID nao pertence mais ao store.
+        Private Function EhNaoEncontrado(hresult As Integer) As Boolean
+            Return hresult = &H8004010F OrElse hresult = &H80070057
         End Function
 
         ''' <summary>
@@ -189,14 +346,216 @@ Namespace Global.Iris.Outlook
         Private Function Data(getter As Func(Of DateTime)) As DateTimeOffset?
             Try
                 Dim valor = getter()
-                ' O Outlook devolve hora local sem Kind. Assumir o fuso
-                ' local aqui é o que impede a mensagem aparecer com hora
-                ' errada quando a Fase 2 persistir isto.
+                ' O Outlook devolve hora local sem Kind. Assumir o fuso local
+                ' aqui é o que impede a mensagem aparecer com hora errada
+                ' quando a Fase 2 persistir isto.
                 Return New DateTimeOffset(DateTime.SpecifyKind(valor, DateTimeKind.Local))
             Catch
                 Return Nothing
             End Try
         End Function
+
+        ' ==================================================================
+
+        ''' <summary>
+        ''' O provider nao oferece EntryID de longo prazo por tabela. Nao e erro
+        ''' do usuario nem do Outlook: e capacidade ausente, e a resposta e usar
+        ''' o caminho lento, nao degradar a chave.
+        ''' </summary>
+        Friend NotInheritable Class LongTermEntryIdUnavailableException
+            Inherits Exception
+            Public Sub New()
+                MyBase.New("PR_LONGTERM_ENTRYID_FROM_TABLE indisponivel neste store")
+            End Sub
+        End Class
+
+        ''' <summary>Uma linha crua da Table, já fora do COM.</summary>
+        Friend NotInheritable Class TableRow
+            Public Property EntryId As String = ""
+            Public Property Subject As String = ""
+            Public Property SenderName As String = ""
+            Public Property ReceivedTime As DateTimeOffset?
+            Public Property SizeBytes As Integer
+            Public Property IsUnread As Boolean
+            Public Property HasAttachments As Boolean
+            Public Property MessageClass As String = ""
+        End Class
+
+        ''' <summary>
+        ''' A <c>Table</c> do Outlook vestida de <see cref="IRowSource(Of T)"/>.
+        '''
+        ''' A ARMADILHA QUE ESTA CLASSE EXISTE PARA NÃO REPETIR: o filtro
+        ''' DASL interpreta a data como <b>UTC</b>, e a <c>Table</c> devolve
+        ''' <c>ReceivedTime</c> em hora <b>local</b>. Na Q1 essa única
+        ''' confusão perdeu 803 de 1.003 mensagens — e a paginação terminou
+        ''' parecendo completa. Prova isolada: com string local vieram 938;
+        ''' com string UTC, 953; contagem manual, 953.
+        ''' </summary>
+        Friend NotInheritable Class TableRowSource
+            Implements IRowSource(Of TableRow)
+
+            Private ReadOnly _folder As OL.MAPIFolder
+            Private _table As OL.Table
+
+            Public Sub New(folder As OL.MAPIFolder)
+                _folder = folder
+            End Sub
+
+            Public Sub Abrir(fronteira As DateTimeOffset?, inclusiva As Boolean) _
+                Implements IRowSource(Of TableRow).Abrir
+
+                Fechar()
+
+                Dim filtro = MontarFiltro(fronteira, inclusiva)
+                _table = If(filtro Is Nothing, _folder.GetTable(), _folder.GetTable(filtro))
+
+                Dim colunas As OL.Columns = Nothing
+                Try
+                    colunas = _table.Columns
+                    colunas.RemoveAll()
+                    ' A ordem aqui É os índices Col* lá em cima.
+                    AdicionarColuna(colunas, TagEntryIdLongo)
+                    AdicionarColuna(colunas, "Subject")
+                    AdicionarColuna(colunas, "SenderName")
+                    AdicionarColuna(colunas, "ReceivedTime")
+                    AdicionarColuna(colunas, "Size")
+                    AdicionarColuna(colunas, "UnRead")
+                    AdicionarColuna(colunas, "MessageClass")
+                    AdicionarColuna(colunas, TagAnexo)
+                Finally
+                    ComHelpers.Release(colunas)
+                End Try
+
+                _table.Sort("ReceivedTime", True)
+            End Sub
+
+            ''' <summary>
+            ''' <c>Columns.Add</c> DEVOLVE um objeto COM. Ignorar o retorno
+            ''' deixa um RCW sem dono — a regra R7, que já foi violada quatro
+            ''' vezes neste projeto, sempre em código que "só lia".
+            ''' </summary>
+            Private Shared Sub AdicionarColuna(colunas As OL.Columns, nome As String)
+                Dim coluna As OL.Column = Nothing
+                Try
+                    coluna = colunas.Add(nome)
+                Catch ex As COMException When nome = TagEntryIdLongo
+                    ' Sem EntryID de longo prazo nao da para produzir chave
+                    ' utilizavel. Cair para a coluna curta seria devolver chave
+                    ' que morre com a sessao, e isso e pior que ser lento.
+                    Throw New LongTermEntryIdUnavailableException()
+                Finally
+                    ComHelpers.Release(coluna)
+                End Try
+            End Sub
+
+            Private Shared Function MontarFiltro(fronteira As DateTimeOffset?,
+                                                 inclusiva As Boolean) As String
+                If Not fronteira.HasValue Then Return Nothing
+                Dim operador = If(inclusiva, "<=", "<")
+                ' UTC. Ver o comentário da classe.
+                Dim quando = fronteira.Value.UtcDateTime.ToString(
+                    "yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture)
+                Return "@SQL=""" & DaslRecebido & """ " & operador & " '" & quando & "'"
+            End Function
+
+            Public Function Ler(quantas As Integer) As IReadOnlyList(Of TableRow) _
+                Implements IRowSource(Of TableRow).Ler
+
+                Dim vazio = New List(Of TableRow)()
+                If _table Is Nothing OrElse _table.EndOfTable Then Return vazio
+
+                Dim bruto = TryCast(_table.GetArray(quantas), Object(,))
+                If bruto Is Nothing Then Return vazio
+
+                ' GetArray e 0-based nas DUAS dimensoes.
+                Dim primeira = bruto.GetLowerBound(0)
+                Dim ultima = bruto.GetUpperBound(0)
+                If ultima < primeira Then Return vazio
+
+                Dim linhas As New List(Of TableRow)(ultima - primeira + 1)
+                For r = primeira To ultima
+                    linhas.Add(New TableRow With {
+                        .EntryId = ComoEntryId(bruto(r, ColEntryId)),
+                        .Subject = ComoTexto(bruto(r, ColSubject)),
+                        .SenderName = ComoTexto(bruto(r, ColSender)),
+                        .ReceivedTime = ComoData(bruto(r, ColRecebido)),
+                        .SizeBytes = ComoInteiro(bruto(r, ColTamanho)),
+                        .IsUnread = ComoBooleano(bruto(r, ColNaoLida)),
+                        .MessageClass = ComoTexto(bruto(r, ColClasse)),
+                        .HasAttachments = ComoBooleano(bruto(r, ColAnexo))
+                    })
+                Next
+                Return linhas
+            End Function
+
+            Public Sub Fechar() Implements IRowSource(Of TableRow).Fechar
+                ComHelpers.Release(_table)
+                _table = Nothing
+            End Sub
+
+            ''' <summary>
+            ''' Instante da linha, para o algoritmo agrupar empate.
+            '''
+            ''' Truncado ao SEGUNDO porque é a granularidade do filtro DASL:
+            ''' agrupar mais fino que o filtro faria a fronteira devolver
+            ''' linhas que o algoritmo julga de outro grupo, e a paginação
+            ''' andaria em círculo.
+            ''' </summary>
+            Public Function InstanteDe(linha As TableRow) As DateTimeOffset _
+                Implements IRowSource(Of TableRow).InstanteDe
+
+                If Not linha.ReceivedTime.HasValue Then Return DateTimeOffset.MinValue
+                Dim q = linha.ReceivedTime.Value
+                Return New DateTimeOffset(q.Year, q.Month, q.Day, q.Hour, q.Minute, q.Second, q.Offset)
+            End Function
+
+            Public Function ChaveDe(linha As TableRow) As String _
+                Implements IRowSource(Of TableRow).ChaveDe
+                Return linha.EntryId
+            End Function
+
+            Private Shared Function ComoTexto(valor As Object) As String
+                Return If(TryCast(valor, String), "")
+            End Function
+
+            ''' <summary>
+            ''' A coluna de EntryID longo e PT_BINARY (0x..0102), entao volta como
+            ''' Byte(). O MailItem.EntryID e hex MAIUSCULO, e a comparacao de
+            ''' ItemKey e textual: hex minusculo aqui daria chave que nunca casa,
+            ''' com o mesmo sintoma silencioso.
+            ''' </summary>
+            Private Shared Function ComoEntryId(valor As Object) As String
+                Dim bytes = TryCast(valor, Byte())
+                If bytes IsNot Nothing Then Return Convert.ToHexString(bytes)
+                Return If(TryCast(valor, String), "")
+            End Function
+
+            Private Shared Function ComoInteiro(valor As Object) As Integer
+                If valor Is Nothing Then Return 0
+                Try : Return Convert.ToInt32(valor, CultureInfo.InvariantCulture)
+                Catch : Return 0
+                End Try
+            End Function
+
+            Private Shared Function ComoBooleano(valor As Object) As Boolean
+                If valor Is Nothing Then Return False
+                Try : Return Convert.ToBoolean(valor, CultureInfo.InvariantCulture)
+                Catch : Return False
+                End Try
+            End Function
+
+            Private Shared Function ComoData(valor As Object) As DateTimeOffset?
+                If valor Is Nothing Then Return Nothing
+                Try
+                    Dim quando = Convert.ToDateTime(valor, CultureInfo.InvariantCulture)
+                    ' Hora LOCAL — ver o comentário da classe.
+                    Return New DateTimeOffset(DateTime.SpecifyKind(quando, DateTimeKind.Local))
+                Catch
+                    Return Nothing
+                End Try
+            End Function
+
+        End Class
 
     End Module
 

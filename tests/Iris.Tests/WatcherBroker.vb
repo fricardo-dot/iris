@@ -113,7 +113,8 @@ Friend NotInheritable Class WatcherBroker
         Return Fora(Of OperationResult(Of IReadOnlyList(Of FolderInfo)))()
     End Function
 
-    Public Function GetMessagePageAsync(query As MessageQuery, offset As Integer, count As Integer,
+    Public Function GetMessagePageAsync(query As MessageQuery, continuation As String,
+                                        targetCount As Integer,
                                         cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessagePage)) Implements IOutlookBroker.GetMessagePageAsync
         Return Fora(Of OperationResult(Of MessagePage))()

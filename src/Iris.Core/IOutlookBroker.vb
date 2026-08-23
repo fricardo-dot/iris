@@ -96,7 +96,16 @@ Namespace Global.Iris.Core
         ''' A página devolve a geração com que foi lida. Página de geração
         ''' vencida deve ser descartada pelo chamador, nunca anexada.
         ''' </summary>
-        Function GetMessagePageAsync(query As MessageQuery, offset As Integer, count As Integer,
+        ''' <param name="continuation">
+        ''' Cursor opaco da pagina anterior. Nothing pede a primeira.
+        ''' </param>
+        ''' <param name="targetCount">
+        ''' ALVO, nao teto. A pagina drena o grupo do ultimo instante ate
+        ''' o fim, entao pode devolver mais — e e isso que impede pular
+        ''' empatado. Ver MessagePage.DrainedExtra.
+        ''' </param>
+        Function GetMessagePageAsync(query As MessageQuery, continuation As String,
+                                     targetCount As Integer,
                                      cancel As CancellationToken) _
             As Task(Of OperationResult(Of MessagePage))
 

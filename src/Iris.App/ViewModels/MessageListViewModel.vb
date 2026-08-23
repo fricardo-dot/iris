@@ -22,16 +22,17 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property Folder As FolderKey
         Public ReadOnly Property Sort As MessageSort
         Public ReadOnly Property Generation As Long
-        Public ReadOnly Property Offset As Integer
+        ''' <summary>Cursor opaco. Nothing pede a primeira pagina.</summary>
+        Public ReadOnly Property Cursor As String
         Public ReadOnly Property SelectionKey As ItemKey
         Public ReadOnly Property IsReload As Boolean
 
         Public Sub New(folder As FolderKey, sort As MessageSort, generation As Long,
-                       offset As Integer, selectionKey As ItemKey, isReload As Boolean)
+                       cursor As String, selectionKey As ItemKey, isReload As Boolean)
             Me.Folder = folder
             Me.Sort = sort
             Me.Generation = generation
-            Me.Offset = offset
+            Me.Cursor = cursor
             Me.SelectionKey = selectionKey
             Me.IsReload = isReload
         End Sub
@@ -64,7 +65,13 @@ Namespace Global.Iris.App.ViewModels
         Private _folder As FolderKey
         Private _folderName As String = ""
         Private _sort As MessageSort = MessageSort.ReceivedDesc
-        Private _nextOffset As Integer = 0
+        ''' <summary>
+        ''' Cursor da proxima pagina. Nothing significa 'primeira pagina',
+        ''' e por isso PRECISA ser zerado em toda troca de pasta, de
+        ''' ordenacao e em recarga: cursor sobrevivente pediria a
+        ''' continuacao de uma lista que nao esta mais na tela.
+        ''' </summary>
+        Private _nextCursor As String = Nothing
 
         ''' <summary>
         ''' Um pedido em execução e, no máximo, UM pendente — o último vence.
@@ -260,7 +267,7 @@ Namespace Global.Iris.App.ViewModels
             End SyncLock
 
             _folder = Nothing
-            _nextOffset = 0
+            _nextCursor = Nothing
             FolderName = ""
             HasFolder = False
             Messages.Clear()
@@ -278,7 +285,8 @@ Namespace Global.Iris.App.ViewModels
             Dim chave = If(preservarSelecao AndAlso Selected IsNot Nothing, Selected.Key, Nothing)
             Dim geracao = Interlocked.Increment(_generation)
 
-            Await Despachar(New PageRequest(_folder, _sort, geracao, 0, chave, isReload:=True))
+            _nextCursor = Nothing
+            Await Despachar(New PageRequest(_folder, _sort, geracao, Nothing, chave, isReload:=True))
         End Function
 
         Private Function PodeCarregarMais() As Boolean
@@ -291,7 +299,7 @@ Namespace Global.Iris.App.ViewModels
             ' NextOffset, não Messages.Count: o broker examina posições e
             ' pode devolver menos DTOs do que examinou.
             Await Despachar(New PageRequest(_folder, _sort, Volatile.Read(_generation),
-                                            _nextOffset, Nothing, isReload:=False))
+                                            _nextCursor, Nothing, isReload:=False))
         End Function
 
         ''' <summary>
@@ -368,7 +376,7 @@ Namespace Global.Iris.App.ViewModels
                 Dim consulta = New MessageQuery(pedido.Folder, pedido.Sort, pedido.Generation)
                 Dim cronometro = Stopwatch.StartNew()
                 Dim resultado = Await _broker.GetMessagePageAsync(
-                    consulta, pedido.Offset, PageSize, CancellationToken.None)
+                    consulta, pedido.Cursor, PageSize, CancellationToken.None)
                 cronometro.Stop()
 
                 If Volatile.Read(_generation) <> pedido.Generation Then Return
@@ -392,9 +400,16 @@ Namespace Global.Iris.App.ViewModels
                             If existentes.Add(m.Key) Then Messages.Add(New MessageRowViewModel(m))
                         Next
 
-                        _nextOffset = pagina.NextOffset
+                        ' a pagina traz a geracao com que foi lida; conferir
+                        ' as duas evita anexar resultado de geracao vencida
+                        ' caso alguma checagem acima mude no futuro.
+                        If pagina.Generation <> pedido.Generation Then Return
+
+                        _nextCursor = pagina.NextCursor
                         _skipped += pagina.SkippedCount
-                        Total = pagina.TotalAtRead
+                        ' TotalAtStart so vem na primeira pagina; nas demais
+                        ' o valor anterior e mantido.
+                        If pagina.TotalAtStart.HasValue Then Total = pagina.TotalAtStart.Value
                         HasMore = pagina.HasMore
                         LastPageMs = cronometro.Elapsed.TotalMilliseconds
                         AtualizarEstados()
