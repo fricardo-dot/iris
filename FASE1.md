@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 12 — critério de 5.000 dispensado; medição corrigida na seção 15.
+**Versão:** 13 — FASE 1 CONCLUÍDA. Critério de 5.000 dispensado; medição na seção 15.
 
 ---
 
@@ -956,17 +956,17 @@ parcelas entre si. Bate com os ~16 ms/item medidos na Fase 0.
 **Uma página custa cerca de 600 ms.** É o tempo real de um "Carregar
 mais", e é o número que importa para a experiência.
 
-**A página do offset 900 saiu ~23% mais lenta que a do offset 100, e a
-causa é indeterminada.**
+**Nas execuções aquecidas (2 e 3), a página do offset 900 saiu ~23% mais
+lenta que a do offset 100. A causa é indeterminada.**
 
-Não é "subida com a profundidade": a série não é monótona. Offset 0 sai
-em ~13,9 ms/item, quase igual ao 900 (~13,7), e o mais RÁPIDO é o 100
-(~11,4). Se a profundidade explicasse, o offset 0 seria o mais barato de
-todos.
+A série não é monótona: offset 0 sai em ~13,9 ms/item, quase igual ao 900
+(~13,7), e o mais rápido é o 100 (~11,4). **A série não oferece evidência
+de efeito da profundidade** — nem a favor, nem contra.
 
-Três execuções, páginas com mensagens diferentes — tamanhos e anexos
-diferentes — não sustentam nem "cresce com o offset" nem "não é ruído".
-O que dá para afirmar é a diferença observada, e que ela é pequena.
+Três execuções, com páginas contendo mensagens diferentes em tamanho e
+anexos, não sustentam nem "cresce com o offset" nem "é só ruído". O que
+dá para afirmar é a diferença observada entre duas páginas, e que ela é
+pequena.
 
 **Nada aqui indica que a paginação por índice quebre.** Nenhum offset
 medido custou o dobro de outro, e a variação está na mesma ordem de
