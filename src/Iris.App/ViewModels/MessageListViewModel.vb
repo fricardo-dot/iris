@@ -79,6 +79,7 @@ Namespace Global.Iris.App.ViewModels
         Private _pending As PageRequest
 
         Private _isLoading As Boolean
+        Private _isRestoringSelection As Boolean
         Private _selected As MessageRowViewModel
         Private _total As Integer
         Private _hasMore As Boolean
@@ -149,6 +150,22 @@ Namespace Global.Iris.App.ViewModels
             Private Set(value As Boolean)
                 If SetProperty(_hasMore, value) Then LoadMoreCommand.NotifyCanExecuteChanged()
             End Set
+        End Property
+
+        ''' <summary>
+        ''' A lista esta trocando o conteudo e vai restaurar a selecao pela
+        ''' chave. Existe para distinguir "a colecao foi esvaziada por dentro"
+        ''' de "o usuario desmarcou".
+        '''
+        ''' Antes isso era inferido de IsLoading, o que era amplo demais:
+        ''' IsLoading tambem e verdadeiro durante "Carregar mais", quando
+        ''' nenhuma selecao esta sendo restaurada, e nesse intervalo uma
+        ''' desmarcacao legitima era ignorada.
+        ''' </summary>
+        Public ReadOnly Property IsRestoringSelection As Boolean
+            Get
+                Return _isRestoringSelection
+            End Get
         End Property
 
         ''' <summary>Uma pasta foi escolhida — ainda que esteja vazia.</summary>
@@ -337,6 +354,10 @@ Namespace Global.Iris.App.ViewModels
                     Await OnUiAsync(
                         Sub()
                             If Volatile.Read(_generation) <> pedido.Generation Then Return
+                            ' Marcado ANTES do Clear: limpar a colecao anula a
+                            ' selecao do ListBox, e quem escuta precisa saber
+                            ' que aquilo e interno, nao o usuario.
+                            _isRestoringSelection = pedido.SelectionKey IsNot Nothing
                             Messages.Clear()
                             ErrorMessage = ""
                             _skipped = 0
@@ -383,9 +404,14 @@ Namespace Global.Iris.App.ViewModels
                             ' ela estiver na parte recarregada.
                             Selected = Messages.FirstOrDefault(
                                 Function(m) pedido.SelectionKey.Equals(m.Key))
+                            _isRestoringSelection = False
                         End If
                     End Sub)
             Finally
+                ' Sempre desmarcado: se a pagina falhou ou a geracao venceu,
+                ' a restauracao nao vai acontecer e deixar a flag ligada
+                ' faria a UI ignorar desmarcacoes de verdade para sempre.
+                _isRestoringSelection = False
                 IsLoading = False
                 LoadMoreCommand.NotifyCanExecuteChanged()
             End Try

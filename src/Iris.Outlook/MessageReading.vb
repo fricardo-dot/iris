@@ -89,10 +89,12 @@ Namespace Global.Iris.Outlook
                 detalhe.Content = If(detalhe.Attachments.Count > 0,
                                      ContentState.AttachmentsAvailable,
                                      ContentState.BodyAvailable)
-            Catch ex As COMException
-                ' Corpo ainda não baixado, item corrompido, ou o Outlook
-                ' recusando: a UI precisa saber a diferença entre "vazio" e
-                ' "não deu para ler" (R9).
+            Catch ex As COMException When EhConteudoIndisponivel(ex.HResult)
+                ' SO os HRESULTs que realmente significam conteudo ausente.
+                ' Antes, qualquer COMException virava "nao baixado" — e
+                ' engolir a excecao impedia o classificador central do broker
+                ' de ver Outlook ocupado, RPC desconectado ou acesso negado,
+                ' que sao coisas diferentes e levam a UI a decisoes opostas.
                 detalhe.Content = ContentState.TransientError
                 detalhe.BodyError = ErrorKind.NotDownloaded
             End Try
@@ -246,17 +248,17 @@ Namespace Global.Iris.Outlook
                     Try
                         a = anexos.Item(key.Index)
 
-                        ' O índice sozinho é instável. Confere nome e tamanho
+                        ' O indice sozinho e instavel. Confere nome E TAMANHO
                         ' antes de gravar: salvar o anexo errado com o nome
-                        ' certo seria pior que falhar.
+                        ' certo seria pior que falhar. A versao anterior
+                        ' prometia os dois no comentario e conferia so o nome.
                         If Not String.Equals(Texto(Function() a.FileName), key.FileName,
-                                             StringComparison.Ordinal) Then
+                                             StringComparison.Ordinal) OrElse
+                           Numero(Function() a.Size) <> key.SizeBytes Then
                             Return OperationResult(Of String).Fail(ErrorKind.Stale, "anexo mudou")
                         End If
 
-                        Directory.CreateDirectory(Path.GetDirectoryName(destino))
-                        a.SaveAsFile(destino)
-                        Return OperationResult(Of String).Ok(destino)
+                        Return GravarComTemporario(a, destino, overwrite)
                     Finally
                         ComHelpers.Release(a)
                     End Try
@@ -266,6 +268,71 @@ Namespace Global.Iris.Outlook
             Finally
                 ComHelpers.Release(mail)
             End Try
+        End Function
+
+        ''' <summary>
+        ''' Grava num temporario ao lado do destino e so entao move.
+        '''
+        ''' Escrever direto no caminho final deixaria um arquivo PARCIAL la
+        ''' se o SaveAsFile falhasse no meio — e um anexo truncado com o nome
+        ''' certo e pior que anexo nenhum. O move final tambem fecha a janela
+        ''' entre o File.Exists e a gravacao, em que outro processo poderia
+        ''' criar o arquivo.
+        ''' </summary>
+        Private Function GravarComTemporario(a As OL.Attachment, destino As String,
+                                             overwrite As Boolean) As OperationResult(Of String)
+            Dim completo As String
+            Try
+                completo = Path.GetFullPath(destino)
+            Catch
+                Return OperationResult(Of String).Fail(ErrorKind.Unexpected, "caminho invalido")
+            End Try
+
+            Dim pasta = Path.GetDirectoryName(completo)
+            If String.IsNullOrEmpty(pasta) Then
+                Return OperationResult(Of String).Fail(ErrorKind.Unexpected, "sem diretorio")
+            End If
+
+            Try
+                Directory.CreateDirectory(pasta)
+            Catch
+                Return OperationResult(Of String).Fail(ErrorKind.Denied, "diretorio")
+            End Try
+
+            ' No MESMO diretorio: mover entre volumes nao e atomico.
+            Dim temporario = Path.Combine(pasta, $".iris-{Guid.NewGuid():N}.tmp")
+
+            Try
+                a.SaveAsFile(temporario)
+                File.Move(temporario, completo, overwrite)
+                Return OperationResult(Of String).Ok(completo)
+            Catch ex As IOException
+                Limpar(temporario)
+                Return OperationResult(Of String).Fail(ErrorKind.Denied, "arquivo ja existe ou em uso")
+            Catch ex As UnauthorizedAccessException
+                Limpar(temporario)
+                Return OperationResult(Of String).Fail(ErrorKind.Denied, "sem permissao")
+            Catch
+                Limpar(temporario)
+                Throw
+            End Try
+        End Function
+
+        Private Sub Limpar(caminho As String)
+            Try
+                If File.Exists(caminho) Then File.Delete(caminho)
+            Catch
+                ' Um temporario orfao nao justifica derrubar a operacao.
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' MAPI_E_NOT_FOUND, E_INVALIDARG e o "objeto nao esta no cache
+        ''' local" do MAPI. Ocupado e desconectado NAO entram aqui.
+        ''' </summary>
+        Private Function EhConteudoIndisponivel(hresult As Integer) As Boolean
+            Return hresult = &H8004010F OrElse hresult = &H80070057 OrElse
+                   hresult = &H80040604
         End Function
 
         Private Function EhNaoEncontrado(hresult As Integer) As Boolean

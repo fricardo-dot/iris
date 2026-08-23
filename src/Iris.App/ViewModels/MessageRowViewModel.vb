@@ -72,7 +72,11 @@ Namespace Global.Iris.App.ViewModels
                 Return _isUnread
             End Get
             Set(value As Boolean)
-                SetProperty(_isUnread, value)
+                If Not SetProperty(_isUnread, value) Then Return
+                ' O DTO acompanha. Deixar envelope e DTO discordando cria
+                ' duas verdades sobre o mesmo campo — e a Fase 2 vai
+                ' persistir o DTO.
+                Summary.IsUnread = value
             End Set
         End Property
 

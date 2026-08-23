@@ -20,11 +20,12 @@ Namespace Global.Iris.App.ViewModels
         Private _disposed As Boolean
         Private _wasConnected As Boolean
 
-        Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher)
+        Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher,
+                       saveFile As ISaveFileService)
             Connection = New ConnectionViewModel(broker, ui)
             Folders = New FolderTreeViewModel(broker, ui, AddressOf Connection.Observe)
             Messages = New MessageListViewModel(broker, ui, AddressOf Connection.Observe)
-            Detail = New MessageDetailViewModel(broker, ui, AddressOf Connection.Observe)
+            Detail = New MessageDetailViewModel(broker, ui, AddressOf Connection.Observe, saveFile)
             _watcher = New FolderWatcher(broker, ui, AddressOf Connection.Observe,
                                          AddressOf Messages.OnFolderInvalidated)
 
@@ -119,12 +120,16 @@ Namespace Global.Iris.App.ViewModels
         Private Sub OnMessagesChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
             If e.PropertyName <> NameOf(MessageListViewModel.Selected) Then Return
 
-            ' Uma recarga chama Messages.Clear(), e limpar a ObservableCollection
-            ' zera a seleção do ListBox por um instante antes de ela ser
-            ' restaurada pela chave. Isso NÃO é o usuário desmarcando nada —
-            ' e tratar como se fosse limpava o leitor e forçava uma segunda
-            ' leitura do corpo assim que a seleção voltava.
-            If Messages.Selected Is Nothing AndAlso Messages.IsLoading Then Return
+            ' Uma recarga chama Messages.Clear(), e limpar a
+            ' ObservableCollection zera a seleção do ListBox por um instante
+            ' antes de ela ser restaurada pela chave. Isso NÃO é o usuário
+            ' desmarcando nada — e tratar como se fosse limpava o leitor e
+            ' forçava uma segunda leitura do corpo.
+            '
+            ' A condição é o estado EXPLÍCITO de restauração, não IsLoading:
+            ' IsLoading também vale durante "Carregar mais", e ali uma
+            ' desmarcação de verdade seria ignorada.
+            If Messages.Selected Is Nothing AndAlso Messages.IsRestoringSelection Then Return
 
             Detail.Show(Messages.Selected)
         End Sub

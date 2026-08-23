@@ -4,6 +4,7 @@ Imports System.Threading
 Imports System.Threading.Tasks
 Imports System.Windows.Threading
 Imports CommunityToolkit.Mvvm.ComponentModel
+Imports CommunityToolkit.Mvvm.Input
 Imports Iris.Core
 Imports Iris.Model
 
@@ -38,6 +39,7 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _broker As IOutlookBroker
         Private ReadOnly _ui As Dispatcher
         Private ReadOnly _observe As Action(Of Task, String)
+        Private ReadOnly _saveFile As ISaveFileService
         Private ReadOnly _debounce As DispatcherTimer
         Private ReadOnly _marcarLida As DispatcherTimer
 
@@ -50,10 +52,13 @@ Namespace Global.Iris.App.ViewModels
         Private _errorMessage As String = ""
         Private _disposed As Boolean
 
-        Public Sub New(broker As IOutlookBroker, ui As Dispatcher, observe As Action(Of Task, String))
+        Public Sub New(broker As IOutlookBroker, ui As Dispatcher,
+                       observe As Action(Of Task, String), saveFile As ISaveFileService)
             _broker = broker
             _ui = ui
             _observe = observe
+            _saveFile = saveFile
+            SaveAttachmentCommand = New AsyncRelayCommand(Of AttachmentInfo)(AddressOf SalvarAnexoAsync)
 
             _debounce = New DispatcherTimer(DispatcherPriority.Normal, ui) With {
                 .Interval = TimeSpan.FromMilliseconds(SelecaoDebounceMs)
@@ -67,6 +72,31 @@ Namespace Global.Iris.App.ViewModels
         End Sub
 
         Public ReadOnly Property Attachments As New ObservableCollection(Of AttachmentInfo)()
+        Public ReadOnly Property SaveAttachmentCommand As IAsyncRelayCommand(Of AttachmentInfo)
+
+        Private _attachmentStatus As String = ""
+
+        ''' <summary>
+        ''' Resultado da última tentativa de salvar. Fica visível porque
+        ''' salvar um anexo pode falhar de três maneiras diferentes, e
+        ''' silêncio faria as três parecerem sucesso.
+        ''' </summary>
+        Public Property AttachmentStatus As String
+            Get
+                Return _attachmentStatus
+            End Get
+            Private Set(value As String)
+                If SetProperty(_attachmentStatus, value) Then
+                    OnPropertyChanged(NameOf(HasAttachmentStatus))
+                End If
+            End Set
+        End Property
+
+        Public ReadOnly Property HasAttachmentStatus As Boolean
+            Get
+                Return Not String.IsNullOrEmpty(_attachmentStatus)
+            End Get
+        End Property
 
         Public Property Detail As MessageDetail
             Get
@@ -206,6 +236,7 @@ Namespace Global.Iris.App.ViewModels
 
             _pendente = linha
             _linhaAtual = Nothing
+            AttachmentStatus = ""
 
             If linha Is Nothing Then
                 Detail = Nothing
@@ -260,7 +291,10 @@ Namespace Global.Iris.App.ViewModels
                         If linha.IsUnread Then _marcarLida.Start()
                     End Sub).Task
             Finally
-                IsLoading = False
+                ' So a geracao CORRENTE pode desligar o indicador. Uma leitura
+                ' obsoleta terminando depois de o usuario ter selecionado
+                ' outra mensagem apagaria o "carregando" da leitura nova.
+                If Volatile.Read(_generation) = geracao Then IsLoading = False
             End Try
         End Function
 
@@ -296,6 +330,59 @@ Namespace Global.Iris.App.ViewModels
             Await _ui.InvokeAsync(Sub() linha.IsUnread = True).Task
         End Function
 
+        ''' <summary>
+        ''' Salva um anexo onde o usuário escolher.
+        '''
+        ''' ABRIR o anexo continua fora: abrir é executar conteúdo não
+        ''' confiável, e o Iris não vai fazer isso por conta própria (F1-J).
+        ''' </summary>
+        Private Async Function SalvarAnexoAsync(anexo As AttachmentInfo) As Task
+            If anexo Is Nothing Then Return
+
+            Dim destino = _saveFile.AskWhereToSave(anexo.FileName)
+            If String.IsNullOrEmpty(destino) Then Return
+
+            AttachmentStatus = $"Salvando {anexo.FileName}…"
+
+            ' O diálogo já confirmou a sobrescrita com o usuário; aqui o
+            ' overwrite é consequência daquela confirmação, não decisão
+            ' silenciosa nossa.
+            Dim resultado = Await _broker.SaveAttachmentAsync(
+                anexo.Key, destino, overwrite:=True, cancel:=CancellationToken.None)
+
+            Await _ui.InvokeAsync(
+                Sub()
+                    If resultado.Succeeded Then
+                        AttachmentStatus = $"Salvo em {destino}"
+                    ElseIf resultado.IsAmbiguous Then
+                        ' Gravação em disco que falha depois de começar pode
+                        ' ter deixado arquivo completo, parcial ou nenhum.
+                        AttachmentStatus =
+                            $"Não foi possível confirmar se {anexo.FileName} foi salvo. " &
+                            "Verifique a pasta escolhida antes de tentar de novo."
+                    Else
+                        AttachmentStatus = TraduzirAnexo(resultado.Kind, anexo.FileName)
+                    End If
+                End Sub).Task
+        End Function
+
+        Private Shared Function TraduzirAnexo(kind As ErrorKind, nome As String) As String
+            Select Case kind
+                Case ErrorKind.Stale
+                    Return $"{nome} mudou desde que a mensagem foi aberta. Reabra a mensagem."
+                Case ErrorKind.NotFound
+                    Return $"{nome} não está mais nesta mensagem."
+                Case ErrorKind.Denied
+                    Return $"Sem permissão para gravar {nome}, ou o arquivo está em uso."
+                Case ErrorKind.NotConnected
+                    Return "Sem conexão com o Outlook."
+                Case ErrorKind.Busy
+                    Return "O Outlook está ocupado. Tente de novo em instantes."
+                Case Else
+                    Return $"Não foi possível salvar {nome}."
+            End Select
+        End Function
+
         Private Shared Function Traduzir(kind As ErrorKind) As String
             Select Case kind
                 Case ErrorKind.NotFound : Return "Esta mensagem não está mais aqui."
@@ -309,6 +396,9 @@ Namespace Global.Iris.App.ViewModels
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True
+            ' Invalida leitura em voo: sem isto, uma carga ja iniciada
+            ' concluiria depois do descarte e ainda tocaria propriedades.
+            Interlocked.Increment(_generation)
             _debounce.Stop()
             _marcarLida.Stop()
             RemoveHandler _debounce.Tick, AddressOf OnDebounceTick

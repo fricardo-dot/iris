@@ -419,9 +419,24 @@
                                                        Style="{StaticResource Text.Body}"
                                                        FontSize="{StaticResource Font.Size.Small}"
                                                        VerticalAlignment="Center"
-                                                       MaxWidth="260"
+                                                       MaxWidth="240"
                                                        TextTrimming="CharacterEllipsis"
                                                        ToolTip="{Binding FileName}" />
+
+                                            <!-- SALVAR, nao abrir. Abrir anexo executa
+                                                 conteudo nao confiavel, e o Iris nao faz
+                                                 isso por conta propria (F1-J). -->
+                                            <Button Content="&#xE74E;"
+                                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                    FontSize="11"
+                                                    Margin="10,0,0,0" Padding="6,2"
+                                                    VerticalAlignment="Center"
+                                                    Style="{StaticResource Button.Secondary}"
+                                                    ToolTip="Salvar anexo"
+                                                    AutomationProperties.Name="Salvar anexo"
+                                                    Command="{Binding DataContext.Detail.SaveAttachmentCommand,
+                                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>
@@ -429,33 +444,54 @@
                         </ItemsControl>
                     </Border>
 
+                    <TextBlock Grid.Row="1" Text="{Binding Detail.AttachmentStatus}"
+                               Style="{StaticResource Text.Muted}"
+                               Margin="20,0,20,8" VerticalAlignment="Bottom"
+                               TextWrapping="Wrap"
+                               Visibility="{Binding Detail.HasAttachmentStatus, Converter={StaticResource BoolToVis}}" />
+
                     <!-- Corpo, em TEXTO PURO nesta versao. HTML de e-mail e
                          conteudo hostil vindo de fora; o WebView2 endurecido
                          entra depois, com as travas verificaveis. -->
-                    <ScrollViewer Grid.Row="2" Padding="20,16"
-                                  VerticalScrollBarVisibility="Auto"
-                                  Visibility="{Binding Detail.HasMessage, Converter={StaticResource BoolToVis}}">
-                        <StackPanel>
-                            <Border Background="{DynamicResource Brush.Surface.3}"
-                                    CornerRadius="{StaticResource Radius.Control}"
-                                    Padding="12,10" Margin="0,0,0,12"
-                                    Visibility="{Binding Detail.HasBodyNotice, Converter={StaticResource BoolToVis}}">
-                                <TextBlock Text="{Binding Detail.BodyNotice}"
-                                           Style="{StaticResource Text.Secondary}" />
-                            </Border>
+                    <!--
+                        Sem ScrollViewer externo. Um ScrollViewer da altura
+                        infinita ao conteudo, e o TextBox precisaria medir e
+                        montar layout do corpo INTEIRO — com teto de 512 mil
+                        caracteres e quebra de linha, isso congela a janela.
+                        O TextBox rola sozinho, numa linha de altura definida.
+                    -->
+                    <Grid Grid.Row="2"
+                          Visibility="{Binding Detail.HasMessage, Converter={StaticResource BoolToVis}}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
 
-                            <TextBox Text="{Binding Detail.Body, Mode=OneWay}"
-                                     IsReadOnly="True"
-                                     BorderThickness="0"
-                                     Background="Transparent"
-                                     Foreground="{DynamicResource Brush.Text.Primary}"
-                                     FontFamily="{StaticResource Font.Ui}"
-                                     FontSize="{StaticResource Font.Size.Body}"
-                                     TextWrapping="Wrap"
-                                     IsTabStop="False"
-                                     AutomationProperties.Name="Corpo da mensagem" />
-                        </StackPanel>
-                    </ScrollViewer>
+                        <Border Grid.Row="0"
+                                Background="{DynamicResource Brush.Surface.3}"
+                                CornerRadius="{StaticResource Radius.Control}"
+                                Padding="12,10" Margin="20,16,20,0"
+                                Visibility="{Binding Detail.HasBodyNotice, Converter={StaticResource BoolToVis}}">
+                            <TextBlock Text="{Binding Detail.BodyNotice}"
+                                       Style="{StaticResource Text.Secondary}" />
+                        </Border>
+
+                        <TextBox Grid.Row="1"
+                                 Text="{Binding Detail.Body, Mode=OneWay}"
+                                 IsReadOnly="True"
+                                 AcceptsReturn="True"
+                                 BorderThickness="0"
+                                 Background="Transparent"
+                                 Foreground="{DynamicResource Brush.Text.Primary}"
+                                 FontFamily="{StaticResource Font.Ui}"
+                                 FontSize="{StaticResource Font.Size.Body}"
+                                 TextWrapping="Wrap"
+                                 Padding="20,16"
+                                 VerticalScrollBarVisibility="Auto"
+                                 HorizontalScrollBarVisibility="Disabled"
+                                 IsTabStop="True"
+                                 AutomationProperties.Name="Corpo da mensagem" />
+                    </Grid>
 
                     <TextBlock Grid.Row="2" Text="Selecione uma mensagem"
                                Style="{StaticResource Text.Muted}"
