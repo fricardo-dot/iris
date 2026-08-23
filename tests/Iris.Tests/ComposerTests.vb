@@ -1312,6 +1312,43 @@ Public Class ComposerTests
         Assert.AreEqual(0, ContarChamadas(broker, "send"))
     End Sub
 
+
+    ''' <summary>
+    ''' Leitura incompleta dos destinatarios BLOQUEIA o envio, e o bloqueio
+    ''' vem ANTES de conferir os enderecos: conferir uma lista incompleta e
+    ''' aprovar o que se ve sem saber o que ficou de fora.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Destinatarios_lidos_pela_metade_bloqueiam_o_envio()
+        Dim broker As New FakeBroker With {.LeituraDeDestinatarios = PartStatus.IncompleteWith(5, 1, ErrorKind.Denied)}
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.Editing, vm.State,
+            "Nao pode nem chegar a tela de confirmacao com a lista incompleta.")
+        Assert.IsTrue(vm.HasStatus)
+        CollectionAssert.DoesNotContain(broker.Chamadas, "send")
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: leitura completa segue para a confirmacao. Sem
+    ''' isto, um compositor que bloqueasse sempre passaria no teste acima.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Destinatarios_lidos_por_inteiro_seguem_para_a_confirmacao()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================

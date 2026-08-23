@@ -68,6 +68,9 @@ Friend NotInheritable Class FakeBroker
     Friend FalhaAoDescartar As ErrorKind = ErrorKind.None
     Friend Modo As ModoDeDestinatario = ModoDeDestinatario.Smtp
 
+    ''' <summary>Como a leitura da lista de destinatarios se saiu.</summary>
+    Friend LeituraDeDestinatarios As PartStatus = PartStatus.Full
+
     ''' <summary>O que foi de fato enviado, para o teste conferir.</summary>
     Friend Enviado As SendPreview
 
@@ -271,6 +274,7 @@ Friend NotInheritable Class FakeBroker
         Next
 
         p.Attachments.AddRange(_anexos)
+        p.RecipientsStatus = LeituraDeDestinatarios
         Return OperationResult(Of SendPreview).Ok(p)
     End Function
 

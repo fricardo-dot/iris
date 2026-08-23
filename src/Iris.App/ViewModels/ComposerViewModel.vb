@@ -922,6 +922,16 @@ Namespace Global.Iris.App.ViewModels
             Preview = p
             Status = ""
 
+            ' A leitura da lista veio inteira? Esta pergunta vem ANTES de
+            ' conferir os endereços, porque conferir uma lista incompleta é
+            ' aprovar o que se vê sem saber o que ficou de fora.
+            If Not ReplyReadiness.CanReply(p.RecipientsStatus) Then
+                Status = ReplyReadiness.DescribeBlock("os destinatários", p.RecipientsStatus) &
+                         " Não dá para conferir para quem a mensagem vai; corrija a lista " &
+                         "ou envie pelo Outlook."
+                Return
+            End If
+
             If p.Recipients.Count = 0 Then
                 Status = "Sem destinatários."
                 Return

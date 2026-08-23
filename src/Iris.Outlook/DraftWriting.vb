@@ -343,6 +343,8 @@ Namespace Global.Iris.Outlook
                 }
 
                 Dim recipients As OL.Recipients = Nothing
+                Dim esperados = 0
+                Dim ultimaFalha = ErrorKind.Unexpected
                 Try
                     recipients = item.Recipients
                     ' ResolveAll ANTES de listar: sem isso, "Resolved" seria
@@ -350,7 +352,8 @@ Namespace Global.Iris.Outlook
                     ' digitou, não para quem a mensagem realmente vai.
                     recipients.ResolveAll()
 
-                    For i = 1 To recipients.Count
+                    esperados = recipients.Count
+                    For i = 1 To esperados
                         Dim r As OL.Recipient = Nothing
                         Try
                             r = recipients.Item(i)
@@ -364,10 +367,30 @@ Namespace Global.Iris.Outlook
                                 .Kind = TipoDeDestinatario(r),
                                 .Resolved = Booleano(Function() r.Resolved) AndAlso EhSmtp(endereco)
                             })
+                        Catch ex As COMException
+                            ' Um destinatário que não se deixa ler não pode
+                            ' virar silêncio: a confirmação mostraria uma
+                            ' lista curta como se fosse a lista inteira.
+                            ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
+                                ex.HResult, isMutation:=False, mutationAttemptStarted:=False)
+                        Catch
+                            ultimaFalha = ErrorKind.Unexpected
                         Finally
                             ComHelpers.Release(r)
                         End Try
                     Next
+
+                    previa.RecipientsStatus = If(previa.Recipients.Count = esperados,
+                                                 PartStatus.CompleteWith(esperados),
+                                                 PartStatus.IncompleteWith(esperados,
+                                                                           previa.Recipients.Count,
+                                                                           ultimaFalha))
+                Catch ex As COMException
+                    previa.RecipientsStatus = PartStatus.Missing(
+                        OutlookFailurePolicy.ClassifyFailure(ex.HResult, isMutation:=False,
+                                                             mutationAttemptStarted:=False))
+                Catch
+                    previa.RecipientsStatus = PartStatus.Missing(ErrorKind.Unexpected)
                 Finally
                     ComHelpers.Release(recipients)
                 End Try

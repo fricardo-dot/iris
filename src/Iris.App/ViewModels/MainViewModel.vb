@@ -53,9 +53,14 @@ Namespace Global.Iris.App.ViewModels
             ReplyAllCommand = New AsyncRelayCommand(Function() ResponderAsync(replyAll:=True),
                                                     Function() PodeResponder)
             ForwardCommand = New AsyncRelayCommand(AddressOf EncaminharAsync,
-                                                   Function() PodeResponder)
+                                                   Function() PodeEncaminhar)
 
             AddHandler Composer.PropertyChanged, AddressOf OnComposerChanged
+
+            ' O detalhe chega DEPOIS da seleção, e é ele que diz se a leitura
+            ' veio completa. Sem escutar isto, responder ficaria habilitado
+            ' com base no estado da mensagem anterior.
+            AddHandler Detail.PropertyChanged, AddressOf OnDetailChanged
 
             AddHandler Messages.PropertyChanged, AddressOf OnMessagesChanged
 
@@ -89,9 +94,25 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' Responder depende dos destinatários LIDOS. Se a leitura veio
+        ''' incompleta, responder a todos responderia a menos gente do que a
+        ''' mensagem tem, sem nada indicar isso.
+        ''' </summary>
         Public ReadOnly Property PodeResponder As Boolean
             Get
-                Return PodeCompor AndAlso Messages.Selected IsNot Nothing
+                Return PodeCompor AndAlso Messages.Selected IsNot Nothing AndAlso Detail.CanReply
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Encaminhar leva os anexos. Lista de anexos incompleta significa
+        ''' mandar para fora sem conseguir conferir o que vai junto.
+        ''' </summary>
+        Public ReadOnly Property PodeEncaminhar As Boolean
+            Get
+                Return PodeCompor AndAlso Messages.Selected IsNot Nothing AndAlso
+                       Detail.CanReply AndAlso Detail.CanForward
             End Get
         End Property
 
@@ -107,6 +128,12 @@ Namespace Global.Iris.App.ViewModels
             Return Composer.ForwardAsync(linha.Key)
         End Function
 
+        Private Sub OnDetailChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
+            If e.PropertyName <> NameOf(MessageDetailViewModel.CanReply) AndAlso
+               e.PropertyName <> NameOf(MessageDetailViewModel.CanForward) Then Return
+            AtualizarComandosDeComposicao()
+        End Sub
+
         Private Sub OnComposerChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
             If e.PropertyName <> NameOf(ComposerViewModel.IsOpen) Then Return
             AtualizarComandosDeComposicao()
@@ -115,6 +142,7 @@ Namespace Global.Iris.App.ViewModels
         Private Sub AtualizarComandosDeComposicao()
             OnPropertyChanged(NameOf(PodeCompor))
             OnPropertyChanged(NameOf(PodeResponder))
+            OnPropertyChanged(NameOf(PodeEncaminhar))
             NewMessageCommand.NotifyCanExecuteChanged()
             ReplyCommand.NotifyCanExecuteChanged()
             ReplyAllCommand.NotifyCanExecuteChanged()
@@ -303,6 +331,7 @@ Namespace Global.Iris.App.ViewModels
             RemoveHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
             RemoveHandler Messages.PropertyChanged, AddressOf OnMessagesChanged
             RemoveHandler Composer.PropertyChanged, AddressOf OnComposerChanged
+            RemoveHandler Detail.PropertyChanged, AddressOf OnDetailChanged
             RemoveHandler _broker.SessionReplaced, AddressOf OnSessionReplaced
             _watcher.Dispose()
             Composer.Dispose()

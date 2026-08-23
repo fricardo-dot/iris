@@ -1,6 +1,7 @@
 Imports System.Collections.Generic
 Imports System.IO
 Imports System.Runtime.InteropServices
+Imports Iris.Core
 Imports Iris.Model
 Imports Iris.Outlook.Interop
 Imports OL = Microsoft.Office.Interop.Outlook
@@ -51,8 +52,8 @@ Namespace Global.Iris.Outlook
                     .IsProtected = Numero(Function() CInt(mail.Permission)) <> 0
                 }
 
-                LerDestinatarios(mail, detalhe.Recipients)
-                LerAnexos(mail, item, detalhe.Attachments)
+                detalhe.RecipientsStatus = LerDestinatarios(mail, detalhe.Recipients)
+                detalhe.AttachmentsStatus = LerAnexos(mail, item, detalhe.Attachments)
                 LerCorpo(mail, detalhe)
 
                 Return OperationResult(Of MessageDetail).Ok(detalhe)
@@ -100,11 +101,26 @@ Namespace Global.Iris.Outlook
             End Try
         End Sub
 
-        Private Sub LerDestinatarios(mail As OL.MailItem, destino As List(Of RecipientInfo))
+        ''' <summary>
+        ''' Lê os destinatários e DIZ o quanto conseguiu.
+        '''
+        ''' Antes engolia as duas falhas em silêncio — a do item e a da
+        ''' coleção inteira — e devolvia uma lista sem dizer se ela estava
+        ''' completa. Lista curta e lista vazia ficavam indistinguíveis de
+        ''' "esta mensagem tem poucos destinatários", e é justamente essa
+        ''' lista que alimenta o Responder a todos.
+        ''' </summary>
+        Private Function LerDestinatarios(mail As OL.MailItem,
+                                          destino As List(Of RecipientInfo)) As PartStatus
             Dim recipients As OL.Recipients = Nothing
+            Dim esperados = 0
+            Dim ultimaFalha = ErrorKind.Unexpected
+
             Try
                 recipients = mail.Recipients
-                For i = 1 To recipients.Count
+                esperados = recipients.Count
+
+                For i = 1 To esperados
                     Dim r As OL.Recipient = Nothing
                     Try
                         r = recipients.Item(i)
@@ -114,19 +130,33 @@ Namespace Global.Iris.Outlook
                             .Kind = TipoDeDestinatario(r),
                             .Resolved = Booleano(Function() r.Resolved)
                         })
+                    Catch ex As COMException
+                        ' Um destinatário problemático não derruba a leitura,
+                        ' mas agora deixa rastro.
+                        ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
+                            ex.HResult, isMutation:=False, mutationAttemptStarted:=False)
                     Catch
-                        ' Um destinatário problemático não derruba a leitura.
+                        ultimaFalha = ErrorKind.Unexpected
                     Finally
                         ComHelpers.Release(r)
                     End Try
                 Next
-            Catch
+
+            Catch ex As COMException
                 ' Ler destinatários é uma das operações que a guarda do
-                ' Object Model protege. Falhar aqui não pode custar o corpo.
+                ' Object Model protege. Falhar aqui não pode custar o corpo —
+                ' mas tem de ser dito.
+                Return PartStatus.Missing(OutlookFailurePolicy.ClassifyFailure(
+                    ex.HResult, isMutation:=False, mutationAttemptStarted:=False))
+            Catch
+                Return PartStatus.Missing(ErrorKind.Unexpected)
             Finally
                 ComHelpers.Release(recipients)
             End Try
-        End Sub
+
+            If destino.Count = esperados Then Return PartStatus.CompleteWith(esperados)
+            Return PartStatus.IncompleteWith(esperados, destino.Count, ultimaFalha)
+        End Function
 
         Private Function TipoDeDestinatario(r As OL.Recipient) As RecipientKind
             Try
@@ -141,11 +171,22 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
-        Private Sub LerAnexos(mail As OL.MailItem, dono As ItemKey, destino As List(Of AttachmentInfo))
+        ''' <summary>
+        ''' Lê os anexos e diz o quanto conseguiu. Mesmo motivo dos
+        ''' destinatários, com um agravante: anexo que não foi lido não
+        ''' deixa rastro nenhum na tela — ao contrário de um corpo truncado,
+        ''' que se vê.
+        ''' </summary>
+        Private Function LerAnexos(mail As OL.MailItem, dono As ItemKey,
+                                   destino As List(Of AttachmentInfo)) As PartStatus
             Dim anexos As OL.Attachments = Nothing
+            Dim esperados = 0
+            Dim ultimaFalha = ErrorKind.Unexpected
+
             Try
                 anexos = mail.Attachments
-                For i = 1 To anexos.Count
+                esperados = anexos.Count
+                For i = 1 To esperados
                     Dim a As OL.Attachment = Nothing
                     Try
                         a = anexos.Item(i)
@@ -160,16 +201,28 @@ Namespace Global.Iris.Outlook
                             .ContentId = "",
                             .IsInline = False
                         })
+                    Catch ex As COMException
+                        ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
+                            ex.HResult, isMutation:=False, mutationAttemptStarted:=False)
                     Catch
+                        ultimaFalha = ErrorKind.Unexpected
                     Finally
                         ComHelpers.Release(a)
                     End Try
                 Next
+
+            Catch ex As COMException
+                Return PartStatus.Missing(OutlookFailurePolicy.ClassifyFailure(
+                    ex.HResult, isMutation:=False, mutationAttemptStarted:=False))
             Catch
+                Return PartStatus.Missing(ErrorKind.Unexpected)
             Finally
                 ComHelpers.Release(anexos)
             End Try
-        End Sub
+
+            If destino.Count = esperados Then Return PartStatus.CompleteWith(esperados)
+            Return PartStatus.IncompleteWith(esperados, destino.Count, ultimaFalha)
+        End Function
 
         ''' <summary>
         ''' Marca como lida. SÓ se estiver não lida.

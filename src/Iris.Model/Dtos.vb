@@ -87,6 +87,13 @@ Namespace Global.Iris.Model
         Public Property Recipients As New List(Of RecipientInfo)()
         Public Property Attachments As New List(Of AttachmentInfo)()
 
+        ''' <summary>
+        ''' Quão completa veio cada parte. Sem isto, lista vazia era
+        ''' ambígua: "não tem" e "não deu para ler" apareciam iguais.
+        ''' </summary>
+        Public Property RecipientsStatus As PartStatus = PartStatus.Full
+        Public Property AttachmentsStatus As PartStatus = PartStatus.Full
+
         Public Property Content As ContentState
         Public Property Format As BodyFormat
         Public Property HtmlBody As String = ""
@@ -244,6 +251,17 @@ Namespace Global.Iris.Model
         ''' errada.
         ''' </summary>
         Public Property Attachments As New List(Of AttachmentInfo)()
+
+        ''' <summary>
+        ''' A lista de destinatários veio inteira?
+        '''
+        ''' É a pergunta mais importante desta tela. Uma lista INCOMPLETA é
+        ''' pior que uma vazia: o usuário confere três endereços certos,
+        ''' aprova, e a mensagem vai para menos gente do que devia — e o que
+        ''' falta é invisível por definição.
+        ''' </summary>
+        Public Property RecipientsStatus As PartStatus = PartStatus.Full
+        Public Property AttachmentsStatus As PartStatus = PartStatus.Full
 
         ''' <summary>
         ''' Todo destinatario tem endereco SMTP reconhecivel.

@@ -112,6 +112,10 @@ Namespace Global.Iris.App.ViewModels
                     OnPropertyChanged(NameOf(BodyNotice))
                     OnPropertyChanged(NameOf(HasBodyNotice))
                     OnPropertyChanged(NameOf(HasAttachments))
+                    OnPropertyChanged(NameOf(CanReply))
+                    OnPropertyChanged(NameOf(CanForward))
+                    OnPropertyChanged(NameOf(PartialReadNotice))
+                    OnPropertyChanged(NameOf(HasPartialRead))
                 End If
             End Set
         End Property
@@ -178,6 +182,58 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property HasBodyNotice As Boolean
             Get
                 Return Not String.IsNullOrEmpty(BodyNotice)
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Dá para responder a esta mensagem?
+        '''
+        ''' Com a lista de destinatários incompleta, "Responder a todos"
+        ''' responde a MENOS gente do que a mensagem tinha — e ninguém
+        ''' percebe, porque o resultado parece normal: uma resposta foi
+        ''' enviada, para pessoas reais. O que falta é invisível.
+        ''' </summary>
+        Public ReadOnly Property CanReply As Boolean
+            Get
+                Return _detail IsNot Nothing AndAlso
+                       ReplyReadiness.CanReply(_detail.RecipientsStatus)
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Encaminhar leva os ANEXOS junto, e anexo que não foi lido não
+        ''' deixa rastro na tela — ao contrário de um corpo truncado.
+        ''' </summary>
+        Public ReadOnly Property CanForward As Boolean
+            Get
+                Return _detail IsNot Nothing AndAlso
+                       ReplyReadiness.CanForward(_detail.AttachmentsStatus)
+            End Get
+        End Property
+
+        ''' <summary>Explica o que ficou faltando, e por isso bloqueou.</summary>
+        Public ReadOnly Property PartialReadNotice As String
+            Get
+                If _detail Is Nothing Then Return ""
+
+                Dim destinatarios = ReplyReadiness.DescribeBlock("os destinatários",
+                                                                 _detail.RecipientsStatus)
+                Dim anexos = ReplyReadiness.DescribeBlock("os anexos",
+                                                          _detail.AttachmentsStatus)
+
+                Dim partes = New List(Of String)()
+                If destinatarios.Length > 0 Then partes.Add(destinatarios)
+                If anexos.Length > 0 Then partes.Add(anexos)
+                If partes.Count = 0 Then Return ""
+
+                Return String.Join(" ", partes) &
+                       " Responder e encaminhar ficam bloqueados até uma releitura completa."
+            End Get
+        End Property
+
+        Public ReadOnly Property HasPartialRead As Boolean
+            Get
+                Return PartialReadNotice.Length > 0
             End Get
         End Property
 
