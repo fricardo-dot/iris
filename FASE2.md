@@ -1,182 +1,323 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 1 — plano, escrito antes de qualquer código.
+**Versão:** 2 — reescrito após avaliação técnica externa da v1.
+
+A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
+medição** coisas que são **decisões de correção**. Perguntar "qual é a
+chave estável?" e esperar que um benchmark responda pode produzir um
+desenho logicamente errado, por mais rápido que ele seja.
+
+Esta versão separa as duas coisas: o que já está decidido porque é
+invariante, e o que depende de número.
 
 ---
 
 ## 1. Por que esta fase existe
 
 A Fase 1 mediu o que custa ler do Outlook: **~600 ms por página de 50
-itens**, dominados pela obtenção e resumo item a item. Abrir a mesma pasta
-duas vezes paga o preço duas vezes. Buscar exige varrer.
+itens**, dominados pela obtenção e resumo item a item.
 
 A Fase 0 mediu o que torna isso difícil de resolver:
 
 - **Não há delta token.** O Object Model não tem "o que mudou desde X".
-- **Eventos não recuperam o que aconteceu com o Iris fechado.** Medido no
-  critério R8: assinatura cancelada, 3 criações e 1 exclusão, zero eventos
-  ao reassinar.
-- **`EntryID` muda quando o item se move.** Medido. Ele não serve como
-  identidade do cache.
-
-Ou seja: o cache não pode ser um espelho que se sincroniza sozinho. Ele
-precisa de identidade própria, de reconciliação que não releia tudo, e de
-uma resposta honesta para exclusões que ninguém viu acontecer.
+- **Eventos não recuperam o que aconteceu com o Iris fechado** (R8).
+- **`EntryID` muda quando o item se move.**
 
 ---
 
-## 2. A pergunta que pode encolher esta fase
+## 2. Revisão explícita do ESCOPO
 
-**Existe `Folder.GetTable()` no Object Model, e ele lê em LOTE.** A Fase 1
-mediu iteração item a item — `Items.Item(i)` seguido de nove leituras de
-propriedade. Nunca medi `Table`.
+O `ESCOPO.md` diz que, a partir da Fase 2, "listagem e busca leem
+exclusivamente do cache". **Esta fase reabre a parte da LISTAGEM**, e o
+faz de propósito: se `Folder.GetTable()` tornar a leitura direta rápida o
+bastante, ler direto pode continuar sendo a resposta certa para listar.
 
-Se `Table` for uma ordem de grandeza mais rápido, duas coisas mudam:
+A BUSCA não é reaberta. Ela continua exigindo cache, e por isso o
+subsistema é necessário de qualquer forma — junto com estado local de
+triagem, histórico de frescor, e o que a Fase 4 vier a indexar.
 
-1. Os ~600 ms/página podem virar dezenas de milissegundos, e a pressa pelo
-   cache diminui muito.
-2. A reconciliação — enumerar as chaves de uma pasta inteira para descobrir
-   o que sumiu — pode passar de "inviável" a "trivial".
-
-**Não vou desenhar o cache antes de medir isso.** Desenhar em cima de uma
-suposição de custo é como este projeto errou a medição de página duas vezes
-seguidas, e ali o custo era só de documentação.
-
-É possível que a conclusão do 2.0 seja **"a Fase 2 deveria ser bem menor do
-que o escopo previa"**. Se for, é isso que o documento vai dizer.
+**Correção da v1:** eu tinha escrito que a Q1 poderia "encolher a fase
+inteira". Não pode. Ela pode encolher a parte "cache como acelerador de
+lista". O subsistema de cache e sincronização continua de pé.
 
 ---
 
-## 3. Marco 2.0 — Spike de medição
+## 3. Decisões tomadas AGORA, porque são invariantes
 
-Mesmo formato da Fase 0: código descartável, critérios objetivos, e **as
-decisões de desenho ficam bloqueadas até os números existirem**.
+Não dependem de medição, e adiá-las seria convidar um desenho errado.
 
-Roda contra a caixa real, **somente leitura**, exceto onde marcado.
+### 3.1 Identidade
 
-### Q1 — `Table` contra iteração
+**O cache tem chave interna própria, opaca, gerada pelo Iris.** Nenhuma
+propriedade MAPI isolada é declarada identidade universal.
 
-Mesmo trabalho, mesmas colunas do `MailSummary`, mesma pasta de 1.003
-itens. Compara `Folder.GetTable()` + `Table.GetArray()` com o caminho atual.
+Hierarquia, e o papel de cada camada:
 
-**Critério:** número de ms/item dos dois caminhos, e se `Table` entrega
-todas as colunas de que o DTO precisa. `Table` não expõe tudo que
-`MailItem` expõe — descobrir o que falta é parte do resultado.
-
-### Q2 — Chave estável
-
-Candidatas, e o que precisa ser verificado de cada uma:
-
-| Candidata | Pergunta |
+| Camada | Papel |
 |---|---|
-| `PR_INTERNET_MESSAGE_ID` | Está presente? Em rascunho também? Sobrevive a mover? |
-| `PR_SEARCH_KEY` | Sobrevive a mover dentro do store? E entre stores? |
-| `ConversationIndex` | Serve para agrupar, serve para identificar? |
+| Chave Iris | Identidade local, definitiva |
+| `StoreID` + `EntryID` | **Localizador atual**, não identidade |
+| `PR_SEARCH_KEY` | Evidência forte, condicionada ao provider |
+| Internet Message-ID | Evidência útil, **nunca sozinha** |
+| Tamanho, datas, remetente, assunto | Desambiguação; fracas isoladamente |
 
-**Critério:** para cada candidata, presença medida numa amostra real, e
-comportamento após mover **um item de teste** entre pastas e entre stores.
+`ConversationIndex` **sai** da lista de candidatas a identidade. Serve
+para agrupar conversa; cópias o preservam e mensagens relacionadas
+compartilham prefixo.
 
-**Este é o único ponto do 2.0 que ESCREVE** — move um item. Precisa de item
-criado para o teste e autorização do usuário, e o item volta para onde
-estava.
+**Em correlação ambígua, NÃO unir.** Apagar e recriar perde continuidade;
+unir errado põe o resumo da IA e o estado do usuário na mensagem errada.
+Perder continuidade é o dano menor, e é o que se escolhe.
 
-### Q3 — Checkpoint incremental
+### 3.2 Eventos
 
-`Items.Restrict` com `[LastModificationTime] > X` funciona? É rápido? A
-propriedade é confiável — muda em toda alteração, inclusive marcar como
-lida?
+**Evento é invalidação, nunca transição a aplicar.** Já vale desde a
+Fase 1; passa a valer também para o cache.
 
-**Critério:** tempo da consulta restrita numa pasta de 1.003 itens, e se o
-conjunto devolvido bate com as alterações feitas.
+### 3.3 Sincronização
 
-### Q4 — Custo de enumerar só as chaves
+- **Incremental é ACELERADOR, nunca prova de ausência.**
+- **Reconciliação completa periódica é obrigatória.**
+- **Remoção no cache só é confirmada depois de uma varredura completa e
+  BEM-SUCEDIDA.**
 
-Quanto custa obter chave + `LastModificationTime` de TODOS os itens de uma
-pasta, sem montar DTO? É o custo de uma reconciliação completa, e define se
-detectar exclusão precisa ser esperto ou pode ser bruto.
+### 3.4 Varredura por geração (mark-and-sweep)
 
-**Critério:** ms para 1.003 itens, pelo caminho mais rápido que o Q1
-indicar.
+1. Inicia geração N.
+2. Marca cada item visto com N.
+3. **Só depois de todas as páginas concluírem com sucesso**, itens não
+   vistos viram ausentes.
+4. Cancelamento, erro, ou Outlook indisponível no meio: a geração inteira
+   **não pode confirmar exclusão nenhuma**.
 
-### Q5 — O que um movimento realmente faz
+Sem isto, uma falha no meio apaga metade do cache — o R2-H.
 
-Um item movido entre pastas do mesmo store, e — se houver segundo store —
-entre stores. Registrar antes e depois: `EntryID`, `PR_SEARCH_KEY`,
-`PR_INTERNET_MESSAGE_ID`.
+### 3.5 Estado de presença por item
 
-**É o D4 da Fase 0, que segue sem teste desde então.**
+Quatro estados, não dois:
 
-### Q6 — Exclusão deixa rastro?
+`Presente` · `Não verificado` · `Suspeito de remoção` · `Remoção confirmada`
 
-Três casos, com item de teste:
+"Não verificado" é o que impede o cache de afirmar o que não sabe.
 
-- excluir normal (vai para Itens Excluídos)
-- esvaziar Itens Excluídos
-- `Shift+Del` (exclusão dura)
+### 3.6 Lotes interrompíveis
 
-**Critério:** em qual deles o Iris consegue perceber, com o programa
-FECHADO durante a exclusão, que o item sumiu — e a que custo.
+Importação e reconciliação são **sequências de unidades curtas**, nunca
+uma operação longa na fila da STA. Ver seção 6.
 
-### Q7 — Onde guardar
+### 3.7 Armazenamento
 
-Não é medição do Outlook, é decisão de dependência: SQLite (via
-`Microsoft.Data.Sqlite`), LiteDB, ou arquivo próprio. Critérios: busca
-textual, tamanho em disco para ~50 mil itens, e o que acontece se o arquivo
-corromper.
+**SQLite**, salvo bloqueio concreto de distribuição ou dependência nativa.
+Não é benchmark: para busca textual, transação, migração, índice e
+recuperação, é a opção natural. LiteDB adiciona dependência com modelo de
+consulta menos adequado; arquivo próprio compraria corrupção, locking e
+indexação artesanais sem benefício.
 
-**Critério:** uma escolha, com o motivo escrito e o custo de reverter.
+**O que precisa de decisão de verdade, e vale mais que o benchmark:**
+criptografia em repouso e política de retenção. O cache é cópia local de
+correspondência corporativa — é o R14 do escopo aparecendo aqui.
 
----
+### 3.8 O cache é sempre reconstruível
 
-## 4. O que só é decidido DEPOIS do 2.0
-
-Estas decisões dependem dos números, e listá-las agora é para que ninguém
-as tome antes:
-
-- **Identidade do item no cache** — depende de Q2 e Q5.
-- **Se a listagem lê do cache ou continua lendo do Outlook** — depende de
-  Q1. Se `Table` for rápido o bastante, ler direto pode continuar sendo a
-  resposta certa para listar, e o cache existir só para busca.
-- **Estratégia de reconciliação** — depende de Q3 e Q4.
-- **O que fazer com exclusão invisível** — depende de Q6. Se não houver
-  forma barata de detectar, a resposta honesta pode ser "o cache mostra
-  itens que já não existem, e a UI descobre ao abrir" — o que precisa ser
-  dito ao usuário, não escondido.
+Perder o arquivo não pode custar nada que só exista nele, além de estado
+local. Reconstruir a partir do Outlook é sempre possível.
 
 ---
 
-## 5. Marcos previstos (esboço, sujeito ao 2.0)
+## 4. Marco 2.0 — Spike de medição
 
-- **2.1** Identidade e armazenamento.
-- **2.2** Importação inicial paginada, com retomada após falha. Importar
-  50 mil itens não pode exigir que nada dê errado no meio.
-- **2.3** Reconciliação incremental.
-- **2.4** Exclusões.
-- **2.5** Busca textual.
-- **2.6** A listagem passa a ler do cache — **se** o 2.0 disser que vale.
+Formato da Fase 0: código descartável, critério objetivo. Somente leitura,
+exceto onde marcado.
+
+### Q1 — `Table` contra iteração, por COLUNA
+
+Não basta "mesmo DTO". Matriz por coluna do `MailSummary`:
+
+| Situação | |
+|---|---|
+| vem na tabela padrão | |
+| vem via `Columns.Add` | |
+| não vem | |
+| vem com semântica diferente | |
+| exige abrir o item | |
+
+Suspeitos principais: `Attachments.Count`, estado de proteção/IRM/Purview,
+propriedades calculadas, e valores que possam disparar download.
+
+**Se sete colunas vierem em lote mas proteção e anexos ainda exigirem
+abrir cada item, o ganho desaparece** — e é por isso que a matriz importa
+mais que o número agregado.
+
+Fases cronometradas em SEPARADO, para não atribuir ao Outlook um custo que
+está na conversão: criar a tabela · adicionar colunas · filtrar/ordenar ·
+`GetArray` · converter em DTO · fallback por item.
+
+Armadilhas a verificar: tabela padrão tem poucas colunas; nem toda
+propriedade vira coluna; propriedades grandes/binárias/multivalor têm
+restrição; coluna ausente pode voltar vazia em vez de erro; Jet e DASL
+diferem, sobretudo em data; conversão local/UTC; `GetArray` grande
+monopoliza a STA; tabela **não** é snapshot estável enquanto a pasta muda;
+conteúdo associado/oculto não pode entrar no universo reconciliado.
+
+### Q2 — Evidências de correlação (absorve a antiga Q5)
+
+Não "qual é a chave vencedora", e sim:
+
+> **Quais evidências permitem correlacionar duas manifestações do mesmo
+> item, e com que taxa de falso positivo e falso negativo?**
+
+Experimento central: mover um item de teste entre pastas, registrando
+antes e depois `EntryID`, `PR_SEARCH_KEY`, `PR_INTERNET_MESSAGE_ID`,
+`PR_RECORD_KEY`. É o **D4 da Fase 0**, sem teste desde então.
+
+**Movimento entre STORES fica como não validado.** Esta máquina tem um
+store só, e fabricar conclusão sobre o que não dá para exercitar é pior
+que registrar a lacuna.
+
+**Resultado aceitável inclui "não correlacionar automaticamente".**
+
+### Q3 — Incremental como acelerador
+
+`Items.Restrict` com `[LastModificationTime] > X`: funciona, é rápido, e
+**onde falha**.
+
+O experimento precisa incluir, porque é onde o desenho quebra:
+
+- vários itens com timestamp idêntico;
+- alteração feita DURANTE a leitura;
+- item movido para fora da pasta (não aparece na consulta);
+- exclusão (não aparece).
+
+**Desenho já decidido**: high-water mark com JANELA DE SOBREPOSIÇÃO —
+consultar desde `checkpoint − janela`, reprocessar de forma idempotente, e
+**só avançar o checkpoint depois do commit local**. Uma falha parcial
+seguida de avanço prematuro perde itens para sempre.
+
+### Q4 — Enumerar chaves, e provar que a varredura foi completa
+
+Custo de obter chave + `LastModificationTime` de todos os itens de uma
+pasta, pelo caminho que a Q1 indicar.
+
+**Mais importante que o custo:** testar consistência sob mutação —
+
+- item criado durante a enumeração;
+- item removido durante a enumeração;
+- item movido entre duas pastas enquanto ambas são varridas;
+- falha COM no meio;
+- cancelamento no meio;
+- Outlook reiniciado no meio.
+
+A pergunta é *"como sei que esta varredura foi completa o bastante para
+confirmar remoções?"*
+
+### Q5 — Política de verificação (era "exclusão deixa rastro?")
+
+A pergunta antiga tem resposta pouco útil: esvaziamento e exclusão dura
+não deixam tombstone recuperável pelo OOM. A pergunta boa é:
+
+> **Que política de verificação distingue movido, excluído e
+> temporariamente invisível sem produzir exclusão falsa?**
+
+**Aviso sobre o experimento:** item esvaziado da lixeira ou apagado com
+`Shift+Del` **não volta**. Este teste exige pasta descartável e
+consentimento explícito, aceitando a perda do item de teste. Não prometer
+restauração.
+
+### Q6 — Identidade de pasta e de store
+
+Pastas movem, são renomeadas, excluídas e recriadas. `FolderKey` hoje é
+`EntryID + StoreID`. O que acontece ao mover uma pasta? E ao remontar o
+store ou trocar de perfil?
+
+### Q7 — Custo e semântica do conteúdo para busca
+
+Metadado rápido não resolve busca textual se indexar corpo exigir abrir
+cada item ou disparar download. **Medir separado**, porque é o que decide
+se a busca do cache é viável.
+
+### Q8 — Matriz de providers
+
+Um número da Caixa de Entrada em modo cached não vira garantia geral.
+Registrar o que foi medido em: Exchange cached, offline, PST. Caixa
+compartilhada só se entrar no produto.
+
+### Q9 — Fronteira de retenção
+
+Todas as pastas e todo o histórico, ou uma janela? **Esta decisão pode
+reduzir o problema mais que qualquer otimização**, e é do usuário.
 
 ---
 
-## 6. Riscos que já dá para nomear
+## 5. Riscos
+
+Reordenados por gravidade. **O primeiro é novo, e é o pior.**
 
 | ID | Risco |
 |---|---|
-| R2-A | Cache diverge do Outlook e o usuário confia no cache. Um e-mail que sumiu continuar aparecendo é pior que lentidão. |
-| R2-B | Importação inicial de caixa grande leva horas e trava a fila da STA, deixando o Iris inútil enquanto roda. |
-| R2-C | Não existe chave estável boa, e todo movimento vira "apagou e criou" — perdendo estado local (lido, marcado, o que a IA já resumiu). |
-| R2-D | Exclusão com o Iris fechado é indetectável a custo aceitável. |
-| R2-E | O arquivo de cache corrompe e o usuário perde estado local. Precisa ser reconstruível a partir do Outlook, sempre. |
-| R2-F | Busca do cache diverge da busca do Outlook e o usuário não entende por quê. |
+| **R2-G** | **Fusão falsa.** Dois itens distintos correlacionados como o mesmo. Resumo da IA, estado local ou ação do usuário vão para a mensagem errada. Pode levar a responder à mensagem errada. Pior que perder continuidade. |
+| R2-H | Varredura parcial confirma exclusões em massa. Falha no meio + mark-and-sweep errado apaga dado válido. |
+| R2-A | Cache diverge e o usuário confia nele. Mensagem que sumiu continuar aparecendo é pior que lentidão. |
+| R2-I | Cache é cópia corporativa desprotegida em disco. É o R14 do escopo, e decide criptografia e o que se indexa. |
+| R2-L | Offline confundido com ausência. Tabela vazia por indisponibilidade **nunca** pode confirmar exclusão. |
+| R2-B | Importação inicial monopoliza a fila da STA e deixa o Iris inútil enquanto roda. |
+| R2-C | Sem correlação boa, todo movimento vira "apagou e criou", perdendo estado local. |
+| R2-J | Sincronização inunda o Outlook e deixa os dois lentos. |
+| R2-K | Esquema sem migração/transação: atualizar o Iris torna o banco incompatível. |
+| R2-M | Pasta ou store muda de identidade: cache órfão ou duplicado. |
+| R2-D | Exclusão com o Iris fechado indetectável a custo aceitável. |
+| R2-F | Busca do cache diverge da do Outlook sem o usuário entender. |
 
 ---
 
-## 7. Critério de pronto do 2.0
+## 6. R2-B: por que não é estrutural
 
-1. Q1 a Q7 respondidos com número, não com impressão.
-2. Cada resposta com a limitação escrita: qual pasta, qual store, cached ou
-   online, quantas execuções.
-3. Uma recomendação explícita sobre o tamanho da Fase 2 — inclusive a
-   possibilidade de recomendar que ela encolha.
+A STA única é estrutural. "Ficar horas sem atender" não é. O erro seria
+enfileirar "importe 50 mil itens" como **uma** operação.
+
+Cada unidade: obter página limitada · liberar todos os RCWs · devolver
+DTOs · **persistir FORA da STA** · reenfileirar a próxima com prioridade
+baixa · permitir leitura e mutação entre páginas · cancelar entre lotes ·
+gravar progresso só após commit.
+
+**Não manter `Table`, `Items` ou `MAPIFolder` vivos entre turnos** só para
+ganhar desempenho. Reabrir por lote custa milissegundos e compra
+isolamento.
+
+Prioridade na fila do broker:
+
+1. mutação explícita do usuário
+2. leitura interativa
+3. atualização da pasta visível
+4. importação e reconciliação de fundo
+
+`GetArray(50000)` é estruturalmente ruim — chamada COM não é abortável.
+`GetArray(100–500)` provavelmente é administrável, sujeito à Q1.
+
+---
+
+## 7. Desenho de exclusão invisível (já decidido)
+
+- A lista abre na hora, com o cache.
+- Cada item carrega `LastVerifiedAt` e estado de presença.
+- Selecionar a pasta dispara reconciliação prioritária.
+- Até ela terminar, o cache é **snapshot**, não verdade atual.
+- Ausência só é confirmada após varredura completa.
+- Ao abrir item ausente, tentar correlação **controlada** para detectar
+  movimento. Sem correspondência inequívoca: *"não está mais disponível no
+  Outlook"*.
+- **Nunca** atribuir o registro a outro item só por Message-ID.
+- Frescor no nível da PASTA — "atualizado em…" — e não um aviso por linha.
+
+---
+
+## 8. Critério de pronto do 2.0
+
+1. Q1, Q3, Q4, Q7 e Q8 com **número**; Q2, Q5, Q6 e Q9 com **conclusão
+   semântica** — nem toda pergunta se responde com métrica, e prometer
+   isso seria repetir o erro da v1.
+2. Cada resposta com a limitação escrita: qual pasta, qual store, cached
+   ou online, quantas execuções.
+3. Recomendação explícita sobre o tamanho de cada marco seguinte.
 4. Revisão externa do RESULTADO, não só do plano.
-5. O item de teste movido/excluído devolvido ao estado original, e a caixa
-   do usuário sem resíduo.
+5. Itens de teste movidos devolvidos ao original. Itens usados no teste de
+   exclusão dura: **perda aceita e consentida de antemão**.
