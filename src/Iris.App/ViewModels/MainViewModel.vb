@@ -115,6 +115,16 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' A janela pode fechar agora?
+        '''
+        ''' Quem decide e o compositor, nao a janela: a janela so sabe de
+        ''' chrome e Win32, e o que esta em jogo aqui e texto do usuario.
+        ''' </summary>
+        Public Function CanCloseWindow() As Boolean
+            Return Composer.RequestCloseFromWindow()
+        End Function
+
         Public Async Function InitializeAsync() As Task
             Await Connection.InitializeAsync()
             SyncContentWithSession()

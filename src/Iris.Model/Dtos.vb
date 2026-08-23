@@ -237,6 +237,20 @@ Namespace Global.Iris.Model
         Public Property SendingAccount As String = ""
         Public Property Subject As String = ""
         Public Property Recipients As New List(Of RecipientInfo)()
+
+        ''' <summary>
+        ''' O que vai junto. A confirmacao precisa mostrar: mandar o anexo
+        ''' errado para fora e tao irreversivel quanto mandar para a pessoa
+        ''' errada.
+        ''' </summary>
+        Public Property Attachments As New List(Of AttachmentInfo)()
+
+        ''' <summary>
+        ''' Todo destinatario tem endereco SMTP reconhecivel.
+        ''' Nao basta o Outlook dizer que resolveu: resolver um nome interno
+        ''' para <c>/O=...</c> continua sendo um endereco que o usuario nao
+        ''' tem como conferir — e conferir e a unica funcao desta tela.
+        ''' </summary>
         Public ReadOnly Property AllResolved As Boolean
             Get
                 For Each r In Recipients

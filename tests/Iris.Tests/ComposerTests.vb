@@ -29,8 +29,27 @@ Public Class ComposerTests
     ''' </summary>
     Private Const DebounceDeTeste As Integer = 40
 
-    Private Shared Function Montar(broker As FakeBroker,
-                                   Optional escolha As String = Nothing) As ComposerViewModel
+    Private ReadOnly _criados As New List(Of ComposerViewModel)()
+
+    ''' <summary>
+    ''' Descarta os compositores do teste.
+    '''
+    ''' Sem isto, o DispatcherTimer de um compositor sobrevive ao teste que
+    ''' o criou. O STA e o dispatcher sao os MESMOS entre os testes da
+    ''' classe, entao o Bombear() de um teste seguinte dispara o autosave
+    ''' do compositor anterior — e um teste passa sozinho e falha na suite,
+    ''' que e a pior forma de falhar.
+    ''' </summary>
+    <TestCleanup>
+    Public Sub Limpar()
+        For Each vm In _criados
+            vm.Dispose()
+        Next
+        _criados.Clear()
+    End Sub
+
+    Private Function Montar(broker As FakeBroker,
+                            Optional escolha As String = Nothing) As ComposerViewModel
         ' Sem contexto de sincronização, as continuações de Await caem no
         ' pool e o DispatcherTimer explode ao ser tocado de fora da STA. O
         ' WPF faz isto sozinho no app; no teste é na mão.
@@ -38,8 +57,10 @@ Public Class ComposerTests
             New DispatcherSynchronizationContext(Dispatcher.CurrentDispatcher))
 
         Dim pick As New FakePickFile With {.Escolha = escolha}
-        Return New ComposerViewModel(broker, Dispatcher.CurrentDispatcher,
-                                     Sub(t, nome) Aguardar(t), pick, DebounceDeTeste)
+        Dim vm As New ComposerViewModel(broker, Dispatcher.CurrentDispatcher,
+                                        Sub(t, nome) Aguardar(t), pick, DebounceDeTeste)
+        _criados.Add(vm)
+        Return vm
     End Function
 
     ' ================================================================
@@ -214,6 +235,8 @@ Public Class ComposerTests
         Dim vm = Montar(broker)
         Aguardar(vm.NewMessageAsync())
 
+        vm.ToLine = "fulano@empresa.com"
+        vm.Subject = "assunto conferível"
         vm.UserText = "texto que ainda não foi gravado"
         ' Sem esperar o debounce de propósito: é justamente o caso em que o
         ' usuário digita e clica em enviar na sequência.
@@ -226,11 +249,17 @@ Public Class ComposerTests
         Assert.IsTrue(prepare > ultimoUpdate,
             "Gravar tem de vir ANTES de conferir, senão a confirmação descreve outra versão.")
         Assert.AreEqual("texto que ainda não foi gravado", broker.Gravacoes.Last().UserText)
+
+        ' Ordem de chamadas não basta como prova. O duplo monta a prévia a
+        ' partir do que está GRAVADO, então conferir o assunto exibido prova
+        ' que a confirmação descreve a versão salva, e não uma anterior.
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+        Assert.AreEqual("assunto conferível", vm.Preview.Subject)
     End Sub
 
     <STATestMethod>
     Public Sub Destinatario_resolvido_leva_a_confirmacao()
-        Dim broker As New FakeBroker With {.TodosResolvidos = True}
+        Dim broker As New FakeBroker With {.Modo = ModoDeDestinatario.Smtp}
         Dim vm = Montar(broker)
         Aguardar(vm.NewMessageAsync())
 
@@ -251,7 +280,7 @@ Public Class ComposerTests
     ''' </summary>
     <STATestMethod>
     Public Sub Destinatario_nao_resolvido_bloqueia_o_envio()
-        Dim broker As New FakeBroker With {.TodosResolvidos = False}
+        Dim broker As New FakeBroker With {.Modo = ModoDeDestinatario.NaoResolvido}
         Dim vm = Montar(broker)
         Aguardar(vm.NewMessageAsync())
 
@@ -350,6 +379,163 @@ Public Class ComposerTests
         CollectionAssert.DoesNotContain(broker.Chamadas, "send")
     End Sub
 
+
+    ''' <summary>
+    ''' A janela que sobrou depois de eu corrigir a descarga: o usuário
+    ''' digita DEPOIS da gravação e ANTES de a prévia ficar pronta. A prévia
+    ''' descreve a versão salva; a tela já mostra outra. Aprovar ali seria
+    ''' aprovar um texto e mandar outro — e, pior, o texto novo morreria no
+    ''' Encerrar() depois do envio.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Digitar_enquanto_o_envio_e_conferido_invalida_a_confirmacao()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        vm.UserText = "versão aprovada"
+
+        broker.TravaDoPrepare = New TaskCompletionSource(Of Boolean)()
+        Dim conferindo = vm.RequestSendCommand.ExecuteAsync(Nothing)
+        AguardarChamadas(broker, "prepare", 1)
+
+        ' Prévia presa; o usuário continua digitando.
+        vm.UserText = "versão nova, que a prévia não viu"
+
+        broker.TravaDoPrepare.SetResult(True)
+        broker.TravaDoPrepare = Nothing
+        Aguardar(conferindo)
+
+        Assert.AreNotEqual(ComposerState.ConfirmingSend, vm.State,
+            "A prévia está vencida; mostrá-la faria o usuário aprovar outra versão.")
+        Assert.IsTrue(vm.HasStatus)
+        Assert.AreEqual("versão nova, que a prévia não viu", vm.UserText,
+            "O texto digitado durante a conferência não pode sumir.")
+        CollectionAssert.DoesNotContain(broker.Chamadas, "send")
+    End Sub
+
+    ''' <summary>
+    ''' Anexar SALVA, e todo Save gira o EntryID. O compositor precisa
+    ''' instalar a chave nova: com a velha, o próximo autosave ou o envio
+    ''' devolveria NotFound.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Anexar_instala_a_chave_nova_do_rascunho()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker, escolha:=CaminhoDeArquivoReal())
+        Aguardar(vm.NewMessageAsync())
+
+        Dim chaveAntesDoAnexo = broker.ChaveAtual()
+        Aguardar(vm.AttachCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(1, vm.Attachments.Count)
+
+        ' O anexo salvou, então o duplo já girou a chave. Sem isso o teste
+        ' não provaria nada — provaria só que a chave nunca muda.
+        Dim chaveDepoisDoAnexo = broker.ChaveAtual()
+        Assert.AreNotEqual(chaveAntesDoAnexo, chaveDepoisDoAnexo)
+
+        ' Se o compositor tivesse ficado com a chave velha, esta gravação
+        ' voltaria NotFound e o rascunho continuaria sujo.
+        vm.UserText = "depois de anexar"
+        AguardarChamadas(broker, "update", 1)
+
+        Assert.AreEqual(chaveDepoisDoAnexo, broker.ChavesRecebidas.Last(),
+            "A gravação seguinte usou a chave anterior ao anexo.")
+        Assert.IsFalse(vm.IsDirty,
+            "A gravação depois de anexar falhou — sinal de chave vencida.")
+    End Sub
+
+    ''' <summary>
+    ''' O caso que engana: o Outlook diz RESOLVIDO e entrega um /O=..., que
+    ''' ninguém consegue conferir. A tela existe para ser conferida, então
+    ''' isso bloqueia — mesmo com Resolved = True.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Endereco_Exchange_legado_bloqueia_mesmo_dizendo_resolvido()
+        Dim broker As New FakeBroker With {.Modo = ModoDeDestinatario.ExchangeLegado}
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.Editing, vm.State,
+            "/O=... não é endereço que o usuário possa conferir.")
+        Assert.IsTrue(vm.HasStatus)
+        CollectionAssert.DoesNotContain(broker.Chamadas, "send")
+    End Sub
+
+    ''' <summary>
+    ''' Duas confirmações quase simultâneas. É o controle negativo que
+    ''' faltava: o teste de ambiguidade provava que não se REABRE o fluxo,
+    ''' não que dois cliques rápidos mandam uma vez só.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Duas_confirmacoes_simultaneas_enviam_uma_vez_so()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+
+        ' Segura o envio para que a segunda chamada caia dentro da janela em
+        ' que a primeira ainda não terminou.
+        broker.TravaDoSend = New TaskCompletionSource(Of Boolean)()
+
+        Dim primeiro = vm.ConfirmSendCommand.ExecuteAsync(Nothing)
+        AguardarChamadas(broker, "send", 1)
+        Dim segundo = vm.ConfirmSendCommand.ExecuteAsync(Nothing)
+
+        broker.TravaDoSend.SetResult(True)
+        broker.TravaDoSend = Nothing
+        Aguardar(primeiro)
+        Aguardar(segundo)
+
+        Assert.AreEqual(1, ContarChamadas(broker, "send"),
+            "Dois cliques não podem virar duas mensagens.")
+    End Sub
+
+    ''' <summary>
+    ''' A decisão da seção 12 promete anexos na confirmação. Mandar o anexo
+    ''' errado para fora é tão irreversível quanto mandar para a pessoa
+    ''' errada.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub A_confirmacao_mostra_os_anexos()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker, escolha:=CaminhoDeArquivoReal())
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.AttachCommand.ExecuteAsync(Nothing))
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+        Assert.IsTrue(vm.HasPreviewAttachments)
+        Assert.AreEqual(1, vm.PreviewAttachments.Count())
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo do teste acima: sem anexo, a confirmação não
+    ''' inventa nenhum. Sem isto, uma propriedade que devolvesse sempre algo
+    ''' passaria.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Sem_anexo_a_confirmacao_nao_mostra_nenhum()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+        Assert.IsFalse(vm.HasPreviewAttachments)
+    End Sub
+
     ' ================================================================
     ' Fechamento
     ' ================================================================
@@ -421,6 +607,17 @@ Public Class ComposerTests
     ' ================================================================
     ' Bombeamento
     ' ================================================================
+
+    ''' <summary>
+    ''' Um arquivo que existe de verdade. O compositor entrega o caminho ao
+    ''' broker sem conferir; quem confere é a camada COM. Aqui basta ser
+    ''' um caminho plausível.
+    ''' </summary>
+    Private Shared Function CaminhoDeArquivoReal() As String
+        Dim caminho = IO.Path.Combine(IO.Path.GetTempPath(), "iris-teste-anexo.txt")
+        IO.File.WriteAllText(caminho, "anexo de teste")
+        Return caminho
+    End Function
 
     Private Shared Function ContarChamadas(broker As FakeBroker, nome As String) As Integer
         ' Where().Count() e nao Count(predicado): List(Of T) tem uma

@@ -862,6 +862,40 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
 
+                            <!-- Anexos. Mandar o arquivo errado para fora é
+                                 tão irreversível quanto mandar para a
+                                 pessoa errada, e a lista vem do rascunho
+                                 GRAVADO, não do editor. -->
+                            <TextBlock Style="{StaticResource Input.Label}" Text="ANEXOS"
+                                       Margin="0,14,0,4"
+                                       Visibility="{Binding Composer.HasPreviewAttachments,
+                                                    Converter={StaticResource BoolToVis}}" />
+                            <ItemsControl ItemsSource="{Binding Composer.PreviewAttachments}"
+                                          MaxHeight="110"
+                                          Visibility="{Binding Composer.HasPreviewAttachments,
+                                                       Converter={StaticResource BoolToVis}}">
+                                <ItemsControl.Template>
+                                    <ControlTemplate TargetType="ItemsControl">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </ControlTemplate>
+                                </ItemsControl.Template>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,3">
+                                            <TextBlock Text="&#xE723;" FontSize="11" Margin="0,0,8,0"
+                                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource Brush.Text.Muted}" />
+                                            <TextBlock Text="{Binding FileName}"
+                                                       Style="{StaticResource Text.Body}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
                                         Margin="0,22,0,0">
                                 <Button Style="{StaticResource Composer.Action}"

@@ -129,9 +129,14 @@ Namespace Global.Iris.Core
                                   cancel As CancellationToken) _
             As Task(Of OperationResult(Of DraftInfo))
 
+        ''' <summary>
+        ''' Anexa e devolve o rascunho redescrito, nao so o anexo: anexar
+        ''' SALVA, e todo Save pode mudar o EntryID. Devolver so o anexo
+        ''' deixaria o chamador com a chave velha.
+        ''' </summary>
         Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String,
                                          cancel As CancellationToken) _
-            As Task(Of OperationResult(Of AttachmentInfo))
+            As Task(Of OperationResult(Of DraftInfo))
 
         Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
                                             cancel As CancellationToken) _

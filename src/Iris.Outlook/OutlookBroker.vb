@@ -173,6 +173,18 @@ Namespace Global.Iris.Outlook
         ''' são idempotentes, e a Fase 0 pegou exatamente este erro — todas
         ''' as mutações do grupo D estavam rodando com retry ligado.
         ''' </summary>
+        ''' <summary>
+        ''' Nem leitura nem mutação: opera sobre o item mas não deixa efeito
+        ''' que sobreviva à chamada. Sem retry, porque repetir não é
+        ''' obviamente seguro; sem Ambiguous, porque não há efeito que possa
+        ''' ter acontecido pela metade.
+        ''' </summary>
+        Private Async Function SemRetryAsync(Of T)(operation As String,
+                                                   work As Func(Of OL.Application, OL.NameSpace, OperationResult(Of T)),
+                                                   cancel As CancellationToken) As Task(Of OperationResult(Of T))
+            Return Await RunAsync(operation, work, allowRetry:=False, isMutation:=False, cancel:=cancel)
+        End Function
+
         Private Async Function MutateAsync(Of T)(operation As String,
                                                  work As Func(Of OL.Application, OL.NameSpace, OperationResult(Of T)),
                                                  cancel As CancellationToken) As Task(Of OperationResult(Of T))
@@ -582,9 +594,9 @@ Namespace Global.Iris.Outlook
 
         Public Async Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String,
                                                       cancel As CancellationToken) _
-            As Task(Of OperationResult(Of AttachmentInfo)) Implements IOutlookBroker.AddDraftAttachmentAsync
+            As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.AddDraftAttachmentAsync
 
-            Return Await MutateAsync(Of AttachmentInfo)(
+            Return Await MutateAsync(Of DraftInfo)(
                 "outlook.addDraftAttachment",
                 Function(app, ns) DraftWriting.AddAttachment(ns, draft, filePath), cancel)
         End Function
@@ -597,16 +609,21 @@ Namespace Global.Iris.Outlook
 
         ''' <summary>
         ''' Descobre para quem a mensagem vai e por qual conta. NÃO envia.
-        ''' Vai por ReadAsync mesmo mexendo em Recipients: ResolveAll é
-        ''' idempotente — resolver duas vezes dá o mesmo resultado — e um
-        ''' retry aqui não produz efeito nenhum no mundo. Marcar como
-        ''' mutação faria uma falha virar Ambiguous, e aí o usuário não
-        ''' conseguiria nem revisar o envio de novo.
+        '''
+        ''' Não é leitura pura — ResolveAll mexe nos Recipients — e por isso
+        ''' não vai por ReadAsync: a regra "leitura tem retry, mutação não"
+        ''' é absoluta, e abrir exceção para ela no código enquanto o
+        ''' contrato a declara sem exceção é como não ter regra.
+        '''
+        ''' Vai por uma terceira classificação: SEM retry, porque não é
+        ''' leitura; e SEM Ambiguous, porque falhar aqui não deixa efeito
+        ''' nenhum no mundo — marcar como ambíguo travaria o rascunho de um
+        ''' usuário que só queria revisar para quem ia mandar.
         ''' </summary>
         Public Async Function PrepareSendAsync(draft As DraftKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of SendPreview)) Implements IOutlookBroker.PrepareSendAsync
 
-            Return Await ReadAsync(Of SendPreview)(
+            Return Await SemRetryAsync(Of SendPreview)(
                 "outlook.prepareSend",
                 Function(app, ns) DraftWriting.PrepareSend(ns, draft), cancel)
         End Function

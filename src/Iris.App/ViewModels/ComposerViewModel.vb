@@ -83,6 +83,25 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private _edicoes As Long
 
+        ''' <summary>
+        ''' Quanto valia <see cref="_edicoes"/> quando a prévia de envio foi
+        ''' montada. Se o número mudar depois disso, a prévia descreve uma
+        ''' versão que não é mais a da tela.
+        ''' </summary>
+        Private _edicoesNaPrevia As Long
+
+        ''' <summary>
+        ''' 1 assim que o Send DE VERDADE começa. Nunca volta a 0 sem uma
+        ''' falha em que se saiba que nada saiu.
+        '''
+        ''' O AsyncRelayCommand já evita execução concorrente por conta
+        ''' própria, mas depender disso é depender de um padrão de
+        ''' biblioteca para a única operação irreversível do projeto. Uma
+        ''' opção mudada, uma refatoração de comando ou uma chamada direta
+        ''' removeriam a garantia sem que nada acusasse.
+        ''' </summary>
+        Private _envioComecou As Integer
+
         Private _carregando As Boolean
         Private _disposed As Boolean
 
@@ -311,6 +330,8 @@ Namespace Global.Iris.App.ViewModels
                 If SetProperty(_preview, value) Then
                     OnPropertyChanged(NameOf(PreviewRecipients))
                     OnPropertyChanged(NameOf(PreviewAccount))
+                    OnPropertyChanged(NameOf(PreviewAttachments))
+                    OnPropertyChanged(NameOf(HasPreviewAttachments))
                 End If
             End Set
         End Property
@@ -319,6 +340,24 @@ Namespace Global.Iris.App.ViewModels
             Get
                 If _preview Is Nothing Then Return Array.Empty(Of RecipientInfo)()
                 Return _preview.Recipients
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Os anexos que vão junto, lidos do rascunho no mesmo instante em
+        ''' que a prévia foi montada. Não é a lista do editor: aquela pode
+        ''' estar à frente do que está gravado.
+        ''' </summary>
+        Public ReadOnly Property PreviewAttachments As IEnumerable(Of AttachmentInfo)
+            Get
+                If _preview Is Nothing Then Return Array.Empty(Of AttachmentInfo)()
+                Return _preview.Attachments
+            End Get
+        End Property
+
+        Public ReadOnly Property HasPreviewAttachments As Boolean
+            Get
+                Return _preview IsNot Nothing AndAlso _preview.Attachments.Count > 0
             End Get
         End Property
 
@@ -484,8 +523,13 @@ Namespace Global.Iris.App.ViewModels
             ' digitar. Sem esta trava, abrir uma resposta já nasceria
             ' "suja" e gravaria de volta o que acabou de ler.
             If _carregando Then Return
-            If Not PodeEditar Then Return
+            If Not IsOpen Then Return
 
+            ' NÃO filtra por PodeEditar. Desabilitar o campo é coisa da
+            ' tela, e entre marcar o estado e o WPF desabilitar de fato
+            ' ainda cabe uma tecla que já estava na fila de entrada.
+            ' Ignorá-la aqui mudaria o texto sem marcar nada como sujo — e
+            ' aí o caractere existiria na tela e em lugar nenhum mais.
             Interlocked.Increment(_edicoes)
             IsDirty = True
 
@@ -604,9 +648,20 @@ Namespace Global.Iris.App.ViewModels
             Dim escolhido = _pickFile.AskWhichFileToAttach()
             If String.IsNullOrEmpty(escolhido) Then Return
 
+            ' Descarrega ANTES de anexar. Anexar usa a chave, e uma gravação
+            ' em voo pode trocá-la no meio do caminho: a anexação sairia com
+            ' a chave velha e voltaria NotFound. Esperar também garante que
+            ' as duas mutações não disputem a fila única da STA.
+            If Not Await DescarregarAsync() Then
+                AvisarDescargaIncompleta()
+                Return
+            End If
+
             Dim resultado = Await _broker.AddDraftAttachmentAsync(_key, escolhido, CancellationToken.None)
             If resultado.Succeeded Then
-                Attachments.Add(resultado.Value)
+                ' Anexar SALVA, e todo Save pode mudar o EntryID. Aplicar
+                ' instala a chave nova e sincroniza a lista de anexos.
+                Aplicar(resultado.Value, primeiraVez:=False)
                 Status = ""
             Else
                 ' O nome vai para a tela porque é um arquivo do próprio
@@ -634,6 +689,11 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End If
 
+            ' Fotografa o que ACABOU de ser gravado. A descarga só devolve
+            ' True com IsDirty falso, então neste instante o número
+            ' corresponde ao que está no store.
+            _edicoesNaPrevia = Interlocked.Read(_edicoes)
+
             Dim resultado = Await _broker.PrepareSendAsync(_key, CancellationToken.None)
             If Not resultado.Succeeded Then
                 Status = "Não foi possível conferir o envio. " & Traduzir(resultado.Kind)
@@ -641,6 +701,16 @@ Namespace Global.Iris.App.ViewModels
             End If
 
             Dim p = resultado.Value
+
+            ' A tela mudou enquanto a prévia era montada? Então ela descreve
+            ' outra versão. Mostrá-la faria o usuário aprovar um texto e o
+            ' Outlook mandar outro — que é exatamente o erro que esta tela
+            ' existe para impedir.
+            If Interlocked.Read(_edicoes) <> _edicoesNaPrevia Then
+                Status = "A mensagem mudou enquanto o envio era conferido. Confira de novo."
+                Return
+            End If
+
             Preview = p
             Status = ""
 
@@ -649,13 +719,18 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End If
 
-            ' Destinatário não resolvido BLOQUEIA. Um nome que o Outlook não
-            ' reconheceu pode virar endereço errado no envio, e não existe
-            ' desfazer.
-            If Not p.AllResolved Then
-                Dim pendentes = p.Recipients.Where(Function(r) Not r.Resolved).
-                                             Select(Function(r) r.DisplayName)
-                Status = "O Outlook não reconheceu: " & String.Join("; ", pendentes) &
+            ' Destinatário sem endereço conferível BLOQUEIA.
+            '
+            ' A checagem é REFEITA aqui, com a mesma política que a leitura
+            ' já usou. É duplicação de propósito: para a única operação sem
+            ' desfazer, a garantia não deve depender de a camada de baixo ter
+            ' feito o trabalho direito. Se um dia ela devolver "resolvido"
+            ' junto com um /O=..., o envio ainda para aqui.
+            Dim ruins = AddressPolicy.Unusable(p.Recipients)
+            If ruins.Count > 0 Then
+                Dim nomes = ruins.Select(Function(r) If(String.IsNullOrWhiteSpace(r.DisplayName),
+                                                        "(sem nome)", r.DisplayName))
+                Status = "Sem endereço conferível para: " & String.Join("; ", nomes) &
                          ". Corrija antes de enviar."
                 Return
             End If
@@ -672,6 +747,19 @@ Namespace Global.Iris.App.ViewModels
         ''' é o único erro deste projeto que não tem volta.
         ''' </summary>
         Private Async Function ConfirmarEnvioAsync() As Task
+            ' Última conferência antes do irreversível: se a mensagem mudou
+            ' depois de o usuário aprovar a lista, o que sairia não é o que
+            ' ele aprovou.
+            If Interlocked.Read(_edicoes) <> _edicoesNaPrevia Then
+                State = ComposerState.Editing
+                Status = "A mensagem mudou depois da confirmação. Confira de novo."
+                Return
+            End If
+
+            ' Trava explícita, e não a proteção implícita do comando: mandar
+            ' duas vezes não tem desfazer.
+            If Interlocked.CompareExchange(_envioComecou, 1, 0) <> 0 Then Return
+
             State = ComposerState.Sending
             Status = "Enviando…"
 
@@ -691,6 +779,10 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End If
 
+            ' Falha CONHECIDA: sabe-se que nada saiu, então enviar de novo
+            ' é seguro e a trava volta. Ambiguous não passa por aqui — ele
+            ' já saiu acima, e de lá não se volta.
+            Volatile.Write(_envioComecou, 0)
             State = ComposerState.Editing
             Status = "Não foi possível enviar. " & Traduzir(resultado.Kind) &
                      " A mensagem continua aqui como rascunho."
@@ -699,6 +791,26 @@ Namespace Global.Iris.App.ViewModels
         ' ================================================================
         ' Fechamento
         ' ================================================================
+
+    ''' <summary>
+        ''' A JANELA quer fechar com o compositor aberto.
+        '''
+        ''' Existe porque a promessa "fechar com alteracao pendente pergunta"
+        ''' valia so para o X do compositor. O X da janela, o Alt+F4 e o
+        ''' desligar do Windows passavam por fora: descartavam o
+        ''' ViewModel e o texto ia junto, sem pergunta nenhuma.
+        '''
+        ''' Nao fecha a janela sozinho depois que o usuario responde. Ele
+        ''' clica no X de novo — e isso e melhor que uma janela que some por
+        ''' conta propria logo depois de ele ter escolhido "salvar".
+        ''' </summary>
+        ''' <returns>True se a janela pode fechar.</returns>
+        Public Function RequestCloseFromWindow() As Boolean
+            If Not IsOpen Then Return True
+
+            Fechar()
+            Return Not IsOpen
+        End Function
 
         Private Sub Fechar()
             If State = ComposerState.SendUnknown Then
@@ -772,6 +884,8 @@ Namespace Global.Iris.App.ViewModels
             _key = Nothing
             _saveTask = Nothing
             _savePendente = False
+            _edicoesNaPrevia = 0
+            Volatile.Write(_envioComecou, 0)
             IsDirty = False
             State = ComposerState.Closed
         End Sub

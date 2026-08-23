@@ -1,8 +1,22 @@
 Imports System.Collections.Generic
+Imports System.Linq
 Imports System.Threading
 Imports System.Threading.Tasks
 Imports Iris.Core
 Imports Iris.Model
+
+''' <summary>Como o "Outlook" de mentira devolve os destinatários.</summary>
+Friend Enum ModoDeDestinatario
+    ''' <summary>Resolvido, com SMTP de gente.</summary>
+    Smtp
+    ''' <summary>O Outlook não reconheceu o nome.</summary>
+    NaoResolvido
+    ''' <summary>
+    ''' O caso perigoso: o Outlook diz que RESOLVEU, mas o endereço é
+    ''' <c>/O=...</c>. Parece sucesso e não é conferível por ninguém.
+    ''' </summary>
+    ExchangeLegado
+End Enum
 
 ''' <summary>
 ''' Broker de mentira, só para os testes do compositor.
@@ -11,6 +25,15 @@ Imports Iris.Model
 ''' para verificar a lógica de rascunho tornaria o teste dependente da
 ''' caixa corporativa do usuário — e, no caso do envio, mandaria mensagem
 ''' de verdade a cada execução da suíte.
+'''
+''' Imita três comportamentos do Outlook que o compositor precisa aguentar,
+''' e imitá-los é o que dá valor aos testes:
+'''
+'''   • TODA operação que salva devolve uma chave nova. Inclui anexar.
+'''   • A prévia de envio é montada a partir do que foi GRAVADO, não do que
+'''     o teste gostaria que estivesse lá. Sem isso, "a confirmação descreve
+'''     o que vai sair" seria só um teste de ordem de chamadas.
+'''   • Operar com chave vencida devolve NotFound.
 '''
 ''' Só o grupo de rascunhos é implementado. O resto lança de propósito: se
 ''' o compositor um dia chamar algo que não é da alçada dele, o teste
@@ -29,40 +52,61 @@ Friend NotInheritable Class FakeBroker
     Friend ReadOnly Gravacoes As New List(Of DraftContent)()
 
     ''' <summary>
-    ''' Quando não é Nothing, UpdateDraft fica parado até alguém completar.
-    ''' É o que permite escrever "o usuário digitou DURANTE a gravação" sem
-    ''' depender de tempo de relógio.
+    ''' Travas para segurar uma operação em voo. É o que permite escrever
+    ''' "o usuário digitou DURANTE isto" sem depender de tempo de relógio.
     ''' </summary>
     Friend TravaDoUpdate As TaskCompletionSource(Of Boolean)
+    Friend TravaDoPrepare As TaskCompletionSource(Of Boolean)
+    Friend TravaDoSend As TaskCompletionSource(Of Boolean)
 
     Friend FalhaAoCriar As ErrorKind = ErrorKind.None
     Friend FalhaAoGravar As ErrorKind = ErrorKind.None
     Friend FalhaAoPreparar As ErrorKind = ErrorKind.None
     Friend ResultadoDoEnvio As ErrorKind = ErrorKind.None
-    Friend TodosResolvidos As Boolean = True
+    Friend Modo As ModoDeDestinatario = ModoDeDestinatario.Smtp
 
-    ''' <summary>
-    ''' Cada gravação devolve uma chave NOVA, como o Outlook faz: o EntryID
-    ''' muda a cada Save. É isto que expõe um compositor que guardou a
-    ''' chave antiga.
-    ''' </summary>
+    ''' <summary>O que foi de fato enviado, para o teste conferir.</summary>
+    Friend Enviado As SendPreview
+
+    ' ---- O "store" ------------------------------------------------------
+
     Private _versao As Integer
+    Private _existe As Boolean
+    Private _subject As String = ""
+    Private _toLine As String = ""
+    Private _ccLine As String = ""
+    Private _userText As String = ""
+    Private _quoted As String = ""
+    Private ReadOnly _anexos As New List(Of AttachmentInfo)()
 
     Friend Function ChaveAtual() As DraftKey
         Return New DraftKey(New ItemKey($"draft-{_versao}", "store-1"))
     End Function
 
-    Private Function NovoInfo() As DraftInfo
+    ''' <summary>
+    ''' Todo Save gira a chave, como o Outlook faz com o EntryID. Quem
+    ''' guardou a antiga descobre aqui.
+    ''' </summary>
+    Private Function Salvar() As DraftInfo
         _versao += 1
-        Return New DraftInfo With {
+        _existe = True
+
+        Dim info As New DraftInfo With {
             .Key = ChaveAtual(),
-            .Subject = "",
-            .ToLine = "",
-            .CcLine = "",
-            .UserText = "",
-            .QuotedBody = "",
+            .Subject = _subject,
+            .ToLine = _toLine,
+            .CcLine = _ccLine,
+            .UserText = _userText,
+            .QuotedBody = _quoted,
+            .QuotedPreview = _quoted,
             .Format = BodyFormat.PlainText
         }
+        info.Attachments.AddRange(_anexos)
+        Return info
+    End Function
+
+    Private Function ChaveVale(chave As DraftKey) As Boolean
+        Return _existe AndAlso chave IsNot Nothing AndAlso chave.Equals(ChaveAtual())
     End Function
 
     ' ---- Rascunhos ------------------------------------------------------
@@ -74,7 +118,7 @@ Friend NotInheritable Class FakeBroker
         If FalhaAoCriar <> ErrorKind.None Then
             Return Task.FromResult(OperationResult(Of DraftInfo).Fail(FalhaAoCriar, "teste"))
         End If
-        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(NovoInfo()))
+        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(Salvar()))
     End Function
 
     Public Function CreateReplyDraftAsync(item As ItemKey, replyAll As Boolean,
@@ -86,19 +130,17 @@ Friend NotInheritable Class FakeBroker
             Return Task.FromResult(OperationResult(Of DraftInfo).Fail(FalhaAoCriar, "teste"))
         End If
 
-        Dim info = NovoInfo()
-        info.Subject = "RE: original"
-        info.ToLine = "alguem@exemplo.com"
-        info.QuotedBody = "<div>----- mensagem original -----</div>"
-        info.QuotedPreview = "----- mensagem original -----"
-        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(info))
+        _subject = "RE: original"
+        _toLine = "alguem@exemplo.com"
+        _quoted = "----- mensagem original -----"
+        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(Salvar()))
     End Function
 
     Public Function CreateForwardDraftAsync(item As ItemKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.CreateForwardDraftAsync
 
         Chamadas.Add("forward")
-        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(NovoInfo()))
+        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(Salvar()))
     End Function
 
     Public Async Function UpdateDraftAsync(draft As DraftKey, content As DraftContent,
@@ -115,23 +157,38 @@ Friend NotInheritable Class FakeBroker
         If FalhaAoGravar <> ErrorKind.None Then
             Return OperationResult(Of DraftInfo).Fail(FalhaAoGravar, "teste")
         End If
+        If Not ChaveVale(draft) Then
+            Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "chave vencida")
+        End If
 
-        Dim info = NovoInfo()
-        info.Subject = content.Subject
-        info.ToLine = content.ToLine
-        info.CcLine = content.CcLine
-        info.UserText = content.UserText
-        Return OperationResult(Of DraftInfo).Ok(info)
+        _subject = content.Subject
+        _toLine = content.ToLine
+        _ccLine = content.CcLine
+        _userText = content.UserText
+        Return OperationResult(Of DraftInfo).Ok(Salvar())
     End Function
 
     Public Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String,
                                             cancel As CancellationToken) _
-        As Task(Of OperationResult(Of AttachmentInfo)) Implements IOutlookBroker.AddDraftAttachmentAsync
+        As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.AddDraftAttachmentAsync
 
         Chamadas.Add("attach")
         ChavesRecebidas.Add(draft)
-        Return Task.FromResult(OperationResult(Of AttachmentInfo).Ok(
-            New AttachmentInfo With {.FileName = System.IO.Path.GetFileName(filePath)}))
+
+        If Not ChaveVale(draft) Then
+            Return Task.FromResult(OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "chave vencida"))
+        End If
+
+        _anexos.Add(New AttachmentInfo With {
+            .Key = New AttachmentKey(ChaveAtual().Item, _anexos.Count + 1,
+                                     System.IO.Path.GetFileName(filePath), 10),
+            .FileName = System.IO.Path.GetFileName(filePath),
+            .SizeBytes = 10
+        })
+
+        ' Anexar SALVA. A chave gira aqui também — era exatamente isto que o
+        ' duplo antigo não fazia, e por isso o defeito passava batido.
+        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(Salvar()))
     End Function
 
     Public Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
@@ -140,40 +197,83 @@ Friend NotInheritable Class FakeBroker
         Throw New NotSupportedException("O compositor não deveria chamar isto neste marco.")
     End Function
 
-    Public Function PrepareSendAsync(draft As DraftKey, cancel As CancellationToken) _
+    ''' <summary>
+    ''' Monta a prévia a partir do que está GRAVADO. Devolver valores fixos
+    ''' faria o teste "a confirmação descreve o que vai sair" provar apenas
+    ''' que uma chamada veio antes da outra.
+    ''' </summary>
+    Public Async Function PrepareSendAsync(draft As DraftKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of SendPreview)) Implements IOutlookBroker.PrepareSendAsync
 
         Chamadas.Add("prepare")
         ChavesRecebidas.Add(draft)
 
+        Dim trava = TravaDoPrepare
+        If trava IsNot Nothing Then Await trava.Task
+
         If FalhaAoPreparar <> ErrorKind.None Then
-            Return Task.FromResult(OperationResult(Of SendPreview).Fail(FalhaAoPreparar, "teste"))
+            Return OperationResult(Of SendPreview).Fail(FalhaAoPreparar, "teste")
+        End If
+        If Not ChaveVale(draft) Then
+            Return OperationResult(Of SendPreview).Fail(ErrorKind.NotFound, "chave vencida")
         End If
 
         Dim p As New SendPreview With {
             .Draft = draft,
             .SendingAccount = "eu@empresa.com",
-            .Subject = "assunto"
+            .Subject = _subject
         }
-        p.Recipients.Add(New RecipientInfo With {
-            .DisplayName = "Fulano",
-            .Address = If(TodosResolvidos, "fulano@empresa.com", ""),
-            .Kind = RecipientKind.To,
-            .Resolved = TodosResolvidos
-        })
-        Return Task.FromResult(OperationResult(Of SendPreview).Ok(p))
+
+        For Each bruto In _toLine.Split(";"c)
+            Dim digitado = bruto.Trim()
+            If digitado.Length = 0 Then Continue For
+
+            Select Case Modo
+                Case ModoDeDestinatario.NaoResolvido
+                    p.Recipients.Add(New RecipientInfo With {
+                        .DisplayName = digitado, .Address = "",
+                        .Kind = RecipientKind.To, .Resolved = False})
+
+                Case ModoDeDestinatario.ExchangeLegado
+                    ' Resolved=True com /O=: o caso que engana.
+                    p.Recipients.Add(New RecipientInfo With {
+                        .DisplayName = digitado,
+                        .Address = "/O=EMPRESA/OU=GRUPO/CN=RECIPIENTS/CN=" & digitado,
+                        .Kind = RecipientKind.To, .Resolved = True})
+
+                Case Else
+                    p.Recipients.Add(New RecipientInfo With {
+                        .DisplayName = digitado, .Address = digitado,
+                        .Kind = RecipientKind.To, .Resolved = True})
+            End Select
+        Next
+
+        p.Attachments.AddRange(_anexos)
+        Return OperationResult(Of SendPreview).Ok(p)
     End Function
 
-    Public Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
+    Public Async Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.SendDraftAsync
 
         Chamadas.Add("send")
         ChavesRecebidas.Add(draft)
 
+        ' Fotografa o que saiu ANTES de qualquer espera: é o que o teste usa
+        ' para conferir se o enviado bate com o confirmado.
+        Enviado = New SendPreview With {.Draft = draft, .Subject = _subject}
+
+        Dim trava = TravaDoSend
+        If trava IsNot Nothing Then Await trava.Task
+
         If ResultadoDoEnvio <> ErrorKind.None Then
-            Return Task.FromResult(OperationResult(Of Boolean).Fail(ResultadoDoEnvio, "teste"))
+            Return OperationResult(Of Boolean).Fail(ResultadoDoEnvio, "teste")
         End If
-        Return Task.FromResult(OperationResult(Of Boolean).Ok(True))
+        If Not ChaveVale(draft) Then
+            Return OperationResult(Of Boolean).Fail(ErrorKind.NotFound, "chave vencida")
+        End If
+
+        _existe = False
+        Return OperationResult(Of Boolean).Ok(True)
     End Function
 
     Public Function DeleteDraftAsync(draft As DraftKey, cancel As CancellationToken) _
@@ -181,6 +281,7 @@ Friend NotInheritable Class FakeBroker
 
         Chamadas.Add("delete")
         ChavesRecebidas.Add(draft)
+        _existe = False
         Return Task.FromResult(OperationResult(Of Boolean).Ok(True))
     End Function
 

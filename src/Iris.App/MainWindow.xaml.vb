@@ -153,6 +153,22 @@ Class MainWindow
         SystemCommands.CloseWindow(Me)
     End Sub
 
+    ''' <summary>
+    ''' Nao deixa a janela fechar por cima de texto nao salvo.
+    '''
+    ''' A decisao nao e daqui — a janela so pergunta ao ViewModel e obedece.
+    ''' Vale para o X, para o Alt+F4 e para o menu do sistema, que e o ponto:
+    ''' o compositor perguntava so quando o proprio X dele era clicado, e
+    ''' todos os outros caminhos descartavam o texto em silencio.
+    ''' </summary>
+    Private Sub MainWindow_Closing(sender As Object, e As System.ComponentModel.CancelEventArgs) _
+        Handles Me.Closing
+
+        Dim vm = TryCast(DataContext, Iris.App.ViewModels.MainViewModel)
+        If vm Is Nothing Then Return
+        If Not vm.CanCloseWindow() Then e.Cancel = True
+    End Sub
+
     Private Sub AlternarMaximizado()
         If WindowState = WindowState.Maximized Then
             SystemCommands.RestoreWindow(Me)

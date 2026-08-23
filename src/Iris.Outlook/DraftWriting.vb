@@ -4,6 +4,7 @@ Imports System.Linq
 Imports System.Net
 Imports System.Runtime.InteropServices
 Imports System.Text
+Imports Iris.Core
 Imports Iris.Model
 Imports Iris.Outlook.Interop
 Imports OL = Microsoft.Office.Interop.Outlook
@@ -32,6 +33,10 @@ Namespace Global.Iris.Outlook
         ''' salvamento reprocessaria a citação inteira e ela degradaria.
         ''' </summary>
         Private Const MarcaHtml As String = "<!--iris-quote-->"
+
+        ''' <summary>PR_SMTP_ADDRESS_W, para quando o OOM nao entrega o SMTP.</summary>
+        Private Const PropSmtpAddress As String =
+            "http://schemas.microsoft.com/mapi/proptag/0x39FE001F"
         Private Const MarcaTexto As String = vbCrLf & "----- mensagem original -----" & vbCrLf
 
         ' ===================================================================
@@ -251,17 +256,26 @@ Namespace Global.Iris.Outlook
             item.CC = If(conteudo.CcLine, "")
         End Sub
 
+        ''' <summary>
+        ''' Anexa e devolve o rascunho INTEIRO redescrito.
+        '''
+        ''' Devolvia so o AttachmentInfo, e isso era um furo na regra de que
+        ''' a chave e relida a cada Save: anexar SALVA, o EntryID pode mudar
+        ''' ai tambem, e o compositor ficava com a chave velha — o autosave
+        ''' seguinte, ou o envio, daria NotFound. Quem salva devolve a
+        ''' identidade nova; nao ha excecao.
+        ''' </summary>
         Public Function AddAttachment(ns As OL.NameSpace, chave As DraftKey,
-                                      caminho As String) As OperationResult(Of AttachmentInfo)
+                                      caminho As String) As OperationResult(Of DraftInfo)
             If String.IsNullOrWhiteSpace(caminho) OrElse Not File.Exists(caminho) Then
-                Return OperationResult(Of AttachmentInfo).Fail(ErrorKind.NotFound, "arquivo")
+                Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "arquivo")
             End If
 
             Dim item As OL.MailItem = Nothing
             Try
                 item = TryCast(ns.GetItemFromID(chave.Item.EntryId, chave.Item.StoreId), OL.MailItem)
                 If item Is Nothing Then
-                    Return OperationResult(Of AttachmentInfo).Fail(ErrorKind.NotFound, "rascunho")
+                    Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "rascunho")
                 End If
 
                 Dim anexos As OL.Attachments = Nothing
@@ -270,22 +284,15 @@ Namespace Global.Iris.Outlook
                     Dim a As OL.Attachment = Nothing
                     Try
                         a = anexos.Add(caminho)
-                        item.Save()
-                        Dim indice = anexos.Count
-                        Return OperationResult(Of AttachmentInfo).Ok(New AttachmentInfo With {
-                            .Key = New AttachmentKey(chave.Item, indice,
-                                                     Texto(Function() a.FileName),
-                                                     Numero(Function() a.Size)),
-                            .FileName = Texto(Function() a.FileName),
-                            .SizeBytes = Numero(Function() a.Size),
-                            .AttachmentType = Texto(Function() a.Type.ToString())
-                        })
                     Finally
                         ComHelpers.Release(a)
                     End Try
                 Finally
                     ComHelpers.Release(anexos)
                 End Try
+
+                item.Save()
+                Return OperationResult(Of DraftInfo).Ok(Descrever(item, ns))
             Finally
                 ComHelpers.Release(item)
             End Try
@@ -347,11 +354,15 @@ Namespace Global.Iris.Outlook
                         Dim r As OL.Recipient = Nothing
                         Try
                             r = recipients.Item(i)
+                            ' Resolvido pelo Outlook NAO basta: ele resolve
+                            ' um nome interno para /O=..., que e endereco que
+                            ' o usuario nao tem como conferir.
+                            Dim endereco = EnderecoSmtp(r)
                             previa.Recipients.Add(New RecipientInfo With {
                                 .DisplayName = Texto(Function() r.Name),
-                                .Address = EnderecoSmtp(r),
+                                .Address = endereco,
                                 .Kind = TipoDeDestinatario(r),
-                                .Resolved = Booleano(Function() r.Resolved)
+                                .Resolved = Booleano(Function() r.Resolved) AndAlso EhSmtp(endereco)
                             })
                         Finally
                             ComHelpers.Release(r)
@@ -361,6 +372,7 @@ Namespace Global.Iris.Outlook
                     ComHelpers.Release(recipients)
                 End Try
 
+                previa.Attachments.AddRange(LerAnexos(item))
                 Return OperationResult(Of SendPreview).Ok(previa)
             Finally
                 ComHelpers.Release(item)
@@ -381,6 +393,7 @@ Namespace Global.Iris.Outlook
                 If entrada Is Nothing Then Return Texto(Function() r.Address)
 
                 Dim tipo = entrada.AddressEntryUserType
+
                 If tipo = OL.OlAddressEntryUserType.olExchangeUserAddressEntry OrElse
                    tipo = OL.OlAddressEntryUserType.olExchangeRemoteUserAddressEntry Then
                     Dim usuario As OL.ExchangeUser = Nothing
@@ -388,13 +401,50 @@ Namespace Global.Iris.Outlook
                         usuario = entrada.GetExchangeUser()
                         If usuario IsNot Nothing Then
                             Dim smtp = Texto(Function() usuario.PrimarySmtpAddress)
-                            If Not String.IsNullOrEmpty(smtp) Then Return smtp
+                            If EhSmtp(smtp) Then Return smtp
                         End If
+                    Catch
                     Finally
                         ComHelpers.Release(usuario)
                     End Try
                 End If
 
+                ' Lista de distribuicao Exchange tem SMTP proprio, e ela e
+                ' justamente o destinatario em que errar custa mais caro:
+                ' manda para o grupo inteiro.
+                If tipo = OL.OlAddressEntryUserType.olExchangeDistributionListAddressEntry Then
+                    Dim lista As OL.ExchangeDistributionList = Nothing
+                    Try
+                        lista = entrada.GetExchangeDistributionList()
+                        If lista IsNot Nothing Then
+                            Dim smtp = Texto(Function() lista.PrimarySmtpAddress)
+                            If EhSmtp(smtp) Then Return smtp
+                        End If
+                    Catch
+                    Finally
+                        ComHelpers.Release(lista)
+                    End Try
+                End If
+
+                ' Ultima tentativa antes de desistir: PR_SMTP_ADDRESS. Cobre
+                ' os tipos que nao tem objeto proprio no Object Model —
+                ' contatos, agentes, entradas de outros provedores.
+                Dim acesso As OL.PropertyAccessor = Nothing
+                Try
+                    acesso = entrada.PropertyAccessor
+                    If acesso IsNot Nothing Then
+                        Dim bruto = acesso.GetProperty(PropSmtpAddress)
+                        Dim smtp = If(TryCast(bruto, String), "")
+                        If EhSmtp(smtp) Then Return smtp
+                    End If
+                Catch
+                Finally
+                    ComHelpers.Release(acesso)
+                End Try
+
+                ' Sobrou o que o Outlook deu. Pode ser /O=..., e quem decide
+                ' se isso serve e o chamador, via EhSmtp: aqui o trabalho e
+                ' devolver o melhor que se conseguiu, nao julgar.
                 Return Texto(Function() r.Address)
             Catch
                 Return Texto(Function() r.Address)
@@ -434,16 +484,11 @@ Namespace Global.Iris.Outlook
             Try
                 contas = ns.Accounts
 
-                ' A primeira conta é a padrão do Outlook. Serve de reserva se
-                ' nenhuma entregar no store deste rascunho.
-                Dim padrao = ""
-
                 For i = 1 To contas.Count
                     Dim c As OL.Account = Nothing
                     Try
                         c = contas.Item(i)
                         Dim smtp = Texto(Function() c.SmtpAddress)
-                        If padrao.Length = 0 Then padrao = smtp
 
                         ' Nunca encadear: DeliveryStore sai numa variável
                         ' própria para ser liberado (R7).
@@ -465,7 +510,11 @@ Namespace Global.Iris.Outlook
                     End Try
                 Next
 
-                Return padrao
+                ' Nenhuma conta entrega neste store. NAO devolver a
+                ' primeira: seria apresentar palpite como fato, e a tela
+                ' diria "enviando por A" enquanto o Outlook manda por B.
+                ' Vazio faz a UI dizer que nao identificou — a verdade.
+                Return ""
             Catch
                 Return ""
             Finally
@@ -556,7 +605,7 @@ Namespace Global.Iris.Outlook
                                     TextoDeHtml(info.QuotedBody),
                                     info.QuotedBody)
 
-            LerAnexosDoRascunho(item, info)
+            info.Attachments.AddRange(LerAnexos(item))
             Return info
         End Function
 
@@ -588,7 +637,15 @@ Namespace Global.Iris.Outlook
             Return String.Join(vbCrLf, linhas)
         End Function
 
-        Private Sub LerAnexosDoRascunho(item As OL.MailItem, info As DraftInfo)
+        ''' <summary>
+        ''' Le os anexos do item. Devolve lista em vez de escrever dentro de
+        ''' um DraftInfo porque a confirmacao de envio precisa dos mesmos
+        ''' anexos sem ser um rascunho descrito.
+        ''' </summary>
+        Private Function LerAnexos(item As OL.MailItem) As List(Of AttachmentInfo)
+            Dim lista As New List(Of AttachmentInfo)()
+            Dim dono = New ItemKey(Texto(Function() item.EntryID), StoreIdDe(item))
+
             Dim anexos As OL.Attachments = Nothing
             Try
                 anexos = item.Attachments
@@ -596,8 +653,8 @@ Namespace Global.Iris.Outlook
                     Dim a As OL.Attachment = Nothing
                     Try
                         a = anexos.Item(i)
-                        info.Attachments.Add(New AttachmentInfo With {
-                            .Key = New AttachmentKey(info.Key.Item, i,
+                        lista.Add(New AttachmentInfo With {
+                            .Key = New AttachmentKey(dono, i,
                                                      Texto(Function() a.FileName),
                                                      Numero(Function() a.Size)),
                             .FileName = Texto(Function() a.FileName),
@@ -612,7 +669,18 @@ Namespace Global.Iris.Outlook
             Finally
                 ComHelpers.Release(anexos)
             End Try
-        End Sub
+
+            Return lista
+        End Function
+
+        ''' <summary>
+        ''' A regra mora em <see cref="AddressPolicy"/>, no Core, porque o
+        ''' compositor a aplica de novo antes de deixar enviar — e porque
+        ''' aqui, dentro da camada COM, nenhum teste a alcançaria.
+        ''' </summary>
+        Private Function EhSmtp(endereco As String) As Boolean
+            Return AddressPolicy.IsUsableSmtp(endereco)
+        End Function
 
         ''' <summary>
         ''' Converte de volta o HTML que NÓS geramos — não HTML arbitrário.
