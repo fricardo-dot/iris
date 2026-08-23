@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 3 — marcos 1.1 a 1.4 concluídos; dívida registrada na seção 11.
+**Versão:** 4 — marcos 1.1 a 1.5 concluídos; dívida registrada na seção 11.
 
 ---
 
@@ -237,7 +237,7 @@ outra mensagem foi selecionada; falha de HTML cai para texto puro; mensagem
 protegida não vaza conteúdo para o log. Exige fixture com mensagem de
 download parcial — sem ela, o critério não é verificável.
 
-### 1.5 — Composição e envio
+### 1.5 — Composição e envio ✅
 
 - Responder, responder a todos, encaminhar, nova
 - Anexar arquivo, salvar rascunho, enviar
@@ -410,6 +410,31 @@ extrapolação nem por semelhança com outra medição.
 - **Leitura parcial não é sinalizada.** Se destinatários ou anexos falharem
   em parte, a UI não distingue "não tem" de "não deu para ler". Passa no
   1.4; não passa no 1.5, onde responder depende dos destinatários.
+
+### Do marco 1.5
+
+- **Marca de separação em texto puro é VISÍVEL.** Em HTML a marca é um
+  comentário e ninguém a vê. Em texto puro não existe marca invisível, e
+  numa mensagem nova a linha `----- mensagem original -----` aparece sem
+  ter original nenhuma embaixo. O padrão do Outlook é HTML, então este é o
+  caminho raro — mas ele existe e está errado.
+- **Remover anexo: NÃO implementado.** `RemoveDraftAttachmentAsync` ainda
+  devolve `NotImplemented`. Dá para anexar e não dá para desanexar.
+- **Rascunho existente não é reaberto.** O compositor só trabalha com
+  rascunhos que ele mesmo criou na sessão. Abrir um rascunho antigo da
+  pasta Rascunhos cai no palpite conservador do leitor — corpo inteiro
+  vira citação — e ainda não foi exercitado.
+- **Envio ambíguo: caminho NÃO exercitado.** O estado terminal está
+  testado contra o broker de mentira. Contra o Outlook de verdade não foi
+  provocado, porque provocá-lo exigiria fazer um `Send` real falhar no
+  meio.
+- **Anexos grandes não medidos.** Anexar foi verificado com o diálogo,
+  não com arquivo de dezenas de MB, que ocupa a fila única da STA.
+- **O que FOI verificado com Outlook aberto:** criar rascunho, autosave
+  gravando, chave relida a cada Save, confirmação com conta remetente e
+  destinatário resolvido em SMTP, pergunta de fechamento e descarte. O
+  envio em si não foi disparado — a Fase 0 já provou o `Send` no critério
+  C2, e repetir aqui mandaria mensagem de verdade sem necessidade.
 
 ### Geral
 
