@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 10 — marco 1.6 FECHADO; resultados na seção 14.
+**Versão:** 11 — critério de 5.000 itens dispensado; medição substituta na seção 15.
 
 ---
 
@@ -381,14 +381,11 @@ extrapolação nem por semelhança com outra medição.
 
 ### Do marco 1.3
 
-- **Fixture de 5.000 itens no OOM: NÃO medido.** A primeira página foi
-  validada com 1.033 itens reais, em 391 ms. O critério fala em 5.000, e a
-  caixa corporativa não tem esse volume — gerar 5 mil mensagens nela está
-  fora de cogitação. O caminho é um PST de teste, com perfil descartável ou
-  anexação temporária autorizada, e limpeza garantida.
-- **Acesso por índice em offset profundo: NÃO medido.** Só a primeira
-  página foi cronometrada. `Items.Item(i)` pode não ser O(1) no OOM, e
-  offsets 300, 600 e 900 precisam de medição própria.
+- **Fixture de 5.000 itens: critério DISPENSADO pelo usuário** em
+  2026-08-23, por não ser viável na caixa corporativa. Ver seção 15: o
+  critério não foi cumprido, foi retirado, e há medição substituta.
+- **Acesso por índice em offset profundo: MEDIDO** em 2026-08-23, e o
+  resultado é bom. Ver seção 15.
 - **Virtualização do WPF: MEDIDA e aprovada.** 5.000 DTOs sintéticos numa
   janela real, contando containers realizados: dezenas, não milhares, com
   controle negativo que exige o contador acusar mais de mil quando a
@@ -886,9 +883,79 @@ caminho específico foram os testes de ViewModel.
   handler que chame o broker e espere trava a STA. O contrato diz que
   handler devolve ao dispatcher dele; nada impõe isso.
 
-### O que continua bloqueando declarar a FASE 1 concluída
+### Sobre a fixture de 5.000 itens
 
-A **fixture de 5.000 itens** é critério de aceite do marco 1.3 que nunca
-foi cumprido. Fica fora do 1.6, que é sobre robustez, mas manter isso como
-dívida perpétua enquanto se declara a fase consolidada seria dar por
-medido o que não foi.
+Critério dispensado pelo usuário em 2026-08-23. Ver seção 15 para a
+decisão, a medição que ficou no lugar, e o que continua sem resposta.
+
+---
+
+## 15. Fixture de 5.000 itens: critério dispensado
+
+**Decisão do usuário, 2026-08-23:** não gerar 5.000 mensagens. O motivo é
+bom — a caixa é corporativa, e encher uma pasta com cinco mil mensagens de
+teste é intrusivo mesmo com limpeza depois.
+
+O critério **não foi cumprido**. Foi retirado. Esta seção existe para que
+ninguém leia "Fase 1 concluída" e presuma que os 5.000 foram medidos.
+
+### O que o critério queria saber
+
+Duas coisas diferentes, que estavam grudadas num número:
+
+1. **A lista aguenta muitos itens sem travar?** — pergunta sobre o WPF.
+2. **`Items.Item(i)` degrada em offset profundo?** — pergunta sobre o
+   Object Model. Se degradar, "Carregar mais" fica progressivamente mais
+   lento e a paginação por índice não escala.
+
+### O que ESTÁ medido
+
+**(1) já estava.** 5.000 DTOs sintéticos numa janela real, contando
+containers realizados: dezenas, não milhares, com controle negativo que
+exige o contador acusar mais de mil quando a virtualização é desligada.
+Isso prova o WPF e não diz nada sobre o custo do OOM — são medições
+separadas.
+
+**(2) foi medido agora**, sem criar item nenhum: na Caixa de Entrada real,
+com 1.003 itens, cronometrando páginas de 50 em offsets crescentes e
+tocando as mesmas propriedades que o DTO da lista usa. Somente leitura.
+
+| offset | exec 1 | exec 2 | exec 3 |
+|---|---|---|---|
+| 0 | 9,51 | 6,41 | 7,19 |
+| 100 | 6,82 | 7,27 | 6,35 |
+| 300 | 6,83 | 6,86 | 6,22 |
+| 600 | 6,51 | 6,98 | 6,41 |
+| 900 | 7,18 | 7,29 | 6,81 |
+
+(ms por item)
+
+**O custo não tem correlação com o offset.** Offset 900 sai igual a offset
+0. A dispersão é ruído de cache e sincronização — a primeira execução de
+todas deu 13 ms/item em dois offsets, e sumiu nas seguintes, por isso três
+execuções e não uma.
+
+**Conclusão:** `Items.Item(i)` é O(1) na prática nesta caixa, em modo
+cached. A paginação por índice escala, e "Carregar mais" não fica mais
+lento à medida que o usuário desce.
+
+### O que CONTINUA sem resposta
+
+Dizer o que a medição não cobre importa tanto quanto o resultado:
+
+- **Pasta com 5.000 itens no OOM não foi exercitada.** O comportamento foi
+  medido até 1.003. Nada garante que `Items.Count` e `Items.Sort` — que
+  rodam uma vez por pasta, antes da primeira página — se comportem igual
+  numa coleção cinco vezes maior. O `Sort` é o candidato mais provável a
+  degradar, e ele não foi cronometrado em separado.
+- **Modo online (não cached) não foi medido.** Esta caixa está em cached
+  mode. Sem cache local, cada acesso vira ida ao servidor, e o resultado
+  acima não se transfere.
+- **Outras pastas não foram medidas.** Só a Caixa de Entrada.
+
+### Se um dia isto voltar a importar
+
+O caminho que não toca na caixa corporativa é um **PST local** com itens
+gerados, anexado temporariamente a um perfil de teste. Não foi feito, e
+não está planejado. Fica registrado como a saída conhecida, não como
+pendência.
