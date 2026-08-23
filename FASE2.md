@@ -1,8 +1,8 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 17 — Q1 e **Q2 fechadas** (seções 9 a 11). Melhoria da Fase 1
-aplicada (12). Q4: custo remedido (13). **Gate arquitetural da Q2 (14)** —
-o que o 2.1 fica proibido de fazer.
+**Versão:** 18 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+Gate arquitetural da Q2 (14). **Q6a respondida (15)**. **Q4 sob mutação,
+Q5 e a lacuna Move-in da Q3 (16)** — e a Q3 caiu.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -1612,3 +1612,164 @@ inspecionável.
 **Sem esses testes, I1–I8 são comentário.** E este projeto já tem o
 precedente: a regra do `Permission` estava escrita e mesmo assim o gate
 falhava aberto por três marcos.
+
+---
+
+## 15. Q6a — identidade de PASTA. RESPONDIDA, e ao contrário do item.
+
+`tools/q6-pasta.ps1`. Escreve **só em pastas que o script cria** na raiz, e
+as remove no fim. Nenhuma pasta do usuário tocada, nenhum item criado.
+
+A §11.1 mediu que o `EntryID` de **item** não sobrevive a um `Move`.
+`FolderKey` é `EntryID + StoreID`. Ninguém tinha verificado o de **pasta**.
+
+| | `EntryID` | `PR_RECORD_KEY` | `PR_CHANGE_KEY` |
+|---|---|---|---|
+| **renomear** | **IGUAL** | **IGUAL** | muda |
+| **mover para dentro de outra** | **IGUAL** | **IGUAL** | muda |
+| **apagar e recriar com o mesmo nome** | muda | muda | muda |
+
+E mais: depois do `MoveTo`, `GetFolderFromID` com o **EntryID antigo ainda
+resolve**, e aponta para a pasta certa.
+
+> **Pasta e item se comportam de forma OPOSTA.** `MailItem.Move` troca a
+> identidade; `MAPIFolder.MoveTo` **preserva**. Renomear também preserva. E
+> apagar+recriar com o mesmo nome **não reaproveita** o `EntryID` — que é o
+> resultado desejado, porque reaproveitar faria uma pasta nova herdar o
+> histórico da antiga.
+
+### O que isto decide
+
+`FolderKey = EntryID + StoreID` **serve** para renomear, mover e recriar,
+**dentro deste store**. A pasta não precisa da mesma maquinaria de
+correlação que o item.
+
+Isso **não** dispensa a identidade interna de pasta do §14.1: o invariante
+I1 continua valendo, e por um motivo prático — o §15 só mediu **um
+store**. Remontar o store, trocar de perfil e mover pasta **entre** stores
+é a Q6b, e vai junto da cobertura da Q8.
+
+### Detalhe de API que custou uma execução
+
+`MAPIFolder.MoveTo` é **`Sub`** e não devolve nada — diferente de
+`MailItem.Move`, que devolve o item movido. Pegar o retorno dá `Nothing`, e
+o erro aparece longe, num `ReleaseComObject`. O teste ficou melhor por
+causa disso: em vez de usar o retorno, ele guarda o `EntryID` antes e tenta
+**resolvê-lo** depois, o que responde a pergunta de forma direta.
+
+---
+
+## 16. Q4 sob mutação, Q5, e a lacuna Move-in da Q3
+
+`tools/q4-mutacao.ps1`. Cria duas pastas próprias e 60 itens próprios;
+remove tudo no fim. **Nenhuma mensagem do usuário é lida, movida ou
+apagada.**
+
+Fases e oráculos **separados**, e isso não é formalidade: a Q4 pergunta
+*"esta geração pode ser declarada válida?"* e a Q5 pergunta *"dadas
+observações válidas, que conclusão é segura?"*. Uma mutação concorrente
+pode **invalidar** a geração — aí ela é evidência para a Q4 e não pode
+alimentar a Q5.
+
+### 16.1 Q4 — a enumeração sob mutação
+
+| Cenário | Resultado |
+|---|---|
+| sem mutação, duas passadas | manifestos **idênticos** |
+| item **criado** durante a varredura | a varredura em curso **já o viu** (61 de 60) |
+| item **movido** entre duas pastas, com o cursor aberto | **contado DUAS vezes** |
+
+O terceiro é o que importa. Mover um item de `origem` para `destino` com o
+cursor de `origem` **aberto**:
+
+- ele apareceu na varredura da **origem**, com a chave **antiga**;
+- ele está no **destino**, com a chave **nova**;
+- e a chave **mudou** no caminho.
+
+> Não é só "contado duas vezes". É contado duas vezes **com identidades
+> diferentes** — as duas observações não têm como se reconhecer como o
+> mesmo item.
+
+Confirma §3.6 (enumeração duvidosa não faz sweep) por medição, e mostra que
+`Table` não é snapshot nem para inserção nem para movimentação.
+
+**NÃO exercitado:** falha COM no meio, cancelamento no meio, Outlook
+reiniciado no meio. São os três que faltam da lista da §4.
+
+### 16.2 Q3 — **o incremental por `LastModificationTime` não descobre entrada**
+
+Este é o achado mais consequente do dia, e ele veio de uma pergunta que a
+§4 **não fazia**: a Q3 testava item movido para **fora** e exclusão; faltava
+o item movido para **dentro**.
+
+```
+LastModificationTime ANTES do move : 23/08/2026 23:45:51
+checkpoint                          : 23/08/2026 23:45:55
+LastModificationTime DEPOIS         : 23/08/2026 23:45:51
+```
+
+> **`Move` NÃO atualiza `PR_LAST_MODIFICATION_TIME`.**
+>
+> O item chega na pasta de destino carregando um carimbo **anterior ao
+> checkpoint**. Um incremental `LastModificationTime > checkpoint`
+> **nunca** o descobre.
+
+E janela de sobreposição **não resolve**: o carimbo pode ser
+arbitrariamente antigo. Arrastar para uma pasta uma mensagem de dois anos
+atrás produz uma associação nova com carimbo de dois anos atrás.
+
+**Consequência para o desenho:** o *high-water mark* da §4, que estava
+"já decidido", **não serve sozinho**. Ele detecta edição e chegada por
+transporte; não detecta **associação nova por movimentação**. Ou o
+incremental é acompanhado de varredura completa periódica — e a §13 mediu
+que ela custa ~3,2 s —, ou associações entram no cache com atraso
+indefinido.
+
+Isso reposiciona a Q3: ela deixa de ser "o acelerador funciona?" e passa a
+ser **"o acelerador é seguro para QUE subconjunto de mudanças?"**. A
+resposta já tem uma exclusão medida.
+
+### 16.3 Q5 — o que a ausência prova
+
+Sobre geração **estável**, sem mutação concorrente: item movido para outra
+pasta some da origem, e a origem vê **exatamente o mesmo** que veria se ele
+tivesse sido apagado.
+
+E é pior do que "some": como a chave **mudou** no `Move`, procurar a chave
+antiga no resto da caixa **não o encontra**. A reconciliação teria de
+procurar por **evidência de correlação** — `SearchKey`, Message-ID —, que
+a §11 mostrou serem insuficientes sozinhas.
+
+Confirma a §3.4 e o que a §11.3 já antecipava, agora por medição direta.
+E dá a forma da resposta da Q5, que **não é** a que a §4 pedia:
+
+> A Q5 pedia uma política que "distingue movido, excluído e temporariamente
+> invisível". Isso é impossível: a §11.3 mostrou que `Copy`+exclusão pode
+> ser indistinguível de `Move`, e a §16.3 mostra que a pasta de origem não
+> tem informação nenhuma para distinguir. A pergunta que tem resposta é
+> **quais transições de estado são seguras APESAR da
+> indistinguibilidade** — e a resposta está na §11.3.
+
+### 16.4 O que ficou NÃO validado
+
+- **Falha COM, cancelamento e Outlook reiniciado** no meio da enumeração.
+- **Exclusão dura** (perna da Q5). Não executada, e por decisão: a própria
+  §4 registra que a resposta é conhecida e "pouco útil" — esvaziamento não
+  deixa tombstone recuperável pelo OOM. Destruir item permanentemente para
+  reconfirmar isso é risco sem retorno.
+- **Copy-in**: só o `Move`-in foi medido. `Copy` provavelmente atualiza o
+  carimbo (cria objeto novo), mas **não foi medido**.
+
+### 16.5 Duas armadilhas de OOM que custaram execução
+
+**`Items.Add` numa pasta qualquer + `Save()` deposita em RASCUNHOS.** O
+item não nasce na pasta em que a coleção foi obtida: medido,
+`m.Parent.Name` devolve `"Rascunhos"` e a pasta alvo fica com 0 itens. O
+idioma correto é criar e **mover** em seguida — e por isso a limpeza
+também precisa varrer Rascunhos, para o caso de falhar entre o `Save` e o
+`Move`.
+
+**`PR_LONGTERM_ENTRYID_FROM_TABLE` só existe como COLUNA DE `Table`.** Pelo
+`PropertyAccessor` de um item ela dá *"desconhecida ou não encontrada"*. O
+equivalente no item é o próprio `.EntryID`, que a §12.2 mediu ter o mesmo
+valor.
