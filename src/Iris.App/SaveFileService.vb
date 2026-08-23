@@ -14,6 +14,38 @@ Namespace Global.Iris.App
         Function AskWhereToSave(suggestedName As String) As String
     End Interface
 
+    ''' <summary>
+    ''' Perguntar ao usuário qual arquivo anexar.
+    '''
+    ''' Separada de <see cref="ISaveFileService"/> de propósito. São duas
+    ''' direções opostas — uma tira dado de dentro da caixa, a outra põe
+    ''' arquivo do disco numa mensagem que vai sair — e juntá-las numa
+    ''' interface só faria qualquer teste do leitor ganhar, de graça, a
+    ''' capacidade de anexar.
+    ''' </summary>
+    Public Interface IPickFileService
+        ''' <returns>O caminho escolhido, ou Nothing se o usuário cancelou.</returns>
+        Function AskWhichFileToAttach() As String
+    End Interface
+
+    Public NotInheritable Class WindowsPickFileService
+        Implements IPickFileService
+
+        Public Function AskWhichFileToAttach() As String _
+            Implements IPickFileService.AskWhichFileToAttach
+
+            Dim dialogo As New Microsoft.Win32.OpenFileDialog With {
+                .Title = "Anexar arquivo",
+                .CheckFileExists = True,
+                .Multiselect = False,
+                .Filter = "Todos os arquivos|*.*"
+            }
+
+            If dialogo.ShowDialog() = True Then Return dialogo.FileName
+            Return Nothing
+        End Function
+    End Class
+
     Public NotInheritable Class WindowsSaveFileService
         Implements ISaveFileService
 

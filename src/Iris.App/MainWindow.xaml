@@ -194,7 +194,45 @@
                          so a barra de tarefas os mostrasse, e a versao
                          anterior ainda desenhava "Iris". Window.Title segue
                          atendendo taskbar, Alt+Tab e acessibilidade.
-                         As colunas 0 e 1 sao area continua de arrasto. -->
+                         A coluna 1 continua sendo area de arrasto. -->
+
+                    <!-- Acoes de composicao. Ficam na barra de titulo
+                         porque a alternativa era uma segunda faixa so para
+                         elas, roubando altura de onde o conteudo esta.
+                         Somem sem sessao: oferecer "Nova mensagem" com o
+                         Outlook fechado seria prometer o que nao da. -->
+                    <StackPanel Grid.Column="0" Orientation="Horizontal"
+                                VerticalAlignment="Center" Margin="12,0,0,0"
+                                Visibility="{Binding ShowContent, Converter={StaticResource BoolToVis}}">
+                        <Button Style="{StaticResource Toolbar.Button}"
+                                Command="{Binding NewMessageCommand}"
+                                ToolTip="Nova mensagem"
+                                AutomationProperties.Name="Nova mensagem">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="&#xE8BD;" FontSize="12" Margin="0,0,7,0"
+                                           FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                           VerticalAlignment="Center" />
+                                <TextBlock Text="Nova" VerticalAlignment="Center" />
+                            </StackPanel>
+                        </Button>
+
+                        <Border Width="1" Margin="8,10" VerticalAlignment="Stretch"
+                                Background="{DynamicResource Brush.Border.Subtle}" />
+
+                        <Button Style="{StaticResource Toolbar.Button}"
+                                Command="{Binding ReplyCommand}"
+                                Content="Responder"
+                                ToolTip="Responder ao remetente"
+                                AutomationProperties.Name="Responder" />
+                        <Button Style="{StaticResource Toolbar.Button}"
+                                Command="{Binding ReplyAllCommand}"
+                                Content="Responder a todos"
+                                AutomationProperties.Name="Responder a todos" />
+                        <Button Style="{StaticResource Toolbar.Button}"
+                                Command="{Binding ForwardCommand}"
+                                Content="Encaminhar"
+                                AutomationProperties.Name="Encaminhar" />
+                    </StackPanel>
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                 VerticalAlignment="Center" Margin="0,0,12,0">
@@ -553,6 +591,341 @@
 
                 </StackPanel>
             </Border>
+
+            <!-- ==================== Compositor ==================== -->
+            <!--
+                Cobre o conteudo, nao a barra de titulo: minimizar, maximizar
+                e fechar a JANELA continuam alcancaveis com um rascunho
+                aberto. Prender o usuario dentro do compositor seria trocar
+                um problema de foco por um de saida.
+            -->
+            <Grid Grid.Row="1" Panel.ZIndex="10"
+                  Visibility="{Binding Composer.IsOpen, Converter={StaticResource BoolToVis}}">
+
+                <!-- Escurece o que esta atras para dizer, sem texto, que a
+                     lista nao responde enquanto isto esta aberto. -->
+                <Rectangle Fill="#99000000" />
+
+                <Border Background="{DynamicResource Brush.Surface.1}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Card}"
+                        MaxWidth="980" Margin="28"
+                        VerticalAlignment="Stretch">
+                    <Grid Margin="24,20,24,18">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" MinHeight="140" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <!-- Cabecalho -->
+                        <Grid Grid.Row="0" Margin="0,0,0,16">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <TextBlock Grid.Column="0" Text="{Binding Composer.Title}"
+                                       Style="{StaticResource Text.Title}"
+                                       VerticalAlignment="Center" />
+
+                            <!-- Diz se o rascunho esta guardado. Sem isto o
+                                 usuario nao tem como saber se pode fechar. -->
+                            <TextBlock Grid.Column="1" Text="{Binding Composer.SaveHint}"
+                                       Style="{StaticResource Text.Muted}"
+                                       VerticalAlignment="Center" Margin="0,0,12,0" />
+
+                            <Button Grid.Column="2" Style="{StaticResource CaptionButton}"
+                                    Content="&#xE8BB;"
+                                    Command="{Binding Composer.CloseCommand}"
+                                    ToolTip="Fechar"
+                                    AutomationProperties.Name="Fechar compositor" />
+                        </Grid>
+
+                        <!-- Destinatarios e assunto -->
+                        <Grid Grid.Row="1" Margin="0,0,0,14">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" MinWidth="64" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="PARA"
+                                       Style="{StaticResource Input.Label}" />
+                            <TextBox Grid.Row="0" Grid.Column="1"
+                                     Style="{StaticResource Input.TextBox}"
+                                     IsEnabled="{Binding Composer.PodeEditar}"
+                                     AutomationProperties.Name="Destinatarios"
+                                     Text="{Binding Composer.ToLine, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="CC"
+                                       Style="{StaticResource Input.Label}" Margin="0,10,12,0" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,10,0,0"
+                                     Style="{StaticResource Input.TextBox}"
+                                     IsEnabled="{Binding Composer.PodeEditar}"
+                                     AutomationProperties.Name="Com copia"
+                                     Text="{Binding Composer.CcLine, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="ASSUNTO"
+                                       Style="{StaticResource Input.Label}" Margin="0,10,12,0" />
+                            <TextBox Grid.Row="2" Grid.Column="1" Margin="0,10,0,0"
+                                     Style="{StaticResource Input.TextBox}"
+                                     IsEnabled="{Binding Composer.PodeEditar}"
+                                     AutomationProperties.Name="Assunto"
+                                     Text="{Binding Composer.Subject, UpdateSourceTrigger=PropertyChanged}" />
+                        </Grid>
+
+                        <!--
+                            UpdateSourceTrigger=PropertyChanged nos quatro
+                            campos, incluindo o corpo. O padrao do WPF e
+                            LostFocus, e com ele o autosave so rodaria quando
+                            o usuario trocasse de campo — ou seja, quase
+                            nunca, que e exatamente o caso em que perder o
+                            texto doi.
+                        -->
+                        <TextBox Grid.Row="2"
+                                 Style="{StaticResource Input.Body}"
+                                 IsEnabled="{Binding Composer.PodeEditar}"
+                                 AutomationProperties.Name="Mensagem"
+                                 Text="{Binding Composer.UserText, UpdateSourceTrigger=PropertyChanged}" />
+
+                        <!-- Citacao e assinatura: exibicao, nunca edicao.
+                             O Iris escreve ACIMA disto e nao reescreve. -->
+                        <Expander Grid.Row="3" Margin="0,12,0,0"
+                                  Foreground="{DynamicResource Brush.Text.Muted}"
+                                  Header="Mensagem original e assinatura"
+                                  Visibility="{Binding Composer.HasQuoted, Converter={StaticResource BoolToVis}}">
+                            <Border Background="{DynamicResource Brush.Surface.2}"
+                                    CornerRadius="{StaticResource Radius.Control}"
+                                    Padding="12,10" Margin="0,8,0,0">
+                                <TextBox Text="{Binding Composer.QuotedPreview, Mode=OneWay}"
+                                         IsReadOnly="True" IsTabStop="False"
+                                         BorderThickness="0" Background="Transparent"
+                                         Foreground="{DynamicResource Brush.Text.Secondary}"
+                                         FontFamily="{StaticResource Font.Ui}"
+                                         FontSize="{StaticResource Font.Size.Small}"
+                                         TextWrapping="Wrap" AcceptsReturn="True"
+                                         MaxHeight="150"
+                                         VerticalScrollBarVisibility="Auto"
+                                         AutomationProperties.Name="Mensagem original" />
+                            </Border>
+                        </Expander>
+
+                        <!-- Anexos -->
+                        <ItemsControl Grid.Row="4" Margin="0,12,0,0"
+                                      ItemsSource="{Binding Composer.Attachments}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource Brush.Surface.3}"
+                                            CornerRadius="{StaticResource Radius.Pill}"
+                                            Padding="10,5" Margin="0,0,8,8">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE723;" FontSize="11" Margin="0,0,7,0"
+                                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource Brush.Text.Muted}" />
+                                            <TextBlock Text="{Binding FileName}"
+                                                       Style="{StaticResource Text.Body}"
+                                                       FontSize="{StaticResource Font.Size.Small}"
+                                                       VerticalAlignment="Center"
+                                                       MaxWidth="240"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding FileName}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <!-- Status. Vira aviso forte quando o envio ficou
+                             sem resposta conhecida. -->
+                        <Border Grid.Row="5" Margin="0,10,0,0"
+                                CornerRadius="{StaticResource Radius.Control}"
+                                Padding="12,9"
+                                Visibility="{Binding Composer.HasStatus, Converter={StaticResource BoolToVis}}">
+                            <Border.Style>
+                                <Style TargetType="Border">
+                                    <Setter Property="Background" Value="{DynamicResource Brush.Surface.2}" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Composer.IsSendUnknown}" Value="True">
+                                            <Setter Property="Background"
+                                                    Value="{DynamicResource Brush.Accent.Surface}" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </Border.Style>
+                            <TextBlock Text="{Binding Composer.Status}" TextWrapping="Wrap">
+                                <TextBlock.Style>
+                                    <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Secondary}">
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding Composer.IsSendUnknown}" Value="True">
+                                                <Setter Property="Foreground"
+                                                        Value="{DynamicResource Brush.Warning}" />
+                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                        </Border>
+
+                        <!-- Rodape -->
+                        <Grid Grid.Row="6" Margin="0,16,0,0">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <Button Grid.Column="0" Style="{StaticResource Composer.Action}"
+                                    Command="{Binding Composer.AttachCommand}"
+                                    Content="Anexar arquivo"
+                                    AutomationProperties.Name="Anexar arquivo" />
+
+                            <Button Grid.Column="2" Style="{StaticResource Button.Primary}"
+                                    Command="{Binding Composer.RequestSendCommand}"
+                                    Content="Revisar e enviar"
+                                    AutomationProperties.Name="Revisar e enviar" />
+                        </Grid>
+                    </Grid>
+                </Border>
+
+                <!-- ============ Perguntas sobre o compositor ============ -->
+                <Grid Visibility="{Binding Composer.ShowOverlay, Converter={StaticResource BoolToVis}}">
+                    <Rectangle Fill="#B3000000" />
+
+                    <!-- Confirmacao de envio. Mostra conta, destinatarios
+                         RESOLVIDOS e assunto: e o ultimo ponto em que da
+                         para descobrir que a mensagem ia para a pessoa
+                         errada. -->
+                    <Border Background="{DynamicResource Brush.Surface.1}"
+                            BorderBrush="{DynamicResource Brush.Border}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource Radius.Card}"
+                            Padding="24" MaxWidth="560"
+                            VerticalAlignment="Center" HorizontalAlignment="Center"
+                            Visibility="{Binding Composer.IsConfirmingSend, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="Enviar esta mensagem?"
+                                       Style="{StaticResource Text.Title}" />
+
+                            <TextBlock Style="{StaticResource Input.Label}" Text="ENVIANDO PELA CONTA"
+                                       Margin="0,18,0,4" />
+                            <TextBlock Text="{Binding Composer.PreviewAccount}"
+                                       Style="{StaticResource Text.Body}" TextWrapping="Wrap" />
+
+                            <TextBlock Style="{StaticResource Input.Label}" Text="ASSUNTO"
+                                       Margin="0,14,0,4" />
+                            <TextBlock Text="{Binding Composer.Subject}"
+                                       Style="{StaticResource Text.Body}" TextWrapping="Wrap" />
+
+                            <TextBlock Style="{StaticResource Input.Label}" Text="DESTINATARIOS"
+                                       Margin="0,14,0,4" />
+                            <ItemsControl ItemsSource="{Binding Composer.PreviewRecipients}"
+                                          MaxHeight="180">
+                                <ItemsControl.Template>
+                                    <ControlTemplate TargetType="ItemsControl">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </ControlTemplate>
+                                </ItemsControl.Template>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Orientation="Horizontal" Margin="0,3">
+                                            <TextBlock Text="{Binding Kind}"
+                                                       Style="{StaticResource Text.Muted}"
+                                                       Width="42" VerticalAlignment="Center" />
+                                            <!-- O endereco resolvido, nao o
+                                                 nome de exibicao: e o
+                                                 endereco que recebe. -->
+                                            <TextBlock Text="{Binding Address}"
+                                                       Style="{StaticResource Text.Body}"
+                                                       TextWrapping="Wrap" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                        Margin="0,22,0,0">
+                                <Button Style="{StaticResource Composer.Action}"
+                                        Content="Voltar"
+                                        Command="{Binding Composer.CancelSendCommand}"
+                                        IsCancel="True"
+                                        AutomationProperties.Name="Voltar a edicao" />
+                                <Button Style="{StaticResource Button.Primary}"
+                                        Content="Enviar agora"
+                                        Command="{Binding Composer.ConfirmSendCommand}"
+                                        AutomationProperties.Name="Enviar agora" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Enviando. Sem botao: nao existe cancelar depois que
+                         o Send comecou, e oferecer um seria mentir. -->
+                    <Border Background="{DynamicResource Brush.Surface.1}"
+                            BorderBrush="{DynamicResource Brush.Border}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource Radius.Card}"
+                            Padding="28" MaxWidth="380"
+                            VerticalAlignment="Center" HorizontalAlignment="Center"
+                            Visibility="{Binding Composer.IsSending, Converter={StaticResource BoolToVis}}">
+                        <TextBlock Text="Enviando…" Style="{StaticResource Text.Title}"
+                                   TextAlignment="Center" />
+                    </Border>
+
+                    <!-- Fechar com alteracao pendente. Tres saidas, nenhuma
+                         delas silenciosa. -->
+                    <Border Background="{DynamicResource Brush.Surface.1}"
+                            BorderBrush="{DynamicResource Brush.Border}"
+                            BorderThickness="1"
+                            CornerRadius="{StaticResource Radius.Card}"
+                            Padding="24" MaxWidth="460"
+                            VerticalAlignment="Center" HorizontalAlignment="Center"
+                            Visibility="{Binding Composer.IsConfirmingClose, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="Ha alteracoes nao salvas"
+                                       Style="{StaticResource Text.Title}" />
+                            <TextBlock Style="{StaticResource Text.Secondary}"
+                                       TextWrapping="Wrap" Margin="0,10,0,0"
+                                       Text="Salvar guarda o rascunho no Outlook. Descartar apaga a mensagem inteira, e nao da para desfazer." />
+
+                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right"
+                                        Margin="0,22,0,0">
+                                <Button Style="{StaticResource Composer.Action}"
+                                        Content="Continuar editando"
+                                        Command="{Binding Composer.KeepEditingCommand}"
+                                        IsCancel="True"
+                                        AutomationProperties.Name="Continuar editando" />
+                                <Button Style="{StaticResource Composer.Action}"
+                                        Content="Descartar"
+                                        Command="{Binding Composer.DiscardCommand}"
+                                        AutomationProperties.Name="Descartar rascunho" />
+                                <Button Style="{StaticResource Button.Primary}"
+                                        Content="Salvar e fechar"
+                                        Command="{Binding Composer.SaveAndCloseCommand}"
+                                        AutomationProperties.Name="Salvar e fechar" />
+                            </StackPanel>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </Grid>
         </Grid>
     </Border>
 </Window>

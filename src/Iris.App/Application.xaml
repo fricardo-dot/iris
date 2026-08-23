@@ -8,6 +8,7 @@
                 <ResourceDictionary Source="Themes/Controls.xaml" />
                 <ResourceDictionary Source="Themes/Tree.xaml" />
                 <ResourceDictionary Source="Themes/MessageList.xaml" />
+                <ResourceDictionary Source="Themes/Composer.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

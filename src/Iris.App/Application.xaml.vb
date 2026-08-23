@@ -43,7 +43,8 @@ Class Application
 
         ' A partir daqui só o contrato circula.
         Dim broker As IOutlookBroker = _broker
-        _viewModel = New MainViewModel(broker, Dispatcher, New WindowsSaveFileService())
+        _viewModel = New MainViewModel(broker, Dispatcher,
+                                       New WindowsSaveFileService(), New WindowsPickFileService())
 
         Dim janela As New MainWindow With {.DataContext = _viewModel}
         janela.Show()
