@@ -1,9 +1,8 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 11 — Q1 fechada (seção 9). Q2 na parte de leitura, 3ª versão
-depois de duas rodadas de Codex (seção 10). Falta o teste de `Move` com
-`Copy` como controle negativo: é o experimento decisivo e depende de
-autorização do usuário.
+**Versão:** 12 — Q1 fechada (seção 9). **Q2 RESPONDIDA**: leitura na
+seção 10, experimento de `Move` na seção 11. A resposta é negativa e
+fecha a questão.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -812,8 +811,8 @@ partição misturava origem com função, e a conclusão não decorre dos dados.
 
 | Papel | Propriedades | Única? | Estável sob `Move`? |
 |---|---|---|---|
-| Identidade do objeto no store | `PR_RECORD_KEY`, `EntryID` | **sim**, 2.281/2.281 | **NÃO MEDIDO** |
-| Linhagem copiada junto | Message-ID, `PR_SEARCH_KEY`, `ConversationIndex` | não | provavelmente, **e não medido** |
+| Identidade do objeto no store | `PR_RECORD_KEY`, `EntryID` | **sim**, 2.281/2.281 | **NÃO** — medido, §11 |
+| Linhagem copiada junto | Message-ID, `PR_SEARCH_KEY`, `ConversationIndex` | não | **sim** — medido, §11 |
 | Versão / causalidade | `PR_CHANGE_KEY`, `PR_PREDECESSOR_CHANGE_LIST` | sim, **e irrelevante** | não, **por desenho** |
 | Localização | `StoreID`, pasta pai | — | não, por definição |
 | Relação entre objetos | `PR_CONFLICT_ITEMS` | — | — |
@@ -833,6 +832,9 @@ a mensagem. O valor não precisa ser função do conteúdo — e o par 4, com
 > Entre as propriedades **preexistentes** medidas, nenhuma foi ainda
 > demonstrada **simultaneamente** única no escopo necessário e estável sob
 > `Move`.
+
+*A seção 11 fechou isso: nenhuma é, e agora está medido nas duas
+direções.*
 
 Não "não existe identidade obtenível pelo OOM". Há pelo menos duas saídas
 que eu não tinha considerado:
@@ -930,11 +932,7 @@ correlacionado". Existe: os pares 2 e 3.
 
 ### 10.8 NÃO validado
 
-- **Sobrevivência a `Move`** de `RecordKey`, `SearchKey` e `EntryID` — o
-  experimento decisivo. **Escreve na caixa; depende de autorização.**
-- **`Copy`** — controle negativo obrigatório do teste de `Move`. Os pares
-  de conflito **não** demonstram o comportamento de `MailItem.Copy`: um
-  item de conflito é criado pelo servidor, não por `Copy`.
+- ~~**Sobrevivência a `Move`**~~ e ~~**`Copy`**~~ — **feitos**, seção 11.
 - **Rascunho antes/depois de enviar**, **encaminhar/reenviar** — exigem
   enviar, proibido fora do C2.
 - **Entre stores** — um store nesta máquina.
@@ -997,3 +995,113 @@ sem uma linha de erro.
 case-insensitive: `foreach ($pid in ...)` aborta. É a mesma classe de
 eclipse que o `CLAUDE.md` documenta em VB — sete ocorrências lá, agora uma
 aqui, em outra linguagem.
+
+---
+
+## 11. Q2 — o experimento decisivo. RESPONDIDA.
+
+Autorizado pelo usuário. `tools/q2-move.ps1`.
+
+**Dois itens**, cada um com ida, volta e um `Copy` como controle negativo:
+
+- **A** — o `[IRIS-SPIKE-C]` **recebido**, artefato meu da Fase 0. Mensagem
+  entregue pelo servidor de verdade (4.615 caracteres de cabeçalho de
+  transporte), e descartável.
+- **B** — a mensagem mais antiga do **Lixo Eletrônico**. O usuário
+  autorizou uma mensagem real sem indicar qual; escolhi a pasta onde um erro
+  custa menos.
+
+### 11.1 O resultado
+
+Idêntico para A e para B:
+
+| Chave | `Move` | `Copy` |
+|---|---|---|
+| `EntryID` | **muda** | muda |
+| `PR_RECORD_KEY` | **MUDA** | muda |
+| `PR_SEARCH_KEY` | **sobrevive** | **DUPLICADA** |
+| Message-ID | **sobrevive** | **DUPLICADO** |
+| `PR_CHANGE_KEY` | muda | muda |
+| `PR_PREDECESSOR_CHANGE_LIST` | muda | muda |
+
+> **`PR_RECORD_KEY` não sobrevive a um `Move`.**
+
+A candidata que a seção 10 tinha recuperado — 100% presente, 2.281 valores
+distintos em 2.281 itens, sem par de pasta no formato — **cai aqui**. O
+argumento de formato estava certo sobre o formato e **não previu o
+comportamento**: o provider aloca uma chave nova no `Move` mesmo sem
+precisar codificar a pasta. Era exatamente a ressalva que eu tinha
+registrado, e era ela que valia.
+
+### 11.2 A resposta da Q2
+
+> **Nenhuma propriedade preexistente é ao mesmo tempo única e estável.**
+>
+> As **únicas** (`EntryID`, `PR_RECORD_KEY`) mudam no `Move`.
+> As **estáveis** (`PR_SEARCH_KEY`, Message-ID) são **duplicadas pelo
+> `Copy`** e compartilhadas por enviado e recebido (par 1 da §10.3).
+>
+> As duas famílias falham, e falham por motivos **opostos**. Não é uma
+> lacuna de medição: é a resposta.
+
+O controle negativo foi o que deu o "opostos". Sem o `Copy`, "a SearchKey
+sobreviveu ao Move" pareceria uma resposta positiva.
+
+### 11.3 A consequência que vai além da Q2
+
+A ida e volta **não restaura** o `EntryID` nem a `RecordKey`: voltar para a
+pasta de origem produz **mais uma** chave nova. Então:
+
+> Um item que saiu e voltou é **indistinguível**, pelas chaves do store, de
+> um item que foi apagado e de outro que chegou no lugar.
+
+Isso atinge direto a §3.4 ("o que uma ausência prova") e a Q5. Uma
+verificação que confie em `EntryID` para dizer "sumiu" vai reportar
+exclusão toda vez que o usuário arrastar uma mensagem entre pastas.
+
+E confirma a §3.1 por medição, ampliando: **`EntryID` é localizador, e
+`PR_RECORD_KEY` também é.**
+
+### 11.4 O que sobra para o 2.1
+
+Nenhuma dessas saídas é gratuita, e a escolha é do 2.1:
+
+1. **Propriedade nomeada escrita pelo Iris.** Única e estável por
+   construção. Mas o `Copy` a duplica — o mesmo defeito da SearchKey —, a
+   Fase 1 registra que a política do tenant pode impedir a gravação
+   (débito do marcador `IrisDraft`), e escrever em item do usuário para
+   poder listá-lo é uma decisão de produto, não só técnica.
+2. **Correlação explícita e reversível**: `(SearchKey, Message-ID)` como
+   candidato, papel (submetido x entregue) para separar o par 1, e a
+   união **sempre desfazível**, com procedência registrada.
+3. **Não correlacionar.** Já estava previsto como resultado aceitável.
+
+Em qualquer uma, o invariante da §3.1 — **na dúvida, não unir** — sai
+reforçado, porque agora se sabe que não existe chave que dispense o
+julgamento.
+
+### 11.5 Limpeza, e o que ela custou
+
+O `Delete()` no item copiado **não o tirou da pasta**: as duas cópias
+ficaram onde estavam. Percebi porque a conta não fechou — Excluídos e Lixo
+com **+1 cada** — e não porque o script avisou.
+
+Reconciliei pela `SearchKey` dos dois alvos (`tools/q2-achar-copias.ps1`),
+que localiza original e cópia de uma vez **porque a cópia herda a
+SearchKey** — o próprio achado do experimento serviu para limpar o
+experimento. `PR_CREATION_TIME` não serviria: o `Copy` preserva o valor do
+original, e eu tentei por aí primeiro.
+
+Estado final:
+
+- **Lixo Eletrônico: 172 itens**, o número de antes.
+- **`Iris Q2 (temp)`: apagada.**
+- Resíduo: **2 cópias em Itens Excluídos**, artefatos meus. Não as apaguei
+  de lá: `Delete()` dentro de Itens Excluídos pode ser **permanente**, e
+  exclusão permanente sem consentimento explícito está proibida neste
+  projeto.
+
+**Contagem em cache não serve para decidir apagar pasta.** O `q2-move.ps1`
+terminou dizendo "itens restantes: 2" logo depois de reportar os dois itens
+de volta na origem, e a contagem estava velha — na releitura havia 1. Foi
+sorte que o script tenha errado para o lado seguro e **mantido** a pasta.
