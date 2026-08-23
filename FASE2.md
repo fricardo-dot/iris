@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 2 — reescrito após avaliação técnica externa da v1.
+**Versão:** 3 — quatro bloqueantes da revisão da v2 corrigidos.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -81,7 +81,45 @@ Fase 1; passa a valer também para o cache.
 - **Remoção no cache só é confirmada depois de uma varredura completa e
   BEM-SUCEDIDA.**
 
-### 3.4 Varredura por geração (mark-and-sweep)
+### 3.4 O que uma ausência prova
+
+**Ausência numa varredura prova, no máximo, que aquela ASSOCIAÇÃO
+item–pasta não existia naquele universo, naquele instante.** Não prova que
+a mensagem foi excluída.
+
+Produzem observações parecidas: mover, excluir, perder acesso à pasta,
+mudar o filtro ou o universo varrido, e provider indisponível.
+
+Consequências no desenho:
+
+- **Presença pertence à relação item–pasta**, não ao item. "Remoção
+  confirmada" quer dizer *removido desta pasta*, e nunca *mensagem
+  excluída*.
+- Um item Iris tem um localizador atual e uma ou mais associações a
+  pastas. São coisas separadas no modelo.
+- **É resultado aceitável da Q5 concluir "indistinguível pelo OOM".** Se
+  for, a política fica conservadora — e o plano não promete uma distinção
+  que o Object Model talvez não permita.
+
+### 3.5 Mudança de universo invalida a geração
+
+Store, pasta, filtro, inclusão de ocultos, janela de retenção e provider
+fazem parte da **identidade da varredura**. Marcas produzidas sob
+universos diferentes não são comparáveis, e comparar é como se apagam
+itens que nunca sumiram.
+
+### 3.6 Enumeração concorrente duvidosa NÃO faz sweep
+
+Concluir todas as chamadas COM sem erro é necessário e **pode não ser
+suficiente**: a pasta pode ter mudado durante a paginação, e aí a
+enumeração não é snapshot de nada.
+
+A geração precisa satisfazer um critério de consistência — que a Q4 vai
+calibrar. **Não satisfazendo, ela termina sem confirmar ausência
+nenhuma.** O spike calibra o critério; ele não decide se exclusão falsa é
+aceitável, porque não é.
+
+### 3.7 Varredura por geração (mark-and-sweep)
 
 1. Inicia geração N.
 2. Marca cada item visto com N.
@@ -92,7 +130,7 @@ Fase 1; passa a valer também para o cache.
 
 Sem isto, uma falha no meio apaga metade do cache — o R2-H.
 
-### 3.5 Estado de presença por item
+### 3.8 Estado de presença por item
 
 Quatro estados, não dois:
 
@@ -100,12 +138,12 @@ Quatro estados, não dois:
 
 "Não verificado" é o que impede o cache de afirmar o que não sabe.
 
-### 3.6 Lotes interrompíveis
+### 3.9 Lotes interrompíveis
 
 Importação e reconciliação são **sequências de unidades curtas**, nunca
 uma operação longa na fila da STA. Ver seção 6.
 
-### 3.7 Armazenamento
+### 3.10 Armazenamento
 
 **SQLite**, salvo bloqueio concreto de distribuição ou dependência nativa.
 Não é benchmark: para busca textual, transação, migração, índice e
@@ -117,10 +155,20 @@ indexação artesanais sem benefício.
 criptografia em repouso e política de retenção. O cache é cópia local de
 correspondência corporativa — é o R14 do escopo aparecendo aqui.
 
-### 3.8 O cache é sempre reconstruível
+### 3.11 Duas classes de dado, e só uma é reconstruível
 
-Perder o arquivo não pode custar nada que só exista nele, além de estado
-local. Reconstruir a partir do Outlook é sempre possível.
+A v2 dizia "o cache é sempre reconstruível, além de estado local". Essa
+frase escondia duas coisas muito diferentes:
+
+| Classe | Origem | Se o arquivo sumir |
+|---|---|---|
+| **Derivado** | Outlook | Reconstrói. Custa tempo, não perde nada. |
+| **Estado local durável** | O usuário e o Iris | **Perde-se.** Triagem, vínculo com resumo da IA, decisões tomadas. |
+
+O estado local durável precisa de armazenamento logicamente separado, com
+backup e migração próprios. Chamar o arquivo inteiro de "sempre
+reconstruível" seria falso, e a diferença aparece exatamente no dia em que
+o arquivo corromper.
 
 ---
 
@@ -164,11 +212,32 @@ conteúdo associado/oculto não pode entrar no universo reconciliado.
 Não "qual é a chave vencedora", e sim:
 
 > **Quais evidências permitem correlacionar duas manifestações do mesmo
-> item, e com que taxa de falso positivo e falso negativo?**
+> item, e onde elas erram?**
 
-Experimento central: mover um item de teste entre pastas, registrando
-antes e depois `EntryID`, `PR_SEARCH_KEY`, `PR_INTERNET_MESSAGE_ID`,
-`PR_RECORD_KEY`. É o **D4 da Fase 0**, sem teste desde então.
+**Correção da v2:** eu pedia "taxa de falso positivo e falso negativo" e
+propunha mover UM item como experimento central. Um item não produz taxa
+nenhuma — isso mede sobrevivência de propriedade, não qualidade de
+correlação.
+
+O experimento precisa de um **corpus adversarial com oráculo manual** —
+uma lista em que eu SEI, de antemão, quais pares são o mesmo item e quais
+não são. Casos que o corpus tem de conter:
+
+| Caso | O que ele ameaça |
+|---|---|
+| A mesma mensagem em duas pastas | falso negativo |
+| Enviado e recebido da mesma mensagem | **falso positivo** |
+| Rascunho antes e depois de enviar | Message-ID que aparece só no envio |
+| Encaminhamento e reenvio | ID novo ou preservado, depende da ferramenta |
+| Cópias com Message-ID idêntico | **falso positivo** |
+| Message-ID ausente ou vazio | evidência que não existe |
+| Pares deliberadamente parecidos, e distintos | **falso positivo** |
+| Item movido entre pastas | é o D4 da Fase 0, sem teste desde então |
+
+Para cada evidência (`PR_SEARCH_KEY`, Message-ID, `PR_RECORD_KEY`,
+combinações), registrar contagem de acertos e erros **contra o oráculo**,
+com os limites explícitos — não uma taxa estatisticamente defensável, que
+o tamanho do corpus não sustenta.
 
 **Movimento entre STORES fica como não validado.** Esta máquina tem um
 store só, e fabricar conclusão sobre o que não dá para exercitar é pior
@@ -210,6 +279,17 @@ pasta, pelo caminho que a Q1 indicar.
 A pergunta é *"como sei que esta varredura foi completa o bastante para
 confirmar remoções?"*
 
+**O que a Q4 calibra, e não decide:** encontrar enumeração afetada por
+mutação concorrente é esperado, não é surpresa. As opções de política já
+estão na mesa, e o spike escolhe entre elas com dado:
+
+1. descartar a geração e repetir;
+2. exigir **duas** observações completas e compatíveis antes de confirmar;
+3. manter os candidatos em `Suspeito de remoção` até verificação
+   individual.
+
+O que **não** está em discussão é aceitar exclusão falsa.
+
 ### Q5 — Política de verificação (era "exclusão deixa rastro?")
 
 A pergunta antiga tem resposta pouco útil: esvaziamento e exclusão dura
@@ -235,6 +315,11 @@ Metadado rápido não resolve busca textual se indexar corpo exigir abrir
 cada item ou disparar download. **Medir separado**, porque é o que decide
 se a busca do cache é viável.
 
+**O spike MEDE o custo e NÃO PERSISTE corpo nem anexo.** Gravar
+correspondência corporativa em disco antes de criptografia e retenção
+estarem decididas seria criar o R2-I durante o experimento que deveria
+informá-lo.
+
 ### Q8 — Matriz de providers
 
 Um número da Caixa de Entrada em modo cached não vira garantia geral.
@@ -250,7 +335,13 @@ reduzir o problema mais que qualquer otimização**, e é do usuário.
 
 ## 5. Riscos
 
-Reordenados por gravidade. **O primeiro é novo, e é o pior.**
+Ordenados por gravidade **estimada**. O primeiro é novo, e é o pior.
+
+Duas ressalvas sobre a ordem: **R2-I pode virar bloqueador absoluto** se a
+política corporativa exigir, superando qualquer risco operacional; e
+**R2-A é categoria ampla**, que engloba várias das linhas abaixo dela — a
+tabela mistura risco-raiz com consequência, e isso vai atrapalhar
+priorização mais adiante.
 
 | ID | Risco |
 |---|---|
@@ -295,7 +386,14 @@ Prioridade na fila do broker:
 
 ---
 
-## 7. Desenho de exclusão invisível (já decidido)
+## 7. Desenho de exclusão invisível
+
+**Condicional à Q1.** Se a leitura direta por `Table` for rápida o
+bastante, a lista pode continuar vindo do Outlook, e este desenho vale só
+para a busca e para o estado local. A seção 2 reabriu essa decisão de
+propósito, e esta seção não pode pressupor o resultado.
+
+Assumindo que a lista venha do cache:
 
 - A lista abre na hora, com o cache.
 - Cada item carrega `LastVerifiedAt` e estado de presença.
@@ -321,3 +419,14 @@ Prioridade na fila do broker:
 4. Revisão externa do RESULTADO, não só do plano.
 5. Itens de teste movidos devolvidos ao original. Itens usados no teste de
    exclusão dura: **perda aceita e consentida de antemão**.
+6. Corpus adversarial da Q2 com **oráculo escrito antes** de rodar — quais
+   pares são o mesmo item, decidido por mim e não pela ferramenta.
+7. Critério operacional de invalidação de geração concorrente, escolhido
+   entre as três opções da Q4 com dado, não por preferência.
+8. **Latência máxima por lote**, e não só tamanho 100–500: quantidade não
+   garante tempo limitado, e é tempo que trava a fila da STA.
+9. Teste de crash entre o commit no SQLite, o avanço do checkpoint e a
+   publicação para a UI — os três passos precisam sobreviver a morrer no
+   meio.
+10. Prova de que uma reconciliação antiga **não sobrescreve** resultado de
+    geração mais nova.
