@@ -1130,7 +1130,7 @@ Namespace Global.Iris.App.ViewModels
             If _disposed Then Return
             _disposed = True
 
-            ' Sobe a geração ANTES de qualquer outra coisa.
+            ' Sobe a geração antes de qualquer LIMPEZA.
             '
             ' Sem isto havia um furo que a própria documentação do AbrirAsync
             ' dizia estar coberto e não estava: com a CRIAÇÃO do rascunho em

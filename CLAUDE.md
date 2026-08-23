@@ -30,7 +30,10 @@ aparece, suspeite disto antes de suspeitar do resto.
 
 ## RCW: nunca encadeie expressões COM
 
-Cada `.` numa cadeia COM cria um RCW intermediário que ninguém libera.
+Cada acesso que **devolve outro objeto COM** pode criar um RCW
+intermediário que ninguém libera. Propriedade escalar — `Count`, `Subject`,
+`EntryID` — não cria RCW próprio; o perigo é a coleção ou o objeto no meio
+da cadeia.
 
 ```vb
 ' NÃO
@@ -62,9 +65,12 @@ contrato a declara absoluta, é o mesmo que não ter regra.
 
 ## Toda operação que salva devolve a identidade nova
 
-O `EntryID` muda no `Save`. Quem salva devolve o item redescrito, não só o
-resultado da ação. Isto já foi esquecido em `AddAttachment`, e o sintoma
-apareceu longe: `NotFound` no envio seguinte.
+O `EntryID` **pode** mudar num `Save` — não é garantido que mude, e é
+justamente por isso que o código não pode apostar em nenhuma das duas
+hipóteses. A regra é sempre relê-lo depois de qualquer operação capaz de
+mudar a identidade, e devolver o item redescrito em vez de só o resultado
+da ação. Isto já foi esquecido em `AddAttachment`, e o sintoma apareceu
+longe: `NotFound` no envio seguinte.
 
 ## Verificação: teste verde não é prova
 

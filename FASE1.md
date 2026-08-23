@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 5 — marcos 1.1 a 1.5 concluídos e revisados; dívida na seção 11.
+**Versão:** 6 — marco 1.5 fechado após seis passadas de revisão externa.
 
 ---
 
@@ -449,22 +449,60 @@ extrapolação nem por semelhança com outra medição.
   envio em si não foi disparado — a Fase 0 já provou o `Send` no critério
   C2, e repetir aqui mandaria mensagem de verdade sem necessidade.
 
-### Revisão externa do 1.5
+### Revisão externa do 1.5 — seis passadas
 
-O marco passou por avaliação técnica externa depois de pronto. Nove
-defeitos vieram de lá e foram corrigidos no commit `60a1f30`: corrida
-entre digitação e confirmação, chave não relida ao anexar, `/O=` aceito
-como resolvido, conta remetente chutada, anexos ausentes da confirmação,
-falta de trava explícita de envio, `PrepareSend` classificado como
-leitura, fechamento da janela sem pergunta, e testes cujo nome prometia
-mais do que a evidência sustentava.
+O marco foi revisado externamente até voltar limpo. Não uma vez: seis.
 
-Vale registrar o que isso diz do processo: o teste que peguei sozinho
-cobria a corrida DURANTE a gravação, e passei a acreditar que a família
-toda estava coberta. A que sobrou — digitar DEPOIS da gravação e ANTES
-da prévia ficar pronta — só apareceu quando alguém de fora olhou. Um
-teste que passa não é prova de que a propriedade vale; é prova de que
-aquele caminho vale.
+| Passada | Achados | Onde |
+|---|---|---|
+| 1 | 9 | no código do marco |
+| 2 | 7 (3 graves) | nas **correções** da passada 1 |
+| 3 | 4 (2 graves) | nas correções da passada 2 |
+| 4 | 3 (3 graves) | nas correções da passada 3 |
+| 5 | 1 bloqueante + 2 dívidas | nas correções da passada 4 |
+| 6 | 0 | aprovado |
+
+Vinte e quatro defeitos ao todo, e **quinze deles foram introduzidos por
+mim ao corrigir os anteriores**. Todos na mesma vizinhança: corrida entre
+digitação, gravação, conferência, envio e fechamento.
+
+Três lições que vão além deste marco:
+
+**Um teste que passa prova aquele caminho, não a propriedade.** Corrigi a
+corrida "digitar DURANTE a gravação", escrevi o teste, ele passou, e
+concluí que a família estava coberta. A irmã dela — "digitar DEPOIS da
+gravação e ANTES da prévia ficar pronta" — sobreviveu intacta.
+
+**Corrigir corrida cria corrida.** A trava que resolveu a disputa pela
+chave cobria só a gravação; como anexar descarrega e DEPOIS anexa, a
+disputa migrou para a fresta entre as duas. Depois, com a trava correta,
+a geração passou a ser fotografada tarde demais, e quem esperava na fila
+comparava com o número errado. Cada correção precisou da sua própria
+revisão.
+
+**Teste sem controle negativo é decoração.** O teste de envio duplo
+passava verde mesmo sem a trava existir, porque o `AsyncRelayCommand`
+barrava a segunda execução por conta própria. A prova só veio quando o
+comando passou a permitir concorrência de propósito, deixando a trava ser
+a única barreira — e quando desfiz a correção para ver o teste falhar.
+Os quatro bloqueios críticos deste marco foram conferidos assim.
+
+### Do fechamento do 1.5
+
+- **Rascunho órfão em caso raro.** Se a criação do rascunho concluir no
+  Outlook depois de o compositor ter sido descartado, o item fica na pasta
+  Rascunhos, vazio. É consequência de a mutação não ser cancelável, não de
+  o estado ressuscitar. Custo: um rascunho vazio que o usuário apaga.
+- **Domínio de rótulo único é reprovado.** `fulano@intranet` existe em
+  rede interna e não passa em `AddressPolicy.IsUsableSmtp`. Deliberado: a
+  regra decide se o usuário consegue CONFERIR o destino, não se o e-mail
+  funciona. Errar bloqueando custa um envio pelo Outlook; errar no outro
+  sentido custa mensagem na caixa de quem não devia.
+- **Encerramento de sessão do Windows não pergunta.** Logoff, desligar e
+  reiniciar não passam pela pergunta de fechamento — cancelar o
+  desligamento por causa de um rascunho seria arrogante, e um overlay
+  assíncrono não tem tempo garantido de resposta. A proteção ali é o
+  autosave de 1,5 s; a exposição é o que foi digitado nesse intervalo.
 
 ### Geral
 
