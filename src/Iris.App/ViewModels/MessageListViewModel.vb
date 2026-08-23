@@ -79,7 +79,7 @@ Namespace Global.Iris.App.ViewModels
         Private _pending As PageRequest
 
         Private _isLoading As Boolean
-        Private _selected As MailSummary
+        Private _selected As MessageRowViewModel
         Private _total As Integer
         Private _hasMore As Boolean
         Private _hasFolder As Boolean
@@ -97,7 +97,11 @@ Namespace Global.Iris.App.ViewModels
             ReloadCommand = New AsyncRelayCommand(Function() ReloadAsync(preservarSelecao:=True))
         End Sub
 
-        Public ReadOnly Property Messages As New ObservableCollection(Of MailSummary)()
+        ''' <summary>
+        ''' MessageRowViewModel, nao MailSummary: o DTO nao notifica mudanca,
+        ''' entao marcar como lida nao repintaria a linha.
+        ''' </summary>
+        Public ReadOnly Property Messages As New ObservableCollection(Of MessageRowViewModel)()
         Public ReadOnly Property LoadMoreCommand As IAsyncRelayCommand
         Public ReadOnly Property ReloadCommand As IAsyncRelayCommand
 
@@ -120,11 +124,11 @@ Namespace Global.Iris.App.ViewModels
         End Property
 
         ''' <summary>ListBox.SelectedItem aceita TwoWay, diferente do TreeView.</summary>
-        Public Property Selected As MailSummary
+        Public Property Selected As MessageRowViewModel
             Get
                 Return _selected
             End Get
-            Set(value As MailSummary)
+            Set(value As MessageRowViewModel)
                 SetProperty(_selected, value)
             End Set
         End Property
@@ -364,7 +368,7 @@ Namespace Global.Iris.App.ViewModels
                         ' apareceria duas vezes na tela.
                         Dim existentes = New HashSet(Of ItemKey)(Messages.Select(Function(m) m.Key))
                         For Each m In pagina.Items
-                            If existentes.Add(m.Key) Then Messages.Add(m)
+                            If existentes.Add(m.Key) Then Messages.Add(New MessageRowViewModel(m))
                         Next
 
                         _nextOffset = pagina.NextOffset

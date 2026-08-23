@@ -24,8 +24,11 @@ Namespace Global.Iris.App.ViewModels
             Connection = New ConnectionViewModel(broker, ui)
             Folders = New FolderTreeViewModel(broker, ui, AddressOf Connection.Observe)
             Messages = New MessageListViewModel(broker, ui, AddressOf Connection.Observe)
+            Detail = New MessageDetailViewModel(broker, ui, AddressOf Connection.Observe)
             _watcher = New FolderWatcher(broker, ui, AddressOf Connection.Observe,
                                          AddressOf Messages.OnFolderInvalidated)
+
+            AddHandler Messages.PropertyChanged, AddressOf OnMessagesChanged
 
             AddHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
 
@@ -35,6 +38,7 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property Connection As ConnectionViewModel
         Public ReadOnly Property Folders As FolderTreeViewModel
         Public ReadOnly Property Messages As MessageListViewModel
+        Public ReadOnly Property Detail As MessageDetailViewModel
 
         ''' <summary>
         ''' Enquanto não há sessão, o card de conexão ocupa a janela. Quando
@@ -78,6 +82,7 @@ Namespace Global.Iris.App.ViewModels
             Else
                 Folders.Clear()
                 Messages.Clear()
+                Detail.Clear()
                 Connection.Observe(_watcher.UnwatchAsync(), "watcher.unwatch")
             End If
         End Sub
@@ -92,8 +97,14 @@ Namespace Global.Iris.App.ViewModels
             Dim pasta = Folders.Selected
             If pasta Is Nothing Then
                 Messages.Clear()
+                Detail.Clear()
                 Return
             End If
+
+            ' Trocar de pasta esvazia o leitor: manter a mensagem anterior
+            ' aberta enquanto a lista mostra outra pasta seria mentir sobre
+            ' onde o usuario esta.
+            Detail.Clear()
 
             Connection.Observe(Messages.ShowFolderAsync(pasta.Key, pasta.Name), "messages.showFolder")
             ' Observar a pasta exibida e o que faz a lista se atualizar
@@ -101,12 +112,31 @@ Namespace Global.Iris.App.ViewModels
             Connection.Observe(_watcher.WatchAsync(pasta.Key), "watcher.watch")
         End Sub
 
+        ''' <summary>
+        ''' Selecionar uma mensagem alimenta o leitor. O leitor decide
+        ''' sozinho quando pedir o conteudo — ele tem debounce proprio.
+        ''' </summary>
+        Private Sub OnMessagesChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
+            If e.PropertyName <> NameOf(MessageListViewModel.Selected) Then Return
+
+            ' Uma recarga chama Messages.Clear(), e limpar a ObservableCollection
+            ' zera a seleção do ListBox por um instante antes de ela ser
+            ' restaurada pela chave. Isso NÃO é o usuário desmarcando nada —
+            ' e tratar como se fosse limpava o leitor e forçava uma segunda
+            ' leitura do corpo assim que a seleção voltava.
+            If Messages.Selected Is Nothing AndAlso Messages.IsLoading Then Return
+
+            Detail.Show(Messages.Selected)
+        End Sub
+
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True
             RemoveHandler Connection.PropertyChanged, AddressOf OnConnectionChanged
             RemoveHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
+            RemoveHandler Messages.PropertyChanged, AddressOf OnMessagesChanged
             _watcher.Dispose()
+            Detail.Dispose()
             Connection.Dispose()
         End Sub
 

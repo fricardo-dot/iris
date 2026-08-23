@@ -512,20 +512,34 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
-        Public Function GetMessageDetailAsync(item As ItemKey, cancel As CancellationToken) _
+        Public Async Function GetMessageDetailAsync(item As ItemKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of MessageDetail)) Implements IOutlookBroker.GetMessageDetailAsync
-            Return Pendente(Of MessageDetail)("1.4")
+
+            Return Await ReadAsync(Of MessageDetail)(
+                "outlook.getMessageDetail",
+                Function(app, ns) MessageReading.ReadDetail(ns, item),
+                cancel)
         End Function
 
-        Public Function SaveAttachmentAsync(attachment As AttachmentKey, destinationPath As String,
-                                            overwrite As Boolean, cancel As CancellationToken) _
+        Public Async Function SaveAttachmentAsync(attachment As AttachmentKey, destinationPath As String,
+                                                  overwrite As Boolean, cancel As CancellationToken) _
             As Task(Of OperationResult(Of String)) Implements IOutlookBroker.SaveAttachmentAsync
-            Return Pendente(Of String)("1.4")
+
+            ' MutateAsync: gravar em disco e efeito externo, nao leitura
+            ' idempotente. Retry cego aqui poderia reescrever um arquivo.
+            Return Await MutateAsync(Of String)(
+                "outlook.saveAttachment",
+                Function(app, ns) MessageReading.SaveAttachment(ns, attachment, destinationPath, overwrite),
+                cancel)
         End Function
 
-        Public Function MarkReadAsync(item As ItemKey, isRead As Boolean, cancel As CancellationToken) _
+        Public Async Function MarkReadAsync(item As ItemKey, isRead As Boolean, cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.MarkReadAsync
-            Return Pendente(Of Boolean)("1.4")
+
+            Return Await MutateAsync(Of Boolean)(
+                "outlook.markRead",
+                Function(app, ns) MessageReading.SetReadState(ns, item, isRead),
+                cancel)
         End Function
 
         Public Function CreateDraftAsync(content As DraftContent, cancel As CancellationToken) _

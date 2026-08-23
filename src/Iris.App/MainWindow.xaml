@@ -5,8 +5,8 @@
         xmlns:model="clr-namespace:Iris.Model;assembly=Iris.Model"
         xmlns:app="clr-namespace:Iris.App"
         Title="Iris"
-        Height="700" Width="1180"
-        MinHeight="480" MinWidth="820"
+        Height="740" Width="1440"
+        MinHeight="520" MinWidth="1000"
         WindowStartupLocation="CenterScreen"
         WindowStyle="None"
         Background="{DynamicResource Brush.Background}"
@@ -222,10 +222,15 @@
             <!-- ============ Conteúdo: pastas | lista | leitura ============ -->
             <Grid Grid.Row="1"
                   Visibility="{Binding ShowContent, Converter={StaticResource BoolToVis}}">
+                <!-- Pastas | lista | leitura. A lista tem largura propria e
+                     limites: deixa-la elastica faria a leitura sumir numa
+                     janela estreita, e o leitor e onde o tempo e gasto. -->
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="240" MinWidth="200" MaxWidth="320" />
                     <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
+                    <ColumnDefinition Width="420" MinWidth="320" MaxWidth="560" />
+                    <ColumnDefinition Width="Auto" />
+                    <ColumnDefinition Width="*" MinWidth="380" />
                 </Grid.ColumnDefinitions>
 
                 <!-- Pastas -->
@@ -347,6 +352,122 @@
                             </StackPanel>
                         </Grid>
                     </Border>
+                </Grid>
+
+                <Border Grid.Column="3" Width="1"
+                        HorizontalAlignment="Center"
+                        Background="{DynamicResource Brush.Border.Subtle}" />
+                <GridSplitter Grid.Column="3" Width="6"
+                              HorizontalAlignment="Center"
+                              Background="Transparent"
+                              ResizeBehavior="PreviousAndNext"
+                              AutomationProperties.Name="Redimensionar lista" />
+
+                <!-- ============ Leitura ============ -->
+                <Grid Grid.Column="4" Background="{DynamicResource Brush.Surface.1}">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <!-- Cabecalho -->
+                    <Border Grid.Row="0" Padding="20,18,20,14"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="0,0,0,1"
+                            Visibility="{Binding Detail.HasMessage, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Detail.Subject}"
+                                       Style="{StaticResource Text.Title}"
+                                       FontSize="{StaticResource Font.Size.Subtitle}"
+                                       TextWrapping="Wrap" />
+                            <TextBlock Text="{Binding Detail.SenderLine}"
+                                       Style="{StaticResource Text.Secondary}"
+                                       Margin="0,8,0,0" />
+                            <TextBlock Text="{Binding Detail.RecipientLine}"
+                                       Style="{StaticResource Text.Muted}"
+                                       TextTrimming="CharacterEllipsis"
+                                       Margin="0,4,0,0" />
+                        </StackPanel>
+                    </Border>
+
+                    <!-- Anexos. Listar e leitura; abrir e decisao da UI com
+                         confirmacao, porque abrir anexo executa conteudo
+                         nao confiavel (F1-J). Por isso, aqui, so SALVAR. -->
+                    <Border Grid.Row="1" Padding="20,10"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="0,0,0,1"
+                            Visibility="{Binding Detail.HasAttachments, Converter={StaticResource BoolToVis}}">
+                        <ItemsControl ItemsSource="{Binding Detail.Attachments}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <WrapPanel />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource Brush.Surface.3}"
+                                            CornerRadius="{StaticResource Radius.Control}"
+                                            Padding="10,6" Margin="0,0,8,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="&#xE723;"
+                                                       FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                       FontSize="11" Margin="0,0,8,0"
+                                                       VerticalAlignment="Center"
+                                                       Foreground="{DynamicResource Brush.Text.Muted}" />
+                                            <TextBlock Text="{Binding FileName}"
+                                                       Style="{StaticResource Text.Body}"
+                                                       FontSize="{StaticResource Font.Size.Small}"
+                                                       VerticalAlignment="Center"
+                                                       MaxWidth="260"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding FileName}" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Border>
+
+                    <!-- Corpo, em TEXTO PURO nesta versao. HTML de e-mail e
+                         conteudo hostil vindo de fora; o WebView2 endurecido
+                         entra depois, com as travas verificaveis. -->
+                    <ScrollViewer Grid.Row="2" Padding="20,16"
+                                  VerticalScrollBarVisibility="Auto"
+                                  Visibility="{Binding Detail.HasMessage, Converter={StaticResource BoolToVis}}">
+                        <StackPanel>
+                            <Border Background="{DynamicResource Brush.Surface.3}"
+                                    CornerRadius="{StaticResource Radius.Control}"
+                                    Padding="12,10" Margin="0,0,0,12"
+                                    Visibility="{Binding Detail.HasBodyNotice, Converter={StaticResource BoolToVis}}">
+                                <TextBlock Text="{Binding Detail.BodyNotice}"
+                                           Style="{StaticResource Text.Secondary}" />
+                            </Border>
+
+                            <TextBox Text="{Binding Detail.Body, Mode=OneWay}"
+                                     IsReadOnly="True"
+                                     BorderThickness="0"
+                                     Background="Transparent"
+                                     Foreground="{DynamicResource Brush.Text.Primary}"
+                                     FontFamily="{StaticResource Font.Ui}"
+                                     FontSize="{StaticResource Font.Size.Body}"
+                                     TextWrapping="Wrap"
+                                     IsTabStop="False"
+                                     AutomationProperties.Name="Corpo da mensagem" />
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <TextBlock Grid.Row="2" Text="Selecione uma mensagem"
+                               Style="{StaticResource Text.Muted}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding Detail.HasMessage, Converter={StaticResource NotBoolToVis}}" />
+
+                    <TextBlock Grid.Row="2" Text="{Binding Detail.ErrorMessage}"
+                               Style="{StaticResource Text.Muted}"
+                               Foreground="{DynamicResource Brush.Error}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               TextWrapping="Wrap" Margin="20"
+                               Visibility="{Binding Detail.HasError, Converter={StaticResource BoolToVis}}" />
                 </Grid>
             </Grid>
 
