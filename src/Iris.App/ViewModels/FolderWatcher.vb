@@ -122,6 +122,29 @@ Namespace Global.Iris.App.ViewModels
         ''' Chega numa thread MTA do pool. Só marca o bit — nada de tocar em
         ''' UI, coleção ou COM daqui.
         ''' </summary>
+        ''' <summary>
+        ''' A sessão COM foi substituída.
+        '''
+        ''' As assinaturas morreram junto com ela, do lado do broker. O token
+        ''' guardado aqui aponta para uma que não existe mais — e chamar
+        ''' Unsubscribe com ele só produziria erro. Larga o token, apaga o
+        ''' estado de debounce, e para de escutar a pasta antiga.
+        '''
+        ''' Sem isto, o watcher continuava achando que estava assinando: era
+        ''' o segundo tempo da falha silenciosa, em que nenhum evento chegava
+        ''' mais e ninguém tinha como perceber.
+        ''' </summary>
+        Public Sub OnSessionReplaced()
+            SyncLock _gate
+                _token = Nothing
+                _watched = Nothing
+                _dirty = False
+                _generation += 1
+            End SyncLock
+
+            _timer.Stop()
+        End Sub
+
         Private Sub OnInvalidated(sender As Object, invalidation As FolderInvalidation)
             If _disposed Then Return
 

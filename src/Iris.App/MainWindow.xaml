@@ -766,6 +766,14 @@
                                             <Setter Property="Background"
                                                     Value="{DynamicResource Brush.Accent.Surface}" />
                                         </DataTrigger>
+                                        <!-- A sessao do Outlook trocou: o texto
+                                             esta na tela mas a chave do rascunho
+                                             e da sessao anterior. Nao pode
+                                             parecer status comum. -->
+                                        <DataTrigger Binding="{Binding Composer.SessaoSubstituida}" Value="True">
+                                            <Setter Property="Background"
+                                                    Value="{DynamicResource Brush.Accent.Surface}" />
+                                        </DataTrigger>
                                     </Style.Triggers>
                                 </Style>
                             </Border.Style>
@@ -774,6 +782,11 @@
                                     <Style TargetType="TextBlock" BasedOn="{StaticResource Text.Secondary}">
                                         <Style.Triggers>
                                             <DataTrigger Binding="{Binding Composer.IsSendUnknown}" Value="True">
+                                                <Setter Property="Foreground"
+                                                        Value="{DynamicResource Brush.Warning}" />
+                                                <Setter Property="FontWeight" Value="SemiBold" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding Composer.SessaoSubstituida}" Value="True">
                                                 <Setter Property="Foreground"
                                                         Value="{DynamicResource Brush.Warning}" />
                                                 <Setter Property="FontWeight" Value="SemiBold" />

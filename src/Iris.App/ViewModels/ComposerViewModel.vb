@@ -126,6 +126,14 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private ReadOnly _exclusiva As New SemaphoreSlim(1, 1)
 
+        ''' <summary>
+        ''' Época da sessão em que este rascunho foi criado. A chave só vale
+        ''' dentro dela.
+        ''' </summary>
+        Private _epocaDoRascunho As Long
+
+        Private _sessaoSubstituida As Boolean
+
         Private _carregando As Boolean
         Private _disposed As Boolean
 
@@ -148,9 +156,9 @@ Namespace Global.Iris.App.ViewModels
             AddHandler _autosave.Tick, AddressOf OnAutosaveTick
 
             AttachCommand = New AsyncRelayCommand(
-                Function() ExclusivoAsync(AddressOf AnexarAsync), Function() PodeEditar)
+                Function() ExclusivoAsync(AddressOf AnexarAsync), Function() PodeGravar)
             RequestSendCommand = New AsyncRelayCommand(
-                Function() ExclusivoAsync(AddressOf PedirEnvioAsync), Function() PodeEditar)
+                Function() ExclusivoAsync(AddressOf PedirEnvioAsync), Function() PodeGravar)
             ' AllowConcurrentExecutions de propósito. O padrão do toolkit
             ' já barraria a segunda execução, e era exatamente isso o
             ' problema: a proteção contra envio duplo ficava sendo um efeito
@@ -202,6 +210,7 @@ Namespace Global.Iris.App.ViewModels
 
                     OnPropertyChanged(NameOf(IsOpen))
                     OnPropertyChanged(NameOf(PodeEditar))
+                    OnPropertyChanged(NameOf(PodeGravar))
                     OnPropertyChanged(NameOf(IsConfirmingSend))
                     OnPropertyChanged(NameOf(IsConfirmingClose))
                     OnPropertyChanged(NameOf(IsSending))
@@ -226,6 +235,28 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property PodeEditar As Boolean
             Get
                 Return _state = ComposerState.Editing
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Editar e GRAVAR são coisas diferentes quando a sessão é
+        ''' substituída.
+        '''
+        ''' O texto continua na tela e continua selecionável, porque é
+        ''' trabalho do usuário e ele precisa poder copiá-lo. Mas a chave do
+        ''' rascunho é da sessão anterior, e gravar ou enviar por ela é
+        ''' operar sobre identidade que já não vale. Preservar o texto é
+        ''' certo; preservar cegamente a capacidade de escrever não é.
+        ''' </summary>
+        Public ReadOnly Property PodeGravar As Boolean
+            Get
+                Return PodeEditar AndAlso Not _sessaoSubstituida
+            End Get
+        End Property
+
+        Public ReadOnly Property SessaoSubstituida As Boolean
+            Get
+                Return _sessaoSubstituida
             End Get
         End Property
 
@@ -517,6 +548,8 @@ Namespace Global.Iris.App.ViewModels
             End If
 
             Aplicar(resultado.Value, primeiraVez:=True)
+            _epocaDoRascunho = _broker.SessionEpoch
+            _sessaoSubstituida = False
             Status = ""
             IsDirty = False
             State = ComposerState.Editing
@@ -612,7 +645,7 @@ Namespace Global.Iris.App.ViewModels
             ' um envio AMBÍGUO é pior: o rascunho é a evidência que o usuário
             ' vai comparar com os Itens Enviados, e sobrescrevê-lo destrói
             ' justamente o que ele precisa para decidir.
-            If Not PodeEditar Then Return
+            If Not PodeGravar Then Return
 
             ' Reiniciar: o debounce conta a partir da ÚLTIMA tecla, não da
             ' primeira. Sem o Stop, o timer do WPF continua o ciclo antigo e
@@ -637,7 +670,7 @@ Namespace Global.Iris.App.ViewModels
             '
             ' Outro comando também pode ter descarregado enquanto este tick
             ' esperava. Se não há mais nada sujo, não grava.
-            If Not IsDirty OrElse State <> ComposerState.Editing Then Return
+            If Not IsDirty OrElse Not PodeGravar Then Return
             Await GravarUmaVezAsync()
         End Function
 
@@ -1078,6 +1111,8 @@ Namespace Global.Iris.App.ViewModels
             ' acabou e larga o resultado.
             Interlocked.Increment(_geracao)
             Interlocked.Exchange(_edicoesNaPrevia, 0)
+            _sessaoSubstituida = False
+            _epocaDoRascunho = 0
             Volatile.Write(_envioComecou, 0)
             IsDirty = False
             State = ComposerState.Closed
@@ -1105,6 +1140,32 @@ Namespace Global.Iris.App.ViewModels
                 _autosave.Stop()
                 _autosave.Start()
             End If
+        End Sub
+
+        ''' <summary>
+        ''' A sessão do Outlook foi substituída — ele morreu e voltou.
+        '''
+        ''' O rascunho JÁ ESTÁ salvo na pasta Rascunhos do Outlook, porque o
+        ''' autosave gravou. Nada se perde. O que deixa de valer é a chave
+        ''' desta sessão, e por isso gravar e enviar param aqui em vez de
+        ''' falharem lá embaixo com NotFound depois de o usuário ter clicado
+        ''' em enviar.
+        ''' </summary>
+        Public Sub OnSessionReplaced(novaEpoca As Long)
+            If Not IsOpen Then Return
+            If novaEpoca = _epocaDoRascunho Then Return
+            If _sessaoSubstituida Then Return
+
+            _sessaoSubstituida = True
+            _autosave.Stop()
+
+            OnPropertyChanged(NameOf(PodeGravar))
+            OnPropertyChanged(NameOf(SessaoSubstituida))
+            NotificarComandos()
+
+            Status = "A conexão com o Outlook foi refeita, e este rascunho é da sessão " &
+                     "anterior. O que você escreveu até agora já está salvo em Rascunhos, " &
+                     "no Outlook. Copie o que ainda não foi salvo, feche, e comece de novo."
         End Sub
 
         Private Sub NotificarComandos()

@@ -18,11 +18,26 @@ Namespace Global.Iris.App.ViewModels
         Implements IDisposable
 
         Private ReadOnly _watcher As FolderWatcher
+        Private ReadOnly _broker As IOutlookBroker
+        Private ReadOnly _ui As Global.System.Windows.Threading.Dispatcher
+
+        ''' <summary>
+        ''' Época de sessão que este ViewModel já tratou. Duas coisas podem
+        ''' disparar a recarga — o evento de substituição e a transição de
+        ''' estado — e a primeira que chegar reivindica a época; a segunda
+        ''' vira no-op. Sem isso, abrir o Iris recarregaria a árvore duas
+        ''' vezes.
+        ''' </summary>
+        Private _epocaVista As Long
         Private _disposed As Boolean
         Private _wasConnected As Boolean
 
         Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher,
                        saveFile As ISaveFileService, pickFile As IPickFileService)
+            _broker = broker
+            _ui = ui
+            _epocaVista = broker.SessionEpoch
+
             Connection = New ConnectionViewModel(broker, ui)
             Folders = New FolderTreeViewModel(broker, ui, AddressOf Connection.Observe)
             Messages = New MessageListViewModel(broker, ui, AddressOf Connection.Observe)
@@ -47,6 +62,8 @@ Namespace Global.Iris.App.ViewModels
             AddHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
 
             AddHandler Connection.PropertyChanged, AddressOf OnConnectionChanged
+
+            AddHandler broker.SessionReplaced, AddressOf OnSessionReplaced
         End Sub
 
         Public ReadOnly Property Connection As ConnectionViewModel
@@ -125,6 +142,41 @@ Namespace Global.Iris.App.ViewModels
             Return Composer.RequestCloseFromWindow()
         End Function
 
+        ''' <summary>
+        ''' Chega em THREAD DO BROKER, como todo evento dele. Nada de tocar
+        ''' em ViewModel aqui: devolve ao dispatcher da UI primeiro.
+        ''' </summary>
+        Private Sub OnSessionReplaced(sender As Object, novaEpoca As Long)
+            _ui.BeginInvoke(New Action(Sub() AplicarSessaoNova(novaEpoca)))
+        End Sub
+
+        ''' <summary>
+        ''' A sessão do Outlook foi substituída — ele morreu e voltou.
+        '''
+        ''' Tudo o que a sessão anterior entregou deixou de valer: chaves de
+        ''' pasta, de item e de assinatura. Continuar mostrando a árvore
+        ''' antiga seria mostrar dado que não pode mais ser lido, e foi
+        ''' exatamente isso que acontecia antes — em silêncio, e para sempre,
+        ''' porque nenhum evento era emitido quando o estado não mudava.
+        ''' </summary>
+        Private Sub AplicarSessaoNova(novaEpoca As Long)
+            If novaEpoca = _epocaVista Then Return
+            _epocaVista = novaEpoca
+
+            ' O compositor é avisado, não limpo: o texto é do usuário.
+            Composer.OnSessionReplaced(novaEpoca)
+
+            _watcher.OnSessionReplaced()
+
+            Folders.Clear()
+            Messages.Clear()
+            Detail.Clear()
+
+            If Connection.State = SessionState.Connected Then
+                Connection.Observe(Folders.ReloadAsync(), "folders.reload")
+            End If
+        End Sub
+
         Public Async Function InitializeAsync() As Task
             Await Connection.InitializeAsync()
             SyncContentWithSession()
@@ -153,6 +205,7 @@ Namespace Global.Iris.App.ViewModels
             _wasConnected = conectado
 
             If conectado Then
+                _epocaVista = _broker.SessionEpoch
                 Connection.Observe(Folders.ReloadAsync(), "folders.reload")
             Else
                 Folders.Clear()
@@ -224,6 +277,7 @@ Namespace Global.Iris.App.ViewModels
             RemoveHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
             RemoveHandler Messages.PropertyChanged, AddressOf OnMessagesChanged
             RemoveHandler Composer.PropertyChanged, AddressOf OnComposerChanged
+            RemoveHandler _broker.SessionReplaced, AddressOf OnSessionReplaced
             _watcher.Dispose()
             Composer.Dispose()
             Detail.Dispose()

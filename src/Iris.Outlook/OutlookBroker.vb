@@ -44,6 +44,18 @@ Namespace Global.Iris.Outlook
         Private _startupError As Exception
         Private _disposed As Boolean
 
+        ''' <summary>
+        ''' Sobe a cada aquisição de sessão COM. Ver SessionEpoch no contrato.
+        ''' </summary>
+        Private _epoca As Long = 0
+
+        ''' <summary>
+        ''' Probes seguidos que falharam sem classificação. Zera a cada probe
+        ''' que dá certo. Existe para falha desconhecida não deixar o Iris
+        ''' "ocupado" para sempre, preservando um RCW que talvez esteja morto.
+        ''' </summary>
+        Private _probesDesconhecidos As Integer = 0
+
         ' Só podem ser tocados de dentro da thread do broker.
         Private _application As OL.Application
         Private _namespace As OL.NameSpace
@@ -70,6 +82,15 @@ Namespace Global.Iris.Outlook
         Public Sub New(log As ILog)
             _log = If(log, CType(New NullLog(), ILog))
         End Sub
+
+        Public Event SessionReplaced As EventHandler(Of Long) _
+            Implements IOutlookBroker.SessionReplaced
+
+        Public ReadOnly Property SessionEpoch As Long Implements IOutlookBroker.SessionEpoch
+            Get
+                Return Interlocked.Read(_epoca)
+            End Get
+        End Property
 
         Public ReadOnly Property State As SessionState Implements IOutlookBroker.State
             Get
@@ -365,6 +386,17 @@ Namespace Global.Iris.Outlook
 
                 _application = app
                 _namespace = app.GetNamespace("MAPI")
+
+                ' Sessão NOVA. Tudo o que a anterior entregou — chaves,
+                ' tokens de assinatura — deixou de valer neste instante, e as
+                ' assinaturas em si já foram embora no ReleaseSessionCore.
+                ' Quem depende disso precisa saber AGORA, e não quando
+                ' tentar usar uma chave morta.
+                Dim nova = Interlocked.Increment(_epoca)
+                _probesDesconhecidos = 0
+                _log.Write(LogLevel.Info, "broker.session", $"epoca {nova}")
+                RaiseEvent SessionReplaced(Me, nova)
+
                 Return SessionState.Connected
 
             Catch ex As COMException
@@ -385,22 +417,39 @@ Namespace Global.Iris.Outlook
 
             Try
                 Dim nome = _application.Name
+                _probesDesconhecidos = 0
                 Return If(String.IsNullOrEmpty(nome), SessionState.Disconnected, SessionState.Connected)
             Catch ex As COMException
                 ' Classificar pelo HRESULT: tratar toda COMException como
                 ' morte derrubaria a sessão por uma recusa transitória.
+                If OutlookFailurePolicy.IsSessionDead(ex.HResult) Then
+                    ReleaseSessionCore()
+                    Return ConnectCore()
+                End If
+
                 Select Case ex.HResult
-                    Case &H80010108, &H800706BA, &H800401FD
-                        ReleaseSessionCore()
-                        Return ConnectCore()
                     Case &H80010001, &H8001010A
+                        _probesDesconhecidos = 0
                         Return SessionState.Busy
+
                     Case Else
-                        ' Antes isto devolvia Connected, ou seja, mentia para a
-                        ' UI logo depois de o probe falhar. Mantem os RCWs,
-                        ' registra, e reporta estado degradado.
+                        ' Preservar o RCW na primeira é certo: recusa
+                        ' transitória não é morte. Insistir para sempre é que
+                        ' não — se o RCW estiver de fato morto com um código
+                        ' que ninguém previu, o Iris ficava "ocupado"
+                        ' eternamente, sem erro, sem reconexão e sem sinal.
+                        _probesDesconhecidos += 1
                         _log.Write(LogLevel.Warn, "broker.probe",
-                                   $"HRESULT 0x{ex.HResult:X8} nao classificado")
+                                   $"HRESULT 0x{ex.HResult:X8} nao classificado " &
+                                   $"({_probesDesconhecidos}x)")
+
+                        If OutlookFailurePolicy.ShouldReattachAfterUnknown(_probesDesconhecidos) Then
+                            _log.Write(LogLevel.Warn, "broker.probe",
+                                       "desistindo do RCW e reanexando")
+                            ReleaseSessionCore()
+                            Return ConnectCore()
+                        End If
+
                         Return SessionState.Busy
                 End Select
             End Try

@@ -321,6 +321,25 @@ Friend NotInheritable Class FakeBroker
     End Property
 
     Public Event StateChanged As EventHandler(Of SessionState) Implements IOutlookBroker.StateChanged
+    Public Event SessionReplaced As EventHandler(Of Long) Implements IOutlookBroker.SessionReplaced
+
+    Private _epoca As Long = 1
+
+    Public ReadOnly Property SessionEpoch As Long Implements IOutlookBroker.SessionEpoch
+        Get
+            Return _epoca
+        End Get
+    End Property
+
+    ''' <summary>
+    ''' Simula o Outlook morrer e voltar: a sessão é outra, as chaves da
+    ''' anterior deixam de valer, e quem depende disso precisa saber.
+    ''' </summary>
+    Friend Sub SubstituirSessao()
+        _epoca += 1
+        _existe = False
+        RaiseEvent SessionReplaced(Me, _epoca)
+    End Sub
     Public Event FolderInvalidated As EventHandler(Of FolderInvalidation) _
         Implements IOutlookBroker.FolderInvalidated
 

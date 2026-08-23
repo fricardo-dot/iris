@@ -1042,6 +1042,113 @@ Public Class ComposerTests
             "Voltar a editar depois de um descarte que falhou tem de rearmar o autosave.")
     End Sub
 
+
+    ' ================================================================
+    ' Substituição de sessão (F1-M)
+    ' ================================================================
+
+    ''' <summary>
+    ''' O Outlook morreu e voltou enquanto o compositor estava aberto.
+    '''
+    ''' O texto NÃO some — é trabalho do usuário. Mas a chave do rascunho é
+    ''' da sessão anterior, e gravar ou enviar por ela é operar sobre
+    ''' identidade que já não vale. Parar aqui é melhor que falhar lá
+    ''' embaixo com NotFound depois de o usuário clicar em enviar.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Sessao_substituida_preserva_o_texto_e_bloqueia_gravar()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        vm.UserText = "trabalho do usuário"
+        AguardarChamadas(broker, "update", 1)
+
+        broker.SubstituirSessao()
+        vm.OnSessionReplaced(broker.SessionEpoch)
+
+        ' O texto continua ali, e continua visível.
+        Assert.IsTrue(vm.IsOpen)
+        Assert.AreEqual("trabalho do usuário", vm.UserText)
+        Assert.IsTrue(vm.HasStatus, "O usuário precisa saber o que aconteceu.")
+
+        ' Mas escrever no store, não.
+        Assert.IsTrue(vm.SessaoSubstituida)
+        Assert.IsFalse(vm.PodeGravar)
+        Assert.IsFalse(vm.RequestSendCommand.CanExecute(Nothing),
+            "Enviar por uma chave de outra sessão daria NotFound depois do clique.")
+        Assert.IsFalse(vm.AttachCommand.CanExecute(Nothing))
+    End Sub
+
+    ''' <summary>
+    ''' E o autosave para. Continuar gravando por uma chave morta encheria a
+    ''' tela de erro a cada 1,5 s sem nunca conseguir nada.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Sessao_substituida_desliga_o_autosave()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        broker.SubstituirSessao()
+        vm.OnSessionReplaced(broker.SessionEpoch)
+
+        Dim gravacoesAntes = ContarChamadas(broker, "update")
+        vm.UserText = "digitado depois da troca"
+        BombearPor(DebounceDeTeste * 6)
+
+        Assert.AreEqual(gravacoesAntes, ContarChamadas(broker, "update"),
+            "Gravar por uma chave de sessão morta só produz erro.")
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: um evento de substituição para a MESMA época não
+    ''' bloqueia nada. Sem isto, um compositor que se travasse a qualquer
+    ''' notificação passaria nos dois testes acima.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Evento_da_mesma_epoca_nao_bloqueia_o_compositor()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        ' Mesma época em que o rascunho nasceu.
+        vm.OnSessionReplaced(broker.SessionEpoch)
+
+        Assert.IsFalse(vm.SessaoSubstituida)
+        Assert.IsTrue(vm.PodeGravar)
+        Assert.IsTrue(vm.RequestSendCommand.CanExecute(Nothing))
+
+        vm.UserText = "continua gravando normalmente"
+        AguardarChamadas(broker, "update", 1)
+        Assert.IsFalse(vm.IsDirty)
+    End Sub
+
+    ''' <summary>
+    ''' Abrir um compositor NOVO depois da troca funciona: a chave nasce na
+    ''' época corrente. Sem isto, o bloqueio poderia ser permanente e o
+    ''' usuário ficaria sem conseguir escrever até reiniciar o Iris.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Compositor_novo_depois_da_troca_funciona()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        broker.SubstituirSessao()
+        vm.OnSessionReplaced(broker.SessionEpoch)
+        Assert.IsFalse(vm.PodeGravar)
+
+        vm.CloseCommand.Execute(Nothing)
+        Aguardar(vm.NewMessageAsync())
+
+        Assert.IsTrue(vm.PodeGravar, "A troca de sessão não pode travar o Iris para sempre.")
+        vm.UserText = "mensagem nova, sessão nova"
+        AguardarChamadas(broker, "update", 1)
+        Assert.IsFalse(vm.IsDirty)
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================

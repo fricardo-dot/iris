@@ -31,6 +31,33 @@ Namespace Global.Iris.Core
 
         ReadOnly Property State As SessionState
 
+        ''' <summary>
+        ''' Identidade da sessão COM atual. Sobe a cada aquisição.
+        '''
+        ''' Existe porque <see cref="SessionState"/> não consegue dizer
+        ''' "conectado, mas é OUTRA sessão" — isso é mudança de identidade,
+        ''' não de estado, e tratar como estado produziu uma falha silenciosa
+        ''' e permanente: o Outlook morria e voltava dentro da janela do
+        ''' watchdog, o broker largava todas as assinaturas e readquiria, o
+        ''' estado continuava Connected dos dois lados, nenhum evento era
+        ''' emitido, e a lista parava de atualizar até o Iris ser reiniciado.
+        '''
+        ''' Toda chave — FolderKey, ItemKey, DraftKey, SubscriptionToken —
+        ''' pertence a uma época. Chave de época vencida não vale.
+        ''' </summary>
+        ReadOnly Property SessionEpoch As Long
+
+        ''' <summary>
+        ''' A sessão COM foi SUBSTITUÍDA. O argumento é a época nova.
+        '''
+        ''' Separado de <see cref="StateChanged"/> de propósito: pode disparar
+        ''' sem que o estado mude, e é justamente esse o caso que importa.
+        '''
+        ''' Chega em thread do broker, como todo evento daqui. O assinante
+        ''' devolve ao dispatcher dele antes de tocar em qualquer coisa.
+        ''' </summary>
+        Event SessionReplaced As EventHandler(Of Long)
+
         ''' <summary>Disparado quando o estado da sessão muda.</summary>
         Event StateChanged As EventHandler(Of SessionState)
 
