@@ -1259,6 +1259,59 @@ Public Class ComposerTests
         Assert.IsTrue(vm.HasStatus, "O usuário precisa saber por que não abriu.")
     End Sub
 
+
+    ''' <summary>
+    ''' O pior caminho: a sessao troca com a tela de confirmacao JA ABERTA.
+    '''
+    ''' O estado continua ConfirmingSend, entao nem o CanExecute nem uma
+    ''' troca de estado barravam — e a chave que iria para o Send seria a da
+    ''' sessao anterior, no unico caminho que nao tem desfazer.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Troca_de_sessao_com_a_confirmacao_aberta_bloqueia_o_envio()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+
+        broker.SubstituirSessao()
+        vm.OnSessionReplaced(broker.SessionEpoch)
+
+        Assert.AreNotEqual(ComposerState.ConfirmingSend, vm.State,
+            "Deixar o botao Enviar agora na tela promete um envio que nao pode acontecer.")
+        Assert.IsFalse(vm.ConfirmSendCommand.CanExecute(Nothing))
+
+        ' E por fora tambem nao passa.
+        Aguardar(vm.ConfirmSendCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(0, ContarChamadas(broker, "send"),
+            "Enviou com a chave da sessao anterior.")
+    End Sub
+
+    ''' <summary>
+    ''' Anexar e conferir tambem consomem a chave, e CanExecute so governa o
+    ''' botao. A recusa tem de estar no caminho.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Sessao_substituida_recusa_anexar_e_conferir_por_fora()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker, escolha:=CaminhoDeArquivoReal())
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        broker.SubstituirSessao()
+        vm.OnSessionReplaced(broker.SessionEpoch)
+
+        Aguardar(vm.AttachCommand.ExecuteAsync(Nothing))
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(0, ContarChamadas(broker, "attach"))
+        Assert.AreEqual(0, ContarChamadas(broker, "prepare"))
+        Assert.AreEqual(0, ContarChamadas(broker, "send"))
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================

@@ -168,7 +168,7 @@ Namespace Global.Iris.App.ViewModels
             ' que o código diz que segura.
             ConfirmSendCommand = New AsyncRelayCommand(
                 Function() ExclusivoAsync(AddressOf ConfirmarEnvioAsync),
-                Function() State = ComposerState.ConfirmingSend,
+                Function() State = ComposerState.ConfirmingSend AndAlso Not _sessaoSubstituida,
                 AsyncRelayCommandOptions.AllowConcurrentExecutions)
             ' VoltarAEditar, e não State = Editing direto. Uma tecla que
             ' escapou para dentro da confirmação deixa o rascunho sujo, e
@@ -835,6 +835,8 @@ Namespace Global.Iris.App.ViewModels
         ' ================================================================
 
         Private Async Function AnexarAsync() As Task
+            If RecusarPorSessao() Then Return
+
             Dim escolhido = _pickFile.AskWhichFileToAttach()
             If String.IsNullOrEmpty(escolhido) Then Return
 
@@ -876,6 +878,8 @@ Namespace Global.Iris.App.ViewModels
 
         Private Async Function PedirEnvioAsync() As Task
             If State = ComposerState.SendUnknown Then Return
+
+            If RecusarPorSessao() Then Return
 
             Dim marca = Interlocked.Read(_geracao)
             Status = "Conferindo destinatários…"
@@ -951,6 +955,15 @@ Namespace Global.Iris.App.ViewModels
         ''' é o único erro deste projeto que não tem volta.
         ''' </summary>
         Private Async Function ConfirmarEnvioAsync() As Task
+            ' Sessão trocada com a confirmação JÁ ABERTA: o estado continua
+            ' ConfirmingSend, então nem o CanExecute nem a troca de estado
+            ' barravam isto — e a chave que iria para o Send seria a da
+            ' sessão anterior, no único caminho sem desfazer.
+            If RecusarPorSessao() Then
+                VoltarAEditar()
+                Return
+            End If
+
             ' Última conferência antes do irreversível: se a mensagem mudou
             ' depois de o usuário aprovar a lista, o que sairia não é o que
             ' ele aprovou.
@@ -966,6 +979,14 @@ Namespace Global.Iris.App.ViewModels
 
             State = ComposerState.Sending
             Status = "Enviando…"
+
+            ' De novo, colado no Send. A sessão pode ter trocado entre a
+            ' conferência acima e este ponto, e aqui não há segunda chance.
+            If RecusarPorSessao() Then
+                Volatile.Write(_envioComecou, 0)
+                VoltarAEditar()
+                Return
+            End If
 
             Dim marca = Interlocked.Read(_geracao)
             Dim resultado = Await _broker.SendDraftAsync(_key, CancellationToken.None)
@@ -1203,6 +1224,11 @@ Namespace Global.Iris.App.ViewModels
 
             _sessaoSubstituida = True
             _autosave.Stop()
+
+            ' Se a confirmação de envio estava aberta, ela descreve uma
+            ' versão de outra sessão. Volta para a edição em vez de deixar
+            ' na tela um "Enviar agora" que não pode mais enviar.
+            If State = ComposerState.ConfirmingSend Then State = ComposerState.Editing
 
             OnPropertyChanged(NameOf(PodeGravar))
             OnPropertyChanged(NameOf(SessaoSubstituida))

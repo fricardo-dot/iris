@@ -160,11 +160,20 @@ Namespace Global.Iris.Outlook
             Dim antes = State
             Dim agora = ProbeCore()
 
-            ' Depois de a aquisição terminar, nunca dentro dela.
-            PublicarSessaoSeHouver()
             _watchdog.Interval = TimeSpan.FromMilliseconds(
                 If(agora = SessionState.Connected, ProbeConnectedMs, ProbeSearchingMs))
             If agora <> antes Then SetState(agora)
+
+            ' Publica por ÚLTIMO. Ordem: adquirir, atualizar o estado, e só
+            ' então anunciar.
+            '
+            ' Publicar antes do SetState era uma armadilha: o assinante
+            ' enfileira o tratamento na UI, ele podia rodar antes de o
+            ' estado virar Connected, encontrar a sessão como não conectada,
+            ' limpar tudo e desistir de restaurar — e a mudança de estado
+            ' seguinte fazia só a recarga comum, já sem a pasta que o
+            ' usuário tinha aberto.
+            PublicarSessaoSeHouver()
         End Sub
 
         ''' <summary>
@@ -180,11 +189,18 @@ Namespace Global.Iris.Outlook
         ''' que estoure não pode derrubar os outros nem fazer uma aquisição
         ''' que deu certo parecer que falhou — e assinante é código de fora,
         ''' então isso não é hipótese remota.
+        '''
+        ''' O que isto NÃO faz: não troca de thread. No caminho do watchdog
+        ''' os handlers rodam na STA do broker, e um handler que chame o
+        ''' broker de volta e ESPERE trava a STA. O contrato do evento diz
+        ''' que handler devolve ao dispatcher dele e não bloqueia; isto aqui
+        ''' protege contra exceção, não contra bloqueio.
         ''' </summary>
         Private Sub PublicarSessaoSeHouver()
-            Dim epoca = _epocaAPublicar
+            ' Interlocked: escrito na STA (dentro do ConnectCore) e lido
+            ' aqui, que depois desta correção pode ser a thread do chamador.
+            Dim epoca = Interlocked.Exchange(_epocaAPublicar, 0)
             If epoca = 0 Then Return
-            _epocaAPublicar = 0
 
             Dim inscritos = SessionReplacedEvent
             If inscritos Is Nothing Then Return
@@ -375,25 +391,17 @@ Namespace Global.Iris.Outlook
 
         Public Async Function ConnectAsync(cancel As CancellationToken) As Task(Of SessionState) _
             Implements IOutlookBroker.ConnectAsync
-            Dim resultado = Await InvokeAsync(
-                Function()
-                    Dim r = ConnectCore()
-                    PublicarSessaoSeHouver()
-                    Return r
-                End Function)
+            Dim resultado = Await InvokeAsync(Function() ConnectCore())
             SetState(resultado)
+            PublicarSessaoSeHouver()
             Return resultado
         End Function
 
         Public Async Function ProbeAsync(cancel As CancellationToken) As Task(Of SessionState) _
             Implements IOutlookBroker.ProbeAsync
-            Dim resultado = Await InvokeAsync(
-                Function()
-                    Dim r = ProbeCore()
-                    PublicarSessaoSeHouver()
-                    Return r
-                End Function)
+            Dim resultado = Await InvokeAsync(Function() ProbeCore())
             SetState(resultado)
+            PublicarSessaoSeHouver()
             Return resultado
         End Function
 
