@@ -1433,7 +1433,7 @@ cobertos.
 `tools/q4-custo.ps1`, **2ª versão**. Somente leitura.
 
 A 1ª versão media a coluna `"EntryID"` — **exatamente a que a §12.2
-acabou de descobrir que não é identidade durável.** Medir o custo de
+acabou de descobrir que não sobrevive à sessão.** Medir o custo de
 enumerar uma chave que não serve não mede nada. Também engolia falha de
 pasta num `catch` vazio, contava a pasta como percorrida assim mesmo, e
 conferia unicidade **por pasta**, quando a pergunta é se a chave é única na
@@ -1456,13 +1456,24 @@ falhas, profundidade máxima 2, nenhuma pasta truncada.
 
 Comparando com o que eu tinha publicado:
 
-| | com a chave curta | com a chave **durável** |
+| | localizador de sessão | localizador **entre sessões** |
 |---|---|---|
 | Caixa de Entrada | 26 ms | **632 ms** |
 | Caixa inteira | ~2,0 s | **~3,2 s** |
 
-> Enumerar a chave durável custa cerca de **24x** mais na Entrada. A chave
-> que serve não é a barata.
+> Enumerar o localizador que sobrevive à sessão custa cerca de **24x**
+> mais na Entrada. O que serve não é o barato.
+
+**Correção de vocabulário, e ela importa.** Eu vinha chamando
+`PR_LONGTERM_ENTRYID_FROM_TABLE` de "chave durável". Depois da §11.1 isso
+está errado: ela **muda no `Move`**. O que ela é, com precisão:
+
+> um **localizador da encarnação atual**, que sobrevive ao fim da sessão —
+> e não a um `Move`.
+
+"Durável" convida a usá-la como chave primária no 2.1, que é exatamente o
+erro que a Q2 existe para impedir. O manifesto da varredura carrega
+**localizador atual + evidências de correlação**, nunca identidade.
 
 ### 13.2 Unicidade, agora na caixa e não por pasta
 

@@ -51,6 +51,13 @@ Namespace Global.Iris.Outlook
         ''' do MESMO item, e nenhum erro aparece: a listagem funciona, so nao
         ''' casa com nada.
         '''
+        ''' CUIDADO COM O NOME. "Longo prazo" aqui significa que ela
+        ''' sobrevive ao fim da SESSAO, e nada alem disso: a secao 11.1 do
+        ''' FASE2 mediu que ela MUDA num Move. Ela e localizador da
+        ''' encarnacao atual, NAO identidade do item. Usa-la como chave
+        ''' primaria no cache seria exatamente o erro que a Q2 existe para
+        ''' impedir.
+        '''
         ''' O teste de cruzamento pegou isso: os dois caminhos liam as MESMAS
         ''' 995 mensagens em 34 paginas e ainda assim os conjuntos de chave
         ''' davam intersecao ZERO. Guardar chave de curto prazo num cache que

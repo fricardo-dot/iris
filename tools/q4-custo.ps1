@@ -1,4 +1,10 @@
-﻿# Q4, parte 1: custo de enumerar CHAVE DURAVEL + LastModificationTime.
+﻿# Q4, parte 1: custo de enumerar LOCALIZADOR ENTRE SESSOES +
+# LastModificationTime.
+#
+# NAO se chama "chave duravel": a 11.1 mediu que ela MUDA no Move. Ela
+# sobrevive ao fim da SESSAO, e nada alem disso. O nome errado convida a
+# usa-la como chave primaria no 2.1, que e o erro que a Q2 existe para
+# impedir.
 #
 # SOMENTE LEITURA.
 #
@@ -6,7 +12,7 @@
 # ironico:
 #
 #   1. Usava a coluna "EntryID", que a secao 12 do FASE2 acabou de
-#      descobrir NAO ser identidade duravel — ela devolve o EntryID de
+#      descobrir que nao sobrevive a sessao — ela devolve o EntryID de
 #      curto prazo, valido so na sessao. Medir o custo de enumerar uma
 #      chave que nao serve nao mede nada.
 #   2. Engolia qualquer falha de pasta num catch vazio, e ainda contava a
