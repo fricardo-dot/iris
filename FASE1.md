@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 7 — marco 1.5 fechado; plano do 1.6 na seção 13.
+**Versão:** 8 — plano do 1.6 (v2) na seção 13; dois defeitos achados ao planejar.
 
 ---
 
@@ -563,110 +563,192 @@ usuário.
 
 ## 13. Plano do marco 1.6 — consolidação e testes de falha
 
-Escrito antes do código, para não virar improviso no meio.
+**Versão 2.** A primeira versão deste plano foi submetida a revisão externa
+antes de virar código, e foi reprovada por um bom motivo: ela produziria
+muitos testes verdes ao redor de riscos secundários enquanto deixava
+descobertos os dois defeitos capazes de duplicar um envio e de silenciar as
+atualizações para sempre. Os dois foram encontrados durante a revisão do
+PLANO, no código que já estava lá, e confirmados linha a linha.
 
-### O que este marco NÃO é
+### Os dois defeitos que reorganizam o marco
 
-Não é onde reconexão e classificação de erro nascem. Elas existem desde o
-1.1 e funcionam. Este marco é onde elas são **exercitadas e provadas** — e
-onde o que ficou pela metade nos marcos anteriores é fechado.
+**F1-M — Reconexão invisível.** `OnWatchdogTick` só emite evento quando o
+estado MUDA:
 
-### O achado que ancora o marco
+```vb
+If agora <> antes Then SetState(agora)
+```
 
-`Classify` e `ClassifyFailure`, em `OutlookBroker.vb`, têm **zero testes**.
+Se o Outlook morre e volta dentro da janela de 15 s do watchdog, `ProbeCore`
+detecta a morte, chama `ReleaseSessionCore` — que **limpa `_subscriptions`
+inteiro** — e reconecta. O probe devolve `Connected`, igual ao anterior.
+Nenhum evento é emitido.
 
-São as regras que decidem se uma falha pode ser repetida. Em particular,
-`ClassifyFailure` contém a única defesa contra o pior erro possível deste
-projeto: uma falha depois de a mutação começar vira `Ambiguous`, que não é
-retentável. O comentário no código conta que já houve o bug oposto — um
-`Send` que estourava depois de a mensagem sair virava `NotConnected`, cujo
-`IsRetryable` é `True`, e o código convidava a reenviar exatamente no caso
-em que reenviar duplica.
+O resultado é uma falha silenciosa e permanente: o broker não tem mais
+assinatura nenhuma, o `FolderWatcher` continua guardando um token que já não
+existe, a UI não recarrega, e a lista para de se atualizar **até o Iris ser
+reiniciado**. O usuário não recebe sinal nenhum.
 
-Essa regra vive dentro de um arquivo de 852 linhas que só compila em
-Windows e só roda com Outlook. Nenhum teste a alcança. É a mesma situação
-de `EhSmtp` antes do 1.5, e a solução é a mesma: a regra é lógica pura,
-então ela sai para o `Iris.Core` e ganha testes.
+`SessionState` não consegue representar isto, porque "Connected, mas é outra
+sessão" não é um estado — é uma mudança de identidade.
 
-### Grupo A — extrair e provar as regras de falha
+**F1-N — Fase da operação é global.** `_effectStarted` é um campo do broker.
+`RunAsync` zera na thread do CHAMADOR antes de postar; a operação marca 1 já
+na STA; e o `Catch` lê depois do `Await`. Qualquer operação concorrente —
+uma recarga de pasta disparada por evento, por exemplo — zera o campo entre
+a falha de um `Send` e a classificação dela.
 
-**A1. `FailureClassification` no `Iris.Core`.**
-Move `Classify` (HRESULT → `ErrorKind`) e a regra de ambiguidade. O broker
-passa a chamar a política; nada de comportamento muda. Testes cobrindo:
-cada HRESULT mapeado, HRESULT desconhecido, e — o principal — que
-`isMutation:=True` com efeito iniciado devolve `Ambiguous` para QUALQUER
-HRESULT, inclusive os que sozinhos seriam `NotConnected` ou `Busy`.
-Controle negativo: leitura com o mesmo HRESULT NÃO vira `Ambiguous`, senão
-a regra estaria classificando tudo como ambíguo e passaria de graça.
+Consequência: um `Send` que falhou DEPOIS de a mensagem sair pode ser
+classificado como `NotConnected`, cujo `IsRetryable` é `True`. É exatamente
+o bug que o comentário do próprio `ClassifyFailure` diz ter corrigido — ele
+foi corrigido na regra e continuou vivo no estado que a regra lê.
 
-**A2. `SessionState` a partir do HRESULT.**
-A mesma extração para a classificação do probe: quais HRESULTs derrubam a
-sessão e forçam reconexão, quais são "ocupado", e a decisão — já tomada e
-comentada no código — de que HRESULT não classificado reporta estado
-degradado em vez de mentir `Connected`.
+A única defesa contra reenviar uma mensagem que talvez já tenha saído
+depende de um campo compartilhado entre operações concorrentes.
 
-### Grupo B — exercitar as falhas na interface
+### Eixo 1 — época de sessão e reconexão observável
 
-Contra o `FakeBroker`, que já sabe falhar sob comando. Cada um com
-controle negativo.
+1. **`SessionEpoch`**: um número que sobe a cada aquisição de sessão COM.
+   Toda chave — `FolderKey`, `ItemKey`, `DraftKey`, `SubscriptionToken` —
+   pertence a uma época.
+2. **Evento de sessão substituída**, separado de `StateChanged`. Emitido
+   sempre que a época sobe, inclusive no caminho `Connected → Connected`.
+3. **A UI reage**: limpa árvore, lista e leitor; relê stores; refaz
+   assinatura. O texto do compositor é PRESERVADO — é trabalho do usuário —
+   mas a `DraftKey` da época anterior é marcada como desligada, e gravar ou
+   enviar por ela fica bloqueado até o usuário resolver. Preservar o texto é
+   certo; preservar cegamente a capacidade de gravar por uma chave de outra
+   sessão não é.
+4. **HRESULT desconhecido não pode significar Busy eterno.** Hoje um código
+   não previsto devolve `Busy` e preserva o RCW; se o RCW estiver morto, o
+   Iris fica "ocupado" para sempre. Passa a haver limiar: falha desconhecida
+   repetida em probes consecutivos força descartar e reanexar; se reanexar
+   falhar, `Unavailable`.
+5. **HRESULTs de morte a acrescentar**, com a ressalva de que lista nunca é
+   prova completa — por isso o limiar acima é que carrega a robustez:
+   `RPC_E_SERVER_DIED` (0x80010007), `RPC_E_SERVER_DIED_DNE` (0x80010012),
+   `RPC_S_CALL_FAILED` (0x800706BE), `RPC_E_INVALID_OBJECT` (0x80010114).
+   `MAPI_E_NETWORK_ERROR` **não** entra: pode ser Outlook vivo com Exchange
+   indisponível.
 
-- **B1. Queda durante o uso.** Árvore, lista e leitor são limpos; o
-  compositor NÃO é, porque o texto é trabalho do usuário. Já decidido no
-  1.5; falta o teste que impede alguém de "simplificar" isso depois.
-- **B2. Volta da conexão.** Árvore recarrega, assinatura é restabelecida,
-  e a recarga acontece UMA vez — não uma por evento.
-- **B3. Item removido por baixo.** `NotFound` tratado ao ler, ao marcar
-  como lida, ao responder e ao enviar. Cada um mostra o que aconteceu em
-  vez de falhar em silêncio.
-- **B4. Rajada de invalidações.** Vinte eventos em sequência produzem uma
-  recarga, não vinte. O debounce do `FolderWatcher` já existe; o teste é o
-  que impede a regressão.
-- **B5. Gravação falhando por disco/permissão.** O texto permanece na
-  tela, o status explica, e a próxima tecla tenta de novo. Parcialmente
-  coberto no 1.5; falta o caso do disco.
+### Eixo 2 — fase local e política pura de falha
 
-### Grupo C — fechar o que ficou pela metade
+1. **A fase da operação sai do broker e vira local à invocação.** É a
+   correção de F1-N, e vem antes de qualquer extração: extrair a regra sem
+   corrigir o estado que ela lê seria testar a regra certa alimentada por
+   dado errado.
+2. **`OutlookFailurePolicy` no `Iris.Core`** — nome específico de propósito.
+   `AddressPolicy` é política de domínio usada por duas camadas; esta é
+   tradução da borda COM, e chamá-la de "política" no mesmo tom seria
+   arrumação estética. Assinatura pura:
+   `ClassifyFailure(hresult As Integer?, isMutation As Boolean, mutationAttemptStarted As Boolean) As ErrorKind`.
+   O broker continua dono de observar a fase e de escrever o log.
+3. **Nomear a fase pelo que ela é.** Hoje "efeito iniciado" significa "o
+   delegate `work` começou", não "a chamada COM mutante começou". É
+   conservador e correto para segurança, mas o nome promete precisão que o
+   código não tem: passa a `mutationAttemptStarted`.
+4. **Testes**: cada HRESULT mapeado; desconhecido; e o principal — mutação
+   com tentativa iniciada devolve `Ambiguous` para QUALQUER HRESULT,
+   inclusive os que sozinhos dariam `NotConnected` ou `Busy`. Controle
+   negativo: leitura com o mesmo HRESULT NÃO vira `Ambiguous`, senão a regra
+   estaria carimbando tudo de ambíguo e passaria de graça.
+5. **Teste de concorrência**, que é o que prova F1-N corrigido: duas
+   operações sobrepostas não compartilham fase.
 
-- **C1. `RemoveDraftAttachmentAsync`.** Hoje devolve `NotImplemented`: dá
-  para anexar e não dá para desanexar. É a lacuna mais visível do 1.5.
-- **C2. Marca de separação visível em texto puro.** Numa mensagem nova em
-  texto puro, a linha `----- mensagem original -----` aparece sem ter
-  original nenhuma embaixo.
-- **C3. Sinalização de leitura parcial.** Dívida do 1.4 que o próprio
-  documento marcou como "não passa no 1.5". Hoje a UI não distingue "não
-  tem destinatário" de "não deu para ler os destinatários".
+### Eixo 3 — reações da UI, de forma determinística
 
-### Grupo D — o que exige o Outlook de verdade
+**`ScenarioBroker`, separado do `FakeBroker`.** O duplo atual foi feito para
+o compositor: `State` fixo em `Connected` e exceção em tudo mais. Transformá-lo
+em simulador universal produziria um objeto enorme e permissivo, que aceita
+qualquer coisa e por isso não prova nada.
 
-Estes **não** dependem de código novo, e sim de um roteiro executado com o
-Outlook aberto. Envolvem fechar e reabrir o Outlook do usuário, que é o
-cliente de e-mail real dele: **pedir autorização antes**, e nunca executar
-por conta própria.
+**O debounce sai do relógio.** O acumulador temporal do `FolderWatcher` vira
+uma máquina pura que recebe `now`. Testar 2 s de relógio real com
+`DispatcherTimer` transforma a suíte num teste de carga da máquina — e
+"estável em 10 execuções" viraria sorte, não prova. A lição do 1.5 vale
+aqui: já tive um teste intermitente e ele é pior que teste nenhum.
 
-- **D1.** Fechar o Outlook com o Iris rodando: estado vira "Outlook
-  fechado", operações devolvem `NotConnected`, compositor preservado.
-- **D2.** Reabrir: reconexão automática pelo watchdog, sem reiniciar o
-  Iris. É o que valida que o RCW morto é descartado e um novo é adquirido.
-- **D3.** D4 e D7 da Fase 0, ainda sem teste: movimento entre stores e
-  reinício do Outlook com assinatura ativa.
+Os testes que valem, e o que cada um detecta:
 
-### O que fica FORA do 1.6, e por quê
+| Teste | Mutação que ele pega |
+|---|---|
+| Eventos em t=0 e t=400 ms não recarregam em t=450 | debounce que conta do PRIMEIRO evento — a implementação que este projeto já teve e corrigiu |
+| Rajada contínua abaixo de 450 ms recarrega perto do teto de 2 s | teto que nunca participa |
+| Evento da assinatura A pendente, troca para B: B não fica suja | dispatch sem geração |
+| `Subscribe(A)` termina depois de `Watch(B)`: A é desassinada | assinatura órfã |
+| Segunda rajada gera segunda recarga | debounce que trava depois da primeira |
 
-- **Fixture de 5.000 itens e offsets profundos.** Precisa de PST de teste;
-  é trabalho de infraestrutura de medição, não de consolidação.
-- **WebView2.** É superfície nova, não consolidação.
-- **Reabrir rascunho existente.** É funcionalidade, não robustez.
-- **Envio ambíguo contra o Outlook real.** Provocá-lo exigiria fazer um
-  `Send` de verdade falhar no meio. O que dá para provar sem isso é a
-  regra de classificação — e é exatamente o que o grupo A faz.
+E as reações de sessão: queda limpa árvore/lista/leitor e preserva o
+compositor; substituição de sessão dispara UMA recarga; resultado atrasado
+da época anterior é descartado; `NotFound`, `Ambiguous` e falha de
+persistência produzem o estado visual certo.
+
+**Controle negativo onde ele detecta alguma coisa**, não como ritual. A
+regra mecânica "cada cenário com o seu" produziria asserts duplicados; cada
+controle precisa nomear a mutação que pretende pegar.
+
+### Eixo 4 — dívidas funcionais
+
+- **`RemoveDraftAttachmentAsync`.** Hoje devolve `NotImplemented`, e a
+  assinatura está errada: devolve `Boolean`, mas remover SALVA, e salvar
+  pode trocar a `DraftKey` e reconstruir todas as `AttachmentKey`. Vira
+  `OperationResult(Of DraftInfo)`, como `AddDraftAttachmentAsync` — é
+  exatamente o mesmo defeito que o 1.5 corrigiu no anexar, sobrevivendo no
+  irmão que ainda não tinha sido escrito.
+- **Marca de separação visível em texto puro.**
+- **Sinalização de leitura parcial.** Fechar o contrato semântico ANTES de
+  mexer na tela: destinatários, anexos e corpo falham de forma
+  independente, e um `ContentState` único não representa isso. E a decisão
+  que importa não é visual — se os destinatários vieram incompletos,
+  responder e enviar provavelmente devem ser BLOQUEADOS até uma releitura
+  bem-sucedida, não apenas ganhar um ícone.
+
+### Eixo 5 — o Outlook de verdade
+
+Não depende de código novo. Envolve fechar e reabrir o Outlook do usuário,
+que é o cliente de e-mail corporativo dele: **pedir autorização antes**,
+nunca executar por conta própria.
+
+- Fechar com o Iris rodando: estado, operações e compositor.
+- Reabrir: é o teste que prova F1-M corrigido de verdade. O duplo prova o
+  protocolo; só o Outlook real prova que o RCW morto foi solto, que o ROT
+  entrega a instância nova e que os sinks são recriados.
+- D4 e D7 da Fase 0: movimento entre stores e reinício com assinatura ativa.
+
+### O que o duplo prova, e o que não prova
+
+Registrado porque a primeira versão deste plano confundia as duas coisas.
+
+**Prova:** reação ao protocolo de sessão — limpeza, preservação do
+compositor, habilitação de comandos, recarga única, descarte de resultado
+de época anterior, estado visual de cada `ErrorKind`, e que a UI não repete
+mutação.
+
+**Não prova:** que fechar o Outlook gera determinado HRESULT; que o ROT
+entrega a instância nova quando se espera; que os RCWs foram liberados; que
+sinks COM sobrevivem ou são recriados; que outro perfil se comporta como
+modelado; que disco cheio chega como a exceção que o duplo simula.
+
+Por isso o teste de persistência **não** se chama "disco cheio": ele prova
+que o compositor recebeu uma falha de gravação e preservou o texto. É o que
+ele prova, e é o nome que ele leva.
 
 ### Critério de pronto
 
-1. `Classify` e a regra de ambiguidade fora do broker, com testes e
-   controles negativos.
-2. Os cinco cenários do grupo B com teste, cada um com controle negativo.
-3. Grupo C fechado.
-4. Roteiro do grupo D executado com o usuário, com resultado registrado
-   aqui — inclusive se algum falhar.
-5. Suíte estável em 10 execuções seguidas.
-6. Revisão externa até voltar sem bloqueante, incluindo as correções.
+1. F1-M e F1-N corrigidos, com teste de concorrência para o segundo.
+2. Época de sessão observável, e UI reagindo à substituição.
+3. `OutlookFailurePolicy` no Core, com testes e controles negativos.
+4. Testes determinísticos do debounce, sem relógio real.
+5. Eixo 4 fechado, com o contrato de leitura parcial decidido por escrito.
+6. Roteiro do eixo 5 executado com o usuário, resultado registrado aqui —
+   inclusive o que falhar.
+7. Revisão externa até voltar sem bloqueante, incluindo as correções.
+
+### Fora do 1.6
+
+WebView2 e reabrir rascunho existente: são funcionalidade, não robustez.
+
+**A fixture de 5.000 itens fica fora do 1.6 mas passa a BLOQUEAR declarar a
+Fase 1 concluída.** É critério de aceite do 1.3 que nunca foi cumprido, e
+manter isso como dívida perpétua enquanto se declara a fase consolidada
+seria dar por medido o que não foi.
