@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 2 — revisada após avaliação técnica externa.
+**Versão:** 3 — marcos 1.1 a 1.4 concluídos; dívida registrada na seção 11.
 
 ---
 
@@ -180,7 +180,7 @@ uma entrega.
 
 ## 6. Marcos
 
-### 1.1 — Esqueleto, contratos e conexão
+### 1.1 — Esqueleto, contratos e conexão ✅
 
 - Quatro projetos e os testes arquiteturais da seção 3
 - DTOs e tipos de erro definidos **antes** de migrar o broker:
@@ -198,7 +198,7 @@ travar; abrir o Outlook depois conecta sozinho; fechar o Iris durante a
 conexão não trava nem deixa `OUTLOOK.EXE` órfão; abrir e fechar rápido não
 cria dois brokers; exceção na inicialização não deixa thread STA viva.
 
-### 1.2 — Árvore de pastas
+### 1.2 — Árvore de pastas ✅
 
 Carregamento sob demanda por nível. Definido explicitamente: quais stores
 entram, se pastas ocultas e de busca aparecem, e a ordem.
@@ -207,7 +207,7 @@ entram, se pastas ocultas e de busca aparecem, e a ordem.
 remover pasta no Outlook aparece após invalidação; contagem de não lidos é
 tratada como **eventualmente consistente**, não instantânea.
 
-### 1.3 — Lista de mensagens *(ponto de decisão)*
+### 1.3 — Lista de mensagens ✅ *(ponto de decisão)*
 
 - `Restrict` e `Sort` feitos pelo Outlook, nunca em laço nosso
 - Paginação volátil da seção 5, com geração
@@ -224,7 +224,7 @@ rolagem contínua por centenas de itens e memória.
 *Fixture:* a pasta de 5.000 itens precisa existir antes do aceite. **Não**
 gerar 5.000 mensagens na caixa corporativa — usar store ou PST de teste.
 
-### 1.4 — Leitura
+### 1.4 — Leitura ✅
 
 - Primeiro incremento: **texto puro**. WebView2 endurecido vem depois
 - Estados explícitos do R9: só metadados / corpo disponível / erro
@@ -371,3 +371,97 @@ Configuração mínima, toda verificável:
 
 O spike fica preservado como está. Cada componente migra revisado, um a um —
 ele não vira biblioteca por osmose.
+
+---
+
+## 11. Dívida registrada
+
+O que NÃO foi feito, dito às claras. Nada aqui foi aprovado por
+extrapolação nem por semelhança com outra medição.
+
+### Do marco 1.3
+
+- **Fixture de 5.000 itens no OOM: NÃO medido.** A primeira página foi
+  validada com 1.033 itens reais, em 391 ms. O critério fala em 5.000, e a
+  caixa corporativa não tem esse volume — gerar 5 mil mensagens nela está
+  fora de cogitação. O caminho é um PST de teste, com perfil descartável ou
+  anexação temporária autorizada, e limpeza garantida.
+- **Acesso por índice em offset profundo: NÃO medido.** Só a primeira
+  página foi cronometrada. `Items.Item(i)` pode não ser O(1) no OOM, e
+  offsets 300, 600 e 900 precisam de medição própria.
+- **Virtualização do WPF: MEDIDA e aprovada.** 5.000 DTOs sintéticos numa
+  janela real, contando containers realizados: dezenas, não milhares, com
+  controle negativo que exige o contador acusar mais de mil quando a
+  virtualização é desligada. Isso prova o WPF e não diz nada sobre o custo
+  do Object Model — são medições separadas, e confundi-las seria o mesmo
+  erro de extrapolar.
+
+### Do marco 1.4
+
+- **WebView2 para corpo HTML: NÃO feito.** O corpo é texto puro. A seção 9
+  descreve a configuração endurecida, e ela continua valendo.
+- **Endereços Exchange legados.** `SenderEmailAddress` e `Recipient.Address`
+  podem devolver `/O=...` em vez de SMTP. Aceitável para exibir; **não**
+  aceitável para a confirmação de envio do 1.5, que precisa resolver
+  `AddressEntry`/`ExchangeUser.PrimarySmtpAddress`.
+- **Corpos grandes: não medidos na UI.** Os 51 ms medidos são de uma
+  mensagem comum. Corpos de 100 KB e de 512 KB precisam de medição própria
+  antes de o teto ser considerado seguro.
+- **Leitura parcial não é sinalizada.** Se destinatários ou anexos falharem
+  em parte, a UI não distingue "não tem" de "não deu para ler". Passa no
+  1.4; não passa no 1.5, onde responder depende dos destinatários.
+
+### Geral
+
+- **D4 e D7 da Fase 0** seguem sem teste: movimento entre stores e reinício
+  do Outlook com assinatura ativa.
+- **Rótulos do Purview** continuam não testados. Bloqueiam a Fase 3.
+
+---
+
+## 12. Decisões do marco 1.5
+
+Fechadas antes de escrever código, para não virarem improviso no meio.
+
+### O rascunho é do Outlook, não nosso
+
+Responder, responder a todos e encaminhar usam `Reply`, `ReplyAll` e
+`Forward` do próprio OOM. Reconstruir destinatários, citação e assinatura à
+mão seria reimplementar regras que o Outlook já aplica — e errar nelas
+significa mandar mensagem para quem não devia.
+
+### Formato: o do rascunho, não o nosso
+
+O compositor edita **texto**, mas a inserção respeita o formato que o
+rascunho já tem. Se o Outlook gerou corpo HTML — com citação e assinatura
+corporativa —, o texto digitado entra como HTML escapado no topo. Forçar
+texto puro destruiria a citação e a assinatura, que é justamente o que
+torna uma resposta utilizável no trabalho.
+
+### O rascunho existe cedo
+
+Ele é criado e salvo ao ABRIR o compositor, não na primeira edição. Assim
+sobrevive a um fechamento acidental, tem chave estável desde o início, e o
+`EntryID` é relido após cada `Save` — porque ele muda em movimentação.
+
+### Autosave com debounce, nunca por caractere
+
+1,5 s de debounce, uma mutação corrente e no máximo um estado pendente. Uma
+fila de `Save` produziria versões intermediárias sem valor e ocuparia a fila
+única da STA.
+
+### Fechar com alterações pendentes pergunta
+
+Salvar, descartar ou cancelar. Descartar em silêncio é perder trabalho do
+usuário.
+
+### Envio
+
+- Destinatário não resolvido **bloqueia** o envio.
+- A confirmação mostra conta remetente, destinatários resolvidos em SMTP,
+  assunto e anexos.
+- `Send()` uma vez, sem retry, com identificador de correlação — o
+  procedimento que a Fase 0 provou no critério C2.
+- Envio ambíguo **bloqueia novo envio daquele rascunho** até a
+  reconciliação. Reenviar no escuro é o único erro irreversível deste
+  projeto.
