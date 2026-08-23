@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 9 — marco 1.6 executado; resultados na seção 14.
+**Versão:** 10 — marco 1.6 FECHADO; resultados na seção 14.
 
 ---
 
@@ -836,7 +836,9 @@ de carregar.
 | 2 | 3 (1 bloqueante) |
 | 3 | 4 |
 | 4 | 1 bloqueante |
-| 5 | pendente |
+| 5 | 0 — aprovado |
+
+Cinco passadas, treze achados, e o marco fechado sem bloqueante.
 
 O padrão do 1.5 se repetiu: **a maioria dos achados das passadas 1 a 3
 foram defeitos que eu introduzi corrigindo os anteriores.** Três exemplos
