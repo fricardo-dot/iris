@@ -56,6 +56,7 @@ Friend NotInheritable Class FakeBroker
     ''' "o usuário digitou DURANTE isto" sem depender de tempo de relógio.
     ''' </summary>
     Friend TravaDoUpdate As TaskCompletionSource(Of Boolean)
+    Friend TravaDoAttach As TaskCompletionSource(Of Boolean)
     Friend TravaDoPrepare As TaskCompletionSource(Of Boolean)
     Friend TravaDoSend As TaskCompletionSource(Of Boolean)
 
@@ -168,15 +169,20 @@ Friend NotInheritable Class FakeBroker
         Return OperationResult(Of DraftInfo).Ok(Salvar())
     End Function
 
-    Public Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String,
-                                            cancel As CancellationToken) _
+    Public Async Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String,
+                                                  cancel As CancellationToken) _
         As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.AddDraftAttachmentAsync
 
         Chamadas.Add("attach")
         ChavesRecebidas.Add(draft)
 
+        ' Ponto de espera DENTRO da anexação. Sem ele não dava para provar
+        ' que a trava cobre até depois do anexo — só que cobria a descarga.
+        Dim trava = TravaDoAttach
+        If trava IsNot Nothing Then Await trava.Task
+
         If Not ChaveVale(draft) Then
-            Return Task.FromResult(OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "chave vencida"))
+            Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "chave vencida")
         End If
 
         _anexos.Add(New AttachmentInfo With {
@@ -198,7 +204,7 @@ Friend NotInheritable Class FakeBroker
         info.Attachments.Clear()
         info.Attachments.AddRange(_anexos)
 
-        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(info))
+        Return OperationResult(Of DraftInfo).Ok(info)
     End Function
 
     Public Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,

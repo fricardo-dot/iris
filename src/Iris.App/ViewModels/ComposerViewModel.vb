@@ -627,9 +627,17 @@ Namespace Global.Iris.App.ViewModels
         End Sub
 
         Private Async Function AutosalvarAsync() As Task
-            ' Outro comando pode ter descarregado enquanto este tick
-            ' esperava a trava. Se não há mais nada sujo, não grava.
-            If Not IsDirty OrElse Not IsOpen Then Return
+            ' Exige o estado de EDIÇÃO, e não só "aberto".
+            '
+            ' O tick pode ter sido armado durante a edição, ficado pendurado
+            ' na trava enquanto a mensagem era enviada, e chegado aqui já com
+            ' o envio AMBÍGUO na tela. SendUnknown continua "aberto", então
+            ' checar IsOpen deixava passar: o autosave gravaria por cima do
+            ' rascunho que é a evidência da reconciliação.
+            '
+            ' Outro comando também pode ter descarregado enquanto este tick
+            ' esperava. Se não há mais nada sujo, não grava.
+            If Not IsDirty OrElse State <> ComposerState.Editing Then Return
             Await GravarUmaVezAsync()
         End Function
 
@@ -732,12 +740,24 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         ''' <summary>
         ''' Roda o trabalho com a trava de rascunho na mão.
-        ''' Quem está aqui dentro NÃO pode chamar isto de novo: seria
-        ''' espera sobre si mesmo.
+        ''' Quem está aqui dentro NÃO pode chamar isto de novo: seria espera
+        ''' sobre si mesmo.
+        '''
+        ''' A geração é fotografada ANTES do WaitAsync, e isso é o ponto.
+        ''' Fotografar depois de entrar era um furo: quem estava na FILA
+        ''' podia ver o rascunho ser encerrado enquanto esperava, pegar a
+        ''' trava, fotografar a geração NOVA e concluir que estava tudo bem
+        ''' — operando sobre uma chave zerada, ou sobre um rascunho que nem
+        ''' era o dele. A conferência lá dentro não pegava, porque comparava
+        ''' com o número errado.
         ''' </summary>
         Private Async Function ExclusivoAsync(trabalho As Func(Of Task)) As Task
+            Dim marca = Interlocked.Read(_geracao)
+
             Await _exclusiva.WaitAsync()
             Try
+                ' O rascunho acabou enquanto este comando esperava a vez.
+                If Not GeracaoValida(marca) Then Return
                 Await trabalho()
             Finally
                 _exclusiva.Release()
@@ -969,14 +989,26 @@ Namespace Global.Iris.App.ViewModels
         End Sub
 
         Private Async Function SalvarEFecharAsync() As Task
-            State = ComposerState.Editing
+            ' NÃO passa por Editing antes de salvar.
+            '
+            ' Passava, e isso quebrava o fechamento da janela: o
+            ' PropertyChanged é síncrono, a janela via o estado virar Editing
+            ' e concluía que o usuário tinha desistido de fechar, largando a
+            ' intenção. Quando o Encerrar publicava Closed, já não havia
+            ' ninguém ouvindo, e a janela ficava aberta depois de o usuário
+            ' ter clicado justamente em "Salvar e fechar".
+            '
+            ' O estado fica em ConfirmingClose até o resultado ser conhecido.
             Status = "Salvando…"
 
             If Not Await DescarregarSemTravaAsync() Then
                 ' Não fecha em cima de uma gravação que falhou: fechar aqui
                 ' seria perder o texto justamente no caso em que ele não
-                ' está guardado.
+                ' está guardado. AGORA sim volta a editar — e aí a janela
+                ' larga a intenção de fechar, corretamente, porque o
+                ' fechamento não aconteceu.
                 AvisarDescargaIncompleta()
+                VoltarAEditar()
                 Return
             End If
 

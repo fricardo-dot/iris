@@ -811,6 +811,159 @@ Public Class ComposerTests
         Assert.IsFalse(vm.IsDirty)
     End Sub
 
+
+    ''' <summary>
+    ''' Um comando que ficou na FILA da trava enquanto o rascunho era
+    ''' descartado nao pode rodar depois.
+    '''
+    ''' Era o furo da geracao: ela era fotografada DEPOIS de pegar a trava,
+    ''' entao quem esperava comparava com o numero NOVO e concluia que
+    ''' estava tudo bem — operando sobre uma chave zerada.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Comando_na_fila_nao_roda_depois_do_rascunho_ser_descartado()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker, escolha:=CaminhoDeArquivoReal())
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+
+        ' O anexo prende a trava.
+        broker.TravaDoAttach = New TaskCompletionSource(Of Boolean)()
+        Dim anexando = vm.AttachCommand.ExecuteAsync(Nothing)
+        AguardarChamadas(broker, "attach", 1)
+
+        ' Estes dois entram na fila, nesta ordem.
+        Dim descartando = vm.DiscardCommand.ExecuteAsync(Nothing)
+        Dim conferindo = vm.RequestSendCommand.ExecuteAsync(Nothing)
+
+        broker.TravaDoAttach.SetResult(True)
+        broker.TravaDoAttach = Nothing
+        Aguardar(anexando)
+        Aguardar(descartando)
+        Aguardar(conferindo)
+
+        Assert.AreEqual(1, ContarChamadas(broker, "delete"))
+        Assert.AreEqual(0, ContarChamadas(broker, "prepare"),
+            "Conferir o envio de um rascunho ja descartado nao pode nem chegar ao broker.")
+        Assert.AreEqual(ComposerState.Closed, vm.State)
+    End Sub
+
+    ''' <summary>
+    ''' A trava cobre ate DEPOIS do anexo, e nao so a descarga. Com a
+    ''' anexacao presa, nenhuma outra operacao pode chegar ao broker.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Enquanto_o_anexo_grava_nenhuma_outra_operacao_passa()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker, escolha:=CaminhoDeArquivoReal())
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+
+        broker.TravaDoAttach = New TaskCompletionSource(Of Boolean)()
+        Dim anexando = vm.AttachCommand.ExecuteAsync(Nothing)
+        AguardarChamadas(broker, "attach", 1)
+
+        Dim conferindo = vm.RequestSendCommand.ExecuteAsync(Nothing)
+        BombearPor(DebounceDeTeste * 4)
+
+        Assert.AreEqual(0, ContarChamadas(broker, "prepare"),
+            "A trava soltou antes de o anexo terminar.")
+
+        broker.TravaDoAttach.SetResult(True)
+        broker.TravaDoAttach = Nothing
+        Aguardar(anexando)
+        Aguardar(conferindo)
+
+        Assert.AreEqual(1, ContarChamadas(broker, "prepare"))
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+    End Sub
+
+    ''' <summary>
+    ''' "Salvar e fechar" tem de continuar em ConfirmingClose ate saber se
+    ''' a gravacao deu certo.
+    '''
+    ''' Passar por Editing no comeco quebrava o fechamento da janela: o
+    ''' PropertyChanged e sincrono, a janela via Editing, concluia que o
+    ''' usuario tinha desistido de fechar e largava a intencao — e ai
+    ''' ninguem estava ouvindo quando o Closed chegava.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Salvar_e_fechar_nao_passa_por_edicao_no_meio()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.UserText = "texto por salvar"
+        vm.CloseCommand.Execute(Nothing)
+        Assert.AreEqual(ComposerState.ConfirmingClose, vm.State)
+
+        Dim estados As New List(Of ComposerState)()
+        AddHandler vm.PropertyChanged,
+            Sub(remetente, argumentos)
+                If argumentos.PropertyName = NameOf(ComposerViewModel.State) Then estados.Add(vm.State)
+            End Sub
+
+        broker.TravaDoUpdate = New TaskCompletionSource(Of Boolean)()
+        Dim fechando = vm.SaveAndCloseCommand.ExecuteAsync(Nothing)
+        AguardarChamadas(broker, "update", 1)
+
+        Assert.AreEqual(ComposerState.ConfirmingClose, vm.State,
+            "Enquanto grava, o estado tem de continuar sendo a pergunta de fechamento.")
+
+        broker.TravaDoUpdate.SetResult(True)
+        broker.TravaDoUpdate = Nothing
+        Aguardar(fechando)
+
+        Assert.AreEqual(ComposerState.Closed, vm.State)
+        CollectionAssert.DoesNotContain(estados, ComposerState.Editing,
+            "Passar por Editing faz a janela largar a intencao de fechar.")
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo do teste acima: se a gravacao FALHA, ai sim volta
+    ''' a editar — porque o fechamento nao aconteceu.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Salvar_e_fechar_que_falha_volta_a_editar()
+        Dim broker As New FakeBroker With {.FalhaAoGravar = ErrorKind.NotConnected}
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.UserText = "texto que nao pode sumir"
+        vm.CloseCommand.Execute(Nothing)
+        Aguardar(vm.SaveAndCloseCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.Editing, vm.State)
+        Assert.IsTrue(vm.IsDirty)
+        Assert.AreEqual("texto que nao pode sumir", vm.UserText)
+    End Sub
+
+    ''' <summary>
+    ''' "Continuar editando" tambem rearma o autosave. Mesmo motivo do
+    ''' CancelSendCommand: o texto pendente nao pode ficar esperando uma
+    ''' proxima tecla que talvez nao venha.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Continuar_editando_volta_a_gravar_o_que_estava_pendente()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.UserText = "texto por salvar"
+        vm.CloseCommand.Execute(Nothing)
+        Assert.AreEqual(ComposerState.ConfirmingClose, vm.State)
+
+        Dim gravacoesAntes = ContarChamadas(broker, "update")
+        vm.KeepEditingCommand.Execute(Nothing)
+        BombearPor(DebounceDeTeste * 6)
+
+        Assert.AreEqual(ComposerState.Editing, vm.State)
+        Assert.IsTrue(ContarChamadas(broker, "update") > gravacoesAntes)
+        Assert.IsFalse(vm.IsDirty)
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================
