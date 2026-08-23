@@ -194,6 +194,12 @@ Namespace Global.Iris.App.ViewModels
             ' apaga seria mentir sobre o que acontece com o rascunho.
             CloseLocallyCommand = New RelayCommand(AddressOf Encerrar,
                                                    Function() _sessaoSubstituida)
+
+            ' Dava para anexar e nao dava para desanexar. Era a lacuna mais
+            ' visivel do 1.5.
+            RemoveAttachmentCommand = New AsyncRelayCommand(Of AttachmentInfo)(
+                Function(a) ExclusivoAsync(Function() DesanexarAsync(a)),
+                Function(a) PodeGravar AndAlso a IsNot Nothing)
             KeepEditingCommand = New RelayCommand(AddressOf VoltarAEditar)
         End Sub
 
@@ -206,6 +212,7 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property DiscardCommand As IAsyncRelayCommand
         Public ReadOnly Property KeepEditingCommand As IRelayCommand
         Public ReadOnly Property CloseLocallyCommand As IRelayCommand
+        Public ReadOnly Property RemoveAttachmentCommand As IAsyncRelayCommand(Of AttachmentInfo)
 
         Public ReadOnly Property Attachments As New ObservableCollection(Of AttachmentInfo)()
 
@@ -872,6 +879,37 @@ Namespace Global.Iris.App.ViewModels
             End If
         End Function
 
+        ''' <summary>
+        ''' Tira um anexo do rascunho.
+        '''
+        ''' Descarrega antes, como o anexar: remover usa a chave, e uma
+        ''' gravacao em voo pode troca-la no meio do caminho.
+        ''' </summary>
+        Private Async Function DesanexarAsync(anexo As AttachmentInfo) As Task
+            If RecusarPorSessao() Then Return
+            If anexo Is Nothing Then Return
+
+            Dim marca = Interlocked.Read(_geracao)
+
+            If Not Await DescarregarSemTravaAsync() Then
+                TratarDescargaIncompleta(marca, retomarEdicao:=False)
+                Return
+            End If
+
+            Dim resultado = Await _broker.RemoveDraftAttachmentAsync(
+                _key, anexo.Key, CancellationToken.None)
+
+            If Not GeracaoValida(marca) Then Return
+
+            If resultado.Succeeded Then
+                Aplicar(resultado.Value, primeiraVez:=False)
+                Status = ""
+            Else
+                Status = "Nao foi possivel remover " & anexo.FileName & ". " &
+                         Traduzir(resultado.Kind)
+            End If
+        End Function
+
         ' ================================================================
         ' Envio
         ' ================================================================
@@ -1257,6 +1295,7 @@ Namespace Global.Iris.App.ViewModels
             SaveAndCloseCommand.NotifyCanExecuteChanged()
             DiscardCommand.NotifyCanExecuteChanged()
             CloseLocallyCommand.NotifyCanExecuteChanged()
+            RemoveAttachmentCommand.NotifyCanExecuteChanged()
         End Sub
 
         Private Shared Function Traduzir(kind As ErrorKind) As String

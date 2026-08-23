@@ -218,8 +218,35 @@ Friend NotInheritable Class FakeBroker
 
     Public Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
                                                cancel As CancellationToken) _
-        As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.RemoveDraftAttachmentAsync
-        Throw New NotSupportedException("O compositor não deveria chamar isto neste marco.")
+        As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.RemoveDraftAttachmentAsync
+
+        Chamadas.Add("detach")
+        ChavesRecebidas.Add(draft)
+
+        If Not ChaveVale(draft) Then
+            Return Task.FromResult(OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "chave vencida"))
+        End If
+
+        Dim alvo = _anexos.FirstOrDefault(
+            Function(x) x.FileName = attachment.FileName AndAlso x.SizeBytes = attachment.SizeBytes)
+
+        If alvo Is Nothing Then
+            Return Task.FromResult(OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "anexo"))
+        End If
+
+        _anexos.Remove(alvo)
+
+        ' Remover SALVA: a chave gira, e as chaves dos anexos que sobraram
+        ' sao reconstruidas porque o indice dos seguintes mudou.
+        Dim info = Salvar()
+        For i = 0 To _anexos.Count - 1
+            _anexos(i).Key = New AttachmentKey(ChaveAtual().Item, i + 1,
+                                               _anexos(i).FileName, _anexos(i).SizeBytes)
+        Next
+        info.Attachments.Clear()
+        info.Attachments.AddRange(_anexos)
+
+        Return Task.FromResult(OperationResult(Of DraftInfo).Ok(info))
     End Function
 
     ''' <summary>

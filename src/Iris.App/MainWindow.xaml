@@ -743,9 +743,21 @@
                                                        Style="{StaticResource Text.Body}"
                                                        FontSize="{StaticResource Font.Size.Small}"
                                                        VerticalAlignment="Center"
-                                                       MaxWidth="240"
+                                                       MaxWidth="220"
                                                        TextTrimming="CharacterEllipsis"
                                                        ToolTip="{Binding FileName}" />
+
+                                            <Button Content="&#xE711;"
+                                                    FontFamily="Segoe Fluent Icons, Segoe MDL2 Assets"
+                                                    FontSize="10"
+                                                    Margin="8,0,-2,0" Padding="4,1"
+                                                    VerticalAlignment="Center"
+                                                    Style="{StaticResource Toolbar.Button}"
+                                                    ToolTip="Remover anexo"
+                                                    AutomationProperties.Name="Remover anexo"
+                                                    Command="{Binding DataContext.Composer.RemoveAttachmentCommand,
+                                                              RelativeSource={RelativeSource AncestorType=Window}}"
+                                                    CommandParameter="{Binding}" />
                                         </StackPanel>
                                     </Border>
                                 </DataTemplate>

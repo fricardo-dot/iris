@@ -165,8 +165,8 @@ Friend NotInheritable Class WatcherBroker
 
     Public Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
                                                cancel As CancellationToken) _
-        As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.RemoveDraftAttachmentAsync
-        Return Fora(Of OperationResult(Of Boolean))()
+        As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.RemoveDraftAttachmentAsync
+        Return Fora(Of OperationResult(Of DraftInfo))()
     End Function
 
     Public Function PrepareSendAsync(draft As DraftKey, cancel As CancellationToken) _

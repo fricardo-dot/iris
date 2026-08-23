@@ -1349,6 +1349,56 @@ Public Class ComposerTests
         Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
     End Sub
 
+
+    ''' <summary>
+    ''' Dava para anexar e nao dava para desanexar. Remover SALVA, entao a
+    ''' chave gira aqui tambem — e o compositor precisa instalar a nova, ou
+    ''' a gravacao seguinte volta NotFound.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Remover_anexo_tira_da_lista_e_instala_a_chave_nova()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker, escolha:=CaminhoDeArquivoReal())
+        Aguardar(vm.NewMessageAsync())
+
+        Aguardar(vm.AttachCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(1, vm.Attachments.Count)
+        Dim anexo = vm.Attachments(0)
+
+        Aguardar(vm.RemoveAttachmentCommand.ExecuteAsync(anexo))
+
+        Assert.AreEqual(0, vm.Attachments.Count, "O anexo continua na lista.")
+        Assert.AreEqual(1, ContarChamadas(broker, "detach"))
+
+        ' Se a chave velha tivesse ficado, esta gravacao daria NotFound.
+        Dim chaveDepois = broker.ChaveAtual()
+        vm.UserText = "depois de remover"
+        AguardarChamadas(broker, "update", 1)
+
+        Assert.AreEqual(chaveDepois, broker.ChavesRecebidas.Last())
+        Assert.IsFalse(vm.IsDirty)
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: com a sessao substituida, remover nao passa —
+    ''' e mais uma operacao que grava com a chave.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Sessao_substituida_bloqueia_remover_anexo()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker, escolha:=CaminhoDeArquivoReal())
+        Aguardar(vm.NewMessageAsync())
+        Aguardar(vm.AttachCommand.ExecuteAsync(Nothing))
+        Dim anexo = vm.Attachments(0)
+
+        broker.SubstituirSessao()
+        vm.OnSessionReplaced(broker.SessionEpoch)
+
+        Assert.IsFalse(vm.RemoveAttachmentCommand.CanExecute(anexo))
+        Aguardar(vm.RemoveAttachmentCommand.ExecuteAsync(anexo))
+        Assert.AreEqual(0, ContarChamadas(broker, "detach"))
+    End Sub
+
     ' ================================================================
     ' Bombeamento
     ' ================================================================

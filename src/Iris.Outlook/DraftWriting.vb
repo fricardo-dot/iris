@@ -34,6 +34,9 @@ Namespace Global.Iris.Outlook
         ''' </summary>
         Private Const MarcaHtml As String = "<!--iris-quote-->"
 
+        ''' <summary>Propriedade de usuário que identifica rascunho do Iris.</summary>
+        Private Const PropDoIris As String = "IrisDraft"
+
         ''' <summary>PR_SMTP_ADDRESS_W, para quando o OOM nao entrega o SMTP.</summary>
         Private Const PropSmtpAddress As String =
             "http://schemas.microsoft.com/mapi/proptag/0x39FE001F"
@@ -207,17 +210,26 @@ Namespace Global.Iris.Outlook
         ''' citação preserva o conteúdo intacto.
         ''' </summary>
         Private Sub PlantarMarca(item As OL.MailItem, temCitacao As Boolean)
+            MarcarComoDoIris(item)
+
             If item.BodyFormat = OL.OlBodyFormat.olFormatHTML Then
                 ' Comentário HTML: invisível para quem recebe.
                 Dim citacao = If(temCitacao, Texto(Function() item.HTMLBody), "")
                 item.HTMLBody = ParaHtml("") & MarcaHtml & citacao
             Else
-                ' Em texto puro não existe marca invisível. A linha aparece,
-                ' e numa mensagem nova ela aparece sem ter original nenhuma
-                ' embaixo — anotado como dívida na FASE1, seção 11. O padrão
-                ' do Outlook é HTML, então este caminho é o raro.
-                Dim citacao = If(temCitacao, Texto(Function() item.Body), "")
-                item.Body = MarcaTexto & citacao
+                ' Em texto puro não existe marca invisível — a linha aparece
+                ' para quem recebe. Então ela SÓ é plantada quando existe
+                ' citação de verdade embaixo dela.
+                '
+                ' Numa mensagem nova não há marca nenhuma, e o leitor precisa
+                ' saber disso: sem marca, ele trataria o corpo inteiro como
+                ' citação e o texto do próprio usuário viraria "mensagem
+                ' original" não editável.
+                If temCitacao Then
+                    item.Body = MarcaTexto & Texto(Function() item.Body)
+                Else
+                    item.Body = ""
+                End If
             End If
         End Sub
 
@@ -296,6 +308,82 @@ Namespace Global.Iris.Outlook
             Finally
                 ComHelpers.Release(item)
             End Try
+        End Function
+
+        ''' <summary>
+        ''' Tira um anexo do rascunho.
+        '''
+        ''' Localiza pelo NOME e pelo tamanho, não só pelo índice. O índice
+        ''' guardado envelhece: basta outro anexo ter sido removido antes
+        ''' para todos os seguintes andarem uma casa, e aí o índice antigo
+        ''' apaga o anexo errado — que é irreversível do ponto de vista do
+        ''' usuário, porque o arquivo original pode não existir mais.
+        '''
+        ''' O índice entra como desempate quando há nomes repetidos.
+        ''' </summary>
+        Public Function RemoveAttachment(ns As OL.NameSpace, chave As DraftKey,
+                                         anexo As AttachmentKey) As OperationResult(Of DraftInfo)
+            If anexo Is Nothing Then
+                Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "anexo")
+            End If
+
+            Dim item As OL.MailItem = Nothing
+            Try
+                item = TryCast(ns.GetItemFromID(chave.Item.EntryId, chave.Item.StoreId), OL.MailItem)
+                If item Is Nothing Then
+                    Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "rascunho")
+                End If
+
+                Dim removido = False
+                Dim anexos As OL.Attachments = Nothing
+                Try
+                    anexos = item.Attachments
+
+                    ' De trás para frente: remover encurta a coleção, e
+                    ' percorrer para a frente pularia o item seguinte ao
+                    ' removido.
+                    For i = anexos.Count To 1 Step -1
+                        Dim a As OL.Attachment = Nothing
+                        Try
+                            a = anexos.Item(i)
+                            If Combina(a, anexo, i) Then
+                                a.Delete()
+                                removido = True
+                                Exit For
+                            End If
+                        Catch
+                        Finally
+                            ComHelpers.Release(a)
+                        End Try
+                    Next
+                Finally
+                    ComHelpers.Release(anexos)
+                End Try
+
+                If Not removido Then
+                    Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "anexo")
+                End If
+
+                item.Save()
+                Return OperationResult(Of DraftInfo).Ok(Descrever(item, ns))
+            Finally
+                ComHelpers.Release(item)
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' É este o anexo? Nome e tamanho primeiro; índice só desempata.
+        ''' </summary>
+        Private Function Combina(a As OL.Attachment, alvo As AttachmentKey, indice As Integer) As Boolean
+            Dim nome = Texto(Function() a.FileName)
+            If Not String.Equals(nome, alvo.FileName, StringComparison.Ordinal) Then Return False
+
+            Dim tamanho = Numero(Function() a.Size)
+            If tamanho <> alvo.SizeBytes Then Return False
+
+            ' Nome e tamanho iguais em dois anexos diferentes é possível — o
+            ' mesmo arquivo anexado duas vezes. Aí o índice decide.
+            Return indice = alvo.Index OrElse alvo.Index <= 0
         End Function
 
         Public Function Delete(ns As OL.NameSpace, chave As DraftKey) As OperationResult(Of Boolean)
@@ -595,6 +683,12 @@ Namespace Global.Iris.Outlook
                            Texto(Function() item.HTMLBody),
                            Texto(Function() item.Body))
 
+            ' Em HTML a marca invisível responde sozinha. Em texto puro não
+            ' há marca numa mensagem nova, então a pergunta "é rascunho do
+            ' Iris?" é o que separa "corpo é do usuário" de "corpo é citação
+            ' de um rascunho que veio de outro lugar".
+            Dim ehDoIris = EhRascunhoDoIris(item)
+
             Dim info As New DraftInfo With {
                 .Key = New DraftKey(New ItemKey(Texto(Function() item.EntryID),
                                                 StoreIdDe(item))),
@@ -619,7 +713,15 @@ Namespace Global.Iris.Outlook
                 If pos >= 0 Then
                     info.UserText = corpo.Substring(0, pos)
                     info.QuotedBody = corpo.Substring(pos + MarcaTexto.Length)
+                ElseIf ehDoIris Then
+                    ' Rascunho que o Iris criou, em texto puro, SEM marca:
+                    ' é uma mensagem nova, e o corpo inteiro é do usuário.
+                    ' Tratar como citação transformaria o que ele digitou em
+                    ' "mensagem original" não editável.
+                    info.UserText = corpo
                 Else
+                    ' Rascunho de origem desconhecida: preservar tudo como
+                    ' citação é o palpite que não destrói nada.
                     info.QuotedBody = corpo
                 End If
             End If
@@ -665,6 +767,49 @@ Namespace Global.Iris.Outlook
         ''' um DraftInfo porque a confirmacao de envio precisa dos mesmos
         ''' anexos sem ser um rascunho descrito.
         ''' </summary>
+        ''' <summary>
+        ''' Este rascunho foi criado pelo Iris nesta sessão?
+        '''
+        ''' Marca gravada numa propriedade de usuário, invisível para quem
+        ''' recebe e independente do formato do corpo. Existe porque em texto
+        ''' puro não dá para plantar marca no corpo sem que ela apareça na
+        ''' mensagem — e sem alguma marca, "corpo sem separador" seria
+        ''' ambíguo entre mensagem nova e rascunho de outra origem.
+        ''' </summary>
+        Private Function EhRascunhoDoIris(item As OL.MailItem) As Boolean
+            Dim props As OL.UserProperties = Nothing
+            Dim prop As OL.UserProperty = Nothing
+            Try
+                props = item.UserProperties
+                prop = props.Find(PropDoIris)
+                Return prop IsNot Nothing
+            Catch
+                Return False
+            Finally
+                ComHelpers.Release(prop)
+                ComHelpers.Release(props)
+            End Try
+        End Function
+
+        Private Sub MarcarComoDoIris(item As OL.MailItem)
+            Dim props As OL.UserProperties = Nothing
+            Dim prop As OL.UserProperty = Nothing
+            Try
+                props = item.UserProperties
+                prop = props.Find(PropDoIris)
+                If prop Is Nothing Then
+                    prop = props.Add(PropDoIris, OL.OlUserPropertyType.olText)
+                End If
+                prop.Value = "1"
+            Catch
+                ' Não conseguir marcar não impede compor; só faz o leitor
+                ' cair no palpite conservador depois.
+            Finally
+                ComHelpers.Release(prop)
+                ComHelpers.Release(props)
+            End Try
+        End Sub
+
         Private Function LerAnexos(item As OL.MailItem) As List(Of AttachmentInfo)
             Dim lista As New List(Of AttachmentInfo)()
             Dim dono = New ItemKey(Texto(Function() item.EntryID), StoreIdDe(item))

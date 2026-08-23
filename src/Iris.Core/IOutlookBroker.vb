@@ -165,9 +165,15 @@ Namespace Global.Iris.Core
                                          cancel As CancellationToken) _
             As Task(Of OperationResult(Of DraftInfo))
 
+        ''' <summary>
+        ''' Remove e devolve o rascunho redescrito. Mesmo motivo do anexar:
+        ''' remover SALVA, o EntryID pode mudar, e todas as AttachmentKey são
+        ''' reconstruídas porque o índice dos anexos seguintes muda ao tirar
+        ''' um do meio.
+        ''' </summary>
         Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
                                             cancel As CancellationToken) _
-            As Task(Of OperationResult(Of Boolean))
+            As Task(Of OperationResult(Of DraftInfo))
 
         ''' <summary>
         ''' O que a confirmação mostra antes de enviar: conta remetente e

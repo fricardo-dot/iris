@@ -736,10 +736,13 @@ Namespace Global.Iris.Outlook
                 Function(app, ns) DraftWriting.AddAttachment(ns, draft, filePath), cancel)
         End Function
 
-        Public Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
-                                                   cancel As CancellationToken) _
-            As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.RemoveDraftAttachmentAsync
-            Return Pendente(Of Boolean)("1.5")
+        Public Async Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
+                                                         cancel As CancellationToken) _
+            As Task(Of OperationResult(Of DraftInfo)) Implements IOutlookBroker.RemoveDraftAttachmentAsync
+
+            Return Await MutateAsync(Of DraftInfo)(
+                "outlook.removeDraftAttachment",
+                Function(app, ns) DraftWriting.RemoveAttachment(ns, draft, attachment), cancel)
         End Function
 
         ''' <summary>
