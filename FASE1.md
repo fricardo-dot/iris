@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 6 — marco 1.5 fechado após seis passadas de revisão externa.
+**Versão:** 7 — marco 1.5 fechado; plano do 1.6 na seção 13.
 
 ---
 
@@ -558,3 +558,115 @@ usuário.
 - Envio ambíguo **bloqueia novo envio daquele rascunho** até a
   reconciliação. Reenviar no escuro é o único erro irreversível deste
   projeto.
+
+---
+
+## 13. Plano do marco 1.6 — consolidação e testes de falha
+
+Escrito antes do código, para não virar improviso no meio.
+
+### O que este marco NÃO é
+
+Não é onde reconexão e classificação de erro nascem. Elas existem desde o
+1.1 e funcionam. Este marco é onde elas são **exercitadas e provadas** — e
+onde o que ficou pela metade nos marcos anteriores é fechado.
+
+### O achado que ancora o marco
+
+`Classify` e `ClassifyFailure`, em `OutlookBroker.vb`, têm **zero testes**.
+
+São as regras que decidem se uma falha pode ser repetida. Em particular,
+`ClassifyFailure` contém a única defesa contra o pior erro possível deste
+projeto: uma falha depois de a mutação começar vira `Ambiguous`, que não é
+retentável. O comentário no código conta que já houve o bug oposto — um
+`Send` que estourava depois de a mensagem sair virava `NotConnected`, cujo
+`IsRetryable` é `True`, e o código convidava a reenviar exatamente no caso
+em que reenviar duplica.
+
+Essa regra vive dentro de um arquivo de 852 linhas que só compila em
+Windows e só roda com Outlook. Nenhum teste a alcança. É a mesma situação
+de `EhSmtp` antes do 1.5, e a solução é a mesma: a regra é lógica pura,
+então ela sai para o `Iris.Core` e ganha testes.
+
+### Grupo A — extrair e provar as regras de falha
+
+**A1. `FailureClassification` no `Iris.Core`.**
+Move `Classify` (HRESULT → `ErrorKind`) e a regra de ambiguidade. O broker
+passa a chamar a política; nada de comportamento muda. Testes cobrindo:
+cada HRESULT mapeado, HRESULT desconhecido, e — o principal — que
+`isMutation:=True` com efeito iniciado devolve `Ambiguous` para QUALQUER
+HRESULT, inclusive os que sozinhos seriam `NotConnected` ou `Busy`.
+Controle negativo: leitura com o mesmo HRESULT NÃO vira `Ambiguous`, senão
+a regra estaria classificando tudo como ambíguo e passaria de graça.
+
+**A2. `SessionState` a partir do HRESULT.**
+A mesma extração para a classificação do probe: quais HRESULTs derrubam a
+sessão e forçam reconexão, quais são "ocupado", e a decisão — já tomada e
+comentada no código — de que HRESULT não classificado reporta estado
+degradado em vez de mentir `Connected`.
+
+### Grupo B — exercitar as falhas na interface
+
+Contra o `FakeBroker`, que já sabe falhar sob comando. Cada um com
+controle negativo.
+
+- **B1. Queda durante o uso.** Árvore, lista e leitor são limpos; o
+  compositor NÃO é, porque o texto é trabalho do usuário. Já decidido no
+  1.5; falta o teste que impede alguém de "simplificar" isso depois.
+- **B2. Volta da conexão.** Árvore recarrega, assinatura é restabelecida,
+  e a recarga acontece UMA vez — não uma por evento.
+- **B3. Item removido por baixo.** `NotFound` tratado ao ler, ao marcar
+  como lida, ao responder e ao enviar. Cada um mostra o que aconteceu em
+  vez de falhar em silêncio.
+- **B4. Rajada de invalidações.** Vinte eventos em sequência produzem uma
+  recarga, não vinte. O debounce do `FolderWatcher` já existe; o teste é o
+  que impede a regressão.
+- **B5. Gravação falhando por disco/permissão.** O texto permanece na
+  tela, o status explica, e a próxima tecla tenta de novo. Parcialmente
+  coberto no 1.5; falta o caso do disco.
+
+### Grupo C — fechar o que ficou pela metade
+
+- **C1. `RemoveDraftAttachmentAsync`.** Hoje devolve `NotImplemented`: dá
+  para anexar e não dá para desanexar. É a lacuna mais visível do 1.5.
+- **C2. Marca de separação visível em texto puro.** Numa mensagem nova em
+  texto puro, a linha `----- mensagem original -----` aparece sem ter
+  original nenhuma embaixo.
+- **C3. Sinalização de leitura parcial.** Dívida do 1.4 que o próprio
+  documento marcou como "não passa no 1.5". Hoje a UI não distingue "não
+  tem destinatário" de "não deu para ler os destinatários".
+
+### Grupo D — o que exige o Outlook de verdade
+
+Estes **não** dependem de código novo, e sim de um roteiro executado com o
+Outlook aberto. Envolvem fechar e reabrir o Outlook do usuário, que é o
+cliente de e-mail real dele: **pedir autorização antes**, e nunca executar
+por conta própria.
+
+- **D1.** Fechar o Outlook com o Iris rodando: estado vira "Outlook
+  fechado", operações devolvem `NotConnected`, compositor preservado.
+- **D2.** Reabrir: reconexão automática pelo watchdog, sem reiniciar o
+  Iris. É o que valida que o RCW morto é descartado e um novo é adquirido.
+- **D3.** D4 e D7 da Fase 0, ainda sem teste: movimento entre stores e
+  reinício do Outlook com assinatura ativa.
+
+### O que fica FORA do 1.6, e por quê
+
+- **Fixture de 5.000 itens e offsets profundos.** Precisa de PST de teste;
+  é trabalho de infraestrutura de medição, não de consolidação.
+- **WebView2.** É superfície nova, não consolidação.
+- **Reabrir rascunho existente.** É funcionalidade, não robustez.
+- **Envio ambíguo contra o Outlook real.** Provocá-lo exigiria fazer um
+  `Send` de verdade falhar no meio. O que dá para provar sem isso é a
+  regra de classificação — e é exatamente o que o grupo A faz.
+
+### Critério de pronto
+
+1. `Classify` e a regra de ambiguidade fora do broker, com testes e
+   controles negativos.
+2. Os cinco cenários do grupo B com teste, cada um com controle negativo.
+3. Grupo C fechado.
+4. Roteiro do grupo D executado com o usuário, com resultado registrado
+   aqui — inclusive se algum falhar.
+5. Suíte estável em 10 execuções seguidas.
+6. Revisão externa até voltar sem bloqueante, incluindo as correções.
