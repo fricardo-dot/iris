@@ -451,7 +451,7 @@ Namespace Global.Iris.Outlook
                 ' travaria a aquisição; e uma exceção dele faria uma conexão
                 ' bem-sucedida parecer falha.
                 Dim nova = Interlocked.Increment(_epoca)
-                _epocaAPublicar = nova
+                Interlocked.Exchange(_epocaAPublicar, nova)
                 _probesDesconhecidos = 0
                 _log.Write(LogLevel.Info, "broker.session", $"epoca {nova}")
 

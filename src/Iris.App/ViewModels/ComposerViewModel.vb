@@ -727,6 +727,8 @@ Namespace Global.Iris.App.ViewModels
                 .CcLine = CcLine
             }
 
+            If _sessaoSubstituida Then Return
+
             Dim resultado = Await _broker.UpdateDraftAsync(_key, conteudo, CancellationToken.None)
 
             ' O rascunho pode ter sido descartado enquanto isto gravava.
@@ -858,6 +860,11 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End If
 
+            ' De novo, colado na chamada. A sessão pode ter trocado
+            ' durante o diálogo de arquivo ou durante a descarga — conferir
+            ' só na entrada deixava exatamente essa janela aberta.
+            If RecusarPorSessao() Then Return
+
             Dim resultado = Await _broker.AddDraftAttachmentAsync(_key, escolhido, CancellationToken.None)
 
             ' O compositor pode ter sido encerrado enquanto o anexo subia.
@@ -895,6 +902,8 @@ Namespace Global.Iris.App.ViewModels
                 TratarDescargaIncompleta(marca, retomarEdicao:=False)
                 Return
             End If
+
+            If RecusarPorSessao() Then Return
 
             Dim resultado = Await _broker.RemoveDraftAttachmentAsync(
                 _key, anexo.Key, CancellationToken.None)
@@ -937,6 +946,8 @@ Namespace Global.Iris.App.ViewModels
             ' escrita comum com Interlocked.Read anuncia uma garantia que o
             ' modelo de memória não dá.
             Interlocked.Exchange(_edicoesNaPrevia, Interlocked.Read(_edicoes))
+
+            If RecusarPorSessao() Then Return
 
             Dim resultado = Await _broker.PrepareSendAsync(_key, CancellationToken.None)
             If Not GeracaoValida(marca) Then Return

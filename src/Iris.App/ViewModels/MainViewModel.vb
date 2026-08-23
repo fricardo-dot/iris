@@ -111,8 +111,13 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property PodeEncaminhar As Boolean
             Get
+                ' SÓ os anexos. Exigir CanReply aqui bloquearia encaminhar por
+                ' causa de uma lista de destinatários incompleta — e
+                ' encaminhar não usa os destinatários da mensagem original.
+                ' Era regra mais restritiva que a documentada, o que é a
+                ' forma silenciosa de a regra escrita deixar de valer.
                 Return PodeCompor AndAlso Messages.Selected IsNot Nothing AndAlso
-                       Detail.CanReply AndAlso Detail.CanForward
+                       Detail.CanForward
             End Get
         End Property
 

@@ -114,7 +114,9 @@ Namespace Global.Iris.Outlook
                                           destino As List(Of RecipientInfo)) As PartStatus
             Dim recipients As OL.Recipients = Nothing
             Dim esperados = 0
-            Dim ultimaFalha = ErrorKind.Unexpected
+            Dim esperadoDepois = -1
+            Dim obtidos = 0
+            Dim ultimaFalha = ErrorKind.None
 
             Try
                 recipients = mail.Recipients
@@ -130,6 +132,7 @@ Namespace Global.Iris.Outlook
                             .Kind = TipoDeDestinatario(r),
                             .Resolved = Booleano(Function() r.Resolved)
                         })
+                        obtidos += 1
                     Catch ex As COMException
                         ' Um destinatário problemático não derruba a leitura,
                         ' mas agora deixa rastro.
@@ -141,6 +144,11 @@ Namespace Global.Iris.Outlook
                         ComHelpers.Release(r)
                     End Try
                 Next
+
+                ' Conta de NOVO. A coleção pode ter mudado no meio do
+                ' percurso, e nesse caso o snapshot não vale — declarar
+                ' completo em cima dele seria afirmar o que não se sabe.
+                esperadoDepois = recipients.Count
 
             Catch ex As COMException
                 ' Ler destinatários é uma das operações que a guarda do
@@ -154,8 +162,7 @@ Namespace Global.Iris.Outlook
                 ComHelpers.Release(recipients)
             End Try
 
-            If destino.Count = esperados Then Return PartStatus.CompleteWith(esperados)
-            Return PartStatus.IncompleteWith(esperados, destino.Count, ultimaFalha)
+            Return PartStatus.FromCounts(esperados, esperadoDepois, obtidos, ultimaFalha)
         End Function
 
         Private Function TipoDeDestinatario(r As OL.Recipient) As RecipientKind
@@ -181,7 +188,9 @@ Namespace Global.Iris.Outlook
                                    destino As List(Of AttachmentInfo)) As PartStatus
             Dim anexos As OL.Attachments = Nothing
             Dim esperados = 0
-            Dim ultimaFalha = ErrorKind.Unexpected
+            Dim esperadoDepois = -1
+            Dim obtidos = 0
+            Dim ultimaFalha = ErrorKind.None
 
             Try
                 anexos = mail.Attachments
@@ -201,6 +210,7 @@ Namespace Global.Iris.Outlook
                             .ContentId = "",
                             .IsInline = False
                         })
+                        obtidos += 1
                     Catch ex As COMException
                         ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
                             ex.HResult, isMutation:=False, mutationAttemptStarted:=False)
@@ -211,6 +221,8 @@ Namespace Global.Iris.Outlook
                     End Try
                 Next
 
+                esperadoDepois = anexos.Count
+
             Catch ex As COMException
                 Return PartStatus.Missing(OutlookFailurePolicy.ClassifyFailure(
                     ex.HResult, isMutation:=False, mutationAttemptStarted:=False))
@@ -220,8 +232,7 @@ Namespace Global.Iris.Outlook
                 ComHelpers.Release(anexos)
             End Try
 
-            If destino.Count = esperados Then Return PartStatus.CompleteWith(esperados)
-            Return PartStatus.IncompleteWith(esperados, destino.Count, ultimaFalha)
+            Return PartStatus.FromCounts(esperados, esperadoDepois, obtidos, ultimaFalha)
         End Function
 
         ''' <summary>

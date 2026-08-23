@@ -135,4 +135,74 @@ Public Class PartialReadTests
         StringAssert.Contains(texto, "anexos")
     End Sub
 
+
+    ' ================================================================
+    ' Contagem dupla
+    ' ================================================================
+
+    ''' <summary>
+    ''' Contagem que mudou no meio do percurso invalida o snapshot.
+    '''
+    ''' Nao existe prova de completude em cima de uma colecao COM que muda
+    ''' sozinha. O que da para fazer e fechar para o lado seguro: se a
+    ''' colecao tinha 5 e passou a ter 6, os 5 lidos nao sao "todos".
+    ''' </summary>
+    <TestMethod>
+    Public Sub Contagem_que_muda_no_meio_nao_e_completa()
+        Dim mudou = PartStatus.FromCounts(esperadoAntes:=5, esperadoDepois:=6,
+                                          obtidos:=5, ultimaFalha:=ErrorKind.None)
+
+        Assert.IsFalse(mudou.IsTrustworthy,
+            "Cinco de cinco, mas a colecao virou seis: o snapshot nao vale.")
+        Assert.AreEqual(PartState.Unavailable, mudou.State)
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: contagem estavel e tudo lido E completo. Sem
+    ''' isto, uma regra que nunca aprovasse passaria.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Contagem_estavel_com_tudo_lido_e_completa()
+        Dim ok = PartStatus.FromCounts(5, 5, 5, ErrorKind.None)
+        Assert.IsTrue(ok.IsTrustworthy)
+        Assert.AreEqual(5, ok.Obtained)
+    End Sub
+
+    <TestMethod>
+    Public Sub Contagem_estavel_com_item_faltando_e_incompleta()
+        Dim faltou = PartStatus.FromCounts(5, 5, 3, ErrorKind.Denied)
+        Assert.AreEqual(PartState.Incomplete, faltou.State)
+        Assert.AreEqual(3, faltou.Obtained)
+        Assert.AreEqual(5, faltou.Expected)
+    End Sub
+
+    ''' <summary>
+    ''' As fabricas recusam estados que nao fazem sentido. Sem estas
+    ''' guardas dava para fabricar um "incompleto" que na verdade e
+    ''' completo, ou um completo sem prova nenhuma.
+    ''' </summary>
+    <TestMethod>
+    Public Sub As_fabricas_recusam_o_que_nao_faz_sentido()
+        Assert.ThrowsException(Of ArgumentOutOfRangeException)(
+            Function() PartStatus.IncompleteWith(expected:=3, obtained:=5, reason:=ErrorKind.Denied))
+
+        Assert.ThrowsException(Of ArgumentException)(
+            Function() PartStatus.IncompleteWith(5, 3, ErrorKind.None))
+
+        Assert.ThrowsException(Of ArgumentException)(
+            Function() PartStatus.Missing(ErrorKind.None))
+    End Sub
+
+    ''' <summary>
+    ''' Nothing e tratado como NAO confiavel. E o que torna o default
+    ''' ausente seguro: quem esquecer de preencher bloqueia, em vez de
+    ''' declarar completude que nao provou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Status_ausente_nao_e_confiavel()
+        Assert.IsFalse(ReplyReadiness.CanReply(Nothing))
+        Assert.IsFalse(ReplyReadiness.CanForward(Nothing))
+        Assert.AreEqual("", ReplyReadiness.DescribeBlock("os anexos", Nothing))
+    End Sub
+
 End Class

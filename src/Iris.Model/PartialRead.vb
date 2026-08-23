@@ -59,23 +59,66 @@ Namespace Global.Iris.Model
             Me.Obtained = obtained
         End Sub
 
+        ''' <summary>
+        ''' Instância única. Antes era uma propriedade que criava objeto novo
+        ''' a cada leitura — imutável, então correto, mas alocação à toa num
+        ''' valor que é sempre o mesmo.
+        ''' </summary>
+        Private Shared ReadOnly _full As New PartStatus(PartState.Complete, ErrorKind.None, 0, 0)
+
         Public Shared ReadOnly Property Full As PartStatus
             Get
-                Return New PartStatus(PartState.Complete, ErrorKind.None, 0, 0)
+                Return _full
             End Get
         End Property
 
         Public Shared Function CompleteWith(count As Integer) As PartStatus
+            If count < 0 Then Throw New ArgumentOutOfRangeException(NameOf(count))
             Return New PartStatus(PartState.Complete, ErrorKind.None, count, count)
         End Function
 
+        ''' <summary>
+        ''' Incompleto exige um motivo e obtido menor que esperado. Sem estas
+        ''' guardas dava para fabricar um "incompleto" que na verdade é
+        ''' completo, ou um completo sem prova nenhuma.
+        ''' </summary>
         Public Shared Function IncompleteWith(expected As Integer, obtained As Integer,
-                                           reason As ErrorKind) As PartStatus
+                                              reason As ErrorKind) As PartStatus
+            If obtained < 0 OrElse expected < obtained Then
+                Throw New ArgumentOutOfRangeException(NameOf(obtained),
+                    "Obtido tem de estar entre zero e o esperado.")
+            End If
+            If reason = ErrorKind.None Then
+                Throw New ArgumentException("Leitura incompleta precisa de motivo.", NameOf(reason))
+            End If
             Return New PartStatus(PartState.Incomplete, reason, expected, obtained)
         End Function
 
         Public Shared Function Missing(reason As ErrorKind) As PartStatus
+            If reason = ErrorKind.None Then
+                Throw New ArgumentException("Parte indisponível precisa de motivo.", NameOf(reason))
+            End If
             Return New PartStatus(PartState.Unavailable, reason, 0, 0)
+        End Function
+
+        ''' <summary>
+        ''' Lê a coleção duas vezes e só declara completo se as duas
+        ''' contagens baterem E todas as posições tiverem sido lidas.
+        '''
+        ''' Não existe prova absoluta de completude em cima de uma coleção COM
+        ''' que muda sozinha. O que dá para fazer é fechar para o lado
+        ''' seguro: contagem que mudou no meio do percurso significa que o
+        ''' snapshot não vale, e um snapshot que não vale não pode ser
+        ''' apresentado como a lista inteira.
+        ''' </summary>
+        Public Shared Function FromCounts(esperadoAntes As Integer, esperadoDepois As Integer,
+                                          obtidos As Integer, ultimaFalha As ErrorKind) As PartStatus
+            If esperadoAntes <> esperadoDepois Then
+                Return Missing(If(ultimaFalha = ErrorKind.None, ErrorKind.Stale, ultimaFalha))
+            End If
+            If obtidos = esperadoAntes Then Return CompleteWith(obtidos)
+            Return IncompleteWith(esperadoAntes, obtidos,
+                                  If(ultimaFalha = ErrorKind.None, ErrorKind.Unexpected, ultimaFalha))
         End Function
 
         ''' <summary>

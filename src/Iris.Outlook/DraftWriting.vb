@@ -37,6 +37,10 @@ Namespace Global.Iris.Outlook
         ''' <summary>Propriedade de usuário que identifica rascunho do Iris.</summary>
         Private Const PropDoIris As String = "IrisDraft"
 
+        ''' <summary>A mesma marca, por propriedade nomeada MAPI.</summary>
+        Private Const PropDoIrisMapi As String =
+            "http://schemas.microsoft.com/mapi/string/{00020329-0000-0000-C000-000000000046}/IrisDraft"
+
         ''' <summary>PR_SMTP_ADDRESS_W, para quando o OOM nao entrega o SMTP.</summary>
         Private Const PropSmtpAddress As String =
             "http://schemas.microsoft.com/mapi/proptag/0x39FE001F"
@@ -334,35 +338,47 @@ Namespace Global.Iris.Outlook
                     Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "rascunho")
                 End If
 
-                Dim removido = False
+                ' Duas passadas: achar QUEM é, e só então apagar.
+                '
+                ' Numa passada só, o primeiro candidato ganhava — e com dois
+                ' anexos de mesmo nome e mesmo tamanho, um índice
+                ' desatualizado apagava o outro. Apagar o anexo errado é
+                ' irreversível do ponto de vista do usuário: o arquivo de
+                ' origem pode não existir mais.
+                Dim candidatos As New List(Of Integer)()
                 Dim anexos As OL.Attachments = Nothing
                 Try
                     anexos = item.Attachments
-
-                    ' De trás para frente: remover encurta a coleção, e
-                    ' percorrer para a frente pularia o item seguinte ao
-                    ' removido.
-                    For i = anexos.Count To 1 Step -1
+                    For i = 1 To anexos.Count
                         Dim a As OL.Attachment = Nothing
                         Try
                             a = anexos.Item(i)
-                            If Combina(a, anexo, i) Then
-                                a.Delete()
-                                removido = True
-                                Exit For
-                            End If
+                            If MesmoArquivo(a, anexo) Then candidatos.Add(i)
                         Catch
                         Finally
                             ComHelpers.Release(a)
                         End Try
                     Next
+
+                    Dim alvo = Escolher(candidatos, anexo.Index)
+                    If alvo = 0 Then
+                        If candidatos.Count = 0 Then
+                            Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "anexo")
+                        End If
+                        Return OperationResult(Of DraftInfo).Fail(ErrorKind.Ambiguous,
+                                                                  "anexo ambiguo")
+                    End If
+
+                    Dim aAlvo As OL.Attachment = Nothing
+                    Try
+                        aAlvo = anexos.Item(alvo)
+                        aAlvo.Delete()
+                    Finally
+                        ComHelpers.Release(aAlvo)
+                    End Try
                 Finally
                     ComHelpers.Release(anexos)
                 End Try
-
-                If Not removido Then
-                    Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "anexo")
-                End If
 
                 item.Save()
                 Return OperationResult(Of DraftInfo).Ok(Descrever(item, ns))
@@ -371,19 +387,27 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
+        ''' <summary>Mesmo nome e mesmo tamanho.</summary>
+        Private Function MesmoArquivo(a As OL.Attachment, alvo As AttachmentKey) As Boolean
+            If Not String.Equals(Texto(Function() a.FileName), alvo.FileName,
+                                 StringComparison.Ordinal) Then Return False
+            Return Numero(Function() a.Size) = alvo.SizeBytes
+        End Function
+
         ''' <summary>
-        ''' É este o anexo? Nome e tamanho primeiro; índice só desempata.
+        ''' Qual dos candidatos apagar. Zero significa "não dá para saber".
+        '''
+        ''' Candidato único: o índice não importa, porque não há outro que
+        ''' possa ser confundido com ele. Vários candidatos: só o índice
+        ''' exato serve, e se ele não estiver entre eles a resposta é
+        ''' RECUSAR — nunca escolher um. Numa operação que apaga, "o mais
+        ''' provável" não é resposta boa o bastante.
         ''' </summary>
-        Private Function Combina(a As OL.Attachment, alvo As AttachmentKey, indice As Integer) As Boolean
-            Dim nome = Texto(Function() a.FileName)
-            If Not String.Equals(nome, alvo.FileName, StringComparison.Ordinal) Then Return False
-
-            Dim tamanho = Numero(Function() a.Size)
-            If tamanho <> alvo.SizeBytes Then Return False
-
-            ' Nome e tamanho iguais em dois anexos diferentes é possível — o
-            ' mesmo arquivo anexado duas vezes. Aí o índice decide.
-            Return indice = alvo.Index OrElse alvo.Index <= 0
+        Private Function Escolher(candidatos As List(Of Integer), indice As Integer) As Integer
+            If candidatos.Count = 0 Then Return 0
+            If candidatos.Count = 1 Then Return candidatos(0)
+            If candidatos.Contains(indice) Then Return indice
+            Return 0
         End Function
 
         Public Function Delete(ns As OL.NameSpace, chave As DraftKey) As OperationResult(Of Boolean)
@@ -483,7 +507,9 @@ Namespace Global.Iris.Outlook
                     ComHelpers.Release(recipients)
                 End Try
 
-                previa.Attachments.AddRange(LerAnexos(item))
+                Dim statusDosAnexos As PartStatus = Nothing
+                previa.Attachments.AddRange(LerAnexos(item, statusDosAnexos))
+                previa.AttachmentsStatus = statusDosAnexos
                 Return OperationResult(Of SendPreview).Ok(previa)
             Finally
                 ComHelpers.Release(item)
@@ -730,7 +756,9 @@ Namespace Global.Iris.Outlook
                                     TextoDeHtml(info.QuotedBody),
                                     info.QuotedBody)
 
-            info.Attachments.AddRange(LerAnexos(item))
+            Dim statusDosAnexos As PartStatus = Nothing
+            info.Attachments.AddRange(LerAnexos(item, statusDosAnexos))
+            info.AttachmentsStatus = statusDosAnexos
             Return info
         End Function
 
@@ -782,12 +810,25 @@ Namespace Global.Iris.Outlook
             Try
                 props = item.UserProperties
                 prop = props.Find(PropDoIris)
-                Return prop IsNot Nothing
+                If prop IsNot Nothing Then Return True
             Catch
-                Return False
             Finally
                 ComHelpers.Release(prop)
                 ComHelpers.Release(props)
+            End Try
+
+            ' Segunda tentativa, pela propriedade nomeada: UserProperties
+            ' pode ser negado por política, e nesse caso a marca foi gravada
+            ' pelo outro caminho.
+            Dim acesso As OL.PropertyAccessor = Nothing
+            Try
+                acesso = item.PropertyAccessor
+                Dim valor = TryCast(acesso.GetProperty(PropDoIrisMapi), String)
+                Return Not String.IsNullOrEmpty(valor)
+            Catch
+                Return False
+            Finally
+                ComHelpers.Release(acesso)
             End Try
         End Function
 
@@ -802,22 +843,51 @@ Namespace Global.Iris.Outlook
                 End If
                 prop.Value = "1"
             Catch
-                ' Não conseguir marcar não impede compor; só faz o leitor
-                ' cair no palpite conservador depois.
+                ' UserProperties pode ser negado por política. Tenta a
+                ' propriedade nomeada antes de desistir.
+                Dim acesso As OL.PropertyAccessor = Nothing
+                Try
+                    acesso = item.PropertyAccessor
+                    acesso.SetProperty(PropDoIrisMapi, "1")
+                Catch
+                    ' Sem marca durável. A consequência só aparece ao REABRIR
+                    ' um rascunho de texto puro numa sessão futura — e reabrir
+                    ' rascunho existente não está implementado. Registrado na
+                    ' FASE1 para não virar surpresa quando estiver.
+                Finally
+                    ComHelpers.Release(acesso)
+                End Try
             Finally
                 ComHelpers.Release(prop)
                 ComHelpers.Release(props)
             End Try
         End Sub
 
-        Private Function LerAnexos(item As OL.MailItem) As List(Of AttachmentInfo)
+        ''' <summary>
+        ''' Lê os anexos e DIZ o quanto conseguiu.
+        '''
+        ''' Continuava devolvendo só a lista e engolindo as falhas, então
+        ''' <c>PrepareSend</c> e <c>Descrever</c> deixavam o status no
+        ''' default — afirmando completude que ninguém provou. Numa
+        ''' confirmação de envio isso é grave: a tela diz o que vai junto, e
+        ''' anexo não lido não deixa rastro.
+        ''' </summary>
+        Private Function LerAnexos(item As OL.MailItem,
+                                   ByRef status As PartStatus) As List(Of AttachmentInfo)
             Dim lista As New List(Of AttachmentInfo)()
             Dim dono = New ItemKey(Texto(Function() item.EntryID), StoreIdDe(item))
+
+            Dim esperados = 0
+            Dim esperadoDepois = -1
+            Dim obtidos = 0
+            Dim ultimaFalha = ErrorKind.None
 
             Dim anexos As OL.Attachments = Nothing
             Try
                 anexos = item.Attachments
-                For i = 1 To anexos.Count
+                esperados = anexos.Count
+
+                For i = 1 To esperados
                     Dim a As OL.Attachment = Nothing
                     Try
                         a = anexos.Item(i)
@@ -828,16 +898,31 @@ Namespace Global.Iris.Outlook
                             .FileName = Texto(Function() a.FileName),
                             .SizeBytes = Numero(Function() a.Size)
                         })
+                        obtidos += 1
+                    Catch ex As COMException
+                        ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
+                            ex.HResult, isMutation:=False, mutationAttemptStarted:=False)
                     Catch
+                        ultimaFalha = ErrorKind.Unexpected
                     Finally
                         ComHelpers.Release(a)
                     End Try
                 Next
+
+                esperadoDepois = anexos.Count
+
+            Catch ex As COMException
+                status = PartStatus.Missing(OutlookFailurePolicy.ClassifyFailure(
+                    ex.HResult, isMutation:=False, mutationAttemptStarted:=False))
+                Return lista
             Catch
+                status = PartStatus.Missing(ErrorKind.Unexpected)
+                Return lista
             Finally
                 ComHelpers.Release(anexos)
             End Try
 
+            status = PartStatus.FromCounts(esperados, esperadoDepois, obtidos, ultimaFalha)
             Return lista
         End Function
 

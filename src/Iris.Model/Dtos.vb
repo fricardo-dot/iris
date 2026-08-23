@@ -91,8 +91,16 @@ Namespace Global.Iris.Model
         ''' Quão completa veio cada parte. Sem isto, lista vazia era
         ''' ambígua: "não tem" e "não deu para ler" apareciam iguais.
         ''' </summary>
-        Public Property RecipientsStatus As PartStatus = PartStatus.Full
-        Public Property AttachmentsStatus As PartStatus = PartStatus.Full
+        ''' <summary>
+        ''' Sem valor inicial DE PROPÓSITO.
+        '''
+        ''' Um default "completo" faz qualquer produtor que esqueça de
+        ''' preencher declarar completude que não provou — e completude não
+        ''' provada é exatamente o que este tipo existe para impedir. Nothing
+        ''' é tratado como não confiável por quem consome.
+        ''' </summary>
+        Public Property RecipientsStatus As PartStatus
+        Public Property AttachmentsStatus As PartStatus
 
         Public Property Content As ContentState
         Public Property Format As BodyFormat
@@ -228,6 +236,12 @@ Namespace Global.Iris.Model
         Public Property Attachments As New List(Of AttachmentInfo)()
 
         ''' <summary>
+        ''' A lista de anexos veio inteira? Sem valor inicial de propósito —
+        ''' ver o comentário em <see cref="MessageDetail"/>.
+        ''' </summary>
+        Public Property AttachmentsStatus As PartStatus
+
+        ''' <summary>
         ''' Conta que o Outlook vai usar para enviar. Aparece na confirmação
         ''' porque delegação e múltiplas contas tornam isso não óbvio (F1-L).
         ''' </summary>
@@ -260,8 +274,8 @@ Namespace Global.Iris.Model
         ''' aprova, e a mensagem vai para menos gente do que devia — e o que
         ''' falta é invisível por definição.
         ''' </summary>
-        Public Property RecipientsStatus As PartStatus = PartStatus.Full
-        Public Property AttachmentsStatus As PartStatus = PartStatus.Full
+        Public Property RecipientsStatus As PartStatus
+        Public Property AttachmentsStatus As PartStatus
 
         ''' <summary>
         ''' Todo destinatario tem endereco SMTP reconhecivel.
