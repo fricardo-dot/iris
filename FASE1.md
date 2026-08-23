@@ -4,7 +4,7 @@
 própria, lendo e escrevendo pela sessão do Outlook clássico.
 
 **Pré-requisito:** Fase 0 concluída. Ver seção 10 do `ESCOPO.md`.
-**Versão:** 8 — plano do 1.6 (v2) na seção 13; dois defeitos achados ao planejar.
+**Versão:** 9 — marco 1.6 executado; resultados na seção 14.
 
 ---
 
@@ -251,7 +251,7 @@ ambígua a UI mostra estado desconhecido e **não** oferece reenvio cego.
 > "Exatamente uma vez" não é prometido como garantia. O spike demonstrou uma
 > execução saudável, não semântica *exactly-once*, que o OOM não oferece.
 
-### 1.6 — Consolidação e testes de falha
+### 1.6 — Consolidação e testes de falha ✅
 
 Não é onde reconexão e invalidação nascem — é onde são exercitadas: Outlook
 fechado e reaberto durante o uso, Outlook ocupado, rajada de invalidações,
@@ -787,3 +787,102 @@ WebView2 e reabrir rascunho existente: são funcionalidade, não robustez.
 Fase 1 concluída.** É critério de aceite do 1.3 que nunca foi cumprido, e
 manter isso como dívida perpétua enquanto se declara a fase consolidada
 seria dar por medido o que não foi.
+
+---
+
+## 14. Resultado do marco 1.6
+
+### O que foi feito
+
+**F1-M e F1-N corrigidos.** Os dois defeitos que a revisão do PLANO
+encontrou no código existente. A fase da operação virou local à invocação;
+a sessão ganhou época observável, com evento próprio.
+
+**`OutlookFailurePolicy` no Core.** A regra que decide se uma falha pode
+ser repetida saiu do broker — 852 linhas que só compilam em Windows — e
+ganhou 14 testes, incluindo o principal: mutação iniciada é ambígua para
+QUALQUER HRESULT, com dois controles negativos.
+
+**`DirtyDebounce` no Core.** O acumulador temporal saiu do relógio. Oito
+testes que recebem o instante como parâmetro, cada um nomeando a mutação
+que pega.
+
+**Contrato de leitura parcial.** `PartState`/`PartStatus` por componente,
+e `ReplyReadiness` decidindo o que fica bloqueado. Destinatários
+incompletos bloqueiam responder e o envio; anexos incompletos bloqueiam
+encaminhar; corpo incompleto não bloqueia. A contagem é lida duas vezes,
+e divergência invalida o snapshot.
+
+**Remover anexo**, com identificação que RECUSA quando há ambiguidade em
+vez de escolher — numa operação que apaga, "o mais provável" não serve.
+
+**Marca invisível em texto puro**, com uma propriedade de usuário
+identificando rascunho do Iris.
+
+**Restauração de pasta na reconexão**, descendo o caminho e expandindo o
+que for preciso.
+
+**116 testes** (eram 57 no início do marco).
+
+### Revisão externa — quatro passadas
+
+| Passada | Achados |
+|---|---|
+| do PLANO | 2 graves, no código que já existia |
+| 1 | 3 (2 bloqueantes) |
+| 2 | 3 (1 bloqueante) |
+| 3 | 4 |
+| 4 | pendente |
+
+O padrão do 1.5 se repetiu: **a maioria dos achados das passadas 1 a 3
+foram defeitos que eu introduzi corrigindo os anteriores.** Três exemplos
+que valem registrar, porque são a mesma falha de raciocínio em lugares
+diferentes:
+
+- Bloqueei gravar quando a sessão troca, e deixei de fora "Salvar e
+  fechar" e "Descartar" — que também gravam.
+- Corrigi isso, e deixei de fora `ConfirmarEnvioAsync`, que é o caminho
+  irreversível.
+- Corrigi isso conferindo a sessão na ENTRADA das operações, e a sessão
+  pode trocar durante a descarga que vem depois.
+
+Em todos os casos eu tinha afirmado que o problema estava fechado. A
+lição não é "revisar mais": é que **"eu bloqueei X" precisa vir com a
+lista de todos os caminhos que fazem X**, e eu não a fiz nenhuma das
+três vezes.
+
+### O que foi verificado com o Outlook real
+
+Fechar e reabrir o Outlook com o Iris rodando, com autorização do
+usuário. O log registrou `epoca 1 → Connected`, `Unavailable` após 11 s,
+`epoca 2 → Connected` após 33 s, e a árvore recarregou com contagens
+diferentes — releitura, não cache.
+
+**NÃO reproduzido:** o caminho exato do F1-M (`Connected → Connected` sem
+transição). O Outlook desta caixa leva de 30 a 90 s para subir e o probe
+roda a cada 15 s, então o watchdog sempre pega o `Unavailable` no meio. A
+janela do defeito é estreita na prática. A correção continua certa — falha
+silenciosa e permanente merece defesa mesmo rara — mas quem provou o
+caminho específico foram os testes de ViewModel.
+
+### Dívida que sai deste marco
+
+- **Envio ambíguo contra o Outlook real** continua sem exercício: provocá-lo
+  exigiria fazer um `Send` de verdade falhar no meio.
+- **Marca `IrisDraft` pode não ser gravável** se `UserProperties` e
+  `PropertyAccessor` forem os dois negados por política. A consequência só
+  aparece ao REABRIR um rascunho de texto puro numa sessão futura — e
+  reabrir rascunho existente não está implementado. Quando estiver, isto
+  precisa ser tratado antes.
+- **Anexos grandes** continuam sem medição.
+- **Handlers de `SessionReplaced` rodam na STA** no caminho do watchdog. O
+  `Try` por assinante protege contra exceção, não contra bloqueio: um
+  handler que chame o broker e espere trava a STA. O contrato diz que
+  handler devolve ao dispatcher dele; nada impõe isso.
+
+### O que continua bloqueando declarar a FASE 1 concluída
+
+A **fixture de 5.000 itens** é critério de aceite do marco 1.3 que nunca
+foi cumprido. Fica fora do 1.6, que é sobre robustez, mas manter isso como
+dívida perpétua enquanto se declara a fase consolidada seria dar por
+medido o que não foi.
