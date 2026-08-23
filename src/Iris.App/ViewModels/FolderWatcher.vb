@@ -36,9 +36,12 @@ Namespace Global.Iris.App.ViewModels
         Private _watched As FolderKey
         Private _generation As Integer = 0
 
-        Private _dirty As Boolean
-        Private _primeiroEventoUtc As DateTimeOffset
-        Private _ultimoEventoUtc As DateTimeOffset
+        ''' <summary>
+        ''' A decisão de QUANDO recarregar mora no Core, como máquina pura.
+        ''' Aqui fica o que é do WPF: timer, dispatcher e lock.
+        ''' </summary>
+        Private ReadOnly _debounce As New DirtyDebounce(DebounceMs, TetoMs)
+
         Private _disposed As Boolean
 
         Public Sub New(broker As IOutlookBroker, ui As Dispatcher,
@@ -71,7 +74,7 @@ Namespace Global.Iris.App.ViewModels
                 _generation += 1
                 geracao = _generation
                 _watched = folder
-                _dirty = False
+                _debounce.Clear()
             End SyncLock
 
             Await UnwatchCoreAsync()
@@ -100,7 +103,7 @@ Namespace Global.Iris.App.ViewModels
             SyncLock _gate
                 _generation += 1
                 _watched = Nothing
-                _dirty = False
+                _debounce.Clear()
             End SyncLock
             Await UnwatchCoreAsync()
         End Function
@@ -138,7 +141,7 @@ Namespace Global.Iris.App.ViewModels
             SyncLock _gate
                 _token = Nothing
                 _watched = Nothing
-                _dirty = False
+                _debounce.Clear()
                 _generation += 1
             End SyncLock
 
@@ -169,12 +172,7 @@ Namespace Global.Iris.App.ViewModels
                         ' de uma mudança na antiga.
                         If _token Is Nothing OrElse _token.Id <> idDoEvento Then Return
 
-                        Dim agora = DateTimeOffset.UtcNow
-                        If Not _dirty Then
-                            _dirty = True
-                            _primeiroEventoUtc = agora
-                        End If
-                        _ultimoEventoUtc = agora
+                        _debounce.Mark(DateTimeOffset.UtcNow)
                     End SyncLock
                 End Sub)
         End Sub
@@ -183,20 +181,10 @@ Namespace Global.Iris.App.ViewModels
             Dim pasta As FolderKey = Nothing
 
             SyncLock _gate
-                If Not _dirty OrElse _watched Is Nothing Then Return
+                If _watched Is Nothing Then Return
+                If Not _debounce.ShouldFlush(DateTimeOffset.UtcNow) Then Return
 
-                Dim agora = DateTimeOffset.UtcNow
-                Dim silencio = (agora - _ultimoEventoUtc).TotalMilliseconds
-                Dim espera = (agora - _primeiroEventoUtc).TotalMilliseconds
-
-                ' Trailing de verdade: espera o BARULHO PARAR. A versão
-                ' anterior olhava só o primeiro evento, então recarregava
-                ' 450 ms depois do primeiro independentemente do que viesse
-                ' depois — e o teto de 2 s nunca participava da decisão,
-                ' porque 450 < 2000 tornava a segunda condição redundante.
-                If silencio < DebounceMs AndAlso espera < TetoMs Then Return
-
-                _dirty = False
+                _debounce.Clear()
                 pasta = _watched
             End SyncLock
 
