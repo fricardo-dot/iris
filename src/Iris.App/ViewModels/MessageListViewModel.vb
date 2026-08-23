@@ -1,4 +1,5 @@
 Imports System.Collections.ObjectModel
+Imports System.Collections.Generic
 Imports System.Diagnostics
 Imports System.Linq
 Imports System.Threading
@@ -11,19 +12,38 @@ Imports Iris.Model
 Namespace Global.Iris.App.ViewModels
 
     ''' <summary>
+    ''' Um pedido de página, com tudo que ele precisa capturado junto.
+    '''
+    ''' Pasta, geração, cursor e seleção viajam como UMA unidade. Ler
+    ''' <c>_folder</c> mutável depois de adquirir a trava permitia que uma
+    ''' operação de uma geração acabasse consultando a pasta de outra.
+    ''' </summary>
+    Friend NotInheritable Class PageRequest
+        Public ReadOnly Property Folder As FolderKey
+        Public ReadOnly Property Sort As MessageSort
+        Public ReadOnly Property Generation As Long
+        Public ReadOnly Property Offset As Integer
+        Public ReadOnly Property SelectionKey As ItemKey
+        Public ReadOnly Property IsReload As Boolean
+
+        Public Sub New(folder As FolderKey, sort As MessageSort, generation As Long,
+                       offset As Integer, selectionKey As ItemKey, isReload As Boolean)
+            Me.Folder = folder
+            Me.Sort = sort
+            Me.Generation = generation
+            Me.Offset = offset
+            Me.SelectionKey = selectionKey
+            Me.IsReload = isReload
+        End Sub
+    End Class
+
+    ''' <summary>
     ''' A lista de mensagens de uma pasta.
     '''
     ''' PAGINAÇÃO VOLÁTIL, assumida e não escondida (FASE1.md seção 5).
     ''' Offset numa pasta viva não é estável: se uma mensagem chega no topo
     ''' entre duas páginas, um item duplica e outro é pulado. A Fase 1 aceita
-    ''' isso; o que ela NÃO aceita é pretender o contrário. Por isso:
-    '''
-    '''   • Toda consulta carrega uma geração.
-    '''   • Resposta de geração vencida é DESCARTADA, nunca anexada.
-    '''   • Mudança na pasta recarrega do topo em vez de remendar a lista.
-    '''
-    ''' Se isso não ficar utilizável na prática, a decisão é antecipar a
-    ''' Fase 2 — este marco é ponto de decisão, não só entrega.
+    ''' isso; o que ela NÃO aceita é pretender o contrário.
     ''' </summary>
     Public NotInheritable Class MessageListViewModel
         Inherits ObservableObject
@@ -38,19 +58,34 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _broker As IOutlookBroker
         Private ReadOnly _ui As Global.System.Windows.Threading.Dispatcher
         Private ReadOnly _observe As Action(Of Task, String)
+        Private ReadOnly _gate As New Object()
 
         Private _generation As Long = 0
         Private _folder As FolderKey
         Private _folderName As String = ""
         Private _sort As MessageSort = MessageSort.ReceivedDesc
+        Private _nextOffset As Integer = 0
 
-        Private _loading As Integer = 0
+        ''' <summary>
+        ''' Um pedido em execução e, no máximo, UM pendente — o último vence.
+        '''
+        ''' A versão anterior simplesmente desistia quando havia carga em
+        ''' curso. O efeito era grave: trocar de pasta durante um
+        ''' carregamento deixava a lista VAZIA até o usuário clicar de novo,
+        ''' porque o pedido novo era descartado e o antigo invalidado pela
+        ''' geração.
+        ''' </summary>
+        Private _running As Boolean
+        Private _pending As PageRequest
+
         Private _isLoading As Boolean
         Private _selected As MailSummary
         Private _total As Integer
         Private _hasMore As Boolean
+        Private _hasFolder As Boolean
         Private _errorMessage As String = ""
         Private _lastPageMs As Double
+        Private _skipped As Integer
 
         Public Sub New(broker As IOutlookBroker,
                        ui As Global.System.Windows.Threading.Dispatcher,
@@ -80,14 +115,11 @@ Namespace Global.Iris.App.ViewModels
                 Return _isLoading
             End Get
             Private Set(value As Boolean)
-                SetProperty(_isLoading, value)
+                If SetProperty(_isLoading, value) Then AtualizarEstados()
             End Set
         End Property
 
-        ''' <summary>
-        ''' ListBox.SelectedItem aceita TwoWay, diferente do TreeView. Por
-        ''' isso aqui a seleção é uma propriedade simples.
-        ''' </summary>
+        ''' <summary>ListBox.SelectedItem aceita TwoWay, diferente do TreeView.</summary>
         Public Property Selected As MailSummary
             Get
                 Return _selected
@@ -102,9 +134,7 @@ Namespace Global.Iris.App.ViewModels
                 Return _total
             End Get
             Private Set(value As Integer)
-                If SetProperty(_total, value) Then
-                    OnPropertyChanged(NameOf(StatusLine))
-                End If
+                If SetProperty(_total, value) Then OnPropertyChanged(NameOf(StatusLine))
             End Set
         End Property
 
@@ -113,9 +143,17 @@ Namespace Global.Iris.App.ViewModels
                 Return _hasMore
             End Get
             Private Set(value As Boolean)
-                If SetProperty(_hasMore, value) Then
-                    LoadMoreCommand.NotifyCanExecuteChanged()
-                End If
+                If SetProperty(_hasMore, value) Then LoadMoreCommand.NotifyCanExecuteChanged()
+            End Set
+        End Property
+
+        ''' <summary>Uma pasta foi escolhida — ainda que esteja vazia.</summary>
+        Public Property HasFolder As Boolean
+            Get
+                Return _hasFolder
+            End Get
+            Private Set(value As Boolean)
+                If SetProperty(_hasFolder, value) Then AtualizarEstados()
             End Set
         End Property
 
@@ -126,6 +164,7 @@ Namespace Global.Iris.App.ViewModels
             Private Set(value As String)
                 If SetProperty(_errorMessage, value) Then
                     OnPropertyChanged(NameOf(HasError))
+                    AtualizarEstados()
                 End If
             End Set
         End Property
@@ -145,99 +184,155 @@ Namespace Global.Iris.App.ViewModels
                 Return _lastPageMs
             End Get
             Private Set(value As Double)
-                If SetProperty(_lastPageMs, value) Then
-                    OnPropertyChanged(NameOf(StatusLine))
-                End If
+                If SetProperty(_lastPageMs, value) Then OnPropertyChanged(NameOf(StatusLine))
             End Set
         End Property
 
         Public ReadOnly Property StatusLine As String
             Get
-                If _total = 0 Then Return ""
-                Return $"{Messages.Count} de {_total} · última página {_lastPageMs:0} ms"
+                If Not _hasFolder Then Return ""
+                Dim linha = $"{Messages.Count} de {_total} · última página {_lastPageMs:0} ms"
+                ' "28 de 30" sem explicação vira mistério.
+                If _skipped > 0 Then linha &= $" · {_skipped} item(ns) ignorado(s)"
+                Return linha
             End Get
         End Property
 
-        Public ReadOnly Property IsEmpty As Boolean
+        ''' <summary>
+        ''' Três estados que antes eram um só. "IsEmpty" dizia ao mesmo tempo
+        ''' "escolha uma pasta", "esta pasta está vazia", "está carregando" e
+        ''' "deu erro" — e a tela mostrava "Selecione uma pasta" para uma
+        ''' caixa legitimamente vazia.
+        ''' </summary>
+        Public ReadOnly Property ShowSelectPrompt As Boolean
             Get
-                Return Messages.Count = 0
+                Return Not _hasFolder AndAlso Not HasError
             End Get
         End Property
+
+        Public ReadOnly Property ShowEmptyFolder As Boolean
+            Get
+                Return _hasFolder AndAlso Messages.Count = 0 AndAlso
+                       Not _isLoading AndAlso Not HasError
+            End Get
+        End Property
+
+        Private Sub AtualizarEstados()
+            OnPropertyChanged(NameOf(ShowSelectPrompt))
+            OnPropertyChanged(NameOf(ShowEmptyFolder))
+            OnPropertyChanged(NameOf(StatusLine))
+        End Sub
 
         ' ===================================================================
 
         Public Async Function ShowFolderAsync(folder As FolderKey, nome As String) As Task
             _folder = folder
             FolderName = nome
+            HasFolder = True
             Await ReloadAsync(preservarSelecao:=False)
         End Function
 
         Public Sub Clear()
             Interlocked.Increment(_generation)
+            SyncLock _gate
+                _pending = Nothing
+            End SyncLock
+
             _folder = Nothing
+            _nextOffset = 0
             FolderName = ""
+            HasFolder = False
             Messages.Clear()
             Selected = Nothing
             Total = 0
             HasMore = False
             ErrorMessage = ""
-            OnPropertyChanged(NameOf(IsEmpty))
+            _skipped = 0
+            AtualizarEstados()
         End Sub
 
-        ''' <summary>
-        ''' Recarrega do topo.
-        '''
-        ''' A seleção é preservada por <see cref="ItemKey"/>, não pelo objeto:
-        ''' o DTO é recriado a cada leitura, então guardar a referência
-        ''' perderia a seleção em toda recarga.
-        ''' </summary>
         Public Async Function ReloadAsync(preservarSelecao As Boolean) As Task
-            Dim chaveSelecionada = If(preservarSelecao AndAlso Selected IsNot Nothing,
-                                      Selected.Key, Nothing)
+            If _folder Is Nothing Then Return
 
+            Dim chave = If(preservarSelecao AndAlso Selected IsNot Nothing, Selected.Key, Nothing)
             Dim geracao = Interlocked.Increment(_generation)
 
-            Await OnUiAsync(
-                Sub()
-                    Messages.Clear()
-                    ErrorMessage = ""
-                    OnPropertyChanged(NameOf(IsEmpty))
-                End Sub)
-
-            Await CarregarPaginaAsync(geracao, offset:=0, chaveParaSelecionar:=chaveSelecionada)
+            Await Despachar(New PageRequest(_folder, _sort, geracao, 0, chave, isReload:=True))
         End Function
 
         Private Function PodeCarregarMais() As Boolean
-            Return _hasMore AndAlso Volatile.Read(_loading) = 0
+            Return _hasMore AndAlso Not _isLoading
         End Function
 
         Public Async Function LoadMoreAsync() As Task
-            If Not PodeCarregarMais() Then Return
-            Await CarregarPaginaAsync(Volatile.Read(_generation), Messages.Count, Nothing)
+            If Not _hasMore OrElse _folder Is Nothing Then Return
+
+            ' NextOffset, não Messages.Count: o broker examina posições e
+            ' pode devolver menos DTOs do que examinou.
+            Await Despachar(New PageRequest(_folder, _sort, Volatile.Read(_generation),
+                                            _nextOffset, Nothing, isReload:=False))
         End Function
 
         ''' <summary>
-        ''' Uma requisição por vez. Sem esta trava, rolagem rápida enfileira
-        ''' páginas na fila única da STA e trava a interface — o F1-F.
+        ''' Uma operação por vez, com o último pedido sempre preservado.
         ''' </summary>
-        Private Async Function CarregarPaginaAsync(geracao As Long, offset As Integer,
-                                                   chaveParaSelecionar As ItemKey) As Task
-            If _folder Is Nothing Then Return
-            If Interlocked.CompareExchange(_loading, 1, 0) <> 0 Then Return
+        Private Async Function Despachar(pedido As PageRequest) As Task
+            SyncLock _gate
+                If _running Then
+                    ' O último vence, e nada se perde: quem chegou agora
+                    ' substitui o pendente e será executado ao fim da
+                    ' operação corrente.
+                    _pending = pedido
+                    Return
+                End If
+                _running = True
+            End SyncLock
+
+            Try
+                Dim atual = pedido
+                Do
+                    Await ExecutarAsync(atual)
+
+                    SyncLock _gate
+                        atual = _pending
+                        _pending = Nothing
+                        If atual Is Nothing Then Return
+                    End SyncLock
+                Loop
+            Finally
+                SyncLock _gate
+                    _running = False
+                End SyncLock
+            End Try
+        End Function
+
+        Private Async Function ExecutarAsync(pedido As PageRequest) As Task
+            ' Revalida ANTES de ir ao broker: o pedido pode ter envelhecido
+            ' enquanto esperava na fila.
+            If Volatile.Read(_generation) <> pedido.Generation Then Return
 
             IsLoading = True
             LoadMoreCommand.NotifyCanExecuteChanged()
 
             Try
-                Dim consulta = New MessageQuery(_folder, _sort, geracao)
+                If pedido.IsReload Then
+                    Await OnUiAsync(
+                        Sub()
+                            If Volatile.Read(_generation) <> pedido.Generation Then Return
+                            Messages.Clear()
+                            ErrorMessage = ""
+                            _skipped = 0
+                            AtualizarEstados()
+                        End Sub)
+                End If
+
+                Dim consulta = New MessageQuery(pedido.Folder, pedido.Sort, pedido.Generation)
                 Dim cronometro = Stopwatch.StartNew()
                 Dim resultado = Await _broker.GetMessagePageAsync(
-                    consulta, offset, PageSize, CancellationToken.None)
+                    consulta, pedido.Offset, PageSize, CancellationToken.None)
                 cronometro.Stop()
 
-                ' Geração vencida: a resposta é de uma pasta ou de uma
-                ' sessão que o usuário já deixou para trás.
-                If Volatile.Read(_generation) <> geracao Then Return
+                If Volatile.Read(_generation) <> pedido.Generation Then Return
 
                 If Not resultado.Succeeded Then
                     Await OnUiAsync(Sub() ErrorMessage = Traduzir(resultado.Kind))
@@ -248,25 +343,31 @@ Namespace Global.Iris.App.ViewModels
 
                 Await OnUiAsync(
                     Sub()
-                        If Volatile.Read(_generation) <> geracao Then Return
+                        If Volatile.Read(_generation) <> pedido.Generation Then Return
 
+                        ' Deduplicação por chave: a paginação é volátil, e
+                        ' uma mensagem que chegou no topo entre páginas
+                        ' apareceria duas vezes na tela.
+                        Dim existentes = New HashSet(Of ItemKey)(Messages.Select(Function(m) m.Key))
                         For Each m In pagina.Items
-                            Messages.Add(m)
+                            If existentes.Add(m.Key) Then Messages.Add(m)
                         Next
 
+                        _nextOffset = pagina.NextOffset
+                        _skipped += pagina.SkippedCount
                         Total = pagina.TotalAtRead
                         HasMore = pagina.HasMore
                         LastPageMs = cronometro.Elapsed.TotalMilliseconds
-                        OnPropertyChanged(NameOf(IsEmpty))
-                        OnPropertyChanged(NameOf(StatusLine))
+                        AtualizarEstados()
 
-                        If chaveParaSelecionar IsNot Nothing Then
+                        If pedido.SelectionKey IsNot Nothing Then
+                            ' Limite conhecido: só reencontra a seleção se
+                            ' ela estiver na parte recarregada.
                             Selected = Messages.FirstOrDefault(
-                                Function(m) chaveParaSelecionar.Equals(m.Key))
+                                Function(m) pedido.SelectionKey.Equals(m.Key))
                         End If
                     End Sub)
             Finally
-                Interlocked.Exchange(_loading, 0)
                 IsLoading = False
                 LoadMoreCommand.NotifyCanExecuteChanged()
             End Try

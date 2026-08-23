@@ -133,6 +133,26 @@ Namespace Global.Iris.Model
         ''' <summary>Total no momento da leitura. Pode já estar desatualizado.</summary>
         Public Property TotalAtRead As Integer
         Public Property HasMore As Boolean
+
+        ''' <summary>
+        ''' Posição na coleção BRUTA onde a próxima página deve começar.
+        '''
+        ''' Existe porque contar DTOs devolvidos estava errado: o broker
+        ''' examina N posições e pode devolver menos, já que uma coleção
+        ''' Items não contém apenas MailItem e itens corrompidos são
+        ''' pulados. Usar Items.Count como próximo offset relia as posições
+        ''' puladas, duplicando linhas — e, no limite, travando o avanço.
+        ''' </summary>
+        Public Property NextOffset As Integer
+
+        ''' <summary>Quantas posições da coleção foram examinadas.</summary>
+        Public Property ExaminedCount As Integer
+
+        ''' <summary>
+        ''' Quantas foram puladas por não serem mensagem ou por erro. Fica
+        ''' visível para "28 de 30" não virar mistério.
+        ''' </summary>
+        Public Property SkippedCount As Integer
     End Class
 
     ''' <summary>

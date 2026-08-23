@@ -49,7 +49,12 @@ Namespace Global.Iris.Outlook
                 Try
                     folder = TryCast(ns.GetFolderFromID(query.Folder.EntryId, query.Folder.StoreId),
                                      OL.MAPIFolder)
-                Catch ex As COMException
+                Catch ex As COMException When EhNaoEncontrado(ex.HResult)
+                    ' SO os HRESULTs que realmente significam "nao existe".
+                    ' Antes, qualquer COMException virava NotFound — inclusive
+                    ' chamada recusada e acesso negado, que sao outra coisa e
+                    ' levam a UI a decisoes opostas. As demais sobem para o
+                    ' classificador do broker.
                     Return OperationResult(Of MessagePage).Fail(ErrorKind.NotFound, "pasta")
                 End Try
 
@@ -61,13 +66,13 @@ Namespace Global.Iris.Outlook
                 Try
                     items = folder.Items
 
+                    ' Sort que falha NAO pode ser engolido. Seguir na ordem
+                    ' natural fingindo que a ordenacao foi aplicada destroi a
+                    ' coerencia dos offsets: a pagina 2 viria de uma ordem
+                    ' diferente da pagina 1. A excecao sobe para o
+                    ' classificador do broker.
                     Dim ordenacao = CampoDeOrdenacao(query.Sort)
-                    Try
-                        items.Sort(ordenacao.Campo, ordenacao.Descendente)
-                    Catch
-                        ' Pasta que não aceita este campo: segue na ordem
-                        ' natural em vez de falhar a página inteira.
-                    End Try
+                    items.Sort(ordenacao.Campo, ordenacao.Descendente)
 
                     Dim total = items.Count
                     Dim pagina As New MessagePage With {
@@ -76,9 +81,10 @@ Namespace Global.Iris.Outlook
                         .TotalAtRead = total
                     }
 
-                    ' Items é 1-based no OOM.
+                    ' Items e 1-based no OOM.
                     Dim primeiro = offset + 1
                     Dim ultimo = Math.Min(offset + count, total)
+                    Dim pulados = 0
 
                     For i = primeiro To ultimo
                         Dim bruto As Object = Nothing
@@ -86,21 +92,27 @@ Namespace Global.Iris.Outlook
                             bruto = items.Item(i)
                             Dim mail = TryCast(bruto, OL.MailItem)
                             If mail Is Nothing Then
-                                ' Uma coleção Items não contém apenas
-                                ' MailItem (ESCOPO.md seção 5). Convites e
-                                ' relatórios de entrega convivem ali.
+                                ' Uma colecao Items nao contem apenas
+                                ' MailItem (ESCOPO.md secao 5). Convites e
+                                ' relatorios de entrega convivem ali.
+                                pulados += 1
                                 Continue For
                             End If
                             pagina.Items.Add(Summarize(mail, query.Folder.StoreId))
                         Catch ex As COMException
-                            ' Item corrompido ou não baixado não pode
-                            ' derrubar a página inteira.
+                            ' Item corrompido ou nao baixado nao pode
+                            ' derrubar a pagina inteira.
+                            pulados += 1
                             Continue For
                         Finally
                             ComHelpers.Release(bruto)
                         End Try
                     Next
 
+                    ' O cursor conta POSICOES EXAMINADAS, nao DTOs devolvidos.
+                    pagina.ExaminedCount = Math.Max(0, ultimo - offset)
+                    pagina.SkippedCount = pulados
+                    pagina.NextOffset = ultimo
                     pagina.HasMore = ultimo < total
                     Return OperationResult(Of MessagePage).Ok(pagina)
                 Finally
@@ -111,23 +123,23 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
+        ' MAPI_E_NOT_FOUND e o "objeto nao existe" do MAPI; E_INVALIDARG
+    ' aparece quando o EntryID nao pertence mais ao store.
+        Private Function EhNaoEncontrado(hresult As Integer) As Boolean
+            Return hresult = &H8004010F OrElse hresult = &H80070057
+        End Function
+
         ''' <summary>
         ''' Resumo para a lista. SEM corpo — ver F1-F.
         ''' </summary>
         Private Function Summarize(mail As OL.MailItem, storeId As String) As MailSummary
             Dim anexos = ContarAnexos(mail)
 
-            Dim estado = ContentState.MetadataOnly
-            Try
-                If mail.DownloadState = OL.OlDownloadState.olFullItem Then
-                    ' DownloadState é a PROMESSA do Outlook, não a prova de
-                    ' que o corpo pode ser lido — a Fase 0 mediu essa
-                    ' diferença. Aqui só o metadado é afirmado.
-                    estado = ContentState.BodyAvailable
-                End If
-            Catch
-                estado = ContentState.TransientError
-            End Try
+            ' ContentState.BodyAvailable significa "corpo LIDO", pela
+            ' definicao do proprio enum. A listagem nao le corpo nenhum, e
+            ' afirmar BodyAvailable so porque DownloadState prometeu era
+            ' contradizer a definicao — exatamente a confusao entre promessa
+            ' e fato que a Fase 0 mediu no criterio B5.
 
             Return New MailSummary With {
                 .Key = New ItemKey(Texto(Function() mail.EntryID), storeId),
@@ -139,7 +151,7 @@ Namespace Global.Iris.Outlook
                 .IsUnread = Booleano(Function() mail.UnRead),
                 .IsProtected = Numero(Function() CInt(mail.Permission)) <> 0,
                 .MessageClass = Texto(Function() mail.MessageClass),
-                .Content = estado
+                .Content = ContentState.MetadataOnly
             }
         End Function
 

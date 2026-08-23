@@ -304,11 +304,19 @@
                              SelectedItem="{Binding Messages.Selected, Mode=TwoWay}"
                              ItemTemplate="{StaticResource MessageRowTemplate}" />
 
-                    <!-- Nenhuma pasta escolhida ainda -->
+                    <!-- Tres estados distintos, nao um so: "escolha uma
+                         pasta", "esta pasta esta vazia" e "deu erro" diziam
+                         a mesma coisa antes, e uma caixa legitimamente
+                         vazia exibia "Selecione uma pasta". -->
                     <TextBlock Grid.Row="1" Text="Selecione uma pasta"
                                Style="{StaticResource Text.Muted}"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
-                               Visibility="{Binding Messages.IsEmpty, Converter={StaticResource BoolToVis}}" />
+                               Visibility="{Binding Messages.ShowSelectPrompt, Converter={StaticResource BoolToVis}}" />
+
+                    <TextBlock Grid.Row="1" Text="Esta pasta está vazia"
+                               Style="{StaticResource Text.Muted}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center"
+                               Visibility="{Binding Messages.ShowEmptyFolder, Converter={StaticResource BoolToVis}}" />
 
                     <TextBlock Grid.Row="1" Text="{Binding Messages.ErrorMessage}"
                                Style="{StaticResource Text.Muted}"
