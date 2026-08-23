@@ -57,6 +57,14 @@ Namespace Global.Iris.Outlook
         ' efeito. Serializado pela thread do broker.
         Private _effectStarted As Integer = 0
 
+        ''' <summary>
+        ''' Assinaturas ativas, por id. Só podem ser tocadas na thread do
+        ''' broker. Guardadas aqui porque a coleção Items precisa de
+        ''' referência forte viva: se o GC a coletar, o event sink morre e os
+        ''' eventos param sem erro nenhum (R7).
+        ''' </summary>
+        Private ReadOnly _subscriptions As New Dictionary(Of Integer, FolderSubscription)()
+
         Public Event StateChanged As EventHandler(Of SessionState) Implements IOutlookBroker.StateChanged
         Public Event FolderInvalidated As EventHandler(Of FolderInvalidation) Implements IOutlookBroker.FolderInvalidated
 
@@ -566,21 +574,73 @@ Namespace Global.Iris.Outlook
             Return Pendente(Of Boolean)("1.5")
         End Function
 
-        Public Function SubscribeFolderAsync(folder As FolderKey, cancel As CancellationToken) _
+        Public Async Function SubscribeFolderAsync(folder As FolderKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of SubscriptionToken)) Implements IOutlookBroker.SubscribeFolderAsync
-            Return Pendente(Of SubscriptionToken)("1.3")
+
+            Return Await ReadAsync(Of SubscriptionToken)(
+                "outlook.subscribeFolder",
+                Function(app, ns)
+                    Dim pasta As OL.MAPIFolder = Nothing
+                    Try
+                        pasta = TryCast(ns.GetFolderFromID(folder.EntryId, folder.StoreId), OL.MAPIFolder)
+                    Catch ex As Runtime.InteropServices.COMException
+                        Return OperationResult(Of SubscriptionToken).Fail(ErrorKind.NotFound, "pasta")
+                    End Try
+
+                    If pasta Is Nothing Then
+                        Return OperationResult(Of SubscriptionToken).Fail(ErrorKind.NotFound, "pasta")
+                    End If
+
+                    ' A assinatura vira dona da pasta: NAO liberar aqui.
+                    Dim assinatura As New FolderSubscription(folder, pasta, AddressOf RaiseInvalidation)
+                    _subscriptions(assinatura.Id) = assinatura
+
+                    _log.Write(LogLevel.Info, "outlook.subscribeFolder", $"id={assinatura.Id}")
+                    Return OperationResult(Of SubscriptionToken).Ok(
+                        New SubscriptionToken(assinatura.Id, folder))
+                End Function, cancel)
         End Function
 
-        Public Function UnsubscribeFolderAsync(token As SubscriptionToken, cancel As CancellationToken) _
+        Public Async Function UnsubscribeFolderAsync(token As SubscriptionToken, cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.UnsubscribeFolderAsync
-            Return Pendente(Of Boolean)("1.3")
+
+            Return Await ReadAsync(Of Boolean)(
+                "outlook.unsubscribeFolder",
+                Function(app, ns)
+                    Dim assinatura As FolderSubscription = Nothing
+                    If Not _subscriptions.TryGetValue(token.Id, assinatura) Then
+                        Return OperationResult(Of Boolean).Ok(False)
+                    End If
+                    _subscriptions.Remove(token.Id)
+                    assinatura.Dispose()
+                    Return OperationResult(Of Boolean).Ok(True)
+                End Function, cancel)
         End Function
+
+        ''' <summary>
+        ''' Chamado da thread MTA de entrega. Só repassa o aviso — o
+        ''' assinante decide o que fazer, e a resposta certa é RELER.
+        ''' </summary>
+        Private Sub RaiseInvalidation(invalidation As FolderInvalidation)
+            RaiseEvent FolderInvalidated(Me, invalidation)
+        End Sub
 
         ' ===================================================================
         ' Encerramento
         ' ===================================================================
 
         Private Sub ReleaseSessionCore()
+            ' Assinaturas primeiro: Dispose desconecta os handlers antes de
+            ' liberar os RCWs. Soltar a sessao com sinks conectados e o
+            ' caminho para OUTLOOK.EXE orfao.
+            For Each par In _subscriptions
+                Try
+                    par.Value.Dispose()
+                Catch
+                End Try
+            Next
+            _subscriptions.Clear()
+
             ComHelpers.Release(_namespace)
             _namespace = Nothing
             ComHelpers.Release(_application)

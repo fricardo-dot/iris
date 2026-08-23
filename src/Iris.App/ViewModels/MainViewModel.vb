@@ -16,6 +16,7 @@ Namespace Global.Iris.App.ViewModels
         Inherits ObservableObject
         Implements IDisposable
 
+        Private ReadOnly _watcher As FolderWatcher
         Private _disposed As Boolean
         Private _wasConnected As Boolean
 
@@ -23,6 +24,8 @@ Namespace Global.Iris.App.ViewModels
             Connection = New ConnectionViewModel(broker, ui)
             Folders = New FolderTreeViewModel(broker, ui, AddressOf Connection.Observe)
             Messages = New MessageListViewModel(broker, ui, AddressOf Connection.Observe)
+            _watcher = New FolderWatcher(broker, ui, AddressOf Connection.Observe,
+                                         AddressOf Messages.OnFolderInvalidated)
 
             AddHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
 
@@ -75,6 +78,7 @@ Namespace Global.Iris.App.ViewModels
             Else
                 Folders.Clear()
                 Messages.Clear()
+                Connection.Observe(_watcher.UnwatchAsync(), "watcher.unwatch")
             End If
         End Sub
 
@@ -92,6 +96,9 @@ Namespace Global.Iris.App.ViewModels
             End If
 
             Connection.Observe(Messages.ShowFolderAsync(pasta.Key, pasta.Name), "messages.showFolder")
+            ' Observar a pasta exibida e o que faz a lista se atualizar
+            ' sozinha quando chega mensagem nova.
+            Connection.Observe(_watcher.WatchAsync(pasta.Key), "watcher.watch")
         End Sub
 
         Public Sub Dispose() Implements IDisposable.Dispose
@@ -99,6 +106,7 @@ Namespace Global.Iris.App.ViewModels
             _disposed = True
             RemoveHandler Connection.PropertyChanged, AddressOf OnConnectionChanged
             RemoveHandler Folders.PropertyChanged, AddressOf OnFoldersChanged
+            _watcher.Dispose()
             Connection.Dispose()
         End Sub
 
