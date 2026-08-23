@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 6 — Q1 RESPONDIDA. Resultado na seção 9.
+**Versão:** 7 — Q1 respondida e corrigida duas vezes. Seção 9.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -469,7 +469,7 @@ Assumindo que a lista venha do cache:
 Medido em 2026-08-23, na Caixa de Entrada real (1.003 itens, Exchange
 cached). Somente leitura. Scripts em `tools/q1-*.ps1`.
 
-**Esta seção está na 2ª versão.** A primeira foi revisada e tinha três
+**Esta seção está na 3ª versão.** A primeira foi revisada e tinha três
 problemas: uma comparação que não era equivalente, uma paginação que ainda
 perdia mensagem, e uma conclusão mais larga que a evidência.
 
@@ -477,10 +477,21 @@ perdia mensagem, e uma conclusão mais larga que a evidência.
 
 | Comparação | Iteração | `Table` | Ganho |
 |---|---|---|---|
-| **Mesmo trabalho** — 8 escalares, sem `Permission`, sem abrir `Attachments` | 7,80 | 0,98 | **7,9x** |
-| **DTO atual completo** — medido direto | 11–13 | 0,63 | **~18x** |
+| **Mesmo trabalho** — as 7 escalares do `MailSummary` | 7,48 | 1,04 | **7,2x** |
+| **DTO completo** | 11–13 | 0,42 | **~18x** |
 
 (ms/item, página de 50)
+
+**Proveniência, porque importa:** a linha do "mesmo trabalho" sai de uma
+execução única de `tools/q1-justo.ps1`, com os dois lados medidos lado a
+lado. A linha do "DTO completo" **não é comparação direta**: os 11–13 vêm
+de `tools/medir-pagina.ps1` e os 0,42 de `q1-justo.ps1`, em execuções
+diferentes. O ~18x é aproximação sustentada por duas medições diretas, não
+por um experimento pareado.
+
+A primeira versão desta tabela dizia "8 escalares" e incluía
+`LastModificationTime`, que **não está no `MailSummary`** — eu tinha metido
+uma propriedade alheia e chamado o conjunto de "o DTO atual".
 
 O que torna a iteração cara não são as propriedades escalares — é o que
 exige tocar em objeto:
@@ -529,10 +540,14 @@ não nulo**. Com isso, `Permission` aparece corretamente como **NÃO**.
 `LastModificationTime` apontava para `datereceived`, e teria declarado
 sucesso para a propriedade errada.)
 
-**Não há substituto exato em tabela.** `MessageClass` (`IPM.Note.rpmsg.*`,
-`IPM.Note.SMIME*`) classifica famílias conhecidas, mas IRM, S/MIME e
-rótulos de sensibilidade não são o mesmo conceito, e nada disso é
-equivalente a `mail.Permission <> 0`.
+**Não foi obtido pelos candidatos testados** — o que é diferente de "não
+existe". Quarenta valores nulos provam que nenhum candidato devolveu valor
+nesta pasta, não que não haja propriedade de tabela equivalente.
+
+O que sustenta a conclusão prática é outra coisa: `MailItem.Permission` é
+abstração de nível OOM, e `MessageClass` (`IPM.Note.rpmsg.*`,
+`IPM.Note.SMIME*`) classifica famílias conhecidas sem ser o mesmo conceito
+— IRM, S/MIME e rótulos de sensibilidade são coisas distintas.
 
 E **esta caixa não tem mensagem protegida** — 0 em 30 itens abertos,
 nenhuma classe protegida em 400 — então a hipótese do `MessageClass` nem dá
@@ -562,22 +577,41 @@ Foi o que eu tinha feito, e está errado. Se o grupo empatado for **maior
 que a página**, a consulta seguinte pode devolver os mesmos itens, nenhum
 ser novo, e a paginação declarar fim.
 
-A saída é **drenar o grupo da fronteira** antes de avançar. Testado contra
-tabela sintética (`tools/q1-cursor-teste.ps1`), com controle negativo:
+A saída tem **três** partes, e faltar uma já perde mensagem: reabrir com
+`<=` para não pular empatado; **drenar** o grupo da fronteira; e depois de
+drenado avançar com `<` **estrito**.
 
-| Cenário | Sem drenar | Com drenagem |
-|---|---|---|
-| empate de 3 (como esta caixa) | perde 1 | OK |
-| empate de 51 (> página) | perde 25 | OK |
-| empate de 500 | **perde 450 de 900** | OK |
-| tudo no mesmo segundo | **perde 150 de 200** | OK |
+**3. A terceira parte era a que faltava.** Reabrir com `<=` depois de
+drenar recomeça no mesmo grupo: nada é novo, e a paginação declara fim com
+itens mais antigos por ler. Não aparecia na caixa real porque aqui o maior
+empate tem 3 itens.
 
-**3. A drenagem, mal feita, quebra tudo.** Minha primeira implementação
-marcava como vistos os itens de FORA do grupo, e a página seguinte os
-achava repetidos: **50 de 1.003**. A drenagem tem de parar no primeiro item
-de instante diferente, **sem consumi-lo**.
+E minha primeira drenagem quebrou de outro jeito ainda: marcava como
+vistos os itens de FORA do grupo, e a página seguinte os achava repetidos —
+**50 de 1.003**. A drenagem tem de parar no primeiro instante diferente
+sem consumi-lo.
 
-Com as três corrigidas: **1.003 de 1.003**.
+**O algoritmo mora em `tools/paginacao.ps1`, e o teste roda ELE.** A versão
+anterior do teste avançava com `AddSeconds(-1)`, ou seja `< T`, enquanto o
+script real reabria com `<=` — os cenários passavam provando um algoritmo
+melhor do que o implementado. Terceira vez neste projeto que um teste
+promete mais do que verifica.
+
+Controles negativos, já com o algoritmo compartilhado:
+
+| Cenário | Fronteira inclusiva | Sem drenar | Correto |
+|---|---|---|---|
+| empate de 50 (= página) + antigos | perde 200 | OK | OK |
+| empate de 100 (2x) + antigos | perde 200 | perde 50 | OK |
+| empate de 500 (10x) + antigos | perde 300 | **perde 450** | OK |
+| tudo no mesmo segundo | OK | **perde 150 de 200** | OK |
+| empate de 200, **ordem instável** | perde 100 | perde 150 | OK |
+
+O cenário de ordem instável embaralha as linhas dentro do empate a cada
+consulta: o OOM não promete ordem estável ali, e um algoritmo que dependa
+disso está errado mesmo passando.
+
+Com as três corrigidas, contra a caixa real: **1.003 de 1.003**.
 
 ### O que isto decide, e com que alcance
 
@@ -609,6 +643,11 @@ funciona — e traz junto as três armadilhas acima, que precisam ir com ele.
 - A contagem de referência do teste de fuso vem da mesma tabela — é prova
   interna da semântica do filtro, não referência independente.
 - `$total` é lido antes da travessia: a pasta pode mudar durante.
-- A drenagem foi provada contra tabela **sintética**. O comportamento da
-  `Table` real com um grupo empatado maior que a página **não foi
-  exercitado** — esta caixa tem no máximo 3 no mesmo segundo.
+- A drenagem foi provada contra tabela **sintética**, e a `Table` real
+  nunca foi exercitada com grupo empatado maior que a página — esta caixa
+  tem no máximo 3 no mesmo segundo. O teste prova que o ALGORITMO está
+  correto; que a `Table` do Outlook se comporta como a fonte sintética
+  modela continua **não validado**.
+- Itens com `ReceivedTime` nulo não foram tratados nem testados. Nesta
+  pasta não existem; em Rascunhos podem existir, e um filtro de comparação
+  os excluiria da paginação inteira.

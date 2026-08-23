@@ -1,170 +1,105 @@
-﻿# Q1: testa o ALGORITMO de paginacao contra uma tabela SINTETICA.
+﻿# Testa o algoritmo de paginacao — O MESMO que o script real usa.
 #
 # Nao toca no Outlook.
 #
-# Motivo: a caixa real tem no maximo 3 itens no mesmo segundo, e o caso que
-# quebra a paginacao e uma pagina INTEIRA empatada. Com pagina de 50 e 80
-# itens no mesmo instante:
+# A versao anterior deste teste avancava a fronteira com AddSeconds(-1),
+# que e "< T", enquanto o script real reabria com "<= T". Os cenarios
+# passavam provando um algoritmo MELHOR do que o implementado — teste que
+# nao testa o que diz. Agora os dois chamam Invoke-PaginacaoPorCursor, em
+# paginacao.ps1: a unica diferenca e de onde as linhas vem.
 #
-#   1. a pagina 1 devolve 50 dos 80;
-#   2. a consulta seguinte usa "<= T";
-#   3. dentro do empate a ordem nao e contratual;
-#   4. GetArray(50) pode devolver OS MESMOS 50;
-#   5. nenhum item novo -> o algoritmo declara fim e perde 30, em silencio.
-#
-# A tabela sintetica devolve, de proposito, a ordem MAIS HOSTIL possivel
-# dentro de um empate: sempre a mesma. Se o algoritmo sobrevive a isso,
-# sobrevive a uma ordem instavel.
+# A caixa real tem no maximo 3 itens no mesmo segundo, entao o caso que
+# quebra — grupo empatado MAIOR que a pagina — so da para exercitar aqui.
 
-# ---------------------------------------------------------------
-# Tabela de mentira: mesmo contrato do Table do OOM.
-# ---------------------------------------------------------------
-function New-TabelaFalsa {
-    param([object[]]$Itens)   # cada item: @{ Id; Quando }
-    $estado = [pscustomobject]@{
-        Todos    = $Itens
-        Filtrado = @()
-        Pos      = 0
-        Chamadas = 0
+. (Join-Path $PSScriptRoot "paginacao.ps1")
+
+function New-Fonte {
+    param([object[]]$Itens, [switch]$OrdemInstavel)
+    return [pscustomobject]@{ Itens = $Itens; Instavel = [bool]$OrdemInstavel }
+}
+
+function Abrir-Fonte {
+    param($Fonte, $Fronteira, [bool]$Inclusivo)
+
+    $conjunto = if ($null -eq $Fronteira) { $Fonte.Itens } else {
+        if ($Inclusivo) { $Fonte.Itens | Where-Object { $_.Quando -le $Fronteira } }
+        else            { $Fonte.Itens | Where-Object { $_.Quando -lt $Fronteira } }
     }
-    return $estado
+
+    # Dentro do empate a ordem e EMBARALHADA quando OrdemInstavel: o OOM
+    # nao promete ordem estavel num empate, e um algoritmo que dependa
+    # dela esta errado mesmo passando.
+    $ordenado = @($conjunto | Sort-Object -Property @{Expression='Quando'; Descending=$true})
+    if ($Fonte.Instavel) {
+        $novo = @()
+        foreach ($g in ($ordenado | Group-Object Quando | Sort-Object { [datetime]$_.Name } -Descending)) {
+            $novo += ($g.Group | Sort-Object { Get-Random })
+        }
+        $ordenado = $novo
+    }
+
+    return [pscustomobject]@{ Linhas = $ordenado; Pos = 0 }
 }
 
-function Abrir-TabelaFalsa {
-    param($Tabela, [Nullable[datetime]]$AteInclusive)
-
-    # Ordena por Quando decrescente. Dentro do empate mantem a ordem
-    # original — a ordem "estavel hostil" descrita acima.
-    $conjunto = if ($null -ne $AteInclusive) {
-        $Tabela.Todos | Where-Object { $_.Quando -le $AteInclusive }
-    } else { $Tabela.Todos }
-
-    $Tabela.Filtrado = @($conjunto | Sort-Object -Property @{Expression='Quando'; Descending=$true})
-    $Tabela.Pos = 0
-    $Tabela.Chamadas++
-}
-
-function Get-LinhasFalsas {
-    param($Tabela, [int]$Quantas)
-    $fim = [Math]::Min($Tabela.Pos + $Quantas, $Tabela.Filtrado.Count)
+function Ler-Fonte {
+    param($Cursor, [int]$Quantas)
+    $fim = [Math]::Min($Cursor.Pos + $Quantas, $Cursor.Linhas.Count)
     $r = @()
-    for ($i = $Tabela.Pos; $i -lt $fim; $i++) { $r += $Tabela.Filtrado[$i] }
-    $Tabela.Pos = $fim
-    return $r
+    for ($i = $Cursor.Pos; $i -lt $fim; $i++) { $r += $Cursor.Linhas[$i] }
+    $Cursor.Pos = $fim
+    return ,$r
 }
 
-# ---------------------------------------------------------------
-# O ALGORITMO em teste.
-#
-# Regra: quando a pagina termina no instante T, DRENA todo o grupo de T
-# antes de avancar a fronteira para "< T". Sem drenar, um grupo maior que
-# a pagina trava o avanco.
-# ---------------------------------------------------------------
-function Paginar {
-    param($Tabela, [int]$TamanhoDaPagina, [int]$MaxChamadas = 500)
-
-    $vistos = @{}
-    $ordem = @()
-    $fronteira = $null
-    $chamadas = 0
-
-    while ($chamadas -lt $MaxChamadas) {
-        Abrir-TabelaFalsa $Tabela $fronteira
-        $chamadas++
-
-        $pagina = Get-LinhasFalsas $Tabela $TamanhoDaPagina
-        if ($pagina.Count -eq 0) { break }
-
-        $novos = 0
-        $ultimo = $null
-        foreach ($it in $pagina) {
-            $ultimo = $it.Quando
-            if ($vistos.ContainsKey($it.Id)) { continue }
-            $vistos[$it.Id] = $true
-            $ordem += $it.Id
-            $novos++
-        }
-
-        # A pagina terminou dentro de um empate? Drena o grupo inteiro
-        # ANTES de mexer na fronteira.
-        $drenou = $false
-        while ($chamadas -lt $MaxChamadas) {
-            $extra = Get-LinhasFalsas $Tabela $TamanhoDaPagina
-            if ($extra.Count -eq 0) { break }
-            $aindaNoGrupo = $false
-            foreach ($it in $extra) {
-                if ($it.Quando -ne $ultimo) { break }
-                $aindaNoGrupo = $true
-                if ($vistos.ContainsKey($it.Id)) { continue }
-                $vistos[$it.Id] = $true
-                $ordem += $it.Id
-                $novos++
-                $drenou = $true
-            }
-            if (-not $aindaNoGrupo) { break }
-        }
-
-        # Com o grupo drenado, a fronteira pode andar com seguranca.
-        if ($novos -eq 0 -and -not $drenou) { break }
-        $fronteira = $ultimo.AddSeconds(-1)
-    }
-
-    return [pscustomobject]@{ Lidos = $ordem.Count; Chamadas = $chamadas }
-}
-
-# ---------------------------------------------------------------
-# Casos
-# ---------------------------------------------------------------
-function Cenario {
-    param([string]$Nome, [int]$Total, [int]$NoMesmoSegundo, [int]$Pagina)
-
+function Montar {
+    param([int]$Antes, [int]$Empatados, [int]$Depois)
     $base = Get-Date "2026-08-01 12:00:00"
     $itens = @()
-
-    # Um bloco empatado no meio, o resto com instantes distintos.
-    $distintos = $Total - $NoMesmoSegundo
-    $metade = [int]($distintos / 2)
-
-    for ($i = 0; $i -lt $metade; $i++) {
+    for ($i = 0; $i -lt $Antes; $i++) {
         $itens += [pscustomobject]@{ Id = "A$i"; Quando = $base.AddSeconds(-$i) }
     }
-    $instanteEmpate = $base.AddSeconds(-$metade)
-    for ($i = 0; $i -lt $NoMesmoSegundo; $i++) {
-        $itens += [pscustomobject]@{ Id = "E$i"; Quando = $instanteEmpate }
+    $t = $base.AddSeconds(-$Antes)
+    for ($i = 0; $i -lt $Empatados; $i++) {
+        $itens += [pscustomobject]@{ Id = "E$i"; Quando = $t }
     }
-    for ($i = 0; $i -lt ($distintos - $metade); $i++) {
-        $itens += [pscustomobject]@{ Id = "B$i"; Quando = $instanteEmpate.AddSeconds(-1 - $i) }
+    for ($i = 0; $i -lt $Depois; $i++) {
+        $itens += [pscustomobject]@{ Id = "B$i"; Quando = $t.AddSeconds(-1 - $i) }
     }
+    return ,$itens
+}
 
-    $t = New-TabelaFalsa $itens
-    $r = Paginar $t $Pagina
+function Testar {
+    param([string]$Nome, [object[]]$Itens, [int]$Pagina, [switch]$Instavel)
 
-    $ok = ($r.Lidos -eq $Total)
+    $fonte = New-Fonte $Itens -OrdemInstavel:$Instavel
+    $r = Invoke-PaginacaoPorCursor `
+        -Abrir  { param($f, $i) Abrir-Fonte $fonte $f $i } `
+        -Ler    { param($c, $n) Ler-Fonte $c $n } `
+        -Fechar { param($c) } `
+        -TamanhoDaPagina $Pagina
 
-    # Write-Host, e nao a string solta: uma funcao do PowerShell devolve
-    # TUDO que ela escreve no fluxo de saida. Com a string solta, a linha
-    # da tabela virava parte do valor de retorno, o "-and" consumia as
-    # duas coisas, e o teste passava sem imprimir nem verificar nada.
-    Write-Host ("{0,-34} | {1,5} | {2,5} | {3,8} | {4}" -f `
-        $Nome, $Total, $r.Lidos, $r.Chamadas, $(if ($ok) { "OK" } else { "PERDEU $($Total - $r.Lidos)" }))
+    $ok = ($r.Lidos -eq $Itens.Count)
+    Write-Host ("{0,-40} | {1,5} | {2,5} | {3,9} | {4}" -f `
+        $Nome, $Itens.Count, $r.Lidos, $r.Consultas,
+        $(if ($ok) { "OK" } else { "PERDEU $($Itens.Count - $r.Lidos)" }))
     return $ok
 }
 
-Write-Host "cenario                            | total | lidos | chamadas | resultado"
-Write-Host "-----------------------------------|-------|-------|----------|----------"
+Write-Host ("{0,-40} | {1,5} | {2,5} | {3,9} | {4}" -f "cenario","total","lidos","consultas","resultado")
+Write-Host ("-" * 84)
 
-$todosOk = $true
-$todosOk = (Cenario "sem empate"                    300  0   50) -and $todosOk
-$todosOk = (Cenario "empate de 3 (como a caixa)"    300  3   50) -and $todosOk
-$todosOk = (Cenario "empate de 51 (> pagina)"       300  51  50) -and $todosOk
-$todosOk = (Cenario "empate de 100 (2x a pagina)"   300  100 50) -and $todosOk
-$todosOk = (Cenario "empate de 500 (10x)"           900  500 50) -and $todosOk
-$todosOk = (Cenario "TUDO no mesmo segundo"         200  200 50) -and $todosOk
+$ok = $true
+$ok = (Testar "sem empate"                        (Montar 300 0 0)     50) -and $ok
+$ok = (Testar "empate de 3 (como a caixa real)"   (Montar 150 3 150)   50) -and $ok
 
-Write-Output ""
-if ($todosOk) {
-    Write-Output "Todos os cenarios leram tudo."
-} else {
-    Write-Output "ALGUM CENARIO PERDEU ITEM."
-    exit 1
-}
+# O CASO QUE FALTAVA: grupo empatado >= pagina, com itens MAIS ANTIGOS
+# depois dele. Sem o avanco ESTRITO apos drenar, a paginacao para aqui.
+$ok = (Testar "empate de 50 (= pagina) + antigos" (Montar 100 50 200)  50) -and $ok
+$ok = (Testar "empate de 100 (2x) + antigos"      (Montar 100 100 200) 50) -and $ok
+$ok = (Testar "empate de 500 (10x) + antigos"     (Montar 100 500 300) 50) -and $ok
+$ok = (Testar "tudo no mesmo segundo"             (Montar 0 200 0)     50) -and $ok
+$ok = (Testar "empate no FIM da pasta"            (Montar 200 100 0)   50) -and $ok
+$ok = (Testar "empate de 200, ordem INSTAVEL"     (Montar 100 200 100) 50 -Instavel) -and $ok
+
+Write-Host ""
+if ($ok) { Write-Host "Todos os cenarios leram tudo." }
+else { Write-Host "ALGUM CENARIO PERDEU ITEM."; exit 1 }

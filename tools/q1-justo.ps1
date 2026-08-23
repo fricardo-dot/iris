@@ -19,10 +19,15 @@ $pasta = $ol.GetNamespace("MAPI").GetDefaultFolder($PastaId)
 function Media($lista) { ($lista | Measure-Object -Average).Average }
 
 # ---------------------------------------------------------------
-# A) COMUM: 8 escalares, sem Permission, sem abrir Attachments.
+# A) COMUM: as 7 escalares que o MailSummary REALMENTE le do item.
+#
+# Eram 8 na primeira versao, e LastModificationTime nao esta no DTO — eu
+# tinha incluido uma propriedade alheia e chamado o conjunto de "o DTO
+# atual". StoreId vem do contexto e Content e constante; nenhum dos dois
+# custa leitura.
 # ---------------------------------------------------------------
 $comuns = @("EntryID","Subject","SenderName","ReceivedTime","Size","UnRead",
-            "MessageClass","LastModificationTime")
+            "MessageClass")
 
 $tabComum = @(); $iterComum = @()
 
@@ -38,7 +43,7 @@ for ($e = 1; $e -le $Execucoes; $e++) {
     for ($r = $a.GetLowerBound(0); $r -le $a.GetUpperBound(0); $r++) {
         $null = [pscustomobject]@{
             A=$a.GetValue($r,0); B=$a.GetValue($r,1); C=$a.GetValue($r,2); D=$a.GetValue($r,3)
-            E=$a.GetValue($r,4); F=$a.GetValue($r,5); G=$a.GetValue($r,6); H=$a.GetValue($r,7)
+            E=$a.GetValue($r,4); F=$a.GetValue($r,5); G=$a.GetValue($r,6)
         }
         $n++
     }
@@ -54,7 +59,7 @@ for ($e = 1; $e -le $Execucoes; $e++) {
         $m = $items.Item($k)
         $null = [pscustomobject]@{
             A=$m.EntryID; B=$m.Subject; C=$m.SenderName; D=$m.ReceivedTime
-            E=$m.Size; F=$m.UnRead; G=$m.MessageClass; H=$m.LastModificationTime
+            E=$m.Size; F=$m.UnRead; G=$m.MessageClass
         }
         $n++
         [void][Runtime.InteropServices.Marshal]::ReleaseComObject($m)
@@ -110,8 +115,8 @@ for ($e = 1; $e -le $Execucoes; $e++) {
     for ($r = $a.GetLowerBound(0); $r -le $a.GetUpperBound(0); $r++) {
         $null = [pscustomobject]@{
             A=$a.GetValue($r,0); B=$a.GetValue($r,1); C=$a.GetValue($r,2); D=$a.GetValue($r,3)
-            E=$a.GetValue($r,4); F=$a.GetValue($r,5); G=$a.GetValue($r,6); H=$a.GetValue($r,7)
-            I=$a.GetValue($r,8); J=$a.GetValue($r,9); K=$a.GetValue($r,10)
+            E=$a.GetValue($r,4); F=$a.GetValue($r,5); G=$a.GetValue($r,6)
+            H=$a.GetValue($r,7); I=$a.GetValue($r,8); J=$a.GetValue($r,9)
         }
         $n++
     }
@@ -125,7 +130,7 @@ $ca = Media $custoAnexoIter
 $cp = Media $custoPermIter
 $c3 = Media $custoTresColunas
 
-Write-Output "MESMO TRABALHO — 8 escalares, sem Permission, sem abrir Attachments"
+Write-Output "MESMO TRABALHO - as 7 escalares do MailSummary, sem Permission e sem Attachments"
 Write-Output ("  Table    : {0,6:N2} ms/item" -f $tc)
 Write-Output ("  Iteracao : {0,6:N2} ms/item" -f $ic)
 Write-Output ("  ganho    : {0,6:N1}x" -f ($ic / $tc))
@@ -133,10 +138,12 @@ Write-Output ""
 Write-Output "CUSTO DE CADA EXTRA, em separado"
 Write-Output ("  iteracao: abrir Attachments + Count : {0,6:N2} ms/item  (marginal)" -f $ca)
 Write-Output ("  iteracao: ler Permission            : {0,6:N2} ms/item  (marginal)" -f $cp)
-Write-Output ("  Table   : 11 colunas em vez de 8    : {0,6:N2} ms/item  (delta {1:N2})" -f $c3, ($c3 - $tc))
+Write-Output ("  Table   : 10 colunas em vez de 7    : {0,6:N2} ms/item  (delta {1:N2})" -f $c3, ($c3 - $tc))
 Write-Output ""
-Write-Output ("Iteracao com o DTO completo (8 + anexos + permissao): {0,6:N2} ms/item" -f ($ic + $ca + $cp))
-Write-Output ("Table com as 11 colunas:                              {0,6:N2} ms/item" -f $c3)
-Write-Output ("Ganho no caminho de PRODUCAO candidato:               {0,6:N1}x" -f (($ic + $ca + $cp) / $c3))
+Write-Output ("SOMA dos componentes da iteracao (NAO e medicao direta): {0,6:N2} ms/item" -f ($ic + $ca + $cp))
+Write-Output ("Table com as 10 colunas:                                 {0,6:N2} ms/item" -f $c3)
+Write-Output ""
+Write-Output "A soma acima INFLA: cada componente carrega overhead proprio."
+Write-Output "Para o DTO completo use a medicao DIRETA de medir-pagina.ps1."
 
 [void][Runtime.InteropServices.Marshal]::ReleaseComObject($pasta)
