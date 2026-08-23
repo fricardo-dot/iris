@@ -1,8 +1,8 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 13 — Q1 fechada (seção 9). **Q2 RESPONDIDA**: leitura na
-seção 10, `Move`/`Copy` na 11, causalidade da PCL na 11.6. Resposta
-negativa, com o escopo explicitado.
+**Versão:** 14 — Q1 fechada (seção 9). **Q2 FECHADA**: leitura na seção
+10, `Move`/`Copy` na 11, causalidade da PCL na 11.6. Resposta negativa,
+com o escopo explicitado. Quatro rodadas de Codex.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -699,7 +699,9 @@ Scripts: `tools/q2-chaves.ps1` (presença, unicidade, matriz de colisão),
 
 > Message-ID **diferente**, os dois não vazios => **mensagens** diferentes.
 >
-> Message-ID **igual** => mesma mensagem, e **não autoriza unir**.
+> Message-ID **igual** => **compatível com** a mesma mensagem, e **não
+> autoriza unir**. Nem prova mesma mensagem: gerador defeituoso reutiliza
+> Message-ID.
 
 A segunda metade não estava na 1ª versão: eu contava "mesmo Message-ID"
 como acerto. O par 1 abaixo desmente.
@@ -768,9 +770,11 @@ chamei os dois casos de "erro", o que troca o alvo no meio do argumento:
 
 - para identidade de **item**, o par 1 é erro (une dois objetos) e o par 4
   está **certo** (separa dois objetos);
-- para identidade de **mensagem**, o par 4 é que é erro.
+- para identidade de **mensagem**, o par 4 **seria** erro — se os dois
+  fossem mesmo a mesma mensagem, o que **não está provado**
+  independentemente. Provar exigiria ler os cabeçalhos `Received`.
 
-Em nenhum dos dois alvos ela acerta sempre.
+O par 1 basta para mostrar que ela não serve como identidade de item.
 
 #### 10.3.1 Os pares de conflito NÃO são o mesmo item
 
@@ -814,7 +818,8 @@ partição misturava origem com função, e a conclusão não decorre dos dados.
 | Identidade do objeto no store | `PR_RECORD_KEY`, `EntryID` | **sim**, 2.281/2.281 | **NÃO** — medido, §11 |
 | Linhagem copiada junto | Message-ID, `PR_SEARCH_KEY` | não | **sim** — medido, §11 |
 | ↳ mesma família, **não medida** no `Move` | `ConversationIndex` | não | não medido |
-| Versão / causalidade | `PR_CHANGE_KEY`, `PR_PREDECESSOR_CHANGE_LIST` | sim, **e irrelevante** | não, **por desenho** |
+| Versão / causalidade | `PR_CHANGE_KEY` | sim, **e irrelevante** | não |
+| ↳ **não medida** no corpus | `PR_PREDECESSOR_CHANGE_LIST` | não medida | só no item da §11.6 |
 | Localização | `StoreID`, pasta pai | — | não, por definição |
 | Relação entre objetos | `PR_CONFLICT_ITEMS` | — | — |
 
@@ -885,8 +890,13 @@ PR_RECORD_KEY      cabecalho |                          GUID+contador da MENSAGE
 
 `4 + 16 (GUID do store) + 2 + 16 (GUID de réplica) + 8 (contador) = 46`
 bytes, e **nenhum par de pasta**. É argumento de **formato**, verificado
-contra um valor em que as duas partes aparecem lado a lado — muito melhor
-que a constância de bytes.
+contra um valor em que as duas partes aparecem lado a lado — melhor que a
+constância de bytes.
+
+Mas o formato foi **inferido por deslocamento e sufixo em poucos
+valores**, não validado contra a especificação. Serve para derrubar o
+motivo pelo qual eu descartei a chave; não serve como descrição
+autoritativa do formato.
 
 Ainda assim, isso **não prova estabilidade**, e não é nem "precondição
 estrutural" como eu escrevi: uma chave pode conter a pasta e ainda ser
@@ -1070,16 +1080,19 @@ copy+delete — regras, arquivamento, retenção, envio de rascunho.
 A ida e volta **não restaura** o `EntryID` nem a `RecordKey`: voltar para a
 pasta de origem produz **mais uma** chave nova. Então:
 
-> **Não existe igualdade de chave única** que reconheça o item depois de um
-> `Move`. Reconhecer exige evidência causal ou comparação com estado.
+> **Entre as chaves medidas, nenhuma igualdade** reconhece o item depois
+> de um `Move`. Reconhecer exige evidência causal ou comparação com
+> estado.
 
 A 1ª redação dizia "indistinguível de apagado + chegou". É forte demais:
 um item movido **deixa rastro** — `SearchKey` e Message-ID preservados,
 conteúdo, instantes, e o par sumiu-aqui/apareceu-ali próximo no tempo.
 O que não existe é a **igualdade** que dispensaria juntar essas pistas.
 
-Resta um limite que nenhuma propriedade resolve: **`Copy` seguido de
-exclusão do original é observacionalmente idêntico a `Move`.** O OOM não
+Resta um limite que nenhuma propriedade medida resolve: **`Copy` seguido
+de exclusão do original pode ser observacionalmente indistinguível de um
+`Move`.** Em outro provider, ou com metadado que eu não medi, pode não
+ser. O OOM não
 carrega a intenção do usuário. Para o cache isso pode ser aceitável —
 sobrando um único descendente, tratá-lo como continuidade dá o mesmo
 resultado prático.
@@ -1128,7 +1141,10 @@ Nenhuma dessas saídas é gratuita, e a escolha é do 2.1:
    do Iris, e `Move`, `Copy`, conflito e duplicata suspeita viram
    **arestas tipadas** — nunca fusão destrutiva. É o que o
    `PR_CONFLICT_ITEMS` da §10.3.1 já faz nativamente para um caso.
-5. ~~**Causalidade via `ChangeKey`/PCL.**~~ Medida na §11.6: **não existe.**
+5. ~~**Causalidade via `ChangeKey`/PCL.**~~ Medida na §11.6: **não foi
+   observada no item testado**, e portanto **não pode ser exigida pelo
+   desenho**. Não é o mesmo que provar que não existe em lugar nenhum —
+   mas para o 2.1 dá no mesmo: não dá para depender dela.
 
 E "reversível" precisa ser **estrutural**. Se lido, triado e ações forem
 fisicamente fundidos numa linha só, desfazer depois não recupera a
@@ -1170,10 +1186,14 @@ Estado final:
 - **Lixo Eletrônico: 172 itens**, o número de antes.
 - **`Iris Q2 (temp)`: removida da raiz** — `Delete()` de pasta é soft, e
   ela está dentro de Itens Excluídos, não eliminada.
-- Resíduo: **2 cópias em Itens Excluídos**, artefatos meus. Não as apaguei
-  de lá: `Delete()` dentro de Itens Excluídos pode ser **permanente**, e
-  exclusão permanente sem consentimento explícito está proibida neste
-  projeto.
+- Resíduo: **3 cópias em Itens Excluídos**, artefatos meus — duas da §11.1
+  e uma da §11.6. Não as apaguei de lá: `Delete()` dentro de Itens
+  Excluídos pode ser **permanente**, e exclusão permanente sem
+  consentimento explícito está proibida neste projeto.
+
+Contagem final conferida: **Entrada 1003, Enviados 106, Rascunhos 68,
+Lixo 172** — todas iguais ao início — e **Itens Excluídos 144** (era 141).
+Nenhuma pasta `Iris*` na raiz.
 
 **Coleção COM obsoleta não serve para decidir apagar pasta.** O
 `q2-move.ps1` terminou dizendo "itens restantes: 2" logo depois de
@@ -1204,11 +1224,14 @@ PCL        14 ff76b71bb72984498978e8b7ac86c493 0000059b
                                     apos o Move:  00002029
 ```
 
-Só o contador final muda; o GUID é estável. Como o corpus tem 2.281
-`ChangeKey` distintas, o GUID é da caixa e o contador é que distingue —
-mais uma razão para ela não ser identidade.
+Só o contador final muda; o GUID ficou estável **neste item, nas quatro
+leituras**. As 2.281 `ChangeKey` distintas do corpus **não provam sozinhas**
+que o GUID seja da caixa — eu não comparei o GUID entre itens diferentes.
+De qualquer forma, uma chave que muda a cada operação não é identidade.
 
-**Sai a saída 5 da §11.4.** Não há aresta causal a explorar aqui.
+**Sai a saída 5 da §11.4** — não porque esteja provado que a aresta causal
+não existe, e sim porque **não foi observada** e o 2.1 não pode depender
+do que não se pode exigir.
 
 **Limitação, e ela é séria:** meu seletor pegou o **primeiro** item com o
 prefixo `[IRIS-SPIKE-C]`, e caiu no artefato
