@@ -86,14 +86,21 @@ Namespace Global.Iris.App.ViewModels
         Private _carregando As Boolean
         Private _disposed As Boolean
 
+        ''' <param name="autosaveMs">
+        ''' Só os testes passam outro valor. Esperar 1,5 s de relógio real
+        ''' em cada teste de debounce tornaria a suíte lenta e, pior,
+        ''' intermitente — e um teste intermitente acaba sendo ignorado, que
+        ''' é o mesmo que não ter teste.
+        ''' </param>
         Public Sub New(broker As IOutlookBroker, ui As Dispatcher,
-                       observe As Action(Of Task, String), pickFile As IPickFileService)
+                       observe As Action(Of Task, String), pickFile As IPickFileService,
+                       Optional autosaveMs As Integer = AutosaveMs)
             _broker = broker
             _observe = observe
             _pickFile = pickFile
 
             _autosave = New DispatcherTimer(DispatcherPriority.Background, ui) With {
-                .Interval = TimeSpan.FromMilliseconds(AutosaveMs)
+                .Interval = TimeSpan.FromMilliseconds(autosaveMs)
             }
             AddHandler _autosave.Tick, AddressOf OnAutosaveTick
 
@@ -534,24 +541,49 @@ Namespace Global.Iris.App.ViewModels
         Private Const FalhaAoSalvar As String = "Não foi possível salvar agora. "
 
         ''' <summary>
+        ''' Quantas rodadas de gravação a descarga tenta antes de desistir.
+        ''' Existe porque o usuário pode continuar digitando durante a
+        ''' descarga, e sem teto isso seria um laço que só termina quando
+        ''' ele parar de digitar.
+        ''' </summary>
+        Private Const MaxRodadasDeDescarga As Integer = 3
+
+        ''' <summary>
         ''' Garante que o store tem exatamente o que está na tela.
         '''
         ''' Chamado antes de conferir o envio e antes de fechar salvando.
         ''' Sem isto, a confirmação mostraria destinatários de uma versão
         ''' antiga e o Outlook enviaria essa versão antiga — o usuário
         ''' aprovaria uma coisa e sairia outra.
+        '''
+        ''' Precisa CONVERGIR, e não gravar uma vez. Gravar leva tempo, e o
+        ''' que for digitado nesse meio continua sujo — uma rodada só
+        ''' devolveria "pronto" com a tela ainda na frente do store.
         ''' </summary>
-        Private Async Function DescarregarAsync() As Task
+        ''' <returns>True se o store bate com a tela.</returns>
+        Private Async Function DescarregarAsync() As Task(Of Boolean)
             _autosave.Stop()
 
             If _saveTask IsNot Nothing AndAlso Not _saveTask.IsCompleted Then
                 Await _saveTask
             End If
 
-            If IsDirty Then
+            Dim rodadas = 0
+            Do While IsDirty
+                rodadas += 1
+                If rodadas > MaxRodadasDeDescarga Then Return False
+
+                Dim antes = Interlocked.Read(_edicoes)
                 _saveTask = GravarAteEstabilizarAsync()
                 Await _saveTask
-            End If
+
+                ' Continuar sujo SEM edição nova quer dizer que a gravação
+                ' falhou. Insistir só repetiria a falha; o Status já explica
+                ' o que houve, e o autosave tenta de novo na próxima tecla.
+                If IsDirty AndAlso Interlocked.Read(_edicoes) = antes Then Return False
+            Loop
+
+            Return True
         End Function
 
         ' ================================================================
@@ -583,11 +615,12 @@ Namespace Global.Iris.App.ViewModels
             If State = ComposerState.SendUnknown Then Return
 
             Status = "Conferindo destinatários…"
-            Await DescarregarAsync()
 
-            If IsDirty Then
-                ' A gravação falhou. Conferir e enviar agora mandaria a
-                ' versão antiga, não a que está na tela.
+            ' A confirmação tem de descrever o que vai sair AGORA. Conferir
+            ' com o store atrasado faria o usuário aprovar uma versão e o
+            ' Outlook mandar outra.
+            If Not Await DescarregarAsync() Then
+                AvisarDescargaIncompleta()
                 Return
             End If
 
@@ -677,12 +710,12 @@ Namespace Global.Iris.App.ViewModels
         Private Async Function SalvarEFecharAsync() As Task
             State = ComposerState.Editing
             Status = "Salvando…"
-            Await DescarregarAsync()
 
-            If IsDirty Then
+            If Not Await DescarregarAsync() Then
                 ' Não fecha em cima de uma gravação que falhou: fechar aqui
                 ' seria perder o texto justamente no caso em que ele não
                 ' está guardado.
+                AvisarDescargaIncompleta()
                 Return
             End If
 
@@ -731,6 +764,17 @@ Namespace Global.Iris.App.ViewModels
             _savePendente = False
             IsDirty = False
             State = ComposerState.Closed
+        End Sub
+
+        ''' <summary>
+        ''' A descarga desistiu. Quase sempre a gravação falhou e o Status
+        ''' já diz por quê; só quando ele está vazio — o caso raro de o
+        ''' usuário digitar sem parar durante a descarga — é que falta
+        ''' explicação, e ficar mudo aqui daria um botão que não faz nada.
+        ''' </summary>
+        Private Sub AvisarDescargaIncompleta()
+            If HasStatus AndAlso Not Status.EndsWith("…", StringComparison.Ordinal) Then Return
+            Status = "Ainda há alterações por salvar. Aguarde um instante e tente de novo."
         End Sub
 
         Private Sub NotificarComandos()
