@@ -324,7 +324,17 @@ Namespace Global.Iris.App.ViewModels
 
         Public ReadOnly Property PreviewAccount As String
             Get
-                Return If(_preview Is Nothing, "", _preview.SendingAccount)
+                If _preview Is Nothing Then Return ""
+
+                ' Em branco é pior que inútil: a tela existe justamente para
+                ' dizer de onde a mensagem sai. Se não deu para descobrir,
+                ' o certo é dizer isso, não mostrar um espaço vazio que o
+                ' usuário lê como se estivesse tudo certo.
+                If String.IsNullOrWhiteSpace(_preview.SendingAccount) Then
+                    Return "não foi possível identificar a conta"
+                End If
+
+                Return _preview.SendingAccount
             End Get
         End Property
 
@@ -426,7 +436,7 @@ Namespace Global.Iris.App.ViewModels
                 End Try
             End If
 
-            QuotedPreview = info.QuotedBody
+            QuotedPreview = info.QuotedPreview
             SincronizarAnexos(info.Attachments)
         End Sub
 

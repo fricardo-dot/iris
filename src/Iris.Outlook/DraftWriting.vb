@@ -46,6 +46,9 @@ Namespace Global.Iris.Outlook
                     Return OperationResult(Of DraftInfo).Fail(ErrorKind.Unexpected, "CreateItem")
                 End If
 
+                ' Sem citação: é uma mensagem nova.
+                PlantarMarca(item, temCitacao:=False)
+
                 ' Salvo JÁ: o rascunho precisa existir antes de o usuário
                 ' digitar qualquer coisa, para sobreviver a um fechamento
                 ' acidental e ter chave estável.
@@ -78,6 +81,9 @@ Namespace Global.Iris.Outlook
                         Return OperationResult(Of DraftInfo).Fail(ErrorKind.Unexpected, "Reply")
                     End If
 
+                    ' O corpo que o Reply gerou — citação e assinatura —
+                    ' é citação por inteiro.
+                    PlantarMarca(resposta, temCitacao:=True)
                     resposta.Save()
                     Return OperationResult(Of DraftInfo).Ok(Descrever(resposta, ns))
                 Finally
@@ -110,6 +116,7 @@ Namespace Global.Iris.Outlook
                         Return OperationResult(Of DraftInfo).Fail(ErrorKind.Unexpected, "Forward")
                     End If
 
+                    PlantarMarca(encaminhada, temCitacao:=True)
                     encaminhada.Save()
                     Return OperationResult(Of DraftInfo).Ok(Descrever(encaminhada, ns))
                 Finally
@@ -175,6 +182,37 @@ Namespace Global.Iris.Outlook
                 Dim atual = Texto(Function() item.Body)
                 Dim citacao = SepararCitacaoTexto(atual)
                 item.Body = digitado & MarcaTexto & citacao
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' Planta a marca de separação no corpo, na CRIAÇÃO do rascunho.
+        '''
+        ''' Sem ela, a ausência da marca é ambígua, e o leitor teria de
+        ''' adivinhar entre dois casos opostos: mensagem nova, em que não há
+        ''' citação nenhuma, e resposta recém-montada pelo Outlook, em que a
+        ''' citação é o corpo inteiro. Adivinhar "é tudo citação" numa
+        ''' mensagem nova embutia o esqueleto HTML vazio do Outlook como se
+        ''' fosse mensagem original — em toda mensagem que o usuário
+        ''' escrevesse.
+        '''
+        ''' Resolvido na origem e não no leitor, porque quem cria SABE de
+        ''' que caso se trata. O leitor mantém o palpite conservador só para
+        ''' rascunho que não foi o Iris que criou: ali, tratar tudo como
+        ''' citação preserva o conteúdo intacto.
+        ''' </summary>
+        Private Sub PlantarMarca(item As OL.MailItem, temCitacao As Boolean)
+            If item.BodyFormat = OL.OlBodyFormat.olFormatHTML Then
+                ' Comentário HTML: invisível para quem recebe.
+                Dim citacao = If(temCitacao, Texto(Function() item.HTMLBody), "")
+                item.HTMLBody = ParaHtml("") & MarcaHtml & citacao
+            Else
+                ' Em texto puro não existe marca invisível. A linha aparece,
+                ' e numa mensagem nova ela aparece sem ter original nenhuma
+                ' embaixo — anotado como dívida na FASE1, seção 11. O padrão
+                ' do Outlook é HTML, então este caminho é o raro.
+                Dim citacao = If(temCitacao, Texto(Function() item.Body), "")
+                item.Body = MarcaTexto & citacao
             End If
         End Sub
 
@@ -294,7 +332,7 @@ Namespace Global.Iris.Outlook
                 Dim previa As New SendPreview With {
                     .Draft = chave,
                     .Subject = Texto(Function() item.Subject),
-                    .SendingAccount = ContaRemetente(item)
+                    .SendingAccount = ContaRemetente(item, ns)
                 }
 
                 Dim recipients As OL.Recipients = Nothing
@@ -365,16 +403,73 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
-        Private Function ContaRemetente(item As OL.MailItem) As String
+        ''' <summary>
+        ''' Por qual conta a mensagem vai sair.
+        '''
+        ''' SendUsingAccount é Nothing quando o usuário não escolheu conta —
+        ''' que é o caso NORMAL. Devolver vazio aí deixava em branco
+        ''' justamente o campo que a tela de confirmação existe para
+        ''' mostrar: um "enviando pela conta: " sem nada depois. Quando não
+        ''' há escolha explícita, quem manda é o store onde o rascunho mora.
+        ''' </summary>
+        Private Function ContaRemetente(item As OL.MailItem, ns As OL.NameSpace) As String
             Dim conta As OL.Account = Nothing
             Try
                 conta = item.SendUsingAccount
-                If conta IsNot Nothing Then Return Texto(Function() conta.SmtpAddress)
-                Return ""
+                If conta IsNot Nothing Then
+                    Dim escolhida = Texto(Function() conta.SmtpAddress)
+                    If escolhida.Length > 0 Then Return escolhida
+                End If
+            Catch
+                ' Cai para o store.
+            Finally
+                ComHelpers.Release(conta)
+            End Try
+
+            Return ContaDoStore(ns, StoreIdDe(item))
+        End Function
+
+        Private Function ContaDoStore(ns As OL.NameSpace, storeId As String) As String
+            Dim contas As OL.Accounts = Nothing
+            Try
+                contas = ns.Accounts
+
+                ' A primeira conta é a padrão do Outlook. Serve de reserva se
+                ' nenhuma entregar no store deste rascunho.
+                Dim padrao = ""
+
+                For i = 1 To contas.Count
+                    Dim c As OL.Account = Nothing
+                    Try
+                        c = contas.Item(i)
+                        Dim smtp = Texto(Function() c.SmtpAddress)
+                        If padrao.Length = 0 Then padrao = smtp
+
+                        ' Nunca encadear: DeliveryStore sai numa variável
+                        ' própria para ser liberado (R7).
+                        Dim entrega As OL.Store = Nothing
+                        Try
+                            entrega = c.DeliveryStore
+                            If entrega IsNot Nothing AndAlso
+                               String.Equals(Texto(Function() entrega.StoreID), storeId,
+                                             StringComparison.Ordinal) Then
+                                Return smtp
+                            End If
+                        Catch
+                        Finally
+                            ComHelpers.Release(entrega)
+                        End Try
+                    Catch
+                    Finally
+                        ComHelpers.Release(c)
+                    End Try
+                Next
+
+                Return padrao
             Catch
                 Return ""
             Finally
-                ComHelpers.Release(conta)
+                ComHelpers.Release(contas)
             End Try
         End Function
 
@@ -435,7 +530,7 @@ Namespace Global.Iris.Outlook
                 .ToLine = Texto(Function() item.To),
                 .CcLine = Texto(Function() item.CC),
                 .Format = formato,
-                .SendingAccount = ContaRemetente(item)
+                .SendingAccount = ContaRemetente(item, ns)
             }
 
             ' Separa o que o usuário digitou do que o Outlook gerou.
@@ -457,8 +552,40 @@ Namespace Global.Iris.Outlook
                 End If
             End If
 
+            info.QuotedPreview = If(formato = BodyFormat.Html,
+                                    TextoDeHtml(info.QuotedBody),
+                                    info.QuotedBody)
+
             LerAnexosDoRascunho(item, info)
             Return info
+        End Function
+
+        ''' <summary>
+        ''' Marcação HTML para texto legível. É de EXIBIÇÃO, e só: o que
+        ''' volta para o Outlook é o HTML original, intacto. Por isso pode
+        ''' ser grosseiro — nada aqui é gravado nem enviado.
+        ''' </summary>
+        Private Function TextoDeHtml(html As String) As String
+            If String.IsNullOrEmpty(html) Then Return ""
+
+            Dim sb As New StringBuilder(html.Length)
+            Dim dentroDeTag = False
+            For Each c In html
+                Select Case c
+                    Case "<"c : dentroDeTag = True
+                    Case ">"c : dentroDeTag = False : sb.Append(" "c)
+                    Case Else : If Not dentroDeTag Then sb.Append(c)
+                End Select
+            Next
+
+            Dim texto = WebUtility.HtmlDecode(sb.ToString())
+
+            ' Tirar tags deixa um rastro de espaços e linhas vazias no lugar
+            ' de cada uma. Sem colapsar, a citação vira uma coluna de vácuo.
+            Dim linhas = texto.Replace(vbCrLf, vbLf).Split(CChar(vbLf)).
+                               Select(Function(l) l.Trim()).
+                               Where(Function(l) l.Length > 0)
+            Return String.Join(vbCrLf, linhas)
         End Function
 
         Private Sub LerAnexosDoRascunho(item As OL.MailItem, info As DraftInfo)

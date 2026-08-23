@@ -89,7 +89,8 @@ Friend NotInheritable Class FakeBroker
         Dim info = NovoInfo()
         info.Subject = "RE: original"
         info.ToLine = "alguem@exemplo.com"
-        info.QuotedBody = "----- mensagem original -----"
+        info.QuotedBody = "<div>----- mensagem original -----</div>"
+        info.QuotedPreview = "----- mensagem original -----"
         Return Task.FromResult(OperationResult(Of DraftInfo).Ok(info))
     End Function
 

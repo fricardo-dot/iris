@@ -207,6 +207,15 @@ Namespace Global.Iris.Model
         ''' escreve acima dele.
         ''' </summary>
         Public Property QuotedBody As String = ""
+
+        ''' <summary>
+        ''' A mesma citação em TEXTO, só para exibir.
+        ''' <see cref="QuotedBody"/> é o que volta para o Outlook e por isso
+        ''' fica intacto — mas mostrar marcação HTML crua na tela seria pior
+        ''' que não mostrar nada.
+        ''' </summary>
+        Public Property QuotedPreview As String = ""
+
         Public Property Format As BodyFormat = BodyFormat.PlainText
 
         Public Property Attachments As New List(Of AttachmentInfo)()
