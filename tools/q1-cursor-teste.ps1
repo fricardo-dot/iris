@@ -102,7 +102,8 @@ Write-Host ("{0,-40} | {1,5} | {2,8} | {3,10} | {4,10}" -f `
 Write-Host ("-" * 88)
 
 $tudoOk = $true
-$algumDefeitoPego = $false
+$pegouSemDrenagem = $false
+$pegouInclusiva = $false
 
 foreach ($c in $casos) {
     $inst = [bool]$c.Instavel
@@ -113,7 +114,13 @@ foreach ($c in $casos) {
     $incl = (Rodar $c.Itens 50 -Instavel:$inst -FronteiraInclusiva).Lidos
 
     if ($bom -ne $total) { $tudoOk = $false }
-    if ($sem -ne $total -or $incl -ne $total) { $algumDefeitoPego = $true }
+
+    # Os DOIS defeitos precisam ser discriminados, cada um por si. Um
+    # guarda que aceitasse "algum dos dois" deixaria passar o dia em que um
+    # deles parasse de perder item — e ai metade do controle negativo
+    # viraria decoracao sem ninguem notar.
+    if ($sem  -ne $total) { $pegouSemDrenagem = $true }
+    if ($incl -ne $total) { $pegouInclusiva = $true }
 
     Write-Host ("{0,-40} | {1,5} | {2,8} | {3,10} | {4,10}" -f `
         $c.Nome, $total,
@@ -127,10 +134,13 @@ if (-not $tudoOk) {
     Write-Host "FALHA: o algoritmo correto perdeu item."
     exit 1
 }
-if (-not $algumDefeitoPego) {
-    # Sem isto, um teste que nao distingue certo de errado passaria para
-    # sempre — inclusive depois de a correcao ser desfeita.
-    Write-Host "FALHA: nenhum controle negativo perdeu item. O teste nao discrimina."
+$faltou = @()
+if (-not $pegouSemDrenagem) { $faltou += "-SemDrenagem" }
+if (-not $pegouInclusiva)   { $faltou += "-FronteiraInclusiva" }
+
+if ($faltou.Count -gt 0) {
+    Write-Host ("FALHA: nenhum cenario discriminou {0}." -f ($faltou -join " e "))
+    Write-Host "Controle negativo que nao perde item nao esta controlando nada."
     exit 1
 }
-Write-Host "O algoritmo correto leu tudo, e os dois defeitos foram pegos."
+Write-Host "O algoritmo correto leu tudo, e os DOIS defeitos foram pegos."

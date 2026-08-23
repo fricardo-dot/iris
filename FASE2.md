@@ -616,9 +616,13 @@ parâmetro (`-SemDrenagem`, `-FronteiraInclusiva`) e o teste roda as três
 variantes lado a lado. Antes eu editava o arquivo à mão e anotava o
 resultado — número anotado não é regressão verificável.
 
-E o teste **falha** se nenhum controle negativo perder item: sem isso, um
-teste que não distingue certo de errado passaria para sempre, inclusive
-depois de a correção ser desfeita.
+E o teste **falha** se qualquer um dos dois deixar de perder item — cada
+defeito precisa ser discriminado por si. Um guarda que aceitasse "algum
+dos dois" deixaria passar o dia em que um deles parasse de controlar, e
+metade do controle negativo viraria decoração sem ninguém notar.
+
+Conferido neutralizando o defeito `-SemDrenagem`: o teste falha nomeando
+qual controle parou de discriminar.
 
 | Cenário | Sem drenar | Fronteira inclusiva | Correto |
 |---|---|---|---|
