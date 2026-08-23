@@ -296,13 +296,27 @@ Namespace Global.Iris.App.ViewModels
                     SyncLock _gate
                         atual = _pending
                         _pending = Nothing
-                        If atual Is Nothing Then Return
+
+                        ' Observar a fila vazia e desligar _running precisa
+                        ' ser ATOMICO. Com o desligamento no Finally havia
+                        ' uma janela: o worker saia do lock vendo vazio, um
+                        ' pedido novo chegava, via _running=True, guardava-se
+                        ' como pendente — e entao o Finally desligava
+                        ' _running sem que ninguem o executasse. O pedido
+                        ' ficava abandonado ate outra acao do usuario.
+                        If atual Is Nothing Then
+                            _running = False
+                            Return
+                        End If
                     End SyncLock
                 Loop
-            Finally
+            Catch
+                ' Rede de seguranca so para excecao: no caminho normal o
+                ' desligamento ja aconteceu dentro do lock.
                 SyncLock _gate
                     _running = False
                 End SyncLock
+                Throw
             End Try
         End Function
 

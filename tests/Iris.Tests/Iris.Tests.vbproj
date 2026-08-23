@@ -5,6 +5,8 @@
     <RootNamespace>Iris.Tests</RootNamespace>
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+    <!-- WPF nos testes: a prova de virtualizacao precisa de janela real. -->
+    <UseWPF>true</UseWPF>
 
     <OptionStrict>On</OptionStrict>
     <OptionExplicit>On</OptionExplicit>

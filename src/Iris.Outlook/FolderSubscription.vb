@@ -1,3 +1,4 @@
+Imports System.Collections.Generic
 Imports System.Threading
 Imports Iris.Model
 Imports Iris.Outlook.Interop
@@ -54,9 +55,40 @@ Namespace Global.Iris.Outlook
             _onChange = Sub(item) Handle(InvalidationKind.ItemChanged, item, sink)
             _onRemove = Sub() Handle(InvalidationKind.ItemRemoved, Nothing, sink)
 
-            AddHandler _items.ItemAdd, _onAdd
-            AddHandler _items.ItemChange, _onChange
-            AddHandler _items.ItemRemove, _onRemove
+            ' Construcao TRANSACIONAL. Se o segundo AddHandler falhasse, o
+            ' primeiro ficaria conectado, os RCWs nao seriam liberados, o
+            ' objeto nunca chegaria ao dicionario do broker — e, como o
+            ' construtor lanca, ninguem chamaria Dispose. Sink pendurado
+            ' para sempre.
+            Dim conectados As New List(Of String)()
+            Try
+                AddHandler _items.ItemAdd, _onAdd
+                conectados.Add("add")
+                AddHandler _items.ItemChange, _onChange
+                conectados.Add("change")
+                AddHandler _items.ItemRemove, _onRemove
+                conectados.Add("remove")
+            Catch
+                DesconectarParcial(conectados)
+                ComHelpers.Release(_items)
+                _items = Nothing
+                ComHelpers.Release(_folder)
+                _folder = Nothing
+                Throw
+            End Try
+        End Sub
+
+        Private Sub DesconectarParcial(conectados As List(Of String))
+            For Each qual In conectados
+                Try
+                    Select Case qual
+                        Case "add" : RemoveHandler _items.ItemAdd, _onAdd
+                        Case "change" : RemoveHandler _items.ItemChange, _onChange
+                        Case "remove" : RemoveHandler _items.ItemRemove, _onRemove
+                    End Select
+                Catch
+                End Try
+            Next
         End Sub
 
         Public ReadOnly Property IsActive As Boolean
@@ -96,13 +128,12 @@ Namespace Global.Iris.Outlook
             If Interlocked.Exchange(_active, 0) = 0 Then Return
             If _items Is Nothing Then Return
 
-            Try
-                RemoveHandler _items.ItemAdd, _onAdd
-                RemoveHandler _items.ItemChange, _onChange
-                RemoveHandler _items.ItemRemove, _onRemove
-            Catch
-                ' Outlook já pode ter ido embora.
-            End Try
+            ' Um Try por handler: com os tres juntos, falhar ao remover
+            ' ItemAdd deixaria ItemChange e ItemRemove conectados sem sequer
+            ' serem tentados.
+            Try : RemoveHandler _items.ItemAdd, _onAdd : Catch : End Try
+            Try : RemoveHandler _items.ItemChange, _onChange : Catch : End Try
+            Try : RemoveHandler _items.ItemRemove, _onRemove : Catch : End Try
 
             _onAdd = Nothing
             _onChange = Nothing

@@ -583,7 +583,11 @@ Namespace Global.Iris.Outlook
                     Dim pasta As OL.MAPIFolder = Nothing
                     Try
                         pasta = TryCast(ns.GetFolderFromID(folder.EntryId, folder.StoreId), OL.MAPIFolder)
-                    Catch ex As Runtime.InteropServices.COMException
+                    Catch ex As Runtime.InteropServices.COMException When EhNaoEncontrado(ex.HResult)
+                        ' Mesmo filtro do MessagePaging: ocupado, desconectado
+                        ' e acesso negado nao sao "pasta nao existe", e levam
+                        ' a UI a decisoes opostas. As demais sobem para o
+                        ' classificador.
                         Return OperationResult(Of SubscriptionToken).Fail(ErrorKind.NotFound, "pasta")
                     End Try
 
@@ -746,6 +750,14 @@ Namespace Global.Iris.Outlook
             Finally
                 ComHelpers.Release(acessor)
             End Try
+        End Function
+
+        ''' <summary>
+        ''' MAPI_E_NOT_FOUND e o "objeto nao existe" do MAPI; E_INVALIDARG
+        ''' aparece quando o EntryID nao pertence mais ao store.
+        ''' </summary>
+        Private Shared Function EhNaoEncontrado(hresult As Integer) As Boolean
+            Return hresult = &H8004010F OrElse hresult = &H80070057
         End Function
 
         Private Shared Function Safe(getter As Func(Of String)) As String
