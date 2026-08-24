@@ -407,13 +407,14 @@ footer {
   <h1>Fase 2 — o que ficou medido</h1>
   <p class="dek">
     O Marco 2.1 fechou a persistência: schema executável, banco real, primitivas
-    transacionais e provas de crash. E uma medição me pegou afirmando uma coisa
-    que eu nunca tinha medido.
+    transacionais e provas de crash. E duas medições derrubaram coisas que eu
+    tinha escrito como certas — a última delas no fim do dia, com você mexendo
+    no cursor da janela.
   </p>
   <div class="meta">
     <span><b>24 de agosto de 2026</b></span>
-    <span>260 testes · <b>0 falhas</b></span>
-    <span>9 commits · <code>f83f4e3</code> → <code>f1d60e9</code></span>
+    <span>261 testes · <b>0 falhas</b> · 3 pulados sem Outlook</span>
+    <span>11 commits · <code>f83f4e3</code> → <code>eb665a3</code></span>
     <span>3 passadas de revisão com o Codex</span>
   </div>
 </header>
@@ -432,8 +433,12 @@ footer {
     <li><strong>A política de ambiente ainda não é aplicada pelo produto.</strong>
       Ela é o modelo da autorização, não o cumprimento. Nada impede hoje um
       chamador de contorná-la.</li>
-    <li><strong>O token da janela precisa de você</strong> — 3 minutos, e sem ele
-      o mecanismo inteiro pode ser decoração.</li>
+    <li><strong>O token da janela não era a janela.</strong> Você moveu o cursor
+      três vezes e o registro do perfil não mudou uma linha. A identidade de
+      ambiente ficou <strong>incompleta por construção</strong> em modo cached —
+      permanentemente, não como pendência.</li>
+    <li><strong>A suíte imprime "Passed!" pulando os testes que tocam o
+      Outlook.</strong> Descoberto hoje, sem conserto ainda.</li>
     <li><strong>O teste de crash cobre morte do processo, não falta de energia.</strong></li>
   </ul>
 </section>
@@ -638,26 +643,89 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
   <em>não verificar</em> — e eu tinha escrito no código que não precisava verificar.
 </p>
 
+<h3>E o token não era a janela</h3>
+
+<p>
+  Você moveu o cursor três vezes. O registro do perfil inteiro — 294 valores,
+  blobs comparados por <em>hash</em> e não por tamanho — não mudou em nada. A
+  única diferença entre os retratos foi uma subchave <code>GroupMailbox</code>
+  renomeada, com todos os valores iguais.
+</p>
+
 <div class="wide tabela-wrap">
 <table>
-  <caption>Token da janela — estado das duas propriedades</caption>
-  <thead><tr><th>Propriedade</th><th>O que significa</th><th>Estado</th></tr></thead>
+  <caption>O cursor mudou. O registro, não.</caption>
+  <thead><tr><th>Configuração</th><th><code>00036601</code></th><th>Perfil inteiro</th></tr></thead>
   <tbody>
-    <tr class="s-par">
-      <td class="st"><strong>Estável</strong></td>
-      <td>não muda sozinho</td>
-      <td><span class="chip parcial">Parcial</span><br>
-        <span class="dim">5 leituras idênticas em ~1,2&nbsp;s, mesma sessão. Reinício não coberto.</span></td>
-    </tr>
-    <tr class="s-nao">
-      <td class="st"><strong>Sensível</strong></td>
-      <td>muda quando a janela muda</td>
-      <td><span class="chip falta">Não medido</span><br>
-        <span class="dim">Precisa de você — 3 minutos.</span></td>
-    </tr>
+    <tr><td>1 mês (inicial)</td><td class="mono-c">84-09-00-00</td><td class="dim">—</td></tr>
+    <tr><td>tentativa de 2 semanas</td><td class="mono-c">84-09-00-00</td><td class="dim">idêntico</td></tr>
+    <tr><td><strong>3 meses</strong>, conferido na tela</td><td class="mono-c">84-09-00-00</td><td class="dim">idêntico</td></tr>
+    <tr><td>de volta a 1 mês</td><td class="mono-c">84-09-00-00</td><td class="dim">idêntico</td></tr>
   </tbody>
 </table>
 </div>
+
+<div class="principio">
+  <p>Somando com a medição anterior — o OOM também não expõe a janela —:
+  <strong>a janela não é legível nem pelo OOM nem pelo registro do perfil.</strong></p>
+  <p>Em modo cached, a impressão digital do ambiente é <strong>incompleta por
+  construção</strong>. O Iris não tem como saber que a janela mudou, e por isso
+  degrada sempre. É o comportamento certo, mas é permanente.</p>
+</div>
+
+<p class="nota">
+  <strong>O que sobreviveu:</strong> o mecanismo degradou corretamente o tempo
+  todo. Nada foi autorizado, nada vazou de um universo para outro. O desenho
+  falhou no lugar certo — que é o que "falhar fechado" quer dizer.
+  <br><br>
+  <strong>E uma armadilha que quase virou medição:</strong> a primeira tentativa
+  reverteu sozinha. O Outlook disse <em>"Conta atualizada com êxito"</em>, pediu
+  reinício, e depois do reinício o cursor estava de volta em 1 mês. Eu ia
+  registrar "o token não é sensível" a partir de um teste que não tinha testado
+  nada. Quem pegou foi você, conferindo a tela.
+</p>
+
+<h3>A saída provável: medir o efeito, não a configuração</h3>
+
+<p>
+  Apareceu um candidato melhor, por acidente, olhando a barra de status do
+  Outlook.
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>Outlook contra OOM, mesma pasta</caption>
+  <thead><tr><th>Pasta</th><th class="n">Outlook</th><th class="n">OOM</th><th></th></tr></thead>
+  <tbody>
+    <tr><td>Caixa de Entrada — itens</td><td class="n">17.728</td><td class="n">1.018</td><td><span class="chip falta">diverge 17×</span></td></tr>
+    <tr><td>Caixa de Entrada — não lidos</td><td class="n">219</td><td class="n">219</td><td><span class="chip medido">bate</span></td></tr>
+    <tr><td>1. Backup — itens</td><td class="n">145</td><td class="n">35</td><td><span class="chip falta">diverge 4×</span></td></tr>
+    <tr><td>1. Backup — não lidos</td><td class="n">2</td><td class="n">2</td><td><span class="chip medido">bate</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  <strong>Não lido bate, total não bate.</strong> Isso descarta as explicações
+  fáceis: se a barra somasse outro escopo, ou mostrasse tudo do servidor, o não
+  lido também divergiria. A leitura que sobra é que a UI mostra o total do
+  <strong>servidor</strong> e o OOM o do <strong>OST</strong>, e o não lido
+  coincide porque mensagem não lida é recente.
+</p>
+
+<p>
+  Se o Iris conseguir ler o total do servidor, ele <em>mede</em> a própria
+  cobertura — "esta pasta tem 145, eu enxergo 35" — em vez de suspeitar dela. É
+  melhor que qualquer token de configuração: mede o <strong>efeito</strong>, e
+  continua valendo quando o efeito vier de outra causa.
+</p>
+
+<p class="nota">
+  Já tentei e falhou: <code>Items.Count</code>, <code>PR_CONTENT_COUNT</code> e a
+  <code>Table</code> dão os mesmos 1.018 e 35. As três concordam porque leem o
+  <strong>mesmo OST</strong> — é a terceira vez nesta fase que três caminhos
+  concordam por compartilharem a fonte, e desta vez eu testei esperando isso.
+</p>
 
 <h3>Reconhecer não é autorizar</h3>
 
@@ -754,19 +822,18 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
 
 <div class="wide acoes">
   <div>
-    <span class="tempo">≈ 3 minutos · destrava a Q8</span>
-    <h3>Validar o token da janela</h3>
+    <span class="tempo">≈ 1 minuto · aponta o caminho do 2.3</span>
+    <h3>Abrir a aba Sincronização de uma pasta</h3>
     <p>
-      Ler o token, mover o cursor de <em>"Baixar email do passado"</em>, ler de novo,
-      voltar, ler outra vez. Eu tinha suposto que isso custava GB de download —
-      custa não: o que custa GB é medir o <em>universo resultante</em>. Ler o token
-      é instantâneo.
+      Botão direito em <strong>"1. Backup"</strong> → Propriedades → aba
+      <strong>Sincronização</strong>. Ela mostra duas linhas, algo como <em>"a pasta
+      do servidor contém N itens"</em> e <em>"a pasta offline contém M itens"</em>.
     </p>
     <p>
-      O protocolo está em <code>tools/q8-sensibilidade.md</code>, com o que cada
-      resultado significa. <strong>Se o token não for sensível, o mecanismo inteiro
-      é decoração</strong> — e é melhor descobrir agora que depois de construir em
-      cima dele.
+      Se der <strong>145 e 35</strong>, está confirmado que o Outlook tem os dois
+      números — e então <strong>existe</strong> uma propriedade MAPI carregando o
+      count do servidor. Achar qual é a primeira coisa do 2.3, e é o que pode
+      destravar a cobertura.
     </p>
   </div>
   <div>
@@ -815,8 +882,12 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
       <td>Existe como modelo; nada no produto a consulta. Um chamador futuro pode contorná-la sem esbarrar em nada.</td>
     </tr>
     <tr>
-      <td><strong>Sensibilidade do token</strong></td>
-      <td>Não medida. Se falhar, a identidade de ambiente precisa de outra fonte, e não tenho candidata boa.</td>
+      <td><strong>Identidade de ambiente</strong></td>
+      <td><strong>Incompleta por construção.</strong> A janela não é legível, então o Iris não detecta quando ela muda — e mudança de janela invalida toda conclusão de ausência. Degradação permanente, não pendência.</td>
+    </tr>
+    <tr>
+      <td><strong>A suíte pula em silêncio</strong></td>
+      <td>Os 3 testes que tocam o Outlook real pulam quando ele não está aberto, e o cabeçalho continua verde. Um resultado que parece igual quando a cobertura mudou.</td>
     </tr>
     <tr>
       <td><strong>Publicação para a UI</strong></td>
