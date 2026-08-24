@@ -1,8 +1,9 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 19 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+**Versão:** 20 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
 Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
-e `Restrict` de verdade (16)**. **Gate de sincronização (17)**.
+e `Restrict` de verdade (16)**. **Gate de sincronização (17)**, com o sinal
+operacional que fecha a parte principal da Q4.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -1863,16 +1864,55 @@ diferentes e apresentando como um número.
 saiu da janela.** Combina com I7: "saiu da janela" e "ausente no Outlook"
 são coisas diferentes.
 
-### O que falta para a Q4 fechar, e virou a maior pendência
+### 17.1 O sinal operacional existe, e é barato
 
-A §16.1 mostra que a varredura **pode** ser silenciosamente incompleta. Não
-mostra **como o Iris saberia disso em produção** — nos experimentos, quem
-provocou a mutação fui eu, então eu sabia.
+A §16.1 mostrou que a varredura pode ser silenciosamente incompleta. Faltava
+**como o Iris saberia disso em produção** — nos experimentos quem provocou
+a mutação fui eu, então eu sabia. `tools/q4-sinal.ps1` mede os candidatos.
 
-> A maior pendência do 2.0 deixou de ser a Q3 e passou a ser a **Q4**: um
-> **sinal operacional** que permita ao Iris declarar uma geração
-> confiável. Contagem antes/depois, `PR_CONTENT_COUNT` da pasta,
-> `ChangeKey` da pasta, evento de modificação — **nada disso foi medido**.
+O critério de um sinal útil tem **duas** metades: acusar a truncagem **e
+ficar quieto quando não houve nenhuma**. Por isso os dois cenários rodam
+lado a lado.
+
+| cenário | lidos | `Count` antes | `Count` depois | `PR_CONTENT_COUNT` | `ChangeKey` da pasta |
+|---|---|---|---|---|---|
+| sem mutação | 40 | 40 | 40 | 40 | não mudou |
+| com um `Move` no lote 1 | **24** | 40 | 39 | 39 | **não mudou** |
+
+| candidato | sem mutação | com mutação | veredito |
+|---|---|---|---|
+| lidos ≠ `Count` **antes** | quieto | **acusa** | **serve** |
+| lidos ≠ `Count` **depois** | quieto | **acusa** | **serve** |
+| `Count` antes ≠ `Count` depois | quieto | **acusa** | **serve** |
+| `ChangeKey` da **pasta** | quieto | **quieto** | **não detecta** |
+
+> **S6 — Uma geração só é declarada válida se as linhas lidas, a contagem
+> ANTES e a contagem DEPOIS concordarem.** Discordância não é erro: é
+> "descarte e repita", que é a opção 1 da §4.
+
+O `ChangeKey` **da pasta** não mudou nem quando um item saiu dela. Era o
+sinal mais barato imaginável e **não serve** — negativo útil, porque é o
+que alguem tentaria primeiro. `PR_CONTENT_COUNT` acompanhou `Items.Count`
+nas duas leituras; este teste **não consegue distinguir** um do outro.
+
+**Limites, e eles importam:**
+
+- pasta de teste **parada**. Na Caixa de Entrada chega mensagem sozinha, e
+  o sinal vai acusar **corretamente** — mas com que frequência, e quantas
+  repetições até uma passar limpa, **não foi medido**. Numa pasta muito
+  movimentada, "descarte e repita" pode nunca convergir;
+- `PR_CONTENT_COUNT` no Exchange é documentadamente sujeito a atraso — a
+  §3 já registra isso para `UnreadCount`. Aqui os dois bateram, o que **não
+  prova** que batem sempre;
+- só o `Move` foi exercitado como mutação. Criação e exclusão durante a
+  varredura não foram medidas contra este sinal.
+
+### 17.2 O que ainda falta na Q4
+
+- **Falha COM, cancelamento e Outlook reiniciado** no meio da enumeração.
+- **Convergência do "descarte e repita"** numa pasta com tráfego real.
+- A escolha entre as três opções da §4 — agora com dado para a opção 1, e
+  a §13 mostrando que a opção 2 (duas observações compatíveis) custa ~6,4 s.
 
 A Q3 já entregou o mais importante: **não pode ser base de completude**. O
 que resta dela é caracterizar onde ainda ajuda.
