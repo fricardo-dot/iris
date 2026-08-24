@@ -93,6 +93,87 @@ Public Class CacheDatabaseTests
     End Sub
 
     ''' <summary>
+    ''' Toda FK aponta para uma coluna QUE EXISTE.
+    '''
+    ''' Este teste não consulta o modelo — só o banco — e é por isso que ele
+    ''' vale. O SQLite aceita <c>REFERENCES pai (coluna_que_nao_existe)</c> no
+    ''' CREATE TABLE sem reclamar; a falha só aparece no primeiro INSERT, como
+    ''' "foreign key mismatch", longe de onde o erro foi escrito.
+    '''
+    ''' Foi exatamente o que aconteceu: o gerador supunha que a chave primária
+    ''' de <c>x</c> se chama <c>x_key</c>, e <c>environment_profile</c> tem
+    ''' <c>environment_key</c>. Os outros dez testes desta classe passaram por
+    ''' cima do schema quebrado — quem acusou foi o primeiro INSERT real, no
+    ''' teste de crash.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Toda_FK_aponta_para_coluna_que_existe()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"{falha}")
+            Dim c = db.Connection
+
+            Dim tabelas As New List(Of String)()
+            Using cmd = c.CreateCommand()
+                cmd.CommandText = "SELECT name FROM sqlite_schema WHERE type='table' " &
+                                  "AND name NOT LIKE 'sqlite_%'"
+                Using rd = cmd.ExecuteReader()
+                    While rd.Read()
+                        tabelas.Add(rd.GetString(0))
+                    End While
+                End Using
+            End Using
+            Assert.IsTrue(tabelas.Count > 10, "esperava o schema inteiro")
+
+            Dim problemas As New List(Of String)()
+            Dim verificadas = 0
+            For Each t In tabelas
+                For Each fk In ForeignKeys(c, t)
+                    verificadas += 1
+                    Dim colunas = ColunasDe(c, fk.Pai)
+                    If colunas.Count = 0 Then
+                        problemas.Add($"{t}.{fk.De} -> tabela {fk.Pai} nao existe")
+                    ElseIf fk.Para IsNot Nothing AndAlso
+                           Not colunas.Contains(fk.Para, StringComparer.OrdinalIgnoreCase) Then
+                        problemas.Add($"{t}.{fk.De} -> {fk.Pai}.{fk.Para}: coluna alvo nao existe")
+                    End If
+                Next
+            Next
+
+            Assert.IsTrue(verificadas > 15, $"so {verificadas} FKs verificadas — teste vazio nao prova nada")
+            Assert.AreEqual(0, problemas.Count, String.Join(" | ", problemas))
+        End Using
+    End Sub
+
+    Private Shared Function ForeignKeys(c As SqliteConnection, tabela As String) _
+            As List(Of (De As String, Pai As String, Para As String))
+        Dim r As New List(Of (De As String, Pai As String, Para As String))()
+        Using cmd = c.CreateCommand()
+            cmd.CommandText = $"PRAGMA foreign_key_list({tabela})"
+            Using rd = cmd.ExecuteReader()
+                While rd.Read()
+                    r.Add((rd.GetString(3), rd.GetString(2),
+                           If(rd.IsDBNull(4), Nothing, rd.GetString(4))))
+                End While
+            End Using
+        End Using
+        Return r
+    End Function
+
+    Private Shared Function ColunasDe(c As SqliteConnection, tabela As String) As List(Of String)
+        Dim r As New List(Of String)()
+        Using cmd = c.CreateCommand()
+            cmd.CommandText = $"PRAGMA table_info({tabela})"
+            Using rd = cmd.ExecuteReader()
+                While rd.Read()
+                    r.Add(rd.GetString(1))
+                End While
+            End Using
+        End Using
+        Return r
+    End Function
+
+    ''' <summary>
     ''' Os CHECK do modelo viram CHECK no banco. Sem isto, 'presence' aceita
     ''' qualquer string e o enum vira sugestão.
     ''' </summary>

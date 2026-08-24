@@ -20,6 +20,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="Iris.Tests" />
+    <InternalsVisibleTo Include="Iris.CrashHarness" />
   </ItemGroup>
 
 </Project>

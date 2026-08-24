@@ -33,7 +33,7 @@ Namespace Global.Iris.Cache
             comandos.Add("PRAGMA journal_mode = WAL")
 
             For Each t In OrdenarPorDependencia(schema)
-                comandos.Add(CriarTabela(t))
+                comandos.Add(CriarTabela(t, schema))
             Next
 
             For Each t In schema.Tables
@@ -89,7 +89,7 @@ Namespace Global.Iris.Cache
             Return ordenadas
         End Function
 
-        Private Shared Function CriarTabela(t As SchemaTable) As String
+        Private Shared Function CriarTabela(t As SchemaTable, schema As CacheSchema) As String
             Dim sb As New StringBuilder()
             sb.Append($"CREATE TABLE {t.Name} (")
             Dim partes As New List(Of String)()
@@ -106,7 +106,7 @@ Namespace Global.Iris.Cache
             For Each c In t.Columns
                 If c.References Is Nothing Then Continue For
                 Dim acao = AcaoSql(c.OnDelete)
-                Dim alvo = ChavePrimariaDe(c.References)
+                Dim alvo = ChavePrimariaDe(schema, c.References)
                 partes.Add($"FOREIGN KEY ({c.Name}) REFERENCES {c.References} ({alvo}){acao}")
             Next
 
@@ -120,10 +120,25 @@ Namespace Global.Iris.Cache
         End Function
 
         ''' <summary>
-        ''' Convenção do modelo: a chave primária de <c>x</c> é <c>x_key</c>.
+        ''' A chave primária REAL da tabela referenciada, lida do modelo.
+        '''
+        ''' Já foi por convenção — "a PK de <c>x</c> chama-se <c>x_key</c>" —,
+        ''' e a convenção estava errada em <c>environment_profile</c>, cuja PK
+        ''' é <c>environment_key</c>. O SQLite aceita o CREATE TABLE apontando
+        ''' para coluna inexistente e só reclama no primeiro INSERT, com
+        ''' "foreign key mismatch", muito longe de onde o erro foi escrito.
         ''' </summary>
-        Private Shared Function ChavePrimariaDe(tabela As String) As String
-            Return tabela & "_key"
+        Friend Shared Function ChavePrimariaDe(schema As CacheSchema, tabela As String) As String
+            Dim alvo = schema.Tables.FirstOrDefault(
+                Function(x) String.Equals(x.Name, tabela, StringComparison.OrdinalIgnoreCase))
+            If alvo Is Nothing Then
+                Throw New InvalidOperationException($"FK aponta para tabela inexistente: {tabela}")
+            End If
+            Dim pk = alvo.Columns.FirstOrDefault(Function(c) c.IsPrimaryKey)
+            If pk Is Nothing Then
+                Throw New InvalidOperationException($"tabela {tabela} nao tem chave primaria")
+            End If
+            Return pk.Name
         End Function
 
         Private Shared Function AcaoSql(a As DeleteAction) As String

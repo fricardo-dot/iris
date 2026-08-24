@@ -39,7 +39,7 @@ Namespace Global.Iris.Cache
             For Each t In esperado.Tables
                 CompararColunas(conn, t, diffs)
                 CompararUnicos(conn, t, diffs)
-                CompararFks(conn, t, diffs)
+                CompararFks(conn, t, esperado, diffs)
             Next
 
             Return diffs
@@ -140,16 +140,28 @@ Namespace Global.Iris.Cache
             Return cols.ToArray()
         End Function
 
+        ''' <summary>
+        ''' Compara a FK inteira: tabela alvo E COLUNA alvo.
+        '''
+        ''' A coluna estava de fora, e isso deixou passar um schema quebrado:
+        ''' <c>scan_attempt.environment_key</c> apontava para
+        ''' <c>environment_profile(environment_profile_key)</c>, coluna que não
+        ''' existe. Como a TABELA alvo estava certa, a comparação dizia "sem
+        ''' divergência" — e o SQLite aceita o CREATE e só reclama no primeiro
+        ''' INSERT, com "foreign key mismatch". Onze testes passaram por cima.
+        ''' </summary>
         Private Shared Sub CompararFks(conn As SqliteConnection, t As SchemaTable,
-                                       diffs As List(Of String))
-            Dim reais As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
+                                       esperado As CacheSchema, diffs As List(Of String))
+            Dim reais As New Dictionary(Of String, (Tabela As String, Coluna As String))(
+                StringComparer.OrdinalIgnoreCase)
 
             Using cmd = conn.CreateCommand()
                 cmd.CommandText = $"PRAGMA foreign_key_list({t.Name})"
                 Using rd = cmd.ExecuteReader()
                     While rd.Read()
-                        ' 2 = tabela alvo, 3 = coluna de origem
-                        reais(rd.GetString(3)) = rd.GetString(2)
+                        ' 2 = tabela alvo, 3 = coluna de origem, 4 = coluna alvo
+                        Dim destino = If(rd.IsDBNull(4), Nothing, rd.GetString(4))
+                        reais(rd.GetString(3)) = (rd.GetString(2), destino)
                     End While
                 End Using
             End Using
@@ -158,8 +170,18 @@ Namespace Global.Iris.Cache
                 If c.References Is Nothing Then Continue For
                 If Not reais.ContainsKey(c.Name) Then
                     diffs.Add($"{t.Name}.{c.Name}: FK ausente no banco (esperava -> {c.References})")
-                ElseIf Not String.Equals(reais(c.Name), c.References, StringComparison.OrdinalIgnoreCase) Then
-                    diffs.Add($"{t.Name}.{c.Name}: FK aponta para {reais(c.Name)}, esperado {c.References}")
+                    Continue For
+                End If
+                Dim real = reais(c.Name)
+                If Not String.Equals(real.Tabela, c.References, StringComparison.OrdinalIgnoreCase) Then
+                    diffs.Add($"{t.Name}.{c.Name}: FK aponta para {real.Tabela}, esperado {c.References}")
+                    Continue For
+                End If
+                Dim colunaEsperada = SqliteDdl.ChavePrimariaDe(esperado, c.References)
+                If real.Coluna IsNot Nothing AndAlso
+                   Not String.Equals(real.Coluna, colunaEsperada, StringComparison.OrdinalIgnoreCase) Then
+                    diffs.Add($"{t.Name}.{c.Name}: FK aponta para {real.Tabela}.{real.Coluna}, " &
+                              $"esperado {c.References}.{colunaEsperada}")
                 End If
             Next
         End Sub
