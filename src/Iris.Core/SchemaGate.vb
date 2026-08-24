@@ -49,6 +49,11 @@ Namespace Global.Iris.Core
             VerificarS3(schema, v)
             VerificarS4(schema, v)
             VerificarS7(schema, v)
+            VerificarS1b(schema, v)
+            VerificarS5(schema, v)
+            VerificarD1(schema, v)
+            VerificarD2(schema, v)
+            VerificarIdempotencia(schema, v)
             Return v
         End Function
 
@@ -138,13 +143,20 @@ Namespace Global.Iris.Core
                 End If
             Next
 
-            ' I8
-            Dim coex = t.Column("coexistence_checked")
-            If coex Is Nothing OrElse Not coex.IsRequired Then
+            ' I8 — e NAO como booleano.
+            '
+            ' Um booleano afirma "checado" sem dizer ONDE, QUANDO nem em qual
+            ' universo. E a §16.1 mediu que duas linhas no cache nao provam
+            ' coexistencia: o corte fraturado produz exatamente isso para um
+            ' Move legitimo. Por isso e REFERENCIA a evidencia.
+            Dim coex = t.Column("coexistence_evidence_key")
+            If coex Is Nothing OrElse coex.References <> "coexistence_evidence" Then
                 v.Add(New GateViolation("I8",
-                    "correlation_edge não registra se a coexistência foi CONFIRMADA. " &
-                    "Duas linhas no cache não provam coexistência: o corte fraturado " &
-                    "da §16.1 produz exatamente isso para um Move legítimo."))
+                    "correlation_edge não aponta para evidência de coexistência. " &
+                    "Booleano não serve: ele afirma 'checado' sem dizer onde nem quando."))
+            End If
+            If s.Table("coexistence_evidence") Is Nothing Then
+                v.Add(New GateViolation("I8", "não existe tabela de evidência de coexistência"))
             End If
         End Sub
 
@@ -293,13 +305,176 @@ Namespace Global.Iris.Core
                 v.Add(New GateViolation("S7", "não existe tabela de pasta"))
                 Return
             End If
-            Dim c = f.Column("coverage")
-            If c Is Nothing OrElse Not c.IsRequired Then
+
+            ' A cobertura e VERSIONADA, nao uma coluna estatica na pasta:
+            ' ela muda com sessao, janela e sincronizacao, e a conclusao so
+            ' vale no universo em que foi tirada.
+            Dim cob = s.Table("coverage_observation")
+            If cob Is Nothing Then
                 v.Add(New GateViolation("S7",
-                    "folder não registra a cobertura do cache. Sem isso, " &
+                    "não existe coverage_observation. Sem cobertura conhecida, " &
                     "'Count == 0' é lido como 'pasta vazia' — e na caixa medida " &
                     "dezenas de pastas cheias reportam zero (§19.2)."))
+                Return
             End If
+            For Each obrigatoria In {"folder_key", "coverage", "universe_fingerprint", "observed_at"}
+                Dim c = cob.Column(obrigatoria)
+                If c Is Nothing OrElse Not c.IsRequired Then
+                    v.Add(New GateViolation("S7",
+                        $"coverage_observation.{obrigatoria} ausente ou opcional"))
+                End If
+            Next
+
+            ' E a ausencia tem de dizer QUAL cobertura a autorizou.
+            Dim assoc = s.Table("association")
+            If assoc IsNot Nothing Then
+                Dim ac = assoc.Column("absent_by_coverage")
+                If ac Is Nothing OrElse ac.References <> "coverage_observation" Then
+                    v.Add(New GateViolation("S7",
+                        "association não amarra a ausência a uma cobertura. Sem isso " &
+                        "não dá para exigir que a pasta estivesse INTEIRA no cache."))
+                End If
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' S1 (parte b) — a TENTATIVA é separada da GERAÇÃO.
+        '''
+        ''' Checkpoint é estado de trabalho INCOMPLETO. Se ele morasse na
+        ''' geração, ou a geração existiria antes de ser válida, ou não
+        ''' haveria onde retomar. Foi o bloqueador da 1ª versão do plano.
+        ''' </summary>
+        Private Shared Sub VerificarS1b(s As CacheSchema, v As List(Of GateViolation))
+            Dim tentativa = s.Table("scan_attempt")
+            Dim geracao = s.Table("generation")
+            If tentativa Is Nothing Then
+                v.Add(New GateViolation("S1b", "nao existe scan_attempt: o checkpoint nao tem onde morar"))
+                Return
+            End If
+            If geracao Is Nothing Then Return
+
+            ' Checkpoint (cursor) NAO pode viver na geracao publicada.
+            If geracao.Column("cursor") IsNot Nothing Then
+                v.Add(New GateViolation("S1b",
+                    "generation.cursor: checkpoint numa tabela imutavel. " &
+                    "Ou a geracao existe antes de ser valida, ou nao ha onde retomar."))
+            End If
+            If tentativa.Column("cursor") Is Nothing Then
+                v.Add(New GateViolation("S1b", "scan_attempt nao tem cursor: nao da para retomar"))
+            End If
+            ' O staging precisa existir e ser POR TENTATIVA.
+            Dim staging = s.Table("scan_stage")
+            If staging Is Nothing Then
+                v.Add(New GateViolation("S1b",
+                    "nao existe scan_stage. As chaves vistas iriam para dentro do cursor, " &
+                    "que e exatamente o desenho que a revisao recusou."))
+            ElseIf staging.Column("attempt_key") Is Nothing Then
+                v.Add(New GateViolation("S1b", "scan_stage nao pertence a uma tentativa"))
+            End If
+            ' publication_log, para reprocessar depois de crash.
+            If s.Table("publication_log") Is Nothing Then
+                v.Add(New GateViolation("S1b",
+                    "nao existe publication_log: um crash entre o commit e a publicacao " &
+                    "perderia o evento sem deixar rastro"))
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' S5 — retenção expurga dado derivado, nunca estado do usuário.
+        ''' Aqui: apagar item ou pasta NÃO pode cascatear para user_state.
+        ''' </summary>
+        Private Shared Sub VerificarS5(s As CacheSchema, v As List(Of GateViolation))
+            Dim us = s.Table("user_state")
+            If us Is Nothing Then Return
+            For Each c In us.Columns
+                If c.OnDelete = DeleteAction.Cascade Then
+                    v.Add(New GateViolation("S5",
+                        $"user_state.{c.Name} cascateia. Apagar um item apagaria o " &
+                        "trabalho do usuario junto."))
+                End If
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' D1 — o cache guarda METADADO, e nao conteudo.
+        '''
+        ''' Medido: metadado da caixa inteira = 11,7 MB; com texto = 372 MB.
+        ''' E texto significa correspondencia EM CLARO no disco antes de
+        ''' criptografia e retencao estarem decididas.
+        ''' </summary>
+        Private Shared Sub VerificarD1(s As CacheSchema, v As List(Of GateViolation))
+            ' O nome sozinho nao basta: "has_attachments INTEGER" e uma FLAG,
+            ' e "body TEXT" e conteudo. A primeira versao desta regra deu
+            ' falso positivo em has_attachments — e regra que grita no
+            ' schema certo e regra que sera desligada.
+            '
+            ' Conteudo mora em TEXT ou BLOB. Flag e contagem moram em
+            ' INTEGER. So os dois primeiros sao suspeitos.
+            Dim proibidos = {"body", "html", "attachment", "anexo", "corpo", "content_bytes"}
+            For Each t In s.Tables
+                For Each c In t.Columns
+                    Dim tipo = c.Kind.ToUpperInvariant()
+                    If tipo <> "TEXT" AndAlso tipo <> "BLOB" Then Continue For
+                    Dim nome = c.Name.ToLowerInvariant()
+                    For Each p In proibidos
+                        If nome.Contains(p) Then
+                            v.Add(New GateViolation("D1",
+                                $"{t.Name}.{c.Name} e {tipo} e parece guardar conteudo. " &
+                                "O 2.1 e metadado: 372 MB e correspondencia em claro no " &
+                                "disco exigem a decisao de criptografia antes."))
+                        End If
+                    Next
+                Next
+            Next
+            If s.Table("metadata_observation") Is Nothing Then
+                v.Add(New GateViolation("D1",
+                    "nao existe metadata_observation: o cache nao guarda o metadado " &
+                    "que o 2.1 promete"))
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' D2 — ambiente nao medido recusa operar, e a allowlist e DADO.
+        ''' </summary>
+        Private Shared Sub VerificarD2(s As CacheSchema, v As List(Of GateViolation))
+            Dim amb = s.Table("environment_profile")
+            If amb Is Nothing Then
+                v.Add(New GateViolation("D2",
+                    "nao existe environment_profile: a allowlist viraria constante no " &
+                    "codigo, e ambiente nao medido operaria por omissao"))
+                Return
+            End If
+            If amb.Column("allowed") Is Nothing OrElse Not amb.Column("allowed").IsRequired Then
+                v.Add(New GateViolation("D2", "environment_profile nao diz se o ambiente e permitido"))
+            End If
+            If amb.Column("fingerprint") Is Nothing Then
+                v.Add(New GateViolation("D2", "environment_profile sem fingerprint"))
+            End If
+        End Sub
+
+        ''' <summary>
+        ''' Idempotencia — reimportar nao pode duplicar.
+        '''
+        ''' Sem isto, uma retomada ou uma segunda importacao criam pasta,
+        ''' encarnacao e associacao repetidas, e o S6 passa a rejeitar toda
+        ''' varredura por chave duplicada. O sintoma aparece longe da causa.
+        ''' </summary>
+        Private Shared Sub VerificarIdempotencia(s As CacheSchema, v As List(Of GateViolation))
+            Dim casos = {
+                ("folder", New String() {"store_key", "provider_entry_id"}),
+                ("incarnation", New String() {"folder_key", "provider_entry_id"}),
+                ("association", New String() {"item_key", "folder_key"}),
+                ("user_state", New String() {"item_key"})
+            }
+            For Each caso In casos
+                Dim t = s.Table(caso.Item1)
+                If t Is Nothing Then Continue For
+                If Not t.TemUnico(caso.Item2) Then
+                    v.Add(New GateViolation("IDEM",
+                        $"{caso.Item1} sem unico sobre ({String.Join(", ", caso.Item2)}): " &
+                        "reimportar duplicaria"))
+                End If
+            Next
         End Sub
 
     End Class

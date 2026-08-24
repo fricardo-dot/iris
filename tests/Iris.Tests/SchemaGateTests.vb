@@ -184,8 +184,10 @@ Public Class SchemaGateTests
 
     <TestMethod>
     Public Sub I8_recusa_uniao_sem_coexistencia_confirmada()
-        Exige(SemColuna(CacheSchema.Intended(), "correlation_edge", "coexistence_checked"),
-              "I8", "a aresta perdeu coexistence_checked")
+        Exige(SemColuna(CacheSchema.Intended(), "correlation_edge", "coexistence_evidence_key"),
+              "I8", "a aresta perdeu a referencia a evidencia de coexistencia")
+        Exige(Sem(CacheSchema.Intended(), "coexistence_evidence"),
+              "I8", "a tabela de evidencia sumiu")
     End Sub
 
     <TestMethod>
@@ -238,15 +240,17 @@ Public Class SchemaGateTests
     ''' </summary>
     <TestMethod>
     Public Sub S7_recusa_pasta_sem_cobertura_conhecida()
-        Exige(SemColuna(CacheSchema.Intended(), "folder", "coverage"),
-              "S7", "folder perdeu a cobertura do cache")
+        Exige(Sem(CacheSchema.Intended(), "coverage_observation"),
+              "S7", "a tabela de cobertura sumiu")
+        Exige(SemColuna(CacheSchema.Intended(), "association", "absent_by_coverage"),
+              "S7", "a ausencia deixou de dizer qual cobertura a autorizou")
     End Sub
 
     <TestMethod>
     Public Sub S7_e_independente_do_S6()
         ' Sem 'coverage', o S7 dispara e o S6 continua satisfeito — que e
         ' exatamente por que S7 precisou existir em separado.
-        Dim s = SemColuna(CacheSchema.Intended(), "folder", "coverage")
+        Dim s = Sem(CacheSchema.Intended(), "coverage_observation")
         Assert.IsTrue(Violou(s, "S7"))
         Assert.IsFalse(Violou(s, "S6"),
             "S6 nao deveria disparar: e por ele nao pegar este caso que o S7 existe")
@@ -274,7 +278,8 @@ Public Class SchemaGateTests
     Public Sub Toda_regra_e_exercitada_por_algum_teste()
         Dim declaradas = New HashSet(Of String)(
             {"I1", "I2", "I3", "I4", "I5", "I6", "I7", "I8",
-             "S1", "S2", "S3", "S4", "S6", "S7"})
+             "S1", "S1b", "S2", "S3", "S4", "S5", "S6", "S7",
+             "D1", "D2", "IDEM"})
 
         ' Recolhe as regras que QUALQUER quebra deste arquivo faz disparar.
         Dim disparadas As New HashSet(Of String)()
@@ -291,6 +296,10 @@ Public Class SchemaGateTests
         Next
         ' as tres que exigem ACRESCENTAR algo, e nao remover
         disparadas.Add("I1") : disparadas.Add("I5") : disparadas.Add("S3")
+        disparadas.Add("S5") : disparadas.Add("D1")
+        ' IDEM so dispara removendo INDICE, e a varredura acima so remove
+        ' tabela e coluna. O teste dedicado esta em IDEM_recusa_falta_de_unicidade.
+        disparadas.Add("IDEM")
 
         Dim orfas = declaradas.Except(disparadas).OrderBy(Function(x) x).ToList()
         Assert.AreEqual(0, orfas.Count,
@@ -298,4 +307,95 @@ Public Class SchemaGateTests
             ". Regra que nunca dispara nao esta protegendo nada.")
     End Sub
 
+    ''' <summary>
+    ''' S1b — o bloqueador principal do plano, como teste.
+    '''
+    ''' Checkpoint numa tabela IMUTAVEL nao existe: ou a geracao passa a
+    ''' existir antes de ser valida, ou nao ha onde retomar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub S1b_recusa_checkpoint_dentro_da_geracao()
+        Dim s = CacheSchema.Intended()
+        Dim g = s.Table("generation")
+        Dim quebrada = New SchemaTable(g.Name,
+            g.Columns.Concat({New SchemaColumn("cursor", "TEXT")}),
+            g.UniqueIndexes, g.Indexes, g.Checks)
+        Exige(Com(s, quebrada), "S1b", "generation ganhou um cursor")
+    End Sub
+
+    <TestMethod>
+    Public Sub S1b_recusa_falta_de_tentativa_staging_ou_log()
+        Exige(Sem(CacheSchema.Intended(), "scan_attempt"), "S1b", "scan_attempt sumiu")
+        Exige(Sem(CacheSchema.Intended(), "scan_stage"), "S1b", "scan_stage sumiu")
+        Exige(Sem(CacheSchema.Intended(), "publication_log"), "S1b", "publication_log sumiu")
+        Exige(SemColuna(CacheSchema.Intended(), "scan_attempt", "cursor"),
+              "S1b", "a tentativa perdeu o cursor")
+    End Sub
+
+    ''' <summary>
+    ''' S5 — apagar um item nao pode levar o trabalho do usuario junto.
+    ''' </summary>
+    <TestMethod>
+    Public Sub S5_recusa_estado_do_usuario_em_cascata()
+        Dim s = CacheSchema.Intended()
+        Dim us = s.Table("user_state")
+        Dim quebrada = New SchemaTable(us.Name,
+            us.Columns.Select(Function(c) If(c.Name = "item_key",
+                New SchemaColumn(c.Name, c.Kind, c.IsPrimaryKey, c.IsRequired,
+                                 c.References, c.IsProviderValue, c.Check,
+                                 DeleteAction.Cascade), c)),
+            us.UniqueIndexes, us.Indexes, us.Checks)
+        Exige(Com(s, quebrada), "S5", "user_state passou a cascatear")
+    End Sub
+
+    ''' <summary>
+    ''' D1 — o cache e METADADO. Corpo custa 372 MB e poe correspondencia
+    ''' em claro no disco antes de criptografia e retencao decididas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub D1_recusa_coluna_de_conteudo()
+        Dim s = CacheSchema.Intended()
+        Dim m = s.Table("metadata_observation")
+        Dim quebrada = New SchemaTable(m.Name,
+            m.Columns.Concat({New SchemaColumn("body_text", "TEXT")}),
+            m.UniqueIndexes, m.Indexes, m.Checks)
+        Exige(Com(s, quebrada), "D1", "metadata_observation ganhou body_text")
+    End Sub
+
+    ''' <summary>
+    ''' E o controle do controle: a regra do D1 NAO pode gritar numa flag.
+    ''' A 1a versao dela deu falso positivo em has_attachments, e regra que
+    ''' grita no schema certo e regra que sera desligada.
+    ''' </summary>
+    <TestMethod>
+    Public Sub D1_nao_confunde_flag_com_conteudo()
+        Assert.IsFalse(Violou(CacheSchema.Intended(), "D1"),
+            "has_attachments INTEGER e flag, nao conteudo")
+    End Sub
+
+    <TestMethod>
+    Public Sub D2_recusa_ausencia_de_allowlist()
+        Exige(Sem(CacheSchema.Intended(), "environment_profile"),
+              "D2", "a allowlist de ambiente sumiu")
+        Exige(SemColuna(CacheSchema.Intended(), "environment_profile", "allowed"),
+              "D2", "o perfil deixou de dizer se e permitido")
+    End Sub
+
+    ''' <summary>
+    ''' Idempotencia. Sem os unicos, uma retomada ou uma segunda importacao
+    ''' duplicam pasta, encarnacao e associacao — e o S6 passa a rejeitar
+    ''' TODA varredura por chave duplicada. O sintoma aparece longe da causa.
+    ''' </summary>
+    <TestMethod>
+    Public Sub IDEM_recusa_falta_de_unicidade()
+        For Each caso In New(Tabela As String, Cols As String())() {
+                ("folder", New String() {"store_key", "provider_entry_id"}),
+                ("incarnation", New String() {"folder_key", "provider_entry_id"}),
+                ("association", New String() {"item_key", "folder_key"})}
+            Dim s = CacheSchema.Intended()
+            Dim t = s.Table(caso.Tabela)
+            Dim semUnico = New SchemaTable(t.Name, t.Columns, Nothing, t.Indexes, t.Checks)
+            Exige(Com(s, semUnico), "IDEM", $"{caso.Tabela} perdeu o indice unico")
+        Next
+    End Sub
 End Class
