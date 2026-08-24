@@ -437,8 +437,43 @@ Namespace Global.Iris.Outlook
                     Return SessionState.Unavailable
                 End If
 
+                ' INSTALACAO TRANSACIONAL.
+                '
+                ' Antes, bastava obter Application e chamar GetNamespace para a
+                ' sessao ser publicada e a epoca incrementada. Isso produz um
+                ' Connected MENTIROSO: os dois respondem enquanto o MAPI e o
+                ' perfil ainda nao estao utilizaveis, os assinantes sao
+                ' notificados, e a PRIMEIRA operacao real falha.
+                '
+                ' E o mesmo padrao que a Q1 cobrou com a coluna Permission e a
+                ' secao 16.5 com o Restrict: "nao lancou" nao e "funciona".
+                ' Aqui se exige uma LEITURA DE VERDADE, sem efeito colateral,
+                ' em variaveis LOCAIS. So depois os campos sao instalados.
+                '
+                ' NAO se chama NameSpace.Logon: isso pode selecionar ou iniciar
+                ' perfil, e contradiz a exigencia de sessao interativa ja aberta.
+                Dim ns As OL.NameSpace = Nothing
+                Dim stores As OL.Stores = Nothing
+                Try
+                    ns = app.GetNamespace("MAPI")
+                    stores = ns.Stores
+                    If stores.Count <= 0 Then
+                        ' Sem store nao ha o que ler. Isso e sessao ainda subindo,
+                        ' nao sessao pronta.
+                        Throw New COMException("nenhum store disponivel", &H80010001)
+                    End If
+                Catch
+                    ComHelpers.Release(stores)
+                    ComHelpers.Release(ns)
+                    ComHelpers.Release(app)
+                    Throw
+                Finally
+                    ' Stores era so para validar; liberar em ordem inversa (R7).
+                    ComHelpers.Release(stores)
+                End Try
+
                 _application = app
-                _namespace = app.GetNamespace("MAPI")
+                _namespace = ns
 
                 ' Sessão NOVA. Tudo o que a anterior entregou — chaves,
                 ' tokens de assinatura — deixou de valer neste instante, e as

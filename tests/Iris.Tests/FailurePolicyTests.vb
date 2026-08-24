@@ -221,4 +221,49 @@ Public Class FailurePolicyTests
         }
     End Function
 
+    ''' <summary>
+    ''' Os HRESULTs que o ANEXAR encontra, e que antes tinham uma segunda
+    ''' tabela em ComInterop.GetRunningInstance discordando desta.
+    '''
+    ''' RPC_E_DISCONNECTED era Busy la e sessao MORTA aqui. Chamar de
+    ''' "ocupado" uma sessao morta faz a UI prometer reconexao automatica
+    ''' que nao vem. Agora o ComInterop DELEGA para ca, entao este teste
+    ''' protege os dois.
+    ''' </summary>
+    <TestMethod>
+    Public Sub HRESULTs_do_anexar_sao_classificados_de_um_jeito_so()
+        ''' Ocupado de verdade: da para tentar de novo.
+        Assert.AreEqual(ErrorKind.Busy,
+            OutlookFailurePolicy.ClassifyFailure(OutlookFailurePolicy.RPC_E_CALL_REJECTED, False, False))
+        Assert.AreEqual(ErrorKind.Busy,
+            OutlookFailurePolicy.ClassifyFailure(OutlookFailurePolicy.RPC_E_SERVERCALL_RETRYLATER, False, False))
+
+        ''' Sessao morta. NAO e ocupado.
+        Assert.AreEqual(ErrorKind.NotConnected,
+            OutlookFailurePolicy.ClassifyFailure(OutlookFailurePolicy.RPC_E_DISCONNECTED, False, False),
+            "RPC_E_DISCONNECTED e sessao morta, nao ocupada")
+    End Sub
+
+    ''' <summary>
+    ''' O HRESULT que a FASE2 secao 21.1 mediu de verdade: fechei o Outlook
+    ''' com uma Table aberta e o GetArray seguinte lancou 0x800706BA.
+    '''
+    ''' Foi a primeira validacao deste classificador contra um caso real -
+    ''' ate entao ele so tinha teste sintetico. Este teste existe para que
+    ''' o caso medido nao possa regredir em silencio.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Morte_do_Outlook_no_meio_da_varredura_e_NotConnected()
+        Const MEDIDO_EM_21_1 As Integer = &H800706BA
+        Assert.AreEqual(OutlookFailurePolicy.RPC_S_SERVER_UNAVAILABLE, MEDIDO_EM_21_1)
+        Assert.AreEqual(ErrorKind.NotConnected,
+            OutlookFailurePolicy.ClassifyFailure(MEDIDO_EM_21_1, False, False))
+        Assert.IsTrue(OutlookFailurePolicy.IsSessionDead(MEDIDO_EM_21_1),
+            "o watchdog precisa reconhecer isto como sessao morta e reanexar")
+
+        ''' E continua Ambiguous se uma MUTACAO ja tinha comecado: a regra de
+        ''' que mutacao vence qualquer HRESULT nao pode ser furada por este.
+        Assert.AreEqual(ErrorKind.Ambiguous,
+            OutlookFailurePolicy.ClassifyFailure(MEDIDO_EM_21_1, isMutation:=True, mutationAttemptStarted:=True))
+    End Sub
 End Class

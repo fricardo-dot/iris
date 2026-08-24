@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 26 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+**Versão:** 27 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
 Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
 e `Restrict` de verdade (16)**. **Gate de sincronização (17)**, com o sinal
 operacional que fecha a parte principal da Q4.
@@ -2476,32 +2476,100 @@ GetActiveObject      : FALHOU por mais de 240 s
 New-Object -ComObject: anexou IMEDIATAMENTE
 ```
 
-> **`GetActiveObject` pode falhar por minutos com o Outlook rodando,
-> saudável e visível na tela.** Ele depende do registro no **ROT**, e o
-> registro pode não acontecer — ou demorar — após um reinício.
+> **`GetActiveObject` pode falhar por MINUTOS com o Outlook rodando,
+> saudável e visível na tela.** Ele depende do registro no **ROT**, e esse
+> registro pode demorar muito após um reinício.
 
-O `ComHelpers.GetRunningInstance` usa **só** `GetActiveObject`, e devolve
-`Unavailable`. O broker então reporta sessão indisponível, o watchdog
-sonda, falha de novo, e o usuário vê *"Outlook não disponível"* com o
-Outlook aberto na frente dele. **Indefinidamente.**
+#### Correção da 1ª redação: é TRANSITÓRIO
 
-A regra do ESCOPO — *"nunca iniciar o aplicativo; `CreateObject` produz
-instância sem perfil interativo"* — continua certa, **e não proíbe a
-saída**: o Outlook é *single-instance*, então quando ele **já está
-rodando** o `CoCreateInstance` **anexa** ao existente em vez de iniciar
-outro. Foi o que aconteceu aqui.
+Eu escrevi que o usuário veria "Outlook não disponível" **indefinidamente**
+e que o modo **"não se resolve sozinho"**. **As duas coisas estão erradas.**
 
-**Correção proposta**, com guarda para preservar a regra:
+Medido depois: com o mesmo processo ainda rodando, `GetActiveObject`
+**voltou a funcionar**. Não sei quando — só que foi entre os 240 s que
+esperei e a verificação seguinte. **O registro no ROT se recupera
+sozinho.**
 
-> Se `GetActiveObject` falhar **e** existir um processo `OUTLOOK.EXE` na
-> mesma sessão, tentar `CoCreateInstance`. Sem processo, continuar
-> devolvendo `NotRunning` — aí sim iniciar seria proibido.
+Como o watchdog sonda a cada 15 s, o broker **reconecta sozinho** quando
+isso acontece. O defeito real é mais modesto, e continua sendo defeito:
 
-Isso ainda **não está implementado**: mexe no caminho de conexão, que é
-encanamento do broker, e merece revisão antes.
+> Depois de um reinício do Outlook, o Iris pode passar **minutos**
+> dizendo "indisponível" com o Outlook aberto na frente do usuário.
+
+**NÃO MEDIDO:** quanto tempo, exatamente. Sei que é **mais que 240 s**.
+Medir exige outro reinício com sondagem contínua.
+
+#### A correção que eu propus, e por que foi DESCARTADA
+
+Propus: se `GetActiveObject` falhar e existir processo `OUTLOOK.EXE` na
+sessão, tentar `CoCreateInstance` — argumentando que o Outlook é
+*single-instance* e portanto anexaria em vez de iniciar.
+
+**Reprovada na revisão, e corretamente.** `CoCreateInstance` não tem modo
+"só anexar", e a corrida é irremovível:
+
+```
+1. a guarda encontra o PID
+2. esse processo termina
+3. CoCreateInstance executa
+4. o COM INICIA outro Outlook
+```
+
+Nenhuma segunda checagem elimina isso — só estreita a janela. Se "nunca
+iniciar" é requisito, ativação não pode estar nesse caminho.
+
+#### A alternativa sugerida NÃO FUNCIONA no Outlook
+
+A revisão propôs uma via não-ativadora: achar a janela do Explorer e obter
+o modelo nativo com `AccessibleObjectFromWindow` + `OBJID_NATIVEOM`. Ela
+não pode iniciar nada, porque depende de janela existente.
+
+**Testei antes de implementar** (`tools/probe-nativeom.ps1`), e não
+funciona aqui: enumerei **todas** as janelas do processo do Outlook —
+inclusive a `rctrl_renwnd32` visível, com o título correto — e
+`AccessibleObjectFromWindow` falhou em **todas**. A técnica é conhecida
+para Word e Excel; o Outlook não expõe `OBJID_NATIVEOM` assim.
+
+Se eu tivesse implementado direto a partir da sugestão, teria entregue
+código que não funciona.
+
+#### O que fica
+
+Nada de estrutural. `GetActiveObject` continua sendo o único caminho, e a
+recuperação é por sondagem — que já existe. O que dá para melhorar:
+
+- **mensagem honesta**: "reconectando" em vez de "indisponível", quando há
+  processo do Outlook vivo. É diagnóstico, não ativação;
+- **medir o tempo real** de recuperação, para saber se 15 s de intervalo
+  são adequados;
+- e dois defeitos **independentes** que a revisão achou de passagem —
+  §21.5.
 
 Nota: isto **não é** o F1-M da Fase 1, que era `Connected -> Connected` sem
-transição. É um modo novo — e pior, porque não se resolve sozinho.
+transição.
+
+### 21.5 Dois defeitos reais, achados de passagem
+
+**1. `RPC_E_DISCONNECTED` classificado como `Busy`.** O
+`ComHelpers.GetRunningInstance` o trata como ocupado; o
+`OutlookFailurePolicy` do próprio projeto o trata como **sessão morta**. Os
+dois não podem estar certos. `CO_E_SERVER_EXEC_FAILURE` também não é
+"ocupado" — é falha de ativação.
+
+**2. `Connected` significa pouco demais.** O `ConnectCore` publica a sessão
+depois de apenas obter `Application` e chamar `GetNamespace`. Isso pode
+produzir um **`Connected` mentiroso**: o `Application` responde, o
+`GetNamespace` responde, MAPI e perfil ainda não estão utilizáveis, a
+época é incrementada, os assinantes são notificados — e a primeira
+operação real falha.
+
+A instalação deveria ser **transacional**: validar em variáveis locais,
+com uma leitura de verdade e sem efeito colateral, e só então instalar os
+campos e incrementar a época. Falha na validação é `Busy` ou
+`Reconnecting`, **nunca** `Connected`.
+
+É o mesmo padrão que a Q1 cobrou com a coluna `Permission` e que a §16.5
+cobrou com o `Restrict`: **"não lançou" não é "funciona"**.
 
 ### 21.3 O que ainda falta na Q4
 

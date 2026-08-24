@@ -1,4 +1,6 @@
 Imports System.Runtime.InteropServices
+Imports Iris.Core
+Imports Iris.Model
 
 Namespace Global.Iris.Outlook.Interop
 
@@ -231,12 +233,16 @@ Namespace Global.Iris.Outlook.Interop
             Failed
         End Enum
 
-        ' HRESULTs relevantes
+        ''' <summary>
+        ''' Não está no ROT. É o único HRESULT que este módulo classifica
+        ''' por conta própria, porque significa algo específico de ANEXAR
+        ''' e o classificador geral não tem como saber disso.
+        '''
+        ''' Medido (FASE2 §21.2): depois de um reinício do Outlook este
+        ''' estado dura MINUTOS com o aplicativo rodando e saudável. É
+        ''' transitório, e a recuperação vem da sondagem do watchdog.
+        ''' </summary>
         Private Const MK_E_UNAVAILABLE As Integer = &H800401E3
-        Private Const RPC_E_CALL_REJECTED As Integer = &H80010001
-        Private Const RPC_E_SERVERCALL_RETRYLATER As Integer = &H8001010A
-        Private Const RPC_E_DISCONNECTED As Integer = &H80010108
-        Private Const CO_E_SERVER_EXEC_FAILURE As Integer = &H80080005
 
         ''' <summary>
         ''' Anexa a uma instância JÁ EM EXECUÇÃO. Nunca inicia o aplicativo —
@@ -257,12 +263,24 @@ Namespace Global.Iris.Outlook.Interop
             Try
                 GetActiveObject(clsid, IntPtr.Zero, instance)
             Catch ex As COMException
-                Select Case ex.HResult
-                    Case MK_E_UNAVAILABLE
-                        Return (Nothing, AttachOutcome.NotRunning, ex.HResult)
-                    Case RPC_E_CALL_REJECTED, RPC_E_SERVERCALL_RETRYLATER,
-                         RPC_E_DISCONNECTED, CO_E_SERVER_EXEC_FAILURE
+                If ex.HResult = MK_E_UNAVAILABLE Then
+                    Return (Nothing, AttachOutcome.NotRunning, ex.HResult)
+                End If
+                ' O RESTO delega ao classificador do projeto, em vez de ter
+                ' uma segunda tabela aqui.
+                '
+                ' Havia DUAS tabelas, e elas discordavam: aqui
+                ' RPC_E_DISCONNECTED era Busy, e no OutlookFailurePolicy era
+                ' sessão MORTA. Chamar de "ocupado" uma sessão morta faz a UI
+                ' prometer reconexão automática que não vem. E
+                ' CO_E_SERVER_EXEC_FAILURE nunca foi "ocupado": é falha de
+                ' ativação.
+                Select Case OutlookFailurePolicy.ClassifyFailure(
+                        ex.HResult, isMutation:=False, mutationAttemptStarted:=False)
+                    Case ErrorKind.Busy
                         Return (Nothing, AttachOutcome.Busy, ex.HResult)
+                    Case ErrorKind.NotConnected
+                        Return (Nothing, AttachOutcome.NotRunning, ex.HResult)
                     Case Else
                         Return (Nothing, AttachOutcome.Failed, ex.HResult)
                 End Select
