@@ -24,14 +24,28 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 Public Class EnvironmentPolicyTests
 
     ''' <summary>
-    ''' O token da janela medido em 2026-08-24. Não é "1 mês" nem número nenhum
-    ''' de meses: é o valor CRU do perfil. Ver
-    ''' <see cref="EnvironmentFingerprint.WindowToken"/>.
+    ''' O ambiente REAL do usuário: Exchange em cache, e a janela em
+    ''' <c>Nothing</c> porque a §22.4 mediu que ela não é legível — nem pelo
+    ''' OOM nem pelo registro do perfil.
+    '''
+    ''' Isto já foi <c>"84-09-00-00"</c>, o valor de <c>00036601</c> no perfil.
+    ''' Três mudanças de janela depois, ele não se moveu uma vez: não era a
+    ''' janela. Medir com cuidado a coisa errada não é melhor que não medir.
     ''' </summary>
-    Private Const TokenMedido As String = "84-09-00-00"
-
     Private Shared Function Medido() As EnvironmentFingerprint
-        Return New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, TokenMedido)
+        Return New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing)
+    End Function
+
+    ''' <summary>
+    ''' Um ambiente cached com janela LEGÍVEL — que hoje não existe.
+    '''
+    ''' Existe para os testes alcançarem os degraus abaixo do "janela não
+    ''' legível". Sem ele, todo ambiente cached para no primeiro degrau e os
+    ''' testes de autorização não exercitariam nada — que é exatamente a
+    ''' armadilha do controle positivo, um degrau mais fundo.
+    ''' </summary>
+    Private Shared Function ComJanelaLegivel() As EnvironmentFingerprint
+        Return New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "janela-hipotetica")
     End Function
 
     ' ==================================================================
@@ -42,6 +56,25 @@ Public Class EnvironmentPolicyTests
         Dim linha = EnvironmentPolicy.Medido(Medido())
         Assert.IsNotNull(linha, "o ambiente medido sumiu da matriz")
         StringAssert.Contains(linha.Evidence, "§22.3")
+    End Sub
+
+    ''' <summary>
+    ''' A consequência da §22.4, escrita como teste: <b>todo ambiente cached
+    ''' degrada</b>, e degrada no PRIMEIRO degrau, porque a janela não é
+    ''' legível.
+    '''
+    ''' Não é pendência que alguém destrava depois — é permanente enquanto não
+    ''' aparecer de onde ler a janela. O teste existe para que, se alguém um dia
+    ''' "consertar" isso passando um valor qualquer só para destravar, tenha de
+    ''' apagar este teste primeiro e explicar por quê.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cached_degrada_no_primeiro_degrau_porque_a_janela_nao_e_legivel()
+        Dim c = EnvironmentPolicy.Capacidades(Medido())
+        Assert.IsTrue(c.Degradado)
+        StringAssert.Contains(c.Reason, "janela nao legivel")
+        StringAssert.Contains(c.Reason, "§22.4",
+            "o motivo tem de apontar a medicao, senao vira dogma")
     End Sub
 
     ''' <summary>
@@ -70,7 +103,10 @@ Public Class EnvironmentPolicyTests
     ''' </summary>
     <TestMethod>
     Public Sub A_negacao_nomeia_a_lacuna()
-        StringAssert.Contains(EnvironmentPolicy.Capacidades(Medido()).Reason, "sensibilidade")
+        ' O ambiente real para na janela; o hipotetico chega ao degrau da matriz.
+        StringAssert.Contains(EnvironmentPolicy.Capacidades(Medido()).Reason, "janela")
+        StringAssert.Contains(EnvironmentPolicy.Capacidades(ComJanelaLegivel()).Reason,
+                              "fora da matriz")
     End Sub
 
     ' ==================================================================
@@ -86,7 +122,7 @@ Public Class EnvironmentPolicyTests
     ''' </summary>
     <TestMethod>
     Public Sub Controle_positivo_uma_linha_demonstrada_AUTORIZA()
-        Dim c = EnvironmentPolicy.Capacidades(Medido(), MatrizSintetica(
+        Dim c = EnvironmentPolicy.Capacidades(ComJanelaLegivel(), MatrizSintetica(
             Inference.ConcluirAusencia, Inference.AfirmarCoberturaCompleta,
             Inference.UsarIncremental))
 
@@ -101,7 +137,7 @@ Public Class EnvironmentPolicyTests
     ''' </summary>
     <TestMethod>
     Public Sub Demonstrar_uma_inferencia_nao_libera_as_outras()
-        Dim c = EnvironmentPolicy.Capacidades(Medido(),
+        Dim c = EnvironmentPolicy.Capacidades(ComJanelaLegivel(),
             MatrizSintetica(Inference.UsarIncremental))
 
         Assert.IsTrue(c.PodeUsarIncremental)
@@ -120,11 +156,11 @@ Public Class EnvironmentPolicyTests
     ''' </summary>
     <TestMethod>
     Public Sub Token_nao_validado_bloqueia_mesmo_com_evidencia()
-        Dim linha = New MeasuredEnvironment(Medido(), "FASE2 §22.3 — teste",
+        Dim linha = New MeasuredEnvironment(ComJanelaLegivel(), "FASE2 §22.3 — teste",
             New Date(2024, 10, 9), tokenValidado:=False,
             grants:={New GrantedInference(Inference.ConcluirAusencia, "FASE2 §22.3 — teste")})
 
-        Dim c = EnvironmentPolicy.Capacidades(Medido(), {linha})
+        Dim c = EnvironmentPolicy.Capacidades(ComJanelaLegivel(), {linha})
         Assert.IsFalse(c.PodeConcluirAusencia)
         StringAssert.Contains(c.Reason, "sensibilidade")
     End Sub
@@ -153,7 +189,7 @@ Public Class EnvironmentPolicyTests
     Public Sub Inferencia_autorizada_duas_vezes_nao_se_constroi()
         Assert.ThrowsException(Of ArgumentException)(
             Sub()
-                Dim x = New MeasuredEnvironment(Medido(), "FASE2 §22.3 — teste",
+                Dim x = New MeasuredEnvironment(ComJanelaLegivel(), "FASE2 §22.3 — teste",
                     Nothing, tokenValidado:=True,
                     grants:={New GrantedInference(Inference.UsarIncremental, "FASE2 §22.3 — a"),
                              New GrantedInference(Inference.UsarIncremental, "FASE2 §22.3 — b")})
@@ -170,7 +206,7 @@ Public Class EnvironmentPolicyTests
     Public Sub Valor_fora_do_enum_nao_se_constroi()
         Assert.ThrowsException(Of ArgumentException)(
             Sub()
-                Dim x = New MeasuredEnvironment(Medido(), "FASE2 §22.3 — teste",
+                Dim x = New MeasuredEnvironment(ComJanelaLegivel(), "FASE2 §22.3 — teste",
                     Nothing, tokenValidado:=True,
                     grants:={New GrantedInference(CType(999, Inference), "FASE2 §22.3 — teste")})
             End Sub)
@@ -190,23 +226,27 @@ Public Class EnvironmentPolicyTests
         Dim casos As New List(Of (Nome As String, Cap As EnvironmentCapabilities))() From {
             ("fp nulo", EnvironmentPolicy.Capacidades(Nothing)),
             ("provider desconhecido", EnvironmentPolicy.Capacidades(
-                New EnvironmentFingerprint(ProviderKind.Desconhecido, True, TokenMedido))),
+                New EnvironmentFingerprint(ProviderKind.Desconhecido, True, "x"))),
             ("cached sem janela", EnvironmentPolicy.Capacidades(
                 New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing))),
             ("fora da matriz", EnvironmentPolicy.Capacidades(
                 New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "00-00-00-00"))),
-            ("token nao validado", EnvironmentPolicy.Capacidades(Medido())),
-            ("grants vazios", EnvironmentPolicy.Capacidades(Medido(), {
-                New MeasuredEnvironment(Medido(), "FASE2 §22.3 — t", Nothing, tokenValidado:=True)})),
-            ("autorizacao parcial", EnvironmentPolicy.Capacidades(Medido(),
+            ("janela nao legivel", EnvironmentPolicy.Capacidades(Medido())),
+            ("token nao validado", EnvironmentPolicy.Capacidades(ComJanelaLegivel(), {
+                New MeasuredEnvironment(ComJanelaLegivel(), "FASE2 §22.3 — t", Nothing,
+                                        tokenValidado:=False)})),
+            ("grants vazios", EnvironmentPolicy.Capacidades(ComJanelaLegivel(), {
+                New MeasuredEnvironment(ComJanelaLegivel(), "FASE2 §22.3 — t", Nothing,
+                                        tokenValidado:=True)})),
+            ("autorizacao parcial", EnvironmentPolicy.Capacidades(ComJanelaLegivel(),
                 MatrizSintetica(Inference.UsarIncremental))),
-            ("autorizacao completa", EnvironmentPolicy.Capacidades(Medido(),
+            ("autorizacao completa", EnvironmentPolicy.Capacidades(ComJanelaLegivel(),
                 MatrizSintetica(Inference.ConcluirAusencia,
                                 Inference.AfirmarCoberturaCompleta,
                                 Inference.UsarIncremental)))}
 
         ' Um por degrau de Capacidades, mais o caminho que autoriza tudo.
-        Assert.AreEqual(8, casos.Count)
+        Assert.AreEqual(9, casos.Count)
 
         Dim degradados = 0
         For Each c In casos
@@ -221,7 +261,7 @@ Public Class EnvironmentPolicyTests
         Next
 
         ' Controle: nem todos degradam, senao o laco acima nao verificaria nada.
-        Assert.AreEqual(7, degradados)
+        Assert.AreEqual(8, degradados)
     End Sub
 
     ' ==================================================================
@@ -239,7 +279,7 @@ Public Class EnvironmentPolicyTests
     <TestMethod>
     Public Sub Provider_desconhecido_degrada()
         Assert.IsTrue(EnvironmentPolicy.Capacidades(
-            New EnvironmentFingerprint(ProviderKind.Desconhecido, True, TokenMedido)).Degradado)
+            New EnvironmentFingerprint(ProviderKind.Desconhecido, True, "x")).Degradado)
     End Sub
 
     <TestMethod>
@@ -280,7 +320,7 @@ Public Class EnvironmentPolicyTests
     ''' </summary>
     <TestMethod>
     Public Sub Trocar_a_janela_muda_o_ambiente()
-        Dim um = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, TokenMedido)
+        Dim um = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "84-09-00-00")
         Dim outro = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "FF-FF-00-00")
         Assert.AreNotEqual(um.Value(), outro.Value())
         Assert.IsTrue(EnvironmentPolicy.ExigeReconciliacao(um, outro))
@@ -297,7 +337,7 @@ Public Class EnvironmentPolicyTests
     <TestMethod>
     Public Sub Aumentar_a_janela_tambem_exige_reconciliacao()
         Assert.IsTrue(EnvironmentPolicy.ExigeReconciliacao(
-            New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, TokenMedido),
+            New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "84-09-00-00"),
             New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "00-00-00-00")),
             "aumentar revela itens ja concluidos ausentes — a conclusao anterior estava errada")
     End Sub
@@ -353,7 +393,7 @@ Public Class EnvironmentPolicyTests
 
     Private Shared Function MatrizSintetica(ParamArray quais As Inference()) _
             As IReadOnlyList(Of MeasuredEnvironment)
-        Return {New MeasuredEnvironment(Medido(), "FASE2 §22.3 — sintetico",
+        Return {New MeasuredEnvironment(ComJanelaLegivel(), "FASE2 §22.3 — sintetico",
                     New Date(2024, 10, 9), tokenValidado:=True,
                     grants:=quais.Select(Function(i) New GrantedInference(i, "FASE2 §22.3 — sintetico")))}
     End Function

@@ -70,31 +70,42 @@ Namespace Global.Iris.Sync
         Public ReadOnly Property CachedMode As Boolean
 
         ''' <summary>
-        ''' A janela, como TOKEN OPACO lido do perfil — não como número de meses.
+        ''' A janela de sincronização — e hoje é sempre <c>Nothing</c>, porque
+        ''' <b>não há de onde lê-la</b>.
         '''
-        ''' A §22.3 mediu que o OOM <b>não expõe a janela</b>: enumerando os
-        ''' membros de <c>Store</c> não há nenhum <c>Sync*</c> nem
-        ''' <c>Window*</c>; só <c>IsCachedExchange</c> e
-        ''' <c>ExchangeStoreType</c>. O valor existe apenas no registro do
-        ''' perfil, em <c>00036601</c>, num blob cuja codificação eu não
-        ''' verifiquei.
+        ''' Isto começou como "token opaco": os bytes crus de <c>00036601</c> no
+        ''' registro do perfil, usados como impressão digital sem decodificar,
+        ''' com o argumento de que a impressão digital só precisa ser estável e
+        ''' sensível, não semântica. O argumento estava certo. A premissa não —
+        ''' e a §22.4 mediu isso do jeito mais direto possível.
         '''
-        ''' <b>Não decodificar não é o mesmo que não verificar.</b> Eu escrevi
-        ''' aqui, antes, que "não preciso verificar" porque não preciso
-        ''' decodificar, e isso era falso: dispensar o significado dos bytes
-        ''' não dispensa saber se o valor serve de impressão digital. Ele
-        ''' precisa de duas propriedades:
+        ''' O usuário moveu o cursor da janela três vezes e o registro do perfil
+        ''' inteiro — 294 valores, blobs comparados por hash — não mudou em nada:
         '''
-        '''   - ESTÁVEL enquanto o ambiente não muda — medido só em SESSÃO
-        '''     CURTA: cinco leituras idênticas em ~1,2 s, mesma sessão do
-        '''     Outlook, sem mudança deliberada (§22.4). Isso não é o mesmo
-        '''     que "não muda sozinho": reinício, atualização do Office ou
-        '''     recriação do perfil ainda podem mexer no valor, e nada disso
-        '''     foi exercitado;
-        '''   - SENSÍVEL quando o ambiente muda — <b>NÃO MEDIDO</b>. Ver
-        '''     <see cref="MeasuredEnvironment.TokenValidado"/>.
+        ''' <code>
+        '''   1 mês (inicial)               00036601 = 84-09-00-00
+        '''   tentativa de 2 semanas                   84-09-00-00
+        '''   3 MESES, conferido na tela               84-09-00-00
+        '''   de volta a 1 mês                         84-09-00-00
+        ''' </code>
         '''
-        ''' <c>Nothing</c> = não foi lido, e isso NÃO é o mesmo que "sem janela".
+        ''' Antes disso a §22.3 já tinha medido que o OOM não expõe a janela:
+        ''' enumerando os membros de <c>Store</c> não há nenhum <c>Sync*</c> nem
+        ''' <c>Window*</c>, só <c>IsCachedExchange</c> e
+        ''' <c>ExchangeStoreType</c>. Somando as duas medições: <b>a janela não
+        ''' é legível nem pelo OOM nem pelo registro do perfil.</b>
+        '''
+        ''' A consequência é dura, e fica explícita em vez de escondida: em modo
+        ''' cached a impressão digital do ambiente é <b>incompleta por
+        ''' construção</b>, e por isso
+        ''' <see cref="EnvironmentPolicy.ExigeReconciliacao"/> não tem como
+        ''' disparar quando a janela muda. O ambiente degrada sempre. É o
+        ''' comportamento certo, mas é degradação <b>permanente</b>, não uma
+        ''' pendência que alguém destrava depois.
+        '''
+        ''' A saída provável não é achar a configuração: é medir o <b>efeito</b>
+        ''' dela — ver §22.11. O campo continua existindo para quando houver de
+        ''' onde ler.
         ''' </summary>
         Public ReadOnly Property WindowToken As String
 
@@ -229,9 +240,10 @@ Namespace Global.Iris.Sync
         ''' autorização concedida ao antigo continua valendo no novo — o
         ''' mecanismo inteiro vira decoração.
         '''
-        ''' O protocolo está em <c>tools/q8-sensibilidade.md</c> e leva
-        ''' minutos: o que custa GB é medir o universo resultante, não ler o
-        ''' token.
+        ''' <b>O protocolo foi executado em 2026-08-24, e o resultado foi
+        ''' negativo</b> (§22.4): o token não é sensível porque não é a janela.
+        ''' Este campo continua existindo — e continua exigindo as duas
+        ''' propriedades — para quando aparecer um candidato que seja.
         ''' </summary>
         Public ReadOnly Property TokenValidado As Boolean
 
@@ -305,20 +317,28 @@ Namespace Global.Iris.Sync
 
             ' UNICA linha, e ela RECONHECE sem AUTORIZAR.
             '
-            ' O token da janela e o valor CRU do perfil, nao um numero de
-            ' meses: ver EnvironmentFingerprint.WindowToken. A tentacao aqui
-            ' era escrever "1 mes", que e o que o usuario tinha dito em
-            ' conversa e o que a §18/§19 mediram em 2026-08-22. Seria uma
-            ' afirmacao nao medida DENTRO da classe que existe para impedir
-            ' afirmacoes nao medidas: a janela mudou desde entao, e a medicao
-            ' de hoje alcanca 1.979 mensagens ate 2024-10-09, contra as 1.004
-            ' de dois dias atras.
+            ' A janela entra como Nothing porque NAO HA DE ONDE LE-LA. A §22.4
+            ' mediu: o usuario moveu o cursor tres vezes e o registro do perfil
+            ' inteiro nao mudou. O 00036601, que eu usava como token, nao e a
+            ' janela.
             '
-            ' Grants vazio e TokenValidado falso sao deliberados. Ver §22.5.
+            ' Duas tentacoes ja foram recusadas aqui, e as duas eram a mesma
+            ' coisa com roupas diferentes:
+            '   1. escrever "1 mes" — que veio de uma frase do usuario em
+            '      conversa, nao de leitura nenhuma;
+            '   2. manter "84-09-00-00" — que veio de uma leitura, mas de uma
+            '      leitura do valor ERRADO.
+            ' A segunda parecia mais rigorosa que a primeira e nao era: medir
+            ' com cuidado a coisa errada nao e melhor que nao medir.
+            '
+            ' Com a janela em Nothing, Capacidades para no degrau
+            ' "cached com janela nao legivel" e nunca chega a consultar esta
+            ' linha. Ela permanece porque REGISTRA a medicao — o alcance, as
+            ' pastas —, nao porque autorize.
             m.Add(New MeasuredEnvironment(
-                New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "84-09-00-00"),
+                New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing),
                 "FASE2 §22.3 — caixa corporativa do usuario, medido em 2026-08-24: " &
-                "108 pastas, 95 reportando zero, 1.979 mensagens datadas alcancadas",
+                "108 pastas, 95 reportando zero, 2.044 mensagens datadas alcancadas",
                 New Date(2024, 10, 9),
                 tokenValidado:=False))
 
@@ -364,9 +384,15 @@ Namespace Global.Iris.Sync
                 Return Negar("provider desconhecido")
             End If
             If fp.CachedMode AndAlso fp.WindowToken Is Nothing Then
-                ' O caso mais traicoeiro: sabe-se que ha janela e nao se sabe
-                ' qual. Pior que nao saber nada, porque parece identificado.
-                Return Negar("modo cached com janela nao lida")
+                ' Sabe-se que ha janela e nao se sabe qual — pior que nao saber
+                ' nada, porque parece identificado.
+                '
+                ' Hoje este degrau e PERMANENTE em modo cached, e nao uma
+                ' pendencia que alguem destrava: a §22.4 mediu que a janela nao
+                ' e legivel nem pelo OOM nem pelo registro do perfil. Enquanto
+                ' isso valer, todo ambiente cached degrada aqui e nenhuma linha
+                ' da matriz chega a ser consultada.
+                Return Negar("modo cached com janela nao legivel (§22.4)")
             End If
 
             Dim linha = Medido(fp, matriz)

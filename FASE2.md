@@ -2727,38 +2727,80 @@ foi visto, nunca para concluir "mais antigo que isto está fora da janela". O
 script `q8-corte.ps1` chamava isso de "corte de observabilidade" e foi
 reescrito.
 
-### 22.4 O token da janela: estável, sensibilidade NÃO medida
+### 22.4 O token da janela: a premissa caiu
 
-A janela entra na impressão digital do ambiente (§18.4) como **token
-opaco** — os bytes crus de `00036601`. Não preciso decodificar o blob: a
-impressão digital exige ser **estável** e **sensível**, e nenhuma das duas
-propriedades depende de saber o que os bytes significam.
+A janela entra na impressão digital do ambiente (§18.4) como **token opaco** —
+os bytes crus de `00036601` no registro do perfil. Não preciso decodificar o
+blob: a impressão digital exige ser **estável** e **sensível**, e nenhuma das
+duas propriedades depende de saber o que os bytes significam.
 
-**Mas não decodificar não é o mesmo que não verificar**, e eu tinha escrito
-no código que "não preciso verificar". Era falso, e o Codex pegou.
+O argumento estava certo. A premissa, não.
+
+**E não decodificar não é o mesmo que não verificar** — eu tinha escrito no
+código que "não preciso verificar", o Codex pegou, e o protocolo foi executado
+no mesmo dia.
 
 | Propriedade | Estado |
 |---|---|
-| **Estável** — não muda sozinho | **parcial**: 5 leituras idênticas em ~1,2 s, mesma sessão, sem mudança deliberada |
-| **Sensível** — muda quando a janela muda | **NÃO MEDIDO** |
+| **Estável** — não muda sozinho | **parcial**: 5 leituras idênticas em ~1,2 s, mesma sessão |
+| **Sensível** — muda quando a janela muda | **NÃO** — medido, e o resultado é negativo |
 
-E "5 leituras em 1,2 segundo" não é "não muda sozinho". Reinício do Outlook,
-reinício da máquina, atualização do Office e recriação do perfil podem mexer
-no valor, e nada disso foi exercitado. Um token que mude sozinho ao reiniciar
-faria o Iris reconciliar a caixa inteira toda vez que o usuário abrisse o
-Outlook — por isso `TokenValidado` exige **as duas** propriedades, e o
-protocolo ganhou um passo de reinício.
+#### O protocolo derrubou a premissa
 
-Eu tinha suposto que medir a sensibilidade custava GB de download. Custa não
-— o que custa GB é medir o **universo resultante**; ler o token é
-instantâneo. O protocolo está em `tools/q8-sensibilidade.md` e leva minutos,
-mas exige mover o cursor da janela, que é mudança de configuração da conta
-do usuário.
+O usuário moveu o cursor da janela três vezes. O registro do perfil inteiro —
+294 valores, com os blobs comparados por **hash**, não por tamanho — não mudou
+em nada:
 
-**Enquanto a sensibilidade não for medida, a linha não autoriza nada.** Se o
-token não mudar quando a janela mudar, a impressão digital não distingue os
-dois universos, e toda autorização concedida ao antigo continua valendo no
-novo. O mecanismo inteiro vira decoração.
+| Configuração | `00036601` | perfil inteiro |
+|---|---|---|
+| 1 mês (inicial) | `84-09-00-00` | — |
+| tentativa de 2 semanas | `84-09-00-00` | idêntico |
+| **3 meses, conferido na tela** | `84-09-00-00` | idêntico |
+| de volta a 1 mês | `84-09-00-00` | idêntico |
+
+A única diferença entre os retratos foi uma subchave `GroupMailbox`
+**renomeada** — GUID novo, todos os valores iguais.
+
+> **O `00036601` não é a janela de sincronização.** Somando com a §22.3, que
+> mediu que o OOM também não a expõe: **a janela não é legível nem pelo OOM
+> nem pelo registro do perfil.**
+
+#### Duas armadilhas no caminho, e as duas do mesmo tipo
+
+**A primeira tentativa reverteu sozinha.** O diálogo disse *"Conta atualizada
+com êxito"*, pediu reinício, e depois do reinício o cursor estava de volta em
+1 mês. Eu estava a um passo de registrar *"o token não é sensível"* —
+conclusão negativa tirada de um teste que **não tinha testado nada**, porque
+não houve mudança para o token refletir. Quem pegou foi o usuário, conferindo
+a tela. Sem essa conferência, o resultado teria entrado aqui como medição.
+
+**O meu primeiro retrato do perfil truncava blobs acima de 64 bytes** para
+`<blob N bytes>`. Blob longo é exatamente onde a configuração teria mais chance
+de morar, então uma mudança dentro dele seria invisível — e o diff diria "nada
+mudou" sobre a parte que ele não olhou.
+
+#### E uma nota sobre a correção da §22.6
+
+Lá eu me corrijo por ter escrito `"1 mês"` a partir de uma frase, e troco por
+`"84-09-00-00"`, que veio de uma leitura. A troca parecia mais rigorosa e não
+era:
+
+> **Medir com cuidado a coisa errada não é melhor que não medir.**
+
+Os dois valores estavam igualmente desconectados da janela. O segundo só
+parecia melhor porque tinha procedência.
+
+#### O que sobreviveu
+
+O mecanismo **degradou corretamente o tempo todo**. `TokenValidado` nunca foi
+marcado, a matriz nunca autorizou nada, e nenhuma conclusão vazou de um
+universo para outro. O desenho falhou no lugar certo — que é o que "falhar
+fechado" quer dizer.
+
+Hoje o degrau *"modo cached com janela não legível"* é **permanente**, não uma
+pendência que alguém destrava: todo ambiente cached para nele, e nenhuma linha
+da matriz chega a ser consultada. Há teste cobrando isso, para que "consertar"
+passando um valor qualquer exija apagar o teste e explicar por quê.
 
 ### 22.5 Reconhecer não é autorizar — a correção que doeu
 
@@ -2826,10 +2868,10 @@ exceção não tratada.
 
 | # | Critério | Estado |
 |---|---|---|
-| 1 | Q1,Q3,Q4,Q7,Q8 com número; Q2,Q5,Q6,Q9 semânticas | **parcial** — Q8 respondida como escopo declarado, não como matriz |
+| 1 | Q1,Q3,Q4,Q7,Q8 com número; Q2,Q5,Q6,Q9 semânticas | **parcial** — Q8 como escopo declarado, e a identidade de ambiente ficou **incompleta por construção** (§22.4) |
 | 2 | Limitação escrita em cada resposta | ok |
 | 3 | Recomendação de tamanho de cada marco seguinte | ok — §22.10 |
-| 4 | Revisão externa do RESULTADO | ok — Codex revisou o 2.1 e achou 4 defeitos reais |
+| 4 | Revisão externa do RESULTADO | ok — 3 passadas do Codex, 10 defeitos reais |
 | 5 | Itens de teste devolvidos | ok, **com exceção declarada** — três cópias ficaram em Itens Excluídos (§11), por segurança, e a pasta `Iris Q4R` vazia que o tenant recusou excluir (§21.4) |
 | 6 | Corpus adversarial da Q2 com oráculo prévio | ok |
 | 7 | Critério operacional de invalidação, com dado | ok — S6 |
@@ -2897,3 +2939,83 @@ falso que devolve uma lista fixa testa o algoritmo contra um mundo que não
 existe: a Fase 2 inteira foi sobre o mundo mudando embaixo da varredura. Se
 o falso não fizer isso, o 2.2a vai passar verde e não provar nada — que é o
 formato do erro da §16.5.
+
+
+### 22.11 A saída provável: medir o efeito, não a configuração
+
+Se a janela não é legível, a identidade do ambiente não pode vir da
+configuração. Mas ela nunca precisou vir de lá: o que importa não é o valor do
+cursor, é **o que o Iris consegue enxergar**. A configuração era um atalho
+para isso, e o atalho não existe.
+
+Apareceu um candidato melhor, por acidente, olhando a tela do Outlook:
+
+| Pasta | Outlook (barra de status) | OOM | |
+|---|---|---|---|
+| Caixa de Entrada — itens | 17.728 | 1.018 | **diverge 17×** |
+| Caixa de Entrada — não lidos | 219 | 219 | **bate** |
+| 1. Backup — itens | 145 | 35 | **diverge 4×** |
+| 1. Backup — não lidos | 2 | 2 | **bate** |
+
+**Não lido bate, total não bate.** Isso descarta as explicações fáceis: se a
+barra estivesse somando outro escopo, ou mostrando tudo do servidor, o não
+lido também divergiria. A leitura que sobra — **a UI mostra o total do
+servidor, o OOM mostra o do OST**, e o não lido coincide porque mensagem não
+lida é recente e cabe em qualquer janela.
+
+Se o Iris conseguir ler o total do servidor, ele **mede** a própria cobertura
+— *"esta pasta tem 145, eu enxergo 35"* — em vez de suspeitar dela. Seria o
+sinal que falta para a `FolderCoverage` sair de `Desconhecida`, e é melhor que
+qualquer token de configuração: mede o **efeito** da janela, e continua
+valendo quando o efeito vier de outra causa.
+
+#### O que já foi tentado, e falhou
+
+| Propriedade | Caixa de Entrada | 1. Backup |
+|---|---|---|
+| `Items.Count` | 1.018 | 35 |
+| `PR_CONTENT_COUNT` (0x36020003) | 1.018 | 35 |
+| `Table` (varredura completa) | 1.018 | 35 |
+| **Outlook (UI)** | **17.728** | **145** |
+
+As três fontes do OOM concordam — e é justamente por concordarem que não
+provam nada: são três caminhos lendo o **mesmo OST**. É a §18.5 pela terceira
+vez nesta fase, e desta vez eu testei esperando encontrá-la.
+
+`PR_CONTENT_UNREAD` devolveu 219 e 2 — iguais à UI —, o que confirma que a
+propriedade está sendo lida certo. O problema não é acesso: é que a pasta do
+OOM **é** a réplica local.
+
+#### O próximo passo, e ele é barato
+
+O Outlook exibe os dois números em *Propriedades da pasta → aba
+Sincronização*: "a pasta do servidor contém N itens" e "a pasta offline contém
+M itens". Se estiverem lá, **existe** uma propriedade MAPI carregando o count
+do servidor, e vale caçar qual. É a primeira coisa do 2.3.
+
+Se não houver como ler pelo OOM, a alternativa é pior mas existe: usar o
+**próprio manifesto do Iris** como referência. Se a varredura de hoje enxerga
+menos do que a de ontem na mesma pasta, alguma coisa encolheu — e isso basta
+para invalidar conclusões de ausência sem precisar saber por quê.
+
+### 22.12 A suíte diz "Passed!" pulando os testes que tocam o Outlook
+
+Descoberto no fim do dia, e vale mais que a forma como apareceu.
+
+Os três testes de integração — `Table_e_iteracao_leem_o_MESMO_conjunto`,
+`Cursor_termina_e_recusa_consulta_trocada`, `O_caminho_por_Table_e_bem_mais_rapido`
+— são os únicos que rodam contra o Outlook real. Quando o `GetActiveObject`
+não acha a instância, eles **pulam**, e a suíte imprime `Passed!`.
+
+Foi o que aconteceu depois de o usuário reiniciar o Outlook várias vezes para
+o teste da janela: `258 passed, 3 skipped` — e o cabeçalho verde igual ao de
+sempre.
+
+O número "260 testes, 0 falhas" que aparece no relatório do 2.1 foi medido com
+o Outlook disponível. Mas nada no cabeçalho distingue os dois casos, e um
+resultado que **parece igual** quando a cobertura mudou é exatamente o formato
+de erro que esta fase inteira persegue.
+
+Não é só documentação: a suíte precisa ou falhar quando a integração não
+pôde rodar num ambiente onde deveria, ou dizer no cabeçalho o que deixou de
+cobrir. Fica para o 2.2a.
