@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 23 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+**Versão:** 24 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
 Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
 e `Restrict` de verdade (16)**. **Gate de sincronização (17)**, com o sinal
 operacional que fecha a parte principal da Q4.
@@ -1622,21 +1622,42 @@ de movimentação que se quer preservar. Coexistência tem de ser
 - **Se vai haver correlação automática.** "Não correlacionar" continua
   resultado aceitável, e satisfaz o gate trivialmente.
 
-### 14.4 Como este gate é verificado
+### 14.4 O gate é EXECUTÁVEL. Já está.
 
-Não por leitura. O critério de pronto do 2.1 passa a incluir, para cada
-invariante, **um teste que falha se ele for violado** — no espírito do que
-a §12.6 fez com o gate de proteção, onde desfazer a correção derruba 2 dos
-4 testes.
+Não ficou como critério para o 2.1 cumprir depois — foi implementado
+agora, porque invariante que depende de alguém lembrar não é invariante.
 
-Os mais fáceis de testar são I1, I3 e I6, porque são afirmações sobre a
-forma do schema e dá para inspecioná-lo. I5 e I8 exigem teste de
-comportamento. I7 exige que a geração carregue o universo, o que é
-inspecionável.
+- `src/Iris.Core/CacheSchema.vb` — o schema como **dado**, não como string
+  de DDL. O gerador de DDL e os testes leem o **mesmo** modelo, então não
+  há como divergirem. É a lição do `CursorPaging`.
+- `src/Iris.Core/SchemaGate.vb` — I1–I8 e S1–S7 como código que **recusa**
+  um schema errado, cada regra citando a medição que a obrigou.
+- `tests/Iris.Tests/SchemaGateTests.vb` — **21 testes**.
 
-**Sem esses testes, I1–I8 são comentário.** E este projeto já tem o
-precedente: a regra do `Permission` estava escrita e mesmo assim o gate
-falhava aberto por três marcos.
+A metade que importa não é "o schema pretendido passa": um gate que nunca
+reprova também passa nisso. É que **cada regra dispara quando é violada**.
+Cada teste quebra o schema de um jeito específico — `provider_entry_id`
+virando chave primária, `user_state` passando a pender de `incarnation`,
+`item` ganhando um `canonical_item_key`, a aresta perdendo `retracted_at`,
+`association` ganhando índice único sobre `item_key` — e exige a violação
+correspondente.
+
+Tem também um **guarda do guarda**: um teste percorre todas as quebras
+possíveis e falha se alguma regra declarada nunca disparar. Acrescentar
+regra sem controle negativo passaria despercebido, senão.
+
+E um caso deliberadamente **aceito**: aresta sem `generation_key` **não** é
+violação. Aresta criada por evento ou por confirmação manual não pertence a
+geração nenhuma — exigir isso foi um erro da 1ª redação do I4, e agora há
+teste garantindo que a correção não regrida.
+
+**Controle negativo do gate inteiro, verificado:** pondo
+`provider_entry_id` como chave primária no schema pretendido, 1 dos 21
+testes falha. Restaurado, 21 passam.
+
+Sem isso, I1–I8 seriam comentário — e este projeto tem o precedente: a
+regra do `Permission` estava escrita e o gate falhava aberto por três
+marcos.
 
 ---
 
