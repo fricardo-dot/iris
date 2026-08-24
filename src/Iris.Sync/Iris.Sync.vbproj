@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!-- Sem -windows: o ciclo de sincronizacao NUNCA ve COM. Ele recebe
+         IOutlookBroker por interface, e o TFM e quem garante isso. -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Sync</RootNamespace>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Model\Iris.Model.vbproj" />
+    <ProjectReference Include="..\Iris.Core\Iris.Core.vbproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Iris.Tests" />
+  </ItemGroup>
+
+</Project>

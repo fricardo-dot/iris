@@ -29,6 +29,15 @@ Public Class ArchitectureTests
         Return GetType(Iris.Core.IOutlookBroker).Assembly
     End Function
 
+    ''' <summary>
+    ''' O ciclo de sincronizacao. Ele recebe IOutlookBroker por INTERFACE e
+    ''' nunca ve COM — o TFM sem -windows e o que garante, e este teste e o
+    ''' que impede alguem acrescentar a referencia sem perceber.
+    ''' </summary>
+    Private Shared Function SyncAssembly() As Assembly
+        Return GetType(Iris.Sync.SweepModel).Assembly
+    End Function
+
     ' ===================================================================
     ' Fase da operação (F1-N)
     ' ===================================================================
@@ -160,6 +169,7 @@ Public Class ArchitectureTests
     <TestMethod>
     Public Sub Core_nao_referencia_interop()
         AssertSemInterop(CoreAssembly())
+        AssertSemInterop(SyncAssembly())
     End Sub
 
     ''' <summary>
@@ -170,7 +180,7 @@ Public Class ArchitectureTests
     ''' </summary>
     <TestMethod>
     Public Sub Model_e_Core_nao_miram_windows()
-        For Each asm In {ModelAssembly(), CoreAssembly()}
+        For Each asm In {ModelAssembly(), CoreAssembly(), SyncAssembly()}
             Dim tfm = asm.GetCustomAttribute(Of Runtime.Versioning.TargetFrameworkAttribute)()
             Assert.IsNotNull(tfm, $"{asm.GetName().Name} sem TargetFramework.")
             StringAssert.Contains(tfm.FrameworkName, "v10.0",
@@ -205,7 +215,7 @@ Public Class ArchitectureTests
     ''' </summary>
     <TestMethod>
     Public Sub Membros_publicos_nao_usam_tipos_de_interop()
-        For Each asm In {ModelAssembly(), CoreAssembly()}
+        For Each asm In {ModelAssembly(), CoreAssembly(), SyncAssembly()}
             For Each t In asm.GetExportedTypes()
                 For Each tipo In TiposUsadosNaSuperficie(t)
                     Dim ns = If(tipo.Namespace, "")
