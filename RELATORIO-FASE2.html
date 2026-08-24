@@ -414,7 +414,7 @@ footer {
   <div class="meta">
     <span><b>24 de agosto de 2026</b></span>
     <span>261 testes · <b>0 falhas</b> · 3 pulados sem Outlook</span>
-    <span>11 commits · <code>f83f4e3</code> → <code>eb665a3</code></span>
+    <span>14 commits · <code>f83f4e3</code> → <code>HEAD</code></span>
     <span>3 passadas de revisão com o Codex</span>
   </div>
 </header>
@@ -437,10 +437,11 @@ footer {
       três vezes e o registro do perfil não mudou uma linha. A identidade de
       ambiente ficou <strong>incompleta por construção</strong> em modo cached —
       permanentemente, não como pendência.</li>
-    <li><strong>A contagem do servidor é inalcançável pelo OOM.</strong> 65.536
-      tags varridos, 22 legíveis, nenhuma devolve o número. A cobertura vai ter
-      de vir do manifesto do próprio Iris, e por isso <strong>se acumula com o
-      tempo</strong> em vez de existir na primeira varredura.</li>
+    <li><strong>A contagem do servidor não vem pelo caminho que varri.</strong>
+      65.536 tags <code>PT_LONG</code>, 22 legíveis, nenhuma devolve o número —
+      e ficaram de fora outros tipos e as propriedades nomeadas. O detector que
+      sobra <strong>invalida, mas não autoriza</strong>: não pega o caso em que a
+      janela sempre foi pequena, que é o desta caixa.</li>
     <li><strong>A suíte imprime "Passed!" pulando os testes que tocam o
       Outlook.</strong> Descoberto hoje, sem conserto ainda.</li>
     <li><strong>O teste de crash cobre morte do processo, não falta de energia.</strong></li>
@@ -713,8 +714,13 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
   <strong>Não lido bate, total não bate.</strong> Isso descarta as explicações
   fáceis: se a barra somasse outro escopo, ou mostrasse tudo do servidor, o não
   lido também divergiria. A leitura que sobra é que a UI mostra o total do
-  <strong>servidor</strong> e o OOM o do <strong>OST</strong>, e o não lido
-  coincide porque mensagem não lida é recente.
+  <strong>servidor</strong> e o OOM o do <strong>OST</strong>.
+</p>
+<p class="nota">
+  <em>Por que</em> os não lidos coincidem, eu não medi. A explicação óbvia é que
+  mensagem não lida tende a ser recente — mas mensagem antiga também fica não
+  lida, e uma janela curta o bastante a excluiria. A aba Sincronização confirmou
+  os totais; não confirmou a causa da coincidência.
 </p>
 
 <p>
@@ -747,13 +753,16 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
 </div>
 
 <div class="principio">
-  <p><strong>A contagem do servidor não é alcançável por
-  <code>Folder.PropertyAccessor</code>.</strong></p>
-  <p>E a formulação importa: isso não é "a propriedade não existe". O
-  <code>PropertyAccessor</code> recusa parte do espaço MAPI, e recusa
-  <em>lançando</em> — o que é indistinguível de "não existe" de onde eu estou
-  olhando. O que está medido é a <strong>inalcançabilidade</strong>, e para o
-  Iris dá no mesmo.</p>
+  <p><strong>Nenhuma proptag não nomeada de tipo <code>PT_LONG</code>, entre os
+  65.536 identificadores, legível por <code>Folder.PropertyAccessor</code> na
+  pasta testada, devolveu 145.</strong></p>
+  <p>A frase é comprida de propósito, porque a curta seria falsa. A varredura é
+  exaustiva <strong>num eixo só</strong>: ficaram de fora os outros tipos, as
+  propriedades <em>nomeadas</em> (cujo id depende do mapping do store, então não
+  dá para varrer por força bruta), valores calculados, e outras interfaces MAPI.</p>
+  <p>E o <code>PropertyAccessor</code> recusa parte do espaço MAPI
+  <em>lançando</em> — indistinguível de ausência daqui. Para a decisão do Iris dá
+  no mesmo: <strong>por esta via, o número não vem.</strong></p>
 </div>
 
 <p class="nota">
@@ -770,9 +779,12 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
 <h3>O que sobra, e a recomendação</h3>
 
 <p>
-  <strong>Extended MAPI</strong> — <code>IMAPIFolder</code> direto ou Redemption.
-  O número existe abaixo do OOM, na camada de replicação. Mas é dependência nova
-  e uma superfície que a Fase 1 evitou de propósito. Não vale o preço ainda.
+  <strong>Extended MAPI — hipótese, não caminho demonstrado.</strong> O que está
+  provado é que o Outlook <em>conhece</em> o número, porque ele o exibe. Não está
+  provado que exista uma propriedade acessível por <code>IMAPIFolder</code> ou
+  Redemption carregando-o. São candidatos plausíveis para um <em>spike</em>, e é
+  o spike que decidiria — dependência nova, e superfície que a Fase 1 evitou de
+  propósito.
 </p>
 
 <p>
@@ -783,16 +795,37 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
 
 <p>
   A segunda é melhor do que parece, e não por ser barata: ela mede o que
-  <strong>o Iris enxerga</strong>, que é a grandeza que importa. A contagem do
-  servidor responderia "quanto existe"; o manifesto responde "quanto eu alcanço,
-  e mudou?" — e é a segunda pergunta que decide se uma conclusão de ausência
-  ainda vale.
+  <strong>o Iris enxerga</strong>. A contagem do servidor responderia "quanto
+  existe"; o manifesto responde "quanto eu alcanço, e mudou?".
 </p>
 
+<p>
+  Mas ele <strong>invalida, não autoriza</strong> — e essa distinção é onde eu
+  já escrevi a versão inflada uma vez. Os buracos são estruturais, não detalhes:
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>O que o detector não pega</caption>
+  <thead><tr><th>Caso</th><th>Por quê</th></tr></thead>
+  <tbody>
+    <tr><td><strong>A janela sempre foi pequena</strong></td>
+      <td>Se o Iris nunca viu o que falta, não há contração para detectar. É o estado desta caixa hoje.</td></tr>
+    <tr><td>Encolhimento compensado</td>
+      <td>Correio novo chega, a contagem não se mexe, o detector não dispara.</td></tr>
+    <tr><td>Troca balanceada</td>
+      <td>Itens saem e entram mantendo o mesmo total.</td></tr>
+    <tr><td>Item que sumiu</td>
+      <td>Mesmo comparando conjuntos, não se distingue excluído de movido de fora-da-janela.</td></tr>
+  </tbody>
+</table>
+</div>
+
 <p class="nota">
-  O custo: a primeira varredura de cada pasta não tem com o que comparar, então
-  não autoriza nada. A cobertura passa a ser uma propriedade que <strong>se
-  acumula com o tempo</strong>, em vez de existir na primeira leitura.
+  Ou seja: <strong>histórico de alcance observado se acumula; cobertura não.</strong>
+  Cobertura exige uma referência externa do universo, e essa referência continua
+  sem fonte. O detector é legítimo como mecanismo conservador de invalidação —
+  seria racionalização vendê-lo como resposta à Q8.
 </p>
 
 <h3>Reconhecer não é autorizar</h3>

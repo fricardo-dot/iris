@@ -228,11 +228,16 @@ Namespace Global.Iris.Sync
         '''   - ESTABILIDADE OPERACIONAL: não muda por conta própria ao longo
         '''     de reinícios do Outlook e do computador.
         '''
-        ''' A §22.4 mediu apenas estabilidade de leitura em sessão curta, que
-        ''' é bem menos que a segunda. Marcar isto como <c>True</c> só depois
-        ''' de cobrir reinício é parte do protocolo, não zelo extra: um token
-        ''' que muda sozinho ao reiniciar faria o Iris reconciliar a caixa
-        ''' inteira toda vez que o usuário abrisse o Outlook.
+        ''' A ordem entre as duas importa, e a §22.4 mostrou por quê: o
+        ''' candidato `00036601` teve a estabilidade medida — cinco leituras
+        ''' idênticas — antes de a sensibilidade ser testada, e a sensibilidade
+        ''' o refutou. <b>Estabilidade de um candidato refutado não vale nada</b>,
+        ''' e medi-la primeiro só produziu confiança sem base. Testar
+        ''' sensibilidade primeiro é mais barato e descarta mais rápido.
+        '''
+        ''' A estabilidade continua exigida porque um token que muda sozinho ao
+        ''' reiniciar faria o Iris reconciliar a caixa inteira toda vez que o
+        ''' usuário abrisse o Outlook.
         '''
         ''' Enquanto for falso, a linha não autoriza inferência nenhuma, mesmo
         ''' que traga evidências. Se o token não mudar quando a janela muda, a
@@ -301,12 +306,12 @@ Namespace Global.Iris.Sync
     ''' coisas é do 2.2, e "a matriz concede zero" não é o mesmo que "o
     ''' produto já impõe zero".
     '''
-    ''' <b>Hoje a matriz autoriza ZERO inferências.</b> Isso não é um bug nem
-    ''' uma pendência escondida: é o estado honesto. O ambiente do usuário está
-    ''' reconhecido, a estabilidade do token está medida, e nenhuma das três
-    ''' inferências foi demonstrada. A consequência de produto — o Iris não
-    ''' pode, hoje, concluir que uma mensagem sumiu de uma pasta — está
-    ''' registrada na §22.5, não escondida atrás de um default permissivo.
+    ''' <b>Hoje a matriz autoriza ZERO inferências</b>, e para o ambiente do
+    ''' usuário a execução nem chega nela: para antes, no degrau da janela não
+    ''' legível (§22.4). Isso não é bug nem pendência escondida — é o estado
+    ''' honesto, e a consequência de produto está registrada na §22.5 em vez de
+    ''' escondida atrás de um default permissivo: <b>o Iris não pode, hoje,
+    ''' concluir que uma mensagem sumiu de uma pasta.</b>
     ''' </summary>
     Public NotInheritable Class EnvironmentPolicy
 
@@ -338,7 +343,8 @@ Namespace Global.Iris.Sync
             m.Add(New MeasuredEnvironment(
                 New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing),
                 "FASE2 §22.3 — caixa corporativa do usuario, medido em 2026-08-24: " &
-                "108 pastas, 95 reportando zero, 2.044 mensagens datadas alcancadas",
+                "108 pastas, 95 reportando zero, 1.979 mensagens datadas alcancadas (manha; " &
+                "a repeticao as 21h deu 2.044 — chegou correio novo, a mais antiga nao mudou)",
                 New Date(2024, 10, 9),
                 tokenValidado:=False))
 

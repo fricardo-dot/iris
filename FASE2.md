@@ -2720,6 +2720,11 @@ Varredura da árvore inteira, mesmo dia:
 | mais antiga alcançada | 2024-10-09 |
 | mais nova | 2026-08-24 |
 
+Esta é a medição da **manhã**. A mesma varredura repetida às 21h do mesmo dia,
+como linha de base antes do teste da janela (§22.4), deu **2.044** — correio
+novo chegou; a mais antiga não se moveu. Os dois números são reais e têm hora;
+o que a matriz cita é o da manhã.
+
 **Alcance, não fronteira.** A mensagem mais antiga alcançada é onde os dados
 por acaso acabam: pode ser mais nova que o limite da janela (não existe
 correio mais velho) ou mais velha que ele. Serve para **descrever** o que
@@ -2761,9 +2766,14 @@ em nada:
 A única diferença entre os retratos foi uma subchave `GroupMailbox`
 **renomeada** — GUID novo, todos os valores iguais.
 
-> **O `00036601` não é a janela de sincronização.** Somando com a §22.3, que
-> mediu que o OOM também não a expõe: **a janela não é legível nem pelo OOM
-> nem pelo registro do perfil.**
+> **O `00036601` não é a janela de sincronização.** Somando com a §22.3:
+> **a janela não apareceu nos membros de `Store` que enumerei, nem em nenhum
+> dos 294 valores sob `HKCU\...\Outlook\Profiles`.**
+
+E o escopo dessa frase é o que ela diz, nem mais. O retrato varre
+`Profiles` e só isso: a configuração pode estar em outra área do registro, no
+próprio OST, ou num armazenamento do tenant. O que ficou medido é que **eu
+não achei onde procurei**, e procurei nos dois lugares mais óbvios.
 
 #### Duas armadilhas no caminho, e as duas do mesmo tipo
 
@@ -2797,10 +2807,15 @@ marcado, a matriz nunca autorizou nada, e nenhuma conclusão vazou de um
 universo para outro. O desenho falhou no lugar certo — que é o que "falhar
 fechado" quer dizer.
 
-Hoje o degrau *"modo cached com janela não legível"* é **permanente**, não uma
-pendência que alguém destrava: todo ambiente cached para nele, e nenhuma linha
-da matriz chega a ser consultada. Há teste cobrando isso, para que "consertar"
-passando um valor qualquer exija apagar o teste e explicar por quê.
+Hoje **a implementação degrada todo ambiente cached** no degrau *"modo cached
+com janela não legível"*, e continuará degradando enquanto não houver uma fonte
+validada da janela. Há teste cobrando isso, para que "consertar" passando um
+valor qualquer exija apagar o teste e explicar por quê.
+
+Isso é uma decisão de política, não uma lei sobre o Outlook. Uma instalação
+foi examinada. Dizer *"todo Outlook cached é ilegível"* extrapolaria de n=1 —
+o que está escrito é que **esta** implementação degrada até que alguém
+apresente uma fonte que funcione.
 
 ### 22.5 Reconhecer não é autorizar — a correção que doeu
 
@@ -2960,8 +2975,13 @@ Apareceu um candidato melhor, por acidente, olhando a tela do Outlook:
 **Não lido bate, total não bate.** Isso descarta as explicações fáceis: se a
 barra estivesse somando outro escopo, ou mostrando tudo do servidor, o não
 lido também divergiria. A leitura que sobra — **a UI mostra o total do
-servidor, o OOM mostra o do OST**, e o não lido coincide porque mensagem não
-lida é recente e cabe em qualquer janela.
+servidor, o OOM mostra o do OST**.
+
+Por que os não lidos coincidem, eu **não medi**. A explicação óbvia é que
+mensagem não lida tende a ser recente e portanto cabe na janela — mas
+mensagem antiga também fica não lida, e uma janela curta o bastante a
+excluiria. A aba Sincronização confirmou os totais; não confirmou a causa da
+coincidência.
 
 Se o Iris conseguir ler o total do servidor, ele **mede** a própria cobertura
 — *"esta pasta tem 145, eu enxergo 35"* — em vez de suspeitar dela. Seria o
@@ -3015,12 +3035,25 @@ menor, procurando o valor 145.
 | propriedades PT_LONG legíveis na pasta | **22** |
 | que devolvem 145 | **nenhuma** |
 
-> A contagem do servidor **não é alcançável por
-> `Folder.PropertyAccessor`**. E a formulação importa: isso não é "a
-> propriedade não existe" — o `PropertyAccessor` do OOM recusa parte do
-> espaço MAPI, e recusa lançando, o que é indistinguível de "não existe" de
-> onde eu estou olhando. O que está medido é a **inalcançabilidade**, e para
-> o Iris dá no mesmo.
+> **Nenhuma proptag não nomeada de tipo `PT_LONG`, entre os 65.536
+> identificadores, legível por `Folder.PropertyAccessor` na pasta testada,
+> devolveu 145.**
+
+Essa frase é comprida de propósito, porque a curta seria falsa. A varredura é
+exaustiva **num eixo só**. Ficaram de fora:
+
+- os outros tipos — `PT_I8`, `PT_BINARY`, `PT_UNICODE`, estruturas;
+- **propriedades nomeadas**, cujo identificador depende do mapping do store e
+  portanto não é varrível por força bruta;
+- valores que precisem ser calculados ou decodificados de outra coisa;
+- outras interfaces MAPI, e objetos que não sejam `Folder`.
+
+E há um segundo limite, independente do primeiro: o `PropertyAccessor` recusa
+parte do espaço MAPI, e recusa **lançando** — o que é indistinguível de "não
+existe" de onde eu estou olhando. Então nem para o eixo varrido dá para
+separar "não tem" de "não me deixam ler".
+
+Para a decisão do Iris dá no mesmo: **por esta via, o número não vem.**
 
 De passagem, um dado de capacidade que vale guardar: uma pasta expõe **22**
 propriedades `PT_LONG` legíveis por essa via, de 65.536 possíveis. O
@@ -3031,23 +3064,40 @@ supunha.
 
 Duas saídas, e a segunda é a que eu recomendo.
 
-**Extended MAPI.** O número existe abaixo do OOM, na camada de replicação.
-Chegar lá significa `IMAPIFolder` direto ou Redemption — dependência nova e
-uma superfície que a Fase 1 deliberadamente evitou. Não vale pelo preço, ainda.
+**Extended MAPI — hipótese, não caminho demonstrado.** O que está provado é
+que o **Outlook conhece** o número, porque ele o exibe. Não está provado que
+exista uma propriedade acessível por `IMAPIFolder` ou Redemption carregando-o
+— são os candidatos plausíveis para um *spike*, e um *spike* é justamente o
+que decidiria. Dependência nova e uma superfície que a Fase 1 evitou de
+propósito: não vale o preço antes de alguém gastar meio dia investigando.
 
-**O próprio manifesto do Iris como referência.** Se a varredura de hoje enxerga
-menos do que a de ontem **na mesma pasta**, alguma coisa encolheu — e isso
-basta para invalidar conclusões de ausência sem precisar saber por quê.
+**O próprio manifesto do Iris como DETECTOR DE CONTRAÇÃO.** Se a varredura de
+hoje enxerga menos do que a de ontem na mesma pasta, alguma coisa encolheu —
+e isso basta para **invalidar** conclusões de ausência sem precisar saber por
+quê.
 
-A segunda é melhor do que parece, e não é só por ser barata: ela mede o que
-**o Iris enxerga**, que é exatamente a grandeza que importa. A contagem do
-servidor responderia "quanto existe"; o manifesto responde "quanto eu alcanço,
-e mudou?" — e é a segunda pergunta que decide se uma conclusão de ausência
-ainda vale.
+E aqui vale ser exato sobre o que ele faz, porque a tentação de transformar
+uma derrota em recurso é grande e eu já escrevi a versão inflada:
 
-Custo: a primeira varredura de cada pasta não tem com o que comparar, então
-não autoriza nada. A cobertura passa a ser uma propriedade que **se acumula
-com o tempo**, em vez de existir na primeira leitura.
+| | |
+|---|---|
+| **Serve para** | invalidar. Encolheu → as conclusões anteriores caem |
+| **Não serve para** | autorizar. Nunca transforma cobertura desconhecida em completa |
+
+Os buracos, e são estruturais, não detalhes:
+
+- **A janela sempre foi pequena.** Se o Iris nunca viu o que falta, não há
+  contração para detectar — e este é exatamente o estado desta caixa hoje.
+- **Encolhimento compensado** por correio novo chegando: a contagem não se
+  mexe e o detector não dispara.
+- **Troca balanceada** de itens mantendo o mesmo total.
+- Mesmo comparando **conjuntos** em vez de contagens, um item que sumiu não
+  se distingue entre excluído, movido e saído da janela.
+
+Ou seja: histórico de alcance observado **se acumula**; **cobertura não**.
+Cobertura exige uma referência externa do universo, e essa referência
+continua sem fonte. O detector é legítimo como mecanismo conservador de
+invalidação; seria racionalização vendê-lo como resposta à Q8.
 
 ### 22.12 A suíte diz "Passed!" pulando os testes que tocam o Outlook
 

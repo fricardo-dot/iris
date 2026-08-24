@@ -70,9 +70,19 @@ Write-Host ("candidatos (= {0}): {1}" -f $ALVO_PEQUENA, $(if ($candidatos) { $ca
 
 if (-not $candidatos) {
     Write-Host ""
-    Write-Host "RESULTADO NEGATIVO: nenhuma propriedade PT_LONG da pasta local"
-    Write-Host "devolve a contagem do servidor. O numero que o Outlook exibe na aba"
-    Write-Host "Sincronizacao nao esta acessivel por PropertyAccessor sobre o Folder."
+    Write-Host "RESULTADO NEGATIVO, e o escopo dele e este, nem mais:"
+    Write-Host ""
+    Write-Host "  Nenhuma proptag NAO NOMEADA de tipo PT_LONG, entre os 65.536"
+    Write-Host "  identificadores, legivel por Folder.PropertyAccessor nesta pasta,"
+    Write-Host "  devolveu o alvo."
+    Write-Host ""
+    Write-Host "  Ficaram de fora: PT_I8, PT_BINARY, PT_UNICODE e estruturas;"
+    Write-Host "  propriedades NOMEADAS (cujo id depende do mapping do store, entao"
+    Write-Host "  nao da para varrer por forca bruta); valores calculados; e outras"
+    Write-Host "  interfaces MAPI. Alem disso o PropertyAccessor recusa LANCANDO, o"
+    Write-Host "  que e indistinguivel de ausencia daqui."
+    Write-Host ""
+    Write-Host "  Para a decisao do Iris da no mesmo: por esta via o numero nao vem."
     exit 0
 }
 
