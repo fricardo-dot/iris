@@ -212,58 +212,16 @@ try {
     }
 
     # =============================================================
-    # Q3 - o Restrict DE VERDADE
+    # A Q3 SAIU DAQUI, e a remocao e deliberada.
+    #
+    # A versao que existia neste script formatava o checkpoint com
+    # .ToString("g"), SEM SEGUNDOS, e por isso concluia o OPOSTO do
+    # resultado real. Deixar codigo defeituoso "so para historico" num
+    # script que alguem pode rodar e pior que apagar: quem rodasse
+    # obteria a conclusao errada com aparencia de medicao.
+    #
+    # A Q3 vive em tools/q3-restrict.ps1, com controle positivo.
     # =============================================================
-    Write-Host ""
-    Write-Host ("=" * 74)
-    Write-Host "Q3 - Items.Restrict de verdade, no MOVE e no COPY"
-    Write-Host ("=" * 74)
-
-    foreach ($f in @($destino.Items)) { $mv = $f.Move($origem); Solta $mv; Solta $f }
-
-    foreach ($modo in @("Move", "Copy")) {
-        $assunto = ("{0} {1:d3}" -f $MARCA, $(if ($modo -eq "Move") { 11 } else { 12 }))
-        $alvo = AcharPorAssunto $origem $assunto
-        $pa = $alvo.PropertyAccessor
-        $lmAntes = $pa.GetProperty($P_LASTMOD)
-        Solta $pa
-
-        Start-Sleep -Seconds 2
-        $checkpoint = Get-Date          # LOCAL: e o que o [ ] do Restrict usa
-        Start-Sleep -Seconds 2
-
-        $novo = if ($modo -eq "Move") { $alvo.Move($destino) } else { $alvo.Copy() }
-        if ($modo -eq "Copy") {
-            $tmp = $novo.Move($destino); Solta $novo; $novo = $tmp
-        }
-        [void]$criados.Add($novo.EntryID)
-        $pa = $novo.PropertyAccessor
-        $lmDepois = $pa.GetProperty($P_LASTMOD)
-        Solta $pa
-        $chaveNova = $novo.EntryID
-        Solta $novo
-
-        # AQUI o Restrict e realmente chamado.
-        $itensD = $destino.Items
-        try {
-            $q = $checkpoint.ToString("g")
-            $filtro = "[LastModificationTime] > '$q'"
-            $restritos = $itensD.Restrict($filtro)
-            try {
-                $achou = $false
-                for ($i = 1; $i -le $restritos.Count; $i++) {
-                    $r = $restritos.Item($i)
-                    try { if ($r.EntryID -eq $chaveNova) { $achou = $true } } finally { Solta $r }
-                }
-                Write-Host ("  {0,-5} LMT {1} -> {2}" -f $modo, $lmAntes, $lmDepois)
-                Write-Host ("        checkpoint local: {0}" -f $q)
-                Write-Host ("        Restrict devolveu {0} item(ns); achou o alvo? {1}" -f `
-                    $restritos.Count, $(if ($achou) { "SIM" } else { "NAO" }))
-                Registrar "Q3 $modo-in" $true ("LMT mudou=$([datetime]$lmDepois -ne [datetime]$lmAntes) Restrict achou=$achou")
-            } finally { Solta $restritos }
-        } finally { Solta $itensD }
-        Solta $alvo
-    }
 
 } catch {
     Write-Host ""

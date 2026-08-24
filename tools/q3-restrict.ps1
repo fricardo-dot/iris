@@ -1,7 +1,13 @@
 ﻿# Q3 com o Restrict de verdade, E com o checkpoint formatado direito.
 # Mais: confirmar se um Move durante a varredura TRUNCA a Table.
 #
-# ESCREVE. So em pasta criada aqui e itens com marcador GUID desta execucao.
+# ESCREVE. So em pasta criada aqui e itens com marcador GUID desta
+# execucao. Nenhuma mensagem do usuario e criada, movida ou apagada.
+#
+# RESSALVA HONESTA: a limpeza PERCORRE os Rascunhos lendo Subject, para
+# achar os proprios artefatos que possam ter ficado entre o Save e o
+# Move. O marcador GUID torna a exclusao segura contra colisao; nao
+# torna verdadeira a frase "nao le nada do usuario".
 #
 # ------------------------------------------------------------------
 # O BUG DA EXECUCAO ANTERIOR, que quase virou conclusao publicada
@@ -105,73 +111,117 @@ try {
     }
 
     # =============================================================
-    # PARTE 2 - o Restrict, com checkpoint COM SEGUNDOS
+    # PARTE 2 - o Restrict, com CONTROLE POSITIVO e DOIS formatos
+    #
+    # A execucao anterior falhou o controle positivo: o filtro
+    # "[LastModificationTime] > '08/23/2026 21:07:15'" devolveu ZERO
+    # inclusive para um item criado DEPOIS do checkpoint. Ou seja: o filtro
+    # nao funcionava, e o "nao achou" nao provava nada sobre Move-in.
+    #
+    # Hipotese: a sintaxe [Campo] do Restrict nao aceita SEGUNDOS. Se for
+    # isso, o .ToString("g") que eu tinha chamado de bug era o formato
+    # CERTO, e eu "consertei" o teste quebrando o filtro.
+    #
+    # Por isso agora:
+    #   - dois formatos, um com segundos e um sem;
+    #   - e tambem o caminho @SQL com o proptag, que a Q1 mediu ser em UTC;
+    #   - separacao de MAIS DE UM MINUTO entre o carimbo do alvo e o
+    #     checkpoint, para o truncamento ao minuto nao criar ambiguidade;
+    #   - controle positivo obrigatorio em todos.
     # =============================================================
     Write-Host ""
     Write-Host ("=" * 70)
-    Write-Host "PARTE 2 - Items.Restrict com checkpoint formatado direito"
+    Write-Host "PARTE 2 - Restrict com controle positivo, tres filtros"
     Write-Host ("=" * 70)
 
-    foreach ($modo in @("Move", "Copy")) {
-        $itens = $origem.Items
-        $alvo = $null
-        $procurado = ("{0} {1:d3}" -f $MARCA, $(if ($modo -eq "Move") { 5 } else { 6 }))
-        for ($i = 1; $i -le $itens.Count; $i++) {
-            $it = $itens.Item($i)
-            if ("$($it.Subject)" -eq $procurado) { $alvo = $it; break }
-            Solta $it
-        }
-        Solta $itens
-        if ($null -eq $alvo) { Write-Host "  ($procurado nao encontrado)"; continue }
+    $itens = $origem.Items
+    $alvo = $null
+    for ($i = 1; $i -le $itens.Count; $i++) {
+        $it = $itens.Item($i)
+        if ("$($it.Subject)" -eq ("{0} {1:d3}" -f $MARCA, 5)) { $alvo = $it; break }
+        Solta $it
+    }
+    Solta $itens
 
-        $pa = $alvo.PropertyAccessor
-        $lmAntes = [datetime]$pa.GetProperty($P_LASTMOD)
-        Solta $pa
+    $pa = $alvo.PropertyAccessor
+    $lmAlvo = [datetime]$pa.GetProperty($P_LASTMOD)   # UTC
+    Solta $pa
+    Write-Host ("  LMT do alvo (UTC)  : {0:yyyy-MM-dd HH:mm:ss}" -f $lmAlvo)
+    Write-Host ("  LMT do alvo (LOCAL): {0:yyyy-MM-dd HH:mm:ss}" -f $lmAlvo.ToLocalTime())
 
-        Start-Sleep -Seconds 5
-        $checkpoint = Get-Date            # LOCAL: e o que [Campo] usa
-        Start-Sleep -Seconds 5
+    Write-Host "  aguardando 70 s para o checkpoint ficar a MAIS DE UM MINUTO..."
+    Start-Sleep -Seconds 70
+    $checkpoint = Get-Date
+    Write-Host ("  checkpoint (LOCAL) : {0:yyyy-MM-dd HH:mm:ss}" -f $checkpoint)
+    Start-Sleep -Seconds 5
 
-        $novo = if ($modo -eq "Move") { $alvo.Move($destino) } else {
-            $c = $alvo.Copy(); $t2 = $c.Move($destino); Solta $c; $t2
-        }
-        $pa = $novo.PropertyAccessor
-        $lmDepois = [datetime]$pa.GetProperty($P_LASTMOD)
-        Solta $pa
-        $chave = $novo.EntryID
-        Solta $novo
+    # controle positivo: criado DEPOIS do checkpoint
+    $rasc2 = $ns.GetDefaultFolder(16)
+    $li2 = $rasc2.Items
+    $ctrl = $li2.Add("IPM.Note")
+    $ctrl.Subject = "$MARCA CONTROLE"
+    $ctrl.Save()
+    $ctrlMov = $ctrl.Move($destino)
+    $chaveCtrl = $ctrlMov.EntryID
+    $pa = $ctrlMov.PropertyAccessor
+    $lmCtrl = [datetime]$pa.GetProperty($P_LASTMOD)
+    Solta $pa
+    Solta $ctrlMov; Solta $ctrl; Solta $li2; Solta $rasc2
+    Write-Host ("  LMT do controle (UTC): {0:yyyy-MM-dd HH:mm:ss}" -f $lmCtrl)
 
-        # COM SEGUNDOS. E imprimindo os dois lados na MESMA base de tempo.
-        $q = $checkpoint.ToString("MM/dd/yyyy HH:mm:ss")
-        $filtro = "[LastModificationTime] > '$q'"
+    # o alvo entra por MOVE, com carimbo velho
+    $movido = $alvo.Move($destino)
+    $chaveAlvo = $movido.EntryID
+    $pa = $movido.PropertyAccessor
+    $lmDepois = [datetime]$pa.GetProperty($P_LASTMOD)
+    Solta $pa; Solta $movido; Solta $alvo
+    Write-Host ("  LMT do alvo APOS o Move (UTC): {0:yyyy-MM-dd HH:mm:ss}  mudou? {1}" -f `
+        $lmDepois, $(if ($lmDepois -ne $lmAlvo) { "SIM" } else { "NAO" }))
+    Write-Host ""
 
-        Write-Host ""
-        Write-Host ("  --- {0}-in ---" -f $modo)
-        Write-Host ("     LMT antes  (UTC)   : {0:yyyy-MM-dd HH:mm:ss}" -f $lmAntes)
-        Write-Host ("     LMT depois (UTC)   : {0:yyyy-MM-dd HH:mm:ss}" -f $lmDepois)
-        Write-Host ("     LMT depois (LOCAL) : {0:yyyy-MM-dd HH:mm:ss}" -f $lmDepois.ToLocalTime())
-        Write-Host ("     checkpoint (LOCAL) : {0:yyyy-MM-dd HH:mm:ss}" -f $checkpoint)
-        Write-Host ("     o carimbo MUDOU?   : {0}" -f $(if ($lmDepois -ne $lmAntes) { "SIM" } else { "NAO" }))
-        Write-Host ("     LMT local > checkpoint? {0}" -f $(if ($lmDepois.ToLocalTime() -gt $checkpoint) { "SIM" } else { "NAO" }))
+    $filtros = @(
+        @{ Nome = "[Campo] 12h SEM segundos"
+           F = "[LastModificationTime] > '" + $checkpoint.ToString("MM/dd/yyyy hh:mm tt") + "'" },
+        @{ Nome = "[Campo] 24h COM segundos"
+           F = "[LastModificationTime] > '" + $checkpoint.ToString("MM/dd/yyyy HH:mm:ss") + "'" },
+        @{ Nome = "@SQL proptag em UTC"
+           F = '@SQL="' + $P_LASTMOD + '" > ' + "'" + $checkpoint.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss") + "'" }
+    )
 
+    foreach ($f in $filtros) {
         $itensD = $destino.Items
         try {
-            $restritos = $itensD.Restrict($filtro)
+            $ok = $true; $achouCtrl = $false; $achouAlvo = $false; $n = 0
             try {
-                $achou = $false
-                for ($i = 1; $i -le $restritos.Count; $i++) {
-                    $r = $restritos.Item($i)
-                    try { if ($r.EntryID -eq $chave) { $achou = $true } } finally { Solta $r }
+                $rs = $itensD.Restrict($f.F)
+                $n = $rs.Count
+                for ($i = 1; $i -le $n; $i++) {
+                    $r = $rs.Item($i)
+                    try {
+                        if ($r.EntryID -eq $chaveCtrl) { $achouCtrl = $true }
+                        if ($r.EntryID -eq $chaveAlvo) { $achouAlvo = $true }
+                    } finally { Solta $r }
                 }
-                Write-Host ("     filtro: {0}" -f $filtro)
-                Write-Host ("     Restrict devolveu {0}; ACHOU o alvo? {1}" -f `
-                    $restritos.Count, $(if ($achou) { "SIM" } else { "NAO" }))
-                if (-not $achou -and $modo -eq "Move") {
-                    Write-Host "     => o incremental por LMT NAO descobre o item que chegou."
+                Solta $rs
+            } catch { $ok = $false; $erro = $_.Exception.Message }
+
+            Write-Host ("  --- {0} ---" -f $f.Nome)
+            Write-Host ("     {0}" -f $f.F)
+            if (-not $ok) {
+                Write-Host ("     Restrict LANCOU: {0}" -f $erro)
+            } else {
+                Write-Host ("     devolveu {0}; controle={1}  alvo-do-Move={2}" -f `
+                    $n, $(if ($achouCtrl) { "ACHADO" } else { "nao" }), `
+                    $(if ($achouAlvo) { "achado" } else { "nao" }))
+                if (-not $achouCtrl) {
+                    Write-Host "     => FILTRO INVALIDO (nem o controle apareceu). Nada a concluir."
+                } elseif (-not $achouAlvo) {
+                    Write-Host "     => PROVADO: filtro funciona, e o Move-in NAO e descoberto."
+                } else {
+                    Write-Host "     => o Move-in FOI descoberto por este filtro."
                 }
-            } finally { Solta $restritos }
+            }
         } finally { Solta $itensD }
-        Solta $alvo
     }
 
 } catch {

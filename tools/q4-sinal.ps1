@@ -1,6 +1,12 @@
 ﻿# Q4, o que faltava: existe SINAL OPERACIONAL de varredura truncada?
 #
-# ESCREVE. So em pasta criada aqui e itens com marcador GUID desta execucao.
+# ESCREVE. So em pasta criada aqui e itens com marcador GUID desta
+# execucao. Nenhuma mensagem do usuario e criada, movida ou apagada.
+#
+# RESSALVA HONESTA: a limpeza PERCORRE os Rascunhos lendo Subject, para
+# achar os proprios artefatos que possam ter ficado entre o Save e o
+# Move. O marcador GUID torna a exclusao segura contra colisao; nao
+# torna verdadeira a frase "nao le nada do usuario".
 #
 # ------------------------------------------------------------------
 # A PERGUNTA

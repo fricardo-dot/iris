@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 20 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+**Versão:** 21 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
 Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
 e `Restrict` de verdade (16)**. **Gate de sincronização (17)**, com o sinal
 operacional que fecha a parte principal da Q4.
@@ -1704,12 +1704,22 @@ move no lote 1 (2) : 23   (a pasta tinha 39)
 move no lote 1 (3) : 22   (a pasta tinha 38)
 ```
 
-> **Um único `Move` durante a varredura truncou a `Table` em exatamente 16
-> itens, três vezes seguidas** — e a varredura reportou `EndOfTable`
-> normalmente, sem erro.
+> Neste provider e store, com `Sort("Subject")`, alvo **ainda não lido** e
+> `Move` disparado após o primeiro lote: **a `Table` terminou normalmente
+> tendo devolvido 16 linhas a menos que o esperado, três vezes seguidas** —
+> com `EndOfTable` verdadeiro e sem erro.
 
-A varredura devolveu **60% da pasta parecendo completa**. Isso é pior que
-duplicar: duplicação dá para notar; truncagem silenciosa, não.
+A varredura devolveu **58–60% da pasta parecendo completa**.
+
+**O "16" é fato observado, não mecanismo explicado.** Não tem relação
+aritmética com o lote de 10. A hipótese plausível é um quantum interno de
+buffer ou bookmark invalidado pela remoção, mas o experimento **não
+sustenta** o mecanismo, e muito menos "um `Move` sempre trunca 16".
+
+E não vale dizer que "duplicação dá para notar", como a 1ª redação dizia:
+o `Move` troca a chave, então as duas encarnações **não se reconhecem como
+duplicatas** (§11.1). As duas são perigosas, por motivos diferentes — e a
+truncagem, ao menos, tem sinal externo (§17.1).
 
 **Matriz B** — o `Move` acontece **entre** as duas varreduras:
 
@@ -1729,32 +1739,51 @@ simultaneidade que o experimento não tinha.
 
 **NÃO exercitado:** falha COM, cancelamento e Outlook reiniciado no meio.
 
-### 16.2 Q3 — o incremental por `LastModificationTime` não descobre entrada
+### 16.2 Q3 — o incremental não descobre entrada. **Agora provado.**
 
-Agora com `Items.Restrict` **de verdade** e checkpoint com segundos:
+**Esta seção está na 3ª versão**, e as duas anteriores estavam erradas em
+direções **opostas**. A §16.5 conta.
+
+O que faltava era **controle positivo**: um teste que só espera zero passa
+igual se o filtro estiver quebrado. Agora um item de controle é criado
+**depois** do checkpoint e **tem** de aparecer.
+
+Com o carimbo do alvo e o checkpoint separados por **mais de um minuto**,
+para o truncamento ao minuto não criar ambiguidade:
 
 ```
---- Move-in ---
-LMT antes  (UTC)   : 2026-08-23 23:56:25
-LMT depois (UTC)   : 2026-08-23 23:56:25     <- nao mudou
-LMT depois (LOCAL) : 2026-08-23 20:56:25
-checkpoint (LOCAL) : 2026-08-23 20:56:31
-filtro: [LastModificationTime] > '08/23/2026 20:56:31'
-Restrict devolveu 0; ACHOU o alvo? NAO
+LMT do alvo    (UTC) : 2026-08-24 00:08:23
+checkpoint   (LOCAL) : 2026-08-23 21:09:34
+LMT do controle(UTC) : 2026-08-24 00:09:39
+LMT do alvo APOS o Move (UTC): 2026-08-24 00:08:23   mudou? NAO
 ```
 
-E o **`Copy`-in dá o mesmo**: carimbo não muda, `Restrict` devolve 0 —
-contra a expectativa razoável de que uma cópia, sendo objeto novo,
-nasceria com carimbo novo.
+| filtro | controle | alvo do `Move` | veredito |
+|---|---|---|---|
+| `[Campo]` 12h **sem** segundos | **ACHADO** | não | **provado** |
+| `[Campo]` 24h **com** segundos | não | não | **filtro inválido** |
+| `@SQL` proptag, em **UTC** | **ACHADO** | não | **provado** |
 
-> Neste Exchange em cache, neste store: `MailItem.Move` e `MailItem.Copy`
-> entre pastas **preservaram** `PR_LAST_MODIFICATION_TIME`, e um
-> `Items.Restrict([LastModificationTime] > checkpoint)` **não encontrou** o
-> item recém-chegado.
+> Neste Exchange em cache, neste store: `MailItem.Move` **preservou**
+> `PR_LAST_MODIFICATION_TIME`, e **dois filtros comprovadamente
+> funcionais** — um por `[Campo]`, outro por `@SQL` em UTC — **não
+> encontraram** o item recém-chegado.
 
-**Um contraexemplo basta** para derrubar a garantia — mesmo raciocínio da
-Q2. **Não** está medido: item antigo de verdade (o alvo tinha minutos),
-movimento pela UI, por regra, por arquivamento, entre stores, e chegada por
+Dois filtros independentes concordando, cada um com o controle positivo
+achado, é o que faltava para isso ser resultado em vez de suspeita.
+
+**Armadilha nova, e das piores:** `[Campo] > 'data COM segundos'` devolve
+**zero, em silêncio**. Não lança. Quem estiver construindo sincronização
+incremental lê "nenhum item mudou" e segue em frente. A sintaxe `[Campo]`
+aceita **hora local sem segundos**; o `@SQL` com proptag aceita segundos e
+é em **UTC** — a mesma divisão que a Q1 mediu para `datereceived`.
+
+**`Copy`-in:** o carimbo também **não muda** (medido). O comportamento do
+`Restrict` para `Copy`-in com um filtro válido **não foi medido
+diretamente** — segue do carimbo preservado, mas por inferência.
+
+**Não medido:** item antigo de verdade (o alvo tinha ~1 minuto), movimento
+pela UI, por regra, por arquivamento, entre stores, e chegada por
 transporte. A frase "o carimbo pode ser arbitrariamente antigo" da 1ª
 versão era **inferência, não medição**.
 
@@ -1799,28 +1828,53 @@ consentimento específico para perda irreversível.
 
 Fica **não validada e não necessária** para a política.
 
-### 16.5 Três defeitos meus, e dois são do tipo que volta
+### 16.5 A Q3 errou em DUAS direções antes de acertar
 
-**1. O teste da Q3 montava um filtro DASL e nunca o usava.** Enumerava a
-tabela e comparava datas em memória. Isso mede o **valor da propriedade**,
-não a semântica do `Restrict`. Seria afirmar sobre `Restrict` sem ter
-chamado `Restrict`.
+Vale contar inteiro, porque o padrão é mais instrutivo que o resultado.
 
-**2. O checkpoint perdia os segundos.** `.ToString("g")` não os tem.
-`PR_LAST_MODIFICATION_TIME` volta em **UTC** pelo `PropertyAccessor`
-(medido: 23:56 UTC para 20:56 local) e o `Restrict` com `[Campo]` compara
-em hora **LOCAL**. Com o checkpoint truncado ao minuto, **qualquer** item
-daquele minuto passava — e o teste disse "o `Restrict` achou", o **oposto**
-do resultado real. Fuso e formato no mesmo teste: a mesma família de erro
-que na Q1 custou 803 mensagens.
+**1ª versão (`q4-mutacao.ps1`) — nunca chamou `Restrict`.** Montava um
+filtro DASL e o deixava numa variável; depois enumerava a tabela inteira e
+comparava datas em memória. Isso mede o **valor da propriedade**, não a
+semântica do filtro. Conclusão publicada: "o incremental não descobre".
+**Certa por acaso.**
 
-**3. Os oráculos não discriminavam.** O caso do `Move` recebia `Ok = True`
-incondicionalmente, e o achado **certo** da Q3 aparecia como falha no
-resumo. Resumo que não distingue acerto de erro não é resumo.
+**2ª versão (`q4-matriz.ps1`) — chamou `Restrict`, e o filtro achou o
+item.** Eu li aquilo como reversão, olhei o checkpoint formatado com
+`.ToString("g")`, vi que não tinha segundos, e concluí que o item passara
+por **truncamento ao minuto**. Reescrevi com segundos.
 
-E um quarto, de honestidade: o cabeçalho prometia "nenhuma mensagem do
-usuário é lida" enquanto a limpeza **varria todos os Rascunhos lendo
-assunto**. Agora usa marcador GUID e `EntryID` capturados.
+**3ª versão — o controle positivo derrubou a 2ª correção.** Com segundos,
+o `Restrict` devolvia zero **até para um item criado depois do
+checkpoint**: eu não tinha consertado o teste, tinha **quebrado o filtro**.
+O `.ToString("g")` era o formato **certo** para a sintaxe `[Campo]`.
+
+Três lições, e a do meio é a que custa:
+
+1. **Teste que só espera zero não é teste.** "Não achou" e "o filtro não
+   funciona" produzem a mesma saída. Sem controle positivo, eu publiquei
+   duas conclusões opostas com a mesma confiança.
+2. **Explicação plausível não é diagnóstico.** "Faltavam segundos" explicava
+   o resultado, era verdade sobre o formato, e **estava invertida** quanto à
+   causa.
+3. **Estar certo não é ter provado.** A 1ª versão acertou a conclusão sem
+   ter medido o que dizia medir — e foi por isso que eu não soube defendê-la
+   quando ela foi contrariada.
+
+E dois defeitos de honestidade nos scripts:
+
+- **os oráculos não discriminavam**: o caso do `Move` recebia `Ok = True`
+  incondicionalmente, e o achado **certo** da Q3 aparecia como falha no
+  resumo;
+- o cabeçalho prometia "nenhuma mensagem do usuário é lida", e a limpeza
+  **percorre os Rascunhos lendo `Subject`**. O marcador GUID torna a
+  exclusão segura contra colisão; **não** torna a frase verdadeira. A
+  promessa correta é: *nenhuma mensagem do usuário é criada, movida ou
+  apagada; a limpeza lê assunto em Rascunhos para achar os próprios
+  artefatos.*
+
+A seção Q3 foi **removida** do `q4-matriz.ps1`: deixar código defeituoso
+"para histórico" num script executável é pior que apagar — quem o rodasse
+obteria a conclusão errada com aparência de medição.
 
 ### 16.6 Duas armadilhas de OOM
 
@@ -1847,18 +1901,21 @@ tem de ser persistido junto com a observação. Violação: um único campo
 `ultima_sincronizacao` por pasta, sem dizer o que aquela passada cobria.
 
 **S2 — Só geração completa, válida e publicada atomicamente pode marcar
-associação como ausente.** A §16.1 mediu varredura truncada em 40% que se
-reportou normal. Falha, cancelamento e restart **não publicam metade**.
+associação como ausente.** A §16.1 mediu varredura truncada em até 40% no cenário
+exercitado, e que se reportou normal. Falha, cancelamento e restart **não publicam metade**.
 
 **S3 — O schema aceita sobreposição transitória.** Não pode existir
 restrição "um item lógico tem exatamente uma pasta atual": a matriz B
-produz, legitimamente, a encarnação velha e a nova ao mesmo tempo.
-Violação: índice único sobre o item lógico na tabela de associação.
+produz, legitimamente, a encarnação velha e a nova **co-residentes no
+cache, vindas de gerações feitas em instantes diferentes** — elas não
+voltaram a coexistir no provider. Violação: índice único sobre o item
+lógico na tabela de associação.
 
 **S4 — Observações de pastas diferentes NÃO formam instantâneo global.**
 Medido na matriz B. Nem a UI nem a correlação podem inferir simultaneidade
-entre pastas. Violação: "total da caixa" somando contagens de gerações
-diferentes e apresentando como um número.
+entre pastas. O proibido não é somar — um "total mais recente conhecido" é
+útil —, e sim **apresentar a soma como contagem exata e simultânea**.
+Composto é composto, e tem de ser rótulado como tal.
 
 **S5 — Retenção expurga dado derivado, nunca estado do usuário só porque
 saiu da janela.** Combina com I7: "saiu da janela" e "ausente no Outlook"
@@ -1886,9 +1943,30 @@ lado a lado.
 | `Count` antes ≠ `Count` depois | quieto | **acusa** | **serve** |
 | `ChangeKey` da **pasta** | quieto | **quieto** | **não detecta** |
 
-> **S6 — Uma geração só é declarada válida se as linhas lidas, a contagem
-> ANTES e a contagem DEPOIS concordarem.** Discordância não é erro: é
+> **S6 — Discordância entre linhas lidas, contagem ANTES e contagem DEPOIS
+> INVALIDA a geração. Concordância NÃO a valida sozinha.**
+>
+> É condição **necessária**, não suficiente. Discordância não é erro: é
 > "descarte e repita", que é a opção 1 da §4.
+
+**Cardinalidade não prova completude de conjunto.** Falsos negativos que
+este sinal **não** pega:
+
+- **uma omissão e uma duplicação** na mesma passada: N linhas, `Count` N
+  antes e depois, e mesmo assim uma chave repetida e outra faltando;
+- **mutações balanceadas**: um item sai e outro entra, e o manifesto mistura
+  encarnações que nunca formaram uma visão coerente;
+- **`Count` obsoleto nas duas leituras**, o que num provider remoto não é
+  hipótese remota;
+- **universos diferentes**: `Items.Count` sem filtro comparado com uma
+  `Table` filtrada por retenção ou classe;
+- **linha inválida**: a `Table` devolve N linhas e uma delas não tem chave
+  utilizável, sendo descartada depois.
+
+Por isso, para autorizar transição para **ausente**, S6 não basta:
+acrescentam-se chaves **distintas** iguais à contagem, mesmo universo nas
+três medições, nenhuma falha ou cancelamento, e **uma segunda passada com
+manifesto compatível** ou verificação individual dos candidatos.
 
 O `ChangeKey` **da pasta** não mudou nem quando um item saiu dela. Era o
 sinal mais barato imaginável e **não serve** — negativo útil, porque é o
@@ -1911,8 +1989,11 @@ nas duas leituras; este teste **não consegue distinguir** um do outro.
 
 - **Falha COM, cancelamento e Outlook reiniciado** no meio da enumeração.
 - **Convergência do "descarte e repita"** numa pasta com tráfego real.
-- A escolha entre as três opções da §4 — agora com dado para a opção 1, e
-  a §13 mostrando que a opção 2 (duas observações compatíveis) custa ~6,4 s.
+- A escolha entre as três opções da §4. Há dado **favorável** à opção 1
+  ("discordou, descarte"), e a §13 mostra que a opção 2 (duas observações
+  compatíveis) custa ~6,4 s. Mas os falsos negativos de S6 mostram que a
+  opção 1 **sozinha não tem condição de aceite segura** para confirmar
+  ausência — ela serve para **rejeitar**, não para aprovar.
 
 A Q3 já entregou o mais importante: **não pode ser base de completude**. O
 que resta dela é caracterizar onde ainda ajuda.
