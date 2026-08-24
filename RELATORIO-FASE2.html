@@ -1,0 +1,847 @@
+<title>Iris — Fase 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+:root {
+  --ground:      #F5F7F9;
+  --surface:     #FFFFFF;
+  --surface-alt: #EDF1F4;
+  --ink:         #14202A;
+  --ink-soft:    #3D4C59;
+  --ink-mute:    #6B7885;
+  --rule:        #D8E0E7;
+  --rule-soft:   #E7ECF1;
+  --accent:      #14606E;
+  --accent-soft: #E0EFF1;
+
+  --medido:      #2C6647;
+  --medido-bg:   #E2EFE7;
+  --parcial:     #8A5A0E;
+  --parcial-bg:  #F5EBD9;
+  --falta:       #A03428;
+  --falta-bg:    #F6E3E0;
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --measure: 34rem;
+  --wide: 60rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0F161C;
+    --surface:     #151E26;
+    --surface-alt: #1B242D;
+    --ink:         #E3E9EE;
+    --ink-soft:    #B4C0CB;
+    --ink-mute:    #8593A0;
+    --rule:        #2A3742;
+    --rule-soft:   #212C35;
+    --accent:      #5EB6C4;
+    --accent-soft: #16323A;
+
+    --medido:      #6FBE8E;
+    --medido-bg:   #162C21;
+    --parcial:     #D8A548;
+    --parcial-bg:  #2E2415;
+    --falta:       #E0796A;
+    --falta-bg:    #331D19;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0F161C;
+  --surface:     #151E26;
+  --surface-alt: #1B242D;
+  --ink:         #E3E9EE;
+  --ink-soft:    #B4C0CB;
+  --ink-mute:    #8593A0;
+  --rule:        #2A3742;
+  --rule-soft:   #212C35;
+  --accent:      #5EB6C4;
+  --accent-soft: #16323A;
+
+  --medido:      #6FBE8E;
+  --medido-bg:   #162C21;
+  --parcial:     #D8A548;
+  --parcial-bg:  #2E2415;
+  --falta:       #E0796A;
+  --falta-bg:    #331D19;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  margin: 0;
+  padding: 0 1.25rem 6rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: var(--wide);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+/* Texto corre estreito; evidência quebra largo. */
+.page > * { max-width: var(--measure); }
+.page > .wide { max-width: 100%; width: 100%; }
+
+/* ---------- cabeçalho ---------- */
+
+header.head {
+  max-width: 100%;
+  border-bottom: 2px solid var(--ink);
+  padding: 4rem 0 1.5rem;
+  margin-bottom: .5rem;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: .75rem;
+  font-weight: 500;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1.25rem;
+}
+
+h1 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: clamp(2rem, 5.5vw, 3.1rem);
+  line-height: 1.06;
+  letter-spacing: -.025em;
+  text-wrap: balance;
+  margin: 0 0 1rem;
+}
+
+.dek {
+  font-size: 1.15rem;
+  color: var(--ink-soft);
+  max-width: 38rem;
+  margin: 0 0 2rem;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 2rem;
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+}
+.meta b { color: var(--ink-soft); font-weight: 500; }
+
+/* ---------- títulos ---------- */
+
+h2 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.5rem;
+  letter-spacing: -.015em;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 2rem 0 0;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--rule);
+  max-width: var(--measure);
+}
+h2 .num {
+  font-family: var(--mono);
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--accent);
+  display: block;
+  margin-bottom: .5rem;
+  letter-spacing: .08em;
+}
+
+h3 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  letter-spacing: -.005em;
+  margin: 1.5rem 0 0;
+}
+
+p { margin: 0; }
+.page > p + p, .page > h3 + p { margin-top: 0 }
+
+strong { font-weight: 600; color: var(--ink); }
+em { font-style: italic; }
+
+code, .mono {
+  font-family: var(--mono);
+  font-size: .875em;
+  background: var(--surface-alt);
+  padding: .1em .35em;
+  border-radius: 3px;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+/* ---------- chips de estado ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  font-family: var(--sans);
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: .25em .6em;
+  border-radius: 3px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.chip::before {
+  content: "";
+  width: .45em; height: .45em;
+  border-radius: 50%;
+  background: currentColor;
+}
+.chip.medido  { color: var(--medido);  background: var(--medido-bg); }
+.chip.parcial { color: var(--parcial); background: var(--parcial-bg); }
+.chip.falta   { color: var(--falta);   background: var(--falta-bg); }
+
+/* ---------- painel de resumo ---------- */
+
+.resumo {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.resumo h2 {
+  border: 0; padding: 0; margin: 0;
+  font-size: 1.1rem;
+}
+.resumo ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .55rem; }
+.resumo li::marker { color: var(--accent); }
+
+/* ---------- caixa de números ---------- */
+
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.numeros div {
+  background: var(--surface);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.numeros .v {
+  font-family: var(--sans);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.numeros .k {
+  font-family: var(--mono);
+  font-size: .7rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+/* ---------- tabelas ---------- */
+
+.tabela-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--sans);
+  font-size: .875rem;
+  font-variant-numeric: tabular-nums;
+}
+caption {
+  caption-side: top;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: .9rem 1rem .6rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+th, td {
+  text-align: left;
+  padding: .6rem 1rem;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+thead th {
+  font-weight: 600;
+  font-size: .72rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  white-space: nowrap;
+  background: var(--surface-alt);
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-family: var(--mono); }
+td.mono-c { font-family: var(--mono); font-size: .8rem; }
+td.dim { color: var(--ink-mute); }
+
+/* faixa de severidade na tabela de critérios */
+td.st { border-left: 3px solid transparent; }
+tr.s-ok  td.st { border-left-color: var(--medido); }
+tr.s-par td.st { border-left-color: var(--parcial); }
+tr.s-nao td.st { border-left-color: var(--falta); }
+
+/* ---------- bloco de código / saída ---------- */
+
+pre {
+  margin: 0;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1rem 1.1rem;
+  font-family: var(--mono);
+  font-size: .8rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ---------- citação / princípio ---------- */
+
+.principio {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 1rem 1.25rem;
+  border-radius: 0 4px 4px 0;
+  font-size: 1.05rem;
+}
+.principio p + p { margin-top: .6rem; }
+
+/* ---------- nota de rodapé de seção ---------- */
+
+.nota {
+  font-size: .95rem;
+  color: var(--ink-mute);
+  border-top: 1px solid var(--rule-soft);
+  padding-top: .9rem;
+}
+
+/* ---------- lista de ações ---------- */
+
+.acoes { display: flex; flex-direction: column; gap: 1rem; margin: 0; padding: 0; }
+.acoes > div {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1.1rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+.acoes h3 { margin: 0; }
+.acoes p { font-size: .97rem; color: var(--ink-soft); }
+.tempo {
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+footer {
+  max-width: 100%;
+  border-top: 1px solid var(--rule);
+  padding-top: 1.25rem;
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--ink-mute);
+  line-height: 1.8;
+}
+
+@media (max-width: 640px) {
+  h2 { font-size: 1.3rem; }
+  .resumo, .acoes > div { padding: 1.1rem 1.15rem; }
+  body { padding-bottom: 4rem; }
+}
+</style>
+
+<div class="page">
+
+<header class="head">
+  <p class="eyebrow">Iris · Relatório de fim de fase</p>
+  <h1>Fase 2 — o que ficou medido</h1>
+  <p class="dek">
+    O Marco 2.1 fechou a persistência: schema executável, banco real, primitivas
+    transacionais e provas de crash. E uma medição me pegou afirmando uma coisa
+    que eu nunca tinha medido.
+  </p>
+  <div class="meta">
+    <span><b>24 de agosto de 2026</b></span>
+    <span>260 testes · <b>0 falhas</b></span>
+    <span>9 commits · <code>f83f4e3</code> → <code>f1d60e9</code></span>
+    <span>3 passadas de revisão com o Codex</span>
+  </div>
+</header>
+
+<section class="resumo">
+  <h2>O essencial, sem suavizar</h2>
+  <ul>
+    <li><strong>Critério 10 fechado.</strong> Geração velha terminando tarde é
+      recusada, e há teste medindo a armadilha — não supondo.</li>
+    <li><strong>Critério 9 parcial.</strong> A dívida de publicação sobrevive ao
+      crash e é consultável. Mas <strong>não existe consumidor na UI ainda</strong>,
+      então "publicar para a UI" está entregue pela metade.</li>
+    <li><strong>A Q8 autoriza zero inferências hoje.</strong> Consequência real:
+      o Iris <strong>não pode concluir que uma mensagem sumiu de uma pasta</strong>.
+      É o estado honesto, não uma pendência escondida.</li>
+    <li><strong>A política de ambiente ainda não é aplicada pelo produto.</strong>
+      Ela é o modelo da autorização, não o cumprimento. Nada impede hoje um
+      chamador de contorná-la.</li>
+    <li><strong>O token da janela precisa de você</strong> — 3 minutos, e sem ele
+      o mecanismo inteiro pode ser decoração.</li>
+    <li><strong>O teste de crash cobre morte do processo, não falta de energia.</strong></li>
+  </ul>
+</section>
+
+<h2><span class="num">01</span>O que o 2.1 entregou</h2>
+
+<p>
+  Planejei 7 passos e entreguei 4. Os que sobraram são de outra classe — dependem
+  da sua caixa ou de orquestração que ainda não existe —, e isso virou a
+  recomendação de tamanho para o 2.2.
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>Marco 2.1 — passos</caption>
+  <thead>
+    <tr><th class="n">Passo</th><th>O que é</th><th>Estado</th></tr>
+  </thead>
+  <tbody>
+    <tr class="s-ok">
+      <td class="st n">1</td>
+      <td>Presença e varredura — <code>PresencePolicy</code>, <code>SweepModel</code>, <code>RetryPolicy</code></td>
+      <td><span class="chip medido">Entregue</span></td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st n">2</td>
+      <td>Gate de schema executável — invariantes como código, não como comentário</td>
+      <td><span class="chip medido">Entregue</span></td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st n">3</td>
+      <td>DDL, introspecção e migração SQLite — o banco real contra o modelo</td>
+      <td><span class="chip medido">Entregue</span></td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st n">4</td>
+      <td>Primitivas transacionais com injeção de crash</td>
+      <td><span class="chip medido">Entregue</span></td>
+    </tr>
+    <tr class="s-nao">
+      <td class="st n">5</td>
+      <td>Orquestração do <code>Iris.Sync</code> contra provider falso mutável</td>
+      <td><span class="chip falta">Fica para o 2.2a</span></td>
+    </tr>
+    <tr class="s-nao">
+      <td class="st n">6</td>
+      <td>Adaptador Outlook + DTO de manifesto; medir o orçamento de 100&nbsp;ms</td>
+      <td><span class="chip falta">Fica para o 2.2b</span></td>
+    </tr>
+    <tr class="s-nao">
+      <td class="st n">7</td>
+      <td>Importação real e retomada</td>
+      <td><span class="chip falta">Fica para o 2.2b</span></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">02</span>Critério 9 — morrer no meio</h2>
+
+<p>
+  O critério pede que gravar as linhas, avançar o checkpoint e publicar sobrevivam
+  a morrer no meio. A resposta não é "tentar de novo": é escolher as fronteiras de
+  forma que todo estado intermediário possível seja aceitável.
+</p>
+
+<div class="principio">
+  <p><strong>Linhas e checkpoint vão na mesma transação.</strong> Separados, morrer
+  entre os dois deixa o checkpoint à frente das linhas — e a retomada
+  <em>pula mensagens</em>. Perda silenciosa: sem erro, sem log, invisível para
+  qualquer contagem que confie no cursor.</p>
+  <p><strong>A publicação é uma linha, não um evento.</strong> Evento perdido num
+  crash não deixa rastro. Uma linha em <code>publication_log</code>, gravada na
+  mesma transação da geração, deixa.</p>
+</div>
+
+<p>
+  Os cinco cenários, medidos matando o processo com <code>TerminateProcess</code> e
+  relendo o arquivo com um leitor independente — o <code>sqlite3</code> do Python,
+  outra biblioteca, outro processo, nenhuma linha de Iris.
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>tools/conferir-crash.py — estado no disco depois de cada morte</caption>
+  <thead>
+    <tr>
+      <th>Morre em</th><th>stage</th><th>cursor</th>
+      <th class="n">linhas</th><th class="n">ger.</th><th class="n">dívida</th><th>cabeça</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>dentro da página</td><td class="mono-c">aberta</td><td class="mono-c dim">—</td>
+      <td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="dim">ausente</td>
+    </tr>
+    <tr>
+      <td>depois do commit da página</td><td class="mono-c">varrendo</td><td class="mono-c">cursor-1</td>
+      <td class="n">2</td><td class="n">0</td><td class="n">0</td><td class="dim">ausente</td>
+    </tr>
+    <tr>
+      <td>dentro da publicação</td><td class="mono-c">varrendo</td><td class="mono-c">cursor-3</td>
+      <td class="n">6</td><td class="n">0</td><td class="n">0</td><td class="dim">ausente</td>
+    </tr>
+    <tr>
+      <td>depois do commit da publicação</td><td class="mono-c">publicada</td><td class="mono-c">cursor-3</td>
+      <td class="n">6</td><td class="n">1</td><td class="n">1 <em>não drenada</em></td><td class="mono-c">1</td>
+    </tr>
+    <tr>
+      <td class="dim">não morre</td><td class="mono-c">publicada</td><td class="mono-c">cursor-3</td>
+      <td class="n">6</td><td class="n">1</td><td class="n">1</td><td class="mono-c">1</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>O controle negativo, e por que ele existe</h3>
+
+<p>
+  Sem ele, as cinco linhas acima passariam idênticas num escritor que
+  <em>não grava nada</em>. Então eu ligo o defeito — avançar o checkpoint em
+  transação própria antes de gravar as linhas, que é o desenho ingênuo
+  <em>salva o progresso primeiro</em> — e exijo que a conferência acuse:
+</p>
+
+<pre class="wide"><code>=== controle negativo: defeito 'checkpoint-antes' ===
+  estado: stage=varrendo cursor=cursor-1 linhas=0
+  ACUSOU 3 divergencia(s), como devia:
+      - stage: 'varrendo', esperado 'aberta'
+      - cursor: 'cursor-1', esperado None
+      - cursor AVANCOU com zero linhas gravadas — perda silenciosa</code></pre>
+
+<p class="nota">
+  <strong>Matar não é lançar.</strong> Injetar exceção prova <em>atomicidade</em> —
+  mas o processo segue vivo e o SQLite roda o rollback com ordem. Matar prova
+  <em>durabilidade</em>. E <code>Environment.Exit</code> não serve: ele roda
+  finalizadores, ou seja, deixa o processo arrumar a casa antes de morrer.
+  Um teste que "mata" assim exercita o caminho de encerramento limpo.
+  <strong>Falta de energia continua não coberta.</strong>
+</p>
+
+<h2><span class="num">03</span>Critério 10 — a chave que ordena</h2>
+
+<p>
+  Geração velha terminando tarde não pode sobrescrever a nova. A armadilha inteira
+  está em <em>qual chave ordena</em>:
+</p>
+
+<div class="principio">
+  <p><code>generation_key</code> é atribuída no INSERT, que só acontece ao
+  <strong>publicar</strong>. A varredura velha que termina tarde recebe a chave
+  <strong>maior</strong> — e um teste de monotonicidade sobre ela aprovaria
+  exatamente o caso que deveria barrar.</p>
+</div>
+
+<p>
+  Por isso a cabeça avança por <code>scan_attempt.attempt_key</code>, atribuída ao
+  <strong>abrir</strong>. Há teste medindo que a velha receberia a chave maior.
+</p>
+
+<p class="nota">
+  <strong>Mas isto é "a tentativa aberta por último vence", e não é o mesmo que
+  "os dados mais frescos vencem".</strong> Tentativas sobrepostas intercalam
+  leituras; a mais velha pode, em tese, ter lido parte dos dados depois da nova.
+  É aproximação conservadora — erra descartando trabalho bom, nunca deixando a
+  cabeça recuar — e não trava nada, porque a guarda só compara com a cabeça
+  <em>publicada</em>.
+</p>
+
+<h2><span class="num">04</span>Q8 — o que a sua caixa mostrou</h2>
+
+<p>
+  A matriz de providers não se levanta mexendo no cursor desta máquina: já foi
+  medido que custa horas e dezenas de GB, e você tem 8 GB livres. Então a resposta
+  virou <strong>declaração de escopo suportado</strong> com degradação explícita
+  para todo o resto.
+</p>
+
+<div class="wide numeros">
+  <div><span class="v">108</span><span class="k">pastas varridas</span></div>
+  <div><span class="v">95</span><span class="k">reportando zero</span></div>
+  <div><span class="v">1.979</span><span class="k">mensagens alcançadas</span></div>
+  <div><span class="v">2024-10-09</span><span class="k">a mais antiga</span></div>
+</div>
+
+<p>
+  <strong>O OOM não expõe a janela de sincronização.</strong> Enumerei os membros
+  de <code>Store</code>: só <code>IsCachedExchange</code> e
+  <code>ExchangeStoreType</code>, nenhum <code>Sync*</code>, nenhum
+  <code>Window*</code>. O valor existe apenas no registro do perfil.
+</p>
+
+<pre class="wide"><code>Outlook\1ed55df826d22a4c8add1bed4cf69a00
+    00036601 = 84-09-00-00      &lt;- a conta
+Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
+    00036601 = 80-01-00-00      &lt;- outro valor, outra chave</code></pre>
+
+<p>
+  Uso os bytes crus como token opaco: a impressão digital precisa ser
+  <strong>estável</strong> e <strong>sensível</strong>, e nenhuma das duas exige
+  saber o que os bytes significam. Mas <em>não decodificar</em> não é
+  <em>não verificar</em> — e eu tinha escrito no código que não precisava verificar.
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>Token da janela — estado das duas propriedades</caption>
+  <thead><tr><th>Propriedade</th><th>O que significa</th><th>Estado</th></tr></thead>
+  <tbody>
+    <tr class="s-par">
+      <td class="st"><strong>Estável</strong></td>
+      <td>não muda sozinho</td>
+      <td><span class="chip parcial">Parcial</span><br>
+        <span class="dim">5 leituras idênticas em ~1,2&nbsp;s, mesma sessão. Reinício não coberto.</span></td>
+    </tr>
+    <tr class="s-nao">
+      <td class="st"><strong>Sensível</strong></td>
+      <td>muda quando a janela muda</td>
+      <td><span class="chip falta">Não medido</span><br>
+        <span class="dim">Precisa de você — 3 minutos.</span></td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Reconhecer não é autorizar</h3>
+
+<p>
+  A primeira versão da política reconhecia o seu ambiente e daí concedia três
+  inferências: concluir ausência, afirmar cobertura completa, usar incremental.
+  O Codex apontou o salto, e ele é grande — <em>"medi quantos itens o OOM alcançou"
+  não implica "medi a correção das três inferências"</em>. E duas delas têm
+  evidência <em>contra</em>, nesta mesma fase: pastas cheias reportando zero, e a
+  pasta de origem não distinguindo movido de excluído.
+</p>
+
+<div class="principio">
+  <p>Hoje a matriz <strong>autoriza zero inferências</strong>. A consequência de
+  produto é real: <strong>o Iris não pode concluir que uma mensagem sumiu de uma
+  pasta.</strong></p>
+  <p>E "a matriz concede zero" ainda não é "o produto impõe zero" — a política é o
+  modelo da autorização, não o cumprimento dela. Ligar as duas coisas é do 2.2.</p>
+</div>
+
+<h2><span class="num">05</span>Os dez critérios de pronto</h2>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>FASE2.md §8 — estado em 24/08/2026</caption>
+  <thead>
+    <tr><th class="n">#</th><th>Critério</th><th>Estado</th></tr>
+  </thead>
+  <tbody>
+    <tr class="s-par">
+      <td class="st n">1</td>
+      <td>Q1, Q3, Q4, Q7, Q8 com número; Q2, Q5, Q6, Q9 com conclusão semântica</td>
+      <td><span class="chip parcial">Parcial</span> <span class="dim">Q8 como escopo declarado, não como matriz</span></td>
+    </tr>
+    <tr class="s-ok"><td class="st n">2</td><td>Limitação escrita em cada resposta</td><td><span class="chip medido">ok</span></td></tr>
+    <tr class="s-ok"><td class="st n">3</td><td>Recomendação de tamanho de cada marco seguinte</td><td><span class="chip medido">ok</span> <span class="dim">§22.10</span></td></tr>
+    <tr class="s-ok"><td class="st n">4</td><td>Revisão externa do resultado</td><td><span class="chip medido">ok</span> <span class="dim">3 passadas; 10 defeitos reais</span></td></tr>
+    <tr class="s-ok">
+      <td class="st n">5</td><td>Itens de teste devolvidos ao original</td>
+      <td><span class="chip medido">ok</span> <span class="dim">com exceção declarada: 3 cópias em Itens Excluídos e a pasta <code>Iris Q4R</code> que o tenant recusou excluir</span></td>
+    </tr>
+    <tr class="s-ok"><td class="st n">6</td><td>Corpus adversarial da Q2 com oráculo escrito antes</td><td><span class="chip medido">ok</span></td></tr>
+    <tr class="s-ok"><td class="st n">7</td><td>Critério operacional de invalidação, escolhido com dado</td><td><span class="chip medido">ok</span> <span class="dim">S6</span></td></tr>
+    <tr class="s-nao">
+      <td class="st n">8</td><td>Latência máxima por lote</td>
+      <td><span class="chip falta">Decidido, não medido</span> <span class="dim">100&nbsp;ms; medir exige o passo 6</span></td>
+    </tr>
+    <tr class="s-par">
+      <td class="st n">9</td><td>Crash entre commit, checkpoint e publicação</td>
+      <td><span class="chip parcial">Parcial</span> <span class="dim">persistência provada; entrega à UI não existe</span></td>
+    </tr>
+    <tr class="s-ok"><td class="st n">10</td><td>Reconciliação antiga não sobrescreve a nova</td><td><span class="chip medido">ok</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">06</span>Os erros que a medição pegou</h2>
+
+<p>
+  Três, e o primeiro é o erro do projeto inteiro em forma nova.
+</p>
+
+<h3>Uma frase virando constante</h3>
+<p>
+  Escrevi a linha da matriz de ambientes com janela <strong>"1 mês"</strong>. Esse
+  número veio de uma frase sua em conversa e de uma medição de dois dias antes —
+  não de leitura nenhuma. Era uma afirmação não medida <em>dentro da classe que
+  existe para impedir afirmações não medidas</em>. A varredura de hoje me
+  contradisse: 1.979 mensagens até 2024-10-09, contra 1.004. A janela tinha mudado.
+</p>
+
+<h3>Onze testes verdes sobre um schema quebrado</h3>
+<p>
+  O gerador de DDL supunha que a chave primária de <code>x</code> se chama
+  <code>x_key</code>. <code>environment_profile</code> tem
+  <code>environment_key</code>. O SQLite <strong>aceita</strong>
+  <code>REFERENCES pai(coluna_inexistente)</code> no CREATE e só reclama no primeiro
+  INSERT. Os 11 testes do passo 3 passaram por cima porque a introspecção comparava
+  só a <em>tabela</em> alvo da FK, nunca a <em>coluna</em>. Quem acusou foi o
+  primeiro INSERT real.
+</p>
+
+<h3>Um conferidor que não conferia</h3>
+<p>
+  Escrevi <code>conferir-crash.py</code> com três invariantes fracos e chamei de
+  verificação independente. O defeito <code>checkpoint-antes</code> — o que motivou
+  o desenho inteiro — passava por todos os três, porque nenhum cobrava
+  <em>"cursor avançado com zero linhas"</em>. É o meu erro recorrente na forma mais
+  pura: escrever um verificador para uma propriedade e não verificar se ele
+  distingue a violação dela.
+</p>
+
+<h2><span class="num">07</span>O que precisa de você</h2>
+
+<div class="wide acoes">
+  <div>
+    <span class="tempo">≈ 3 minutos · destrava a Q8</span>
+    <h3>Validar o token da janela</h3>
+    <p>
+      Ler o token, mover o cursor de <em>"Baixar email do passado"</em>, ler de novo,
+      voltar, ler outra vez. Eu tinha suposto que isso custava GB de download —
+      custa não: o que custa GB é medir o <em>universo resultante</em>. Ler o token
+      é instantâneo.
+    </p>
+    <p>
+      O protocolo está em <code>tools/q8-sensibilidade.md</code>, com o que cada
+      resultado significa. <strong>Se o token não for sensível, o mecanismo inteiro
+      é decoração</strong> — e é melhor descobrir agora que depois de construir em
+      cima dele.
+    </p>
+  </div>
+  <div>
+    <span class="tempo">decisão</span>
+    <h3>Confirmar o recorte do 2.2</h3>
+    <p>
+      Proponho separar o que se verifica de graça do que exige a sua caixa:
+      <strong>2.2a</strong> (orquestração, DTO, consumidor do log, cumprimento da
+      política — 3 a 4 passos) e <strong>2.2b</strong> (adaptador Outlook e a
+      medição de 100&nbsp;ms — 2 passos, no máximo).
+    </p>
+    <p>
+      A base é uma amostra só — o 2.1 —, então é recomendação, não lei. Separo
+      porque custa pouco e o custo de errar é um marco que não fecha.
+    </p>
+  </div>
+  <div>
+    <span class="tempo">revisão visual</span>
+    <h3>Ler a §22 do FASE2.md</h3>
+    <p>
+      É a seção nova, com tudo o que está acima em detalhe — incluindo as duas
+      medições que não estão neste relatório e as armadilhas de PowerShell/OOM que
+      valem para quem for mexer nos scripts.
+    </p>
+  </div>
+</div>
+
+<h2><span class="num">08</span>Onde eu ainda posso estar errado</h2>
+
+<p>
+  A parte do relatório que a minha narrativa naturalmente suavizaria, então ela
+  fica separada e no fim, onde não dá para não ver.
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>Limitações conhecidas</caption>
+  <thead><tr><th>O que</th><th>Por quê importa</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>A Q8 autoriza zero</strong></td>
+      <td>O Iris não pode concluir ausência. Se a UI depender disso, ela não funciona ainda.</td>
+    </tr>
+    <tr>
+      <td><strong>A política não é aplicada</strong></td>
+      <td>Existe como modelo; nada no produto a consulta. Um chamador futuro pode contorná-la sem esbarrar em nada.</td>
+    </tr>
+    <tr>
+      <td><strong>Sensibilidade do token</strong></td>
+      <td>Não medida. Se falhar, a identidade de ambiente precisa de outra fonte, e não tenho candidata boa.</td>
+    </tr>
+    <tr>
+      <td><strong>Publicação para a UI</strong></td>
+      <td>A dívida persiste e é consultável; ninguém consome. E a entrega será <em>ao menos uma vez</em> — o consumidor terá de ser idempotente.</td>
+    </tr>
+    <tr>
+      <td><strong><code>attempt_key</code></strong></td>
+      <td>Implementa "última tentativa aberta vence", não "dados mais frescos vencem". Pode descartar resultado bom.</td>
+    </tr>
+    <tr>
+      <td><strong>Crash test</strong></td>
+      <td>Cobre término abrupto do processo. Não cobre falta de energia, corrupção de mídia nem morte do kernel.</td>
+    </tr>
+    <tr>
+      <td><strong>Um store só</strong></td>
+      <td>O script de varredura agrega todos os stores. Hoje coincide porque só há um; com dois, o número deixa de descrever a caixa que a matriz nomeia.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<footer>
+  Iris · Fase 2 · Marco 2.1<br>
+  Detalhe completo em <code>FASE2.md</code> §22 · medições em <code>tools/q8-*.ps1</code> e <code>tools/conferir-crash.py</code><br>
+  260 testes, 0 falhas · <code>dotnet test Iris.slnx</code>
+</footer>
+
+</div>
