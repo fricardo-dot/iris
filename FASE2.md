@@ -2244,19 +2244,40 @@ O S6 (concordância de contagens) e o S7 (cobertura conhecida) são
 O experimento de abrir para 3 meses foi interrompido, e o motivo é um dado
 em si:
 
+A curva inteira, registrada por `tools/` a cada 30 s:
+
 ```
-Outlook: "Atualizando Caixa de Entrada (19,1 GB, 2 horas)"
-taxa medida     : 255 MB/min
-livre no disco  : 7,98 GB
-tempo ate encher: ~32 min
+decorrido | entrada | mais antigo |  OST MB | livre GB | MB/min
+00:00:30  |    1442 |       08/07 |   1.893 |     8,35 |   +255
+00:01:01  |    1531 |       03/07 |   2.020 |     8,23 |   +255
+00:02:01  |    1690 |       29/06 |   2.147 |     8,10 |   +255
+00:02:31  |    1769 |       25/06 |   2.275 |     7,98 |   +255
+00:03:31  |    1865 |       22/06 |   2.402 |     7,85 |   +255
+00:06:32  |  (Outlook fechado pelo usuario)
+00:08:32  |    1004 |       23/07 |   1.448 |     8,76 |   -954   <- compactacao
 ```
+
+Taxa **constante**, não em rajadas. O Outlook anunciava *"Atualizando Caixa
+de Entrada (19,1 GB, 2 horas)"* e havia **7,98 GB** livres: nesse ritmo o
+disco encheria em **~32 min**, muito antes das 2 horas.
 
 > **Alargar a janela de cache não é um experimento barato.** É uma
 > operação de horas, dezenas de GB, e pode encher o disco antes de
 > terminar. O Outlook anuncia o total, e não avisa que não cabe.
 
 Baixou ~890 MB em ~4 minutos antes de o usuário parar. A janela voltou
-para 1 mês.
+para 1 mês e a compactação devolveu **954 MB** — terminando **abaixo** do
+tamanho inicial (1.448 contra 1.511 MB).
+
+**E os 19 GB não eram a Entrada.** Em 3,5 minutos ela recuou de 23/07 para
+22/06 e ganhou 861 itens — cerca de **1 MB por item**. Nesse ritmo, a
+Entrada inteira em 3 meses custaria ~3 GB e ~12 minutos. O resto dos 19 GB
+está nas outras pastas, e a maior parte são justamente as **dezenas de
+pastas antigas em Itens Excluídos** — as mesmas que a §19.2 mostrou
+reportando zero itens.
+
+Ou seja: o que custa caro para baixar é exatamente o que hoje está
+invisível para o Iris.
 
 **Consequência para a Q8:** a matriz de providers **não pode** ser
 levantada só mexendo no cursor desta máquina. "Exchange em cache, 3 meses"
