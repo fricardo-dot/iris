@@ -1,8 +1,8 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 18 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
-Gate arquitetural da Q2 (14). **Q6a respondida (15)**. **Q4 sob mutação,
-Q5 e a lacuna Move-in da Q3 (16)** — e a Q3 caiu.
+**Versão:** 19 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
+e `Restrict` de verdade (16)**. **Gate de sincronização (17)**.
 
 A v1 foi reprovada por um bom motivo: ela transformava em **pergunta de
 medição** coisas que são **decisões de correção**. Perguntar "qual é a
@@ -1558,8 +1558,10 @@ troca o id interno de uma linha pelo de outra, ou `DELETE` da linha
 "perdedora". Depois de reescrever, desfazer é impossível — e a Q2 garante
 que vaí haver união errada, porque nenhuma evidência é suficiente sozinha.
 
-**I4 — Toda aresta carrega procedência, confiança e geração.** Qual
-evidência sustentou, quão forte, e quando. Violação: tabela de ligação com
+**I4 — Toda aresta carrega procedência, confiança e instante.** Qual
+evidência sustentou, quão forte, e quando. *(A 1ª redação exigia
+**geração**; aresta criada por evento, importação ou confirmação manual não
+pertence a geração nenhuma. `generation_id` é opcional.)* Violação: tabela de ligação com
 duas colunas de id e mais nada. Sem procedência não dá para reavaliar
 quando a regra melhorar, e a §10.6 mostrou que as regras erram muito.
 
@@ -1581,11 +1583,19 @@ Corolário: **"saiu da janela" tem de ser distinguível de "ausente no
 Outlook"** — e o cutoff tem de ser **congelado** por geração, senão uma
 janela móvel move o chão durante a varredura.
 
-**I8 — Evidência igual em itens COEXISTENTES obriga bifurcar, nunca
-fundir.** É o `Copy` da §11.1: ele duplica `SearchKey` e Message-ID. Se os
-dois estão lá ao mesmo tempo, são dois. Violação: dedup por `SearchKey`
-sem checar coexistência. Vale também para a propriedade nomeada que o Iris
-venha a escrever — a §11.4 registra que o `Copy` a duplicaria igual.
+**I8 — Evidência igual em itens cuja coexistência foi CONFIRMADA obriga
+bifurcar, nunca fundir.** É o `Copy` da §11.1: ele duplica `SearchKey` e
+Message-ID. Violação: dedup por `SearchKey` sem checar coexistência. Vale
+para a propriedade nomeada que o Iris venha a escrever — a §11.4 registra
+que o `Copy` a duplicaria igual.
+
+*Refinamento:* **"coexistentes" NÃO pode significar "há duas linhas no
+cache"**. A §16.1 mediu que um corte fraturado deixa a encarnação velha e a
+nova no cache **sem que jamais tenham coexistido no provider**. Se I8
+usasse presença no cache, todo `Move` visto por um corte fraturado
+obrigaria bifurcar — seguro contra fusão falsa, e destruindo a correlação
+de movimentação que se quer preservar. Coexistência tem de ser
+**confirmada por verificação compatível**.
 
 ### 14.3 O que este gate NÃO decide
 
@@ -1659,117 +1669,210 @@ causa disso: em vez de usar o retorno, ele guarda o `EntryID` antes e tenta
 
 ---
 
-## 16. Q4 sob mutação, Q5, e a lacuna Move-in da Q3
+## 16. Q4, Q5 e Q3 — **2ª versão**, com matriz temporal
 
-`tools/q4-mutacao.ps1`. Cria duas pastas próprias e 60 itens próprios;
-remove tudo no fim. **Nenhuma mensagem do usuário é lida, movida ou
-apagada.**
+`tools/q4-matriz.ps1` e `tools/q3-restrict.ps1`. Criam pastas próprias e
+itens marcados com um **GUID gerado na execução**; a limpeza usa o marcador
+e os `EntryID` capturados.
 
-Fases e oráculos **separados**, e isso não é formalidade: a Q4 pergunta
-*"esta geração pode ser declarada válida?"* e a Q5 pergunta *"dadas
-observações válidas, que conclusão é segura?"*. Uma mutação concorrente
-pode **invalidar** a geração — aí ela é evidência para a Q4 e não pode
-alimentar a Q5.
+A 1ª versão (`q4-mutacao.ps1`) tinha **três defeitos que invalidavam as
+conclusões** — §16.5.
 
-### 16.1 Q4 — a enumeração sob mutação
+Oráculos **separados**: a Q4 pergunta *"esta geração pode ser declarada
+válida?"*; a Q5, *"dadas observações válidas, que conclusão é segura?"*.
+Mutação concorrente pode **invalidar** a geração — aí é evidência para a Q4
+e não pode alimentar a Q5.
 
-| Cenário | Resultado |
-|---|---|
-| sem mutação, duas passadas | manifestos **idênticos** |
-| item **criado** durante a varredura | a varredura em curso **já o viu** (61 de 60) |
-| item **movido** entre duas pastas, com o cursor aberto | **contado DUAS vezes** |
+### 16.1 Q4 — e é pior do que "contado duas vezes"
 
-O terceiro é o que importa. Mover um item de `origem` para `destino` com o
-cursor de `origem` **aberto**:
+**Matriz A** — uma pasta, ordem determinada (`Sort` por assunto), lote de
+10, `Move` disparado ao fim do **lote 1**:
 
-- ele apareceu na varredura da **origem**, com a chave **antiga**;
-- ele está no **destino**, com a chave **nova**;
-- e a chave **mudou** no caminho.
+| | alvo já lido? | apareceu no manifesto? | **itens lidos** |
+|---|---|---|---|
+| controle, sem mutação | — | — | **40 de 40** |
+| A1 — alvo já lido | sim | sim | 40 |
+| A2 — alvo ainda não lido | não | não | **24 de 39** |
 
-> Não é só "contado duas vezes". É contado duas vezes **com identidades
-> diferentes** — as duas observações não têm como se reconhecer como o
-> mesmo item.
-
-Confirma §3.6 (enumeração duvidosa não faz sweep) por medição, e mostra que
-`Table` não é snapshot nem para inserção nem para movimentação.
-
-**NÃO exercitado:** falha COM no meio, cancelamento no meio, Outlook
-reiniciado no meio. São os três que faltam da lista da §4.
-
-### 16.2 Q3 — **o incremental por `LastModificationTime` não descobre entrada**
-
-Este é o achado mais consequente do dia, e ele veio de uma pergunta que a
-§4 **não fazia**: a Q3 testava item movido para **fora** e exclusão; faltava
-o item movido para **dentro**.
+A última célula é o achado, e repete:
 
 ```
-LastModificationTime ANTES do move : 23/08/2026 23:45:51
-checkpoint                          : 23/08/2026 23:45:55
-LastModificationTime DEPOIS         : 23/08/2026 23:45:51
+sem mutacao        : 40 itens em 4 lotes
+move no lote 1 (1) : 24   (a pasta tinha 40)
+move no lote 1 (2) : 23   (a pasta tinha 39)
+move no lote 1 (3) : 22   (a pasta tinha 38)
 ```
 
-> **`Move` NÃO atualiza `PR_LAST_MODIFICATION_TIME`.**
->
-> O item chega na pasta de destino carregando um carimbo **anterior ao
-> checkpoint**. Um incremental `LastModificationTime > checkpoint`
-> **nunca** o descobre.
+> **Um único `Move` durante a varredura truncou a `Table` em exatamente 16
+> itens, três vezes seguidas** — e a varredura reportou `EndOfTable`
+> normalmente, sem erro.
 
-E janela de sobreposição **não resolve**: o carimbo pode ser
-arbitrariamente antigo. Arrastar para uma pasta uma mensagem de dois anos
-atrás produz uma associação nova com carimbo de dois anos atrás.
+A varredura devolveu **60% da pasta parecendo completa**. Isso é pior que
+duplicar: duplicação dá para notar; truncagem silenciosa, não.
 
-**Consequência para o desenho:** o *high-water mark* da §4, que estava
-"já decidido", **não serve sozinho**. Ele detecta edição e chegada por
-transporte; não detecta **associação nova por movimentação**. Ou o
-incremental é acompanhado de varredura completa periódica — e a §13 mediu
-que ela custa ~3,2 s —, ou associações entram no cache com atraso
-indefinido.
+**Matriz B** — o `Move` acontece **entre** as duas varreduras:
 
-Isso reposiciona a Q3: ela deixa de ser "o acelerador funciona?" e passa a
-ser **"o acelerador é seguro para QUE subconjunto de mudanças?"**. A
-resposta já tem uma exclusão medida.
+| ordem | na origem? | no destino? | resultado |
+|---|---|---|---|
+| origem antes, destino depois | sim (chave velha) | sim (chave nova) | **DUPLICADO** |
+| destino antes, origem depois | não | não | **PERDIDO** |
+
+Isso **não** é defeito da `Table`: é não existir corte atômico entre pastas.
+A 1ª versão chamou o primeiro caso de "contado duas vezes no mesmo instante
+lógico" — **não existe instante lógico comum**, e a frase inventava uma
+simultaneidade que o experimento não tinha.
+
+> A união de duas varreduras sequenciais pode conter a encarnação **velha**
+> e a **nova** do mesmo movimento — ou **nenhuma das duas** —, sem
+> igualdade que permita reconhecê-las como o mesmo item.
+
+**NÃO exercitado:** falha COM, cancelamento e Outlook reiniciado no meio.
+
+### 16.2 Q3 — o incremental por `LastModificationTime` não descobre entrada
+
+Agora com `Items.Restrict` **de verdade** e checkpoint com segundos:
+
+```
+--- Move-in ---
+LMT antes  (UTC)   : 2026-08-23 23:56:25
+LMT depois (UTC)   : 2026-08-23 23:56:25     <- nao mudou
+LMT depois (LOCAL) : 2026-08-23 20:56:25
+checkpoint (LOCAL) : 2026-08-23 20:56:31
+filtro: [LastModificationTime] > '08/23/2026 20:56:31'
+Restrict devolveu 0; ACHOU o alvo? NAO
+```
+
+E o **`Copy`-in dá o mesmo**: carimbo não muda, `Restrict` devolve 0 —
+contra a expectativa razoável de que uma cópia, sendo objeto novo,
+nasceria com carimbo novo.
+
+> Neste Exchange em cache, neste store: `MailItem.Move` e `MailItem.Copy`
+> entre pastas **preservaram** `PR_LAST_MODIFICATION_TIME`, e um
+> `Items.Restrict([LastModificationTime] > checkpoint)` **não encontrou** o
+> item recém-chegado.
+
+**Um contraexemplo basta** para derrubar a garantia — mesmo raciocínio da
+Q2. **Não** está medido: item antigo de verdade (o alvo tinha minutos),
+movimento pela UI, por regra, por arquivamento, entre stores, e chegada por
+transporte. A frase "o carimbo pode ser arbitrariamente antigo" da 1ª
+versão era **inferência, não medição**.
+
+**Consequência:** o *high-water mark* da §4, que estava "já decidido",
+**não fecha membership**. Os papéis se invertem:
+
+| | antes | depois |
+|---|---|---|
+| varredura completa por pasta | verificação periódica | **mecanismo de completude** |
+| incremental e eventos | caminho normal | **aceleradores de frescor** |
+
+A §13 mediu ~3,2 s para a caixa inteira. Isso deixa de ser custo eventual e
+vira **custo central do produto**.
 
 ### 16.3 Q5 — o que a ausência prova
 
-Sobre geração **estável**, sem mutação concorrente: item movido para outra
-pasta some da origem, e a origem vê **exatamente o mesmo** que veria se ele
-tivesse sido apagado.
+Item movido some da origem, e como a chave **mudou**, procurar a chave
+antiga no resto da caixa **não o encontra**.
 
-E é pior do que "some": como a chave **mudou** no `Move`, procurar a chave
-antiga no resto da caixa **não o encontra**. A reconciliação teria de
-procurar por **evidência de correlação** — `SearchKey`, Message-ID —, que
-a §11 mostrou serem insuficientes sozinhas.
+Que isso seja *idêntico* ao que se veria numa exclusão combina **medição do
+ramo `Move`** com o conhecimento prévio da §4 de que exclusão não deixa
+tombstone pelo OOM. O ramo da exclusão **não foi medido** (§16.4).
 
-Confirma a §3.4 e o que a §11.3 já antecipava, agora por medição direta.
-E dá a forma da resposta da Q5, que **não é** a que a §4 pedia:
+A pergunta original da Q5 **não tem resposta**: a §11.3 mostrou que
+`Copy`+exclusão pode ser indistinguível de `Move`, e a §16.3 mostra que a
+origem não tem informação para distinguir. A que tem resposta é **quais
+transições são seguras APESAR da indistinguibilidade** — §17.
 
-> A Q5 pedia uma política que "distingue movido, excluído e temporariamente
-> invisível". Isso é impossível: a §11.3 mostrou que `Copy`+exclusão pode
-> ser indistinguível de `Move`, e a §16.3 mostra que a pasta de origem não
-> tem informação nenhuma para distinguir. A pergunta que tem resposta é
-> **quais transições de estado são seguras APESAR da
-> indistinguibilidade** — e a resposta está na §11.3.
+### 16.4 A exclusão dura não foi executada, e por decisão
 
-### 16.4 O que ficou NÃO validado
+O usuário autorizou trabalho autônomo. O critério que usei não foi cautela
+vaga, foi **qual decisão mudaria com o resultado**:
 
-- **Falha COM, cancelamento e Outlook reiniciado** no meio da enumeração.
-- **Exclusão dura** (perna da Q5). Não executada, e por decisão: a própria
-  §4 registra que a resposta é conhecida e "pouco útil" — esvaziamento não
-  deixa tombstone recuperável pelo OOM. Destruir item permanentemente para
-  reconfirmar isso é risco sem retorno.
-- **Copy-in**: só o `Move`-in foi medido. `Copy` provavelmente atualiza o
-  carimbo (cria objeto novo), mas **não foi medido**.
+- sem tombstone, a ausência continua indistinguível — que a §4 já
+  registrava como resposta conhecida e "pouco útil";
+- com algum rastro inesperado, seria evidência **específica deste
+  provider**, e a política segura continuaria sem afirmar "excluído".
 
-### 16.5 Duas armadilhas de OOM que custaram execução
+Nenhum dos dois muda o desenho. E a §8 pede **perda aceita de antemão**:
+autorização genérica dada por usuário ausente é evidência mais fraca que
+consentimento específico para perda irreversível.
 
-**`Items.Add` numa pasta qualquer + `Save()` deposita em RASCUNHOS.** O
-item não nasce na pasta em que a coleção foi obtida: medido,
-`m.Parent.Name` devolve `"Rascunhos"` e a pasta alvo fica com 0 itens. O
-idioma correto é criar e **mover** em seguida — e por isso a limpeza
-também precisa varrer Rascunhos, para o caso de falhar entre o `Save` e o
-`Move`.
+Fica **não validada e não necessária** para a política.
 
-**`PR_LONGTERM_ENTRYID_FROM_TABLE` só existe como COLUNA DE `Table`.** Pelo
-`PropertyAccessor` de um item ela dá *"desconhecida ou não encontrada"*. O
-equivalente no item é o próprio `.EntryID`, que a §12.2 mediu ter o mesmo
-valor.
+### 16.5 Três defeitos meus, e dois são do tipo que volta
+
+**1. O teste da Q3 montava um filtro DASL e nunca o usava.** Enumerava a
+tabela e comparava datas em memória. Isso mede o **valor da propriedade**,
+não a semântica do `Restrict`. Seria afirmar sobre `Restrict` sem ter
+chamado `Restrict`.
+
+**2. O checkpoint perdia os segundos.** `.ToString("g")` não os tem.
+`PR_LAST_MODIFICATION_TIME` volta em **UTC** pelo `PropertyAccessor`
+(medido: 23:56 UTC para 20:56 local) e o `Restrict` com `[Campo]` compara
+em hora **LOCAL**. Com o checkpoint truncado ao minuto, **qualquer** item
+daquele minuto passava — e o teste disse "o `Restrict` achou", o **oposto**
+do resultado real. Fuso e formato no mesmo teste: a mesma família de erro
+que na Q1 custou 803 mensagens.
+
+**3. Os oráculos não discriminavam.** O caso do `Move` recebia `Ok = True`
+incondicionalmente, e o achado **certo** da Q3 aparecia como falha no
+resumo. Resumo que não distingue acerto de erro não é resumo.
+
+E um quarto, de honestidade: o cabeçalho prometia "nenhuma mensagem do
+usuário é lida" enquanto a limpeza **varria todos os Rascunhos lendo
+assunto**. Agora usa marcador GUID e `EntryID` capturados.
+
+### 16.6 Duas armadilhas de OOM
+
+**`Items.Add` + `Save()` deposita em RASCUNHOS**, não na pasta da coleção.
+Medido: `m.Parent.Name` = `"Rascunhos"`, pasta alvo com 0. O idioma é criar
+e **mover** — e a limpeza precisa varrer Rascunhos, para o caso de falhar
+entre o `Save` e o `Move`.
+
+**`PR_LONGTERM_ENTRYID_FROM_TABLE` só existe como COLUNA de `Table`.** Pelo
+`PropertyAccessor` de um item dá *"desconhecida ou não encontrada"*. O
+equivalente no item é o próprio `.EntryID`.
+
+---
+
+## 17. Gate de sincronização
+
+O §14 proíbe schema que torne correlação irreversível. Ele **não** cobre o
+que a §16 revelou, que é **quando uma observação pode ser crida**.
+
+**S1 — Incremental nunca certifica completude nem ausência.** A §16.2
+mediu que `Move`-in e `Copy`-in não aparecem num `Restrict` por
+`LastModificationTime`. O **tipo de cobertura** — incremental ou completa —
+tem de ser persistido junto com a observação. Violação: um único campo
+`ultima_sincronizacao` por pasta, sem dizer o que aquela passada cobria.
+
+**S2 — Só geração completa, válida e publicada atomicamente pode marcar
+associação como ausente.** A §16.1 mediu varredura truncada em 40% que se
+reportou normal. Falha, cancelamento e restart **não publicam metade**.
+
+**S3 — O schema aceita sobreposição transitória.** Não pode existir
+restrição "um item lógico tem exatamente uma pasta atual": a matriz B
+produz, legitimamente, a encarnação velha e a nova ao mesmo tempo.
+Violação: índice único sobre o item lógico na tabela de associação.
+
+**S4 — Observações de pastas diferentes NÃO formam instantâneo global.**
+Medido na matriz B. Nem a UI nem a correlação podem inferir simultaneidade
+entre pastas. Violação: "total da caixa" somando contagens de gerações
+diferentes e apresentando como um número.
+
+**S5 — Retenção expurga dado derivado, nunca estado do usuário só porque
+saiu da janela.** Combina com I7: "saiu da janela" e "ausente no Outlook"
+são coisas diferentes.
+
+### O que falta para a Q4 fechar, e virou a maior pendência
+
+A §16.1 mostra que a varredura **pode** ser silenciosamente incompleta. Não
+mostra **como o Iris saberia disso em produção** — nos experimentos, quem
+provocou a mutação fui eu, então eu sabia.
+
+> A maior pendência do 2.0 deixou de ser a Q3 e passou a ser a **Q4**: um
+> **sinal operacional** que permita ao Iris declarar uma geração
+> confiável. Contagem antes/depois, `PR_CONTENT_COUNT` da pasta,
+> `ChangeKey` da pasta, evento de modificação — **nada disso foi medido**.
+
+A Q3 já entregou o mais importante: **não pode ser base de completude**. O
+que resta dela é caracterizar onde ainda ajuda.
