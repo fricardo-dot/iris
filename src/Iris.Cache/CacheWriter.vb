@@ -49,7 +49,18 @@ Namespace Global.Iris.Cache
     ''' evento deixaria a geração no banco e a UI sem saber dela — e nada no
     ''' disco registrando essa dívida. Com <c>publication_log</c> gravado na
     ''' mesma transação da geração, os únicos estados possíveis são: nada, ou
-    ''' geração com dívida registrada, que a UI drena ao voltar.
+    ''' geração com dívida registrada e consultável.
+    '''
+    ''' <b>O que está provado, e o que não está.</b> Está provado que a dívida
+    ''' persiste ao término abrupto do processo e é consultável depois. NÃO
+    ''' está provado que "a UI drena ao voltar": não existe consumidor de
+    ''' <see cref="PublicacoesPendentes"/> no produto ainda — só o teste chama.
+    ''' A integração é do 2.2.
+    '''
+    ''' E quando existir, a entrega será <b>ao menos uma vez</b>: morrer depois
+    ''' de a UI agir e antes de <see cref="MarcarDrenada"/> repete a entrega. É
+    ''' a escolha certa — repetir é recuperável, perder não —, mas o consumidor
+    ''' precisa ser idempotente, e isso é contrato dele, não deste arquivo.
     ''' </summary>
     Public NotInheritable Class CacheWriter
 
@@ -169,9 +180,22 @@ Namespace Global.Iris.Cache
                 ' atribuido no INSERT, que acontece ao PUBLICAR — entao uma
                 ' varredura velha que termina tarde recebe a chave MAIOR, e um
                 ' teste de monotonicidade sobre generation_key aprovaria
-                ' exatamente o caso que ele deveria barrar. attempt_key e
-                ' atribuido ao ABRIR, e e essa a ordem que diz qual leitura e
-                ' mais antiga.
+                ' exatamente o caso que ele deveria barrar.
+                '
+                ' A politica e "a tentativa aberta por ultimo vence", e ela NAO
+                ' e o mesmo que "os dados mais frescos vencem". Tentativas
+                ' sobrepostas intercalam leituras: a mais velha pode, em tese,
+                ' ter lido parte dos dados depois da mais nova. Ordem de
+                ' abertura e aproximacao conservadora — erra para o lado de
+                ' descartar trabalho bom, nunca para o lado de deixar a cabeca
+                ' recuar.
+                '
+                ' E nao trava o sistema: a guarda compara so com a cabeca
+                ' PUBLICADA, entao uma tentativa nova abandonada nao bloqueia
+                ' ninguem. O custo maximo e perder o frescor de uma varredura,
+                ' e a proxima recupera. Afirmar frescor de verdade exigiria
+                ' serializar as varreduras por pasta ou ter leitura com
+                ' snapshot, e nenhuma das duas existe aqui.
                 Dim cabeca = Ler(tx, "SELECT g.attempt_key FROM folder f " &
                     "JOIN generation g ON g.generation_key = f.published_generation_key " &
                     "WHERE f.folder_key = $f", ("$f", CObj(folderKey)))

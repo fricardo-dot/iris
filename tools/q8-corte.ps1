@@ -1,9 +1,14 @@
-# Q8 - Qual e o CORTE DE OBSERVABILIDADE deste ambiente, medido?
+# Q8 - Qual e o ALCANCE MINIMO OBSERVADO deste ambiente?
 #
-# A EnvironmentPolicy declara um cutoff abaixo do qual nada e observavel.
-# Ate agora ele estava como Nothing - ou seja, declarado e nao medido.
-# Aqui ele e medido pelo unico jeito honesto: perguntando ao proprio OOM
-# qual e a mensagem mais ANTIGA que ele alcanca, varrendo a arvore inteira.
+# ALCANCE, nao FRONTEIRA - e a distincao e o motivo de este cabecalho ter
+# sido reescrito. A mensagem mais antiga que o OOM alcanca e onde os dados por
+# acaso acabam: pode ser mais nova que o limite da janela (nao existe correio
+# mais velho) ou mais velha que ele (itens que chegaram por outro caminho).
+#
+# A versao anterior deste script chamava isso de "corte de observabilidade" e
+# de "abaixo do qual nada e observavel" - exatamente a inferencia que o modelo
+# em EnvironmentPolicy.AlcanceMedido proibe. Serve para DESCREVER o que foi
+# visto, nunca para concluir "mais antigo que isto esta fora da janela".
 $ErrorActionPreference = "Stop"
 $ol = [Runtime.InteropServices.Marshal]::GetActiveObject("Outlook.Application")
 $ns = $ol.GetNamespace("MAPI")
@@ -93,5 +98,5 @@ Write-Host "mais NOVA       : $global:maxData"
 if ($global:minData -and $global:maxData) {
     $dias = [int]($global:maxData - $global:minData).TotalDays
     Write-Host "amplitude       : $dias dias"
-    Write-Host "corte medido    : $($global:minData.ToString('yyyy-MM-dd'))"
+    Write-Host "alcance minimo  : $($global:minData.ToString('yyyy-MM-dd'))  (o que se enxergou, NAO a fronteira da janela)"
 }

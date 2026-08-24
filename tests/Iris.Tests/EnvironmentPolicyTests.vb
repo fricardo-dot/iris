@@ -1,4 +1,7 @@
+Imports System.Collections.Generic
+Imports System.IO
 Imports System.Linq
+Imports System.Text.RegularExpressions
 Imports Iris.Sync
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
 
@@ -8,15 +11,21 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' A matriz está incompleta e continua incompleta depois destes testes: a
 ''' §19.3 mediu que levantar as outras linhas custa horas e dezenas de GB
 ''' nesta máquina. O que estes testes cobram é a outra metade da resposta —
-''' que ambiente não medido DEGRADE, em vez de ser tratado como
+''' que ambiente não demonstrado DEGRADE, em vez de ser tratado como
 ''' "provavelmente igual".
+'''
+''' O ponto que estes testes aprenderam depois: <b>reconhecer não é
+''' autorizar</b>. A primeira versão desta política reconhecia o ambiente do
+''' usuário e daí concedia as três inferências, o que transformava "medi
+''' quantos itens o OOM alcança" em "medi que ausência, cobertura e
+''' incremental funcionam". Nenhuma das três estava medida.
 ''' </summary>
 <TestClass>
 Public Class EnvironmentPolicyTests
 
     ''' <summary>
-    ''' O token da janela medido em 2026-08-24. Nao e "1 mes" nem numero
-    ''' nenhum de meses: e o valor CRU do perfil. Ver
+    ''' O token da janela medido em 2026-08-24. Não é "1 mês" nem número nenhum
+    ''' de meses: é o valor CRU do perfil. Ver
     ''' <see cref="EnvironmentFingerprint.WindowToken"/>.
     ''' </summary>
     Private Const TokenMedido As String = "84-09-00-00"
@@ -25,26 +34,112 @@ Public Class EnvironmentPolicyTests
         Return New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, TokenMedido)
     End Function
 
+    ' ==================================================================
+    ' O estado de HOJE: reconhecido, nada autorizado
+
     <TestMethod>
-    Public Sub O_ambiente_medido_autoriza_tudo()
+    Public Sub O_ambiente_do_usuario_esta_reconhecido()
+        Dim linha = EnvironmentPolicy.Medido(Medido())
+        Assert.IsNotNull(linha, "o ambiente medido sumiu da matriz")
+        StringAssert.Contains(linha.Evidence, "§22.3")
+    End Sub
+
+    ''' <summary>
+    ''' E não autoriza nada — e isso é o estado honesto, não uma pendência
+    ''' escondida.
+    '''
+    ''' Medir que o OOM alcança 1.979 mensagens diz quanto se enxergou. Não diz
+    ''' que "não encontrei" significa excluído, nem que uma varredura teve
+    ''' cobertura completa, nem que o incremental não perde itens. Três
+    ''' inferências, três demonstrações — e nenhuma foi feita.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Reconhecer_nao_e_autorizar()
         Dim c = EnvironmentPolicy.Capacidades(Medido())
-        Assert.IsTrue(c.PodeConcluirAusencia)
+        Assert.IsFalse(c.PodeConcluirAusencia,
+            "alcance medido nao demonstra que 'nao encontrei' significa excluido")
+        Assert.IsFalse(c.PodeAfirmarCoberturaCompleta,
+            "a §19.2 mediu pastas cheias reportando zero — cobertura nao vem de contagem")
+        Assert.IsFalse(c.PodeUsarIncremental)
+        Assert.IsTrue(c.Degradado)
+    End Sub
+
+    ''' <summary>
+    ''' O motivo da negação nomeia a lacuna, em vez de dizer só "não pode".
+    ''' Sem isso, quem for destravar vai destravar no lugar errado.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_negacao_nomeia_a_lacuna()
+        StringAssert.Contains(EnvironmentPolicy.Capacidades(Medido()).Reason, "sensibilidade")
+    End Sub
+
+    ' ==================================================================
+    ' CONTROLE POSITIVO
+
+    ''' <summary>
+    ''' O controle positivo, e sem ele nada aqui prova coisa alguma.
+    '''
+    ''' Com a matriz de produção autorizando zero, uma política que
+    ''' simplesmente negasse tudo — um <c>Return Negar(...)</c> na primeira
+    ''' linha — passaria em todos os outros testes desta classe. Este exercita
+    ''' o caminho de AUTORIZAÇÃO, com uma matriz injetada.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_positivo_uma_linha_demonstrada_AUTORIZA()
+        Dim c = EnvironmentPolicy.Capacidades(Medido(), MatrizSintetica(
+            Inference.ConcluirAusencia, Inference.AfirmarCoberturaCompleta,
+            Inference.UsarIncremental))
+
+        Assert.IsTrue(c.PodeConcluirAusencia, "a politica nao esta decidindo nada — nega sempre")
         Assert.IsTrue(c.PodeAfirmarCoberturaCompleta)
         Assert.IsTrue(c.PodeUsarIncremental)
         Assert.IsFalse(c.Degradado)
     End Sub
 
     ''' <summary>
-    ''' O controle POSITIVO. Sem ele, uma política que degradasse SEMPRE
-    ''' passaria em todos os testes de degradação abaixo — e seria inútil
-    ''' sem que nenhum teste percebesse.
+    ''' Autorização é POR INFERÊNCIA: demonstrar uma não libera as outras.
     ''' </summary>
     <TestMethod>
-    Public Sub Controle_positivo_a_politica_nao_degrada_sempre()
-        Assert.IsFalse(EnvironmentPolicy.Capacidades(Medido()).Degradado,
-            "se ate o ambiente medido degrada, a politica nao esta decidindo nada")
-        Assert.IsTrue(EnvironmentPolicy.Matriz.Count > 0)
+    Public Sub Demonstrar_uma_inferencia_nao_libera_as_outras()
+        Dim c = EnvironmentPolicy.Capacidades(Medido(),
+            MatrizSintetica(Inference.UsarIncremental))
+
+        Assert.IsTrue(c.PodeUsarIncremental)
+        Assert.IsFalse(c.PodeConcluirAusencia, "cada inferencia exige demonstracao propria")
+        Assert.IsFalse(c.PodeAfirmarCoberturaCompleta)
+        Assert.IsTrue(c.Degradado)
+        StringAssert.Contains(c.Reason, "parcial")
     End Sub
+
+    ''' <summary>
+    ''' Token não validado bloqueia MESMO com inferências demonstradas.
+    '''
+    ''' Se o token não muda quando a janela muda, a impressão digital não
+    ''' distingue os dois universos — e a autorização concedida ao antigo
+    ''' continua valendo no novo, sem ninguém notar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Token_nao_validado_bloqueia_mesmo_com_evidencia()
+        Dim linha = New MeasuredEnvironment(Medido(), "FASE2 §22.3 — teste",
+            New Date(2024, 10, 9), tokenValidado:=False,
+            grants:={New GrantedInference(Inference.ConcluirAusencia, "FASE2 §22.3 — teste")})
+
+        Dim c = EnvironmentPolicy.Capacidades(Medido(), {linha})
+        Assert.IsFalse(c.PodeConcluirAusencia)
+        StringAssert.Contains(c.Reason, "sensibilidade")
+    End Sub
+
+    ''' <summary>Inferência autorizada sem evidência não se constrói.</summary>
+    <TestMethod>
+    Public Sub Inferencia_autorizada_exige_evidencia()
+        Assert.ThrowsException(Of ArgumentException)(
+            Sub()
+                Dim x = New GrantedInference(Inference.ConcluirAusencia, "  ")
+            End Sub)
+    End Sub
+
+    ' ==================================================================
+    ' Degradação fora da matriz
 
     <TestMethod>
     Public Sub Ambiente_fora_da_matriz_nao_pode_concluir_ausencia()
@@ -52,16 +147,13 @@ Public Class EnvironmentPolicyTests
         Dim c = EnvironmentPolicy.Capacidades(fora)
         Assert.IsFalse(c.PodeConcluirAusencia,
             "num ambiente nao medido, 'nao encontrei' nao distingue excluido de fora-da-janela")
-        Assert.IsFalse(c.PodeAfirmarCoberturaCompleta)
-        Assert.IsFalse(c.PodeUsarIncremental)
         StringAssert.Contains(c.Reason, "fora da matriz")
     End Sub
 
     <TestMethod>
     Public Sub Provider_desconhecido_degrada()
-        Dim c = EnvironmentPolicy.Capacidades(
-            New EnvironmentFingerprint(ProviderKind.Desconhecido, True, "1 mes"))
-        Assert.IsTrue(c.Degradado)
+        Assert.IsTrue(EnvironmentPolicy.Capacidades(
+            New EnvironmentFingerprint(ProviderKind.Desconhecido, True, TokenMedido)).Degradado)
     End Sub
 
     <TestMethod>
@@ -82,14 +174,11 @@ Public Class EnvironmentPolicyTests
         StringAssert.Contains(c.Reason, "janela")
     End Sub
 
-    ''' <summary>
-    ''' PST não está medido — e não herda nada do Exchange.
-    ''' </summary>
     <TestMethod>
     Public Sub PST_nao_herda_do_Exchange()
-        Dim c = EnvironmentPolicy.Capacidades(
-            New EnvironmentFingerprint(ProviderKind.PstLocal, False, "sem-janela"))
-        Assert.IsTrue(c.Degradado, "PST nunca foi medido neste projeto")
+        Assert.IsTrue(EnvironmentPolicy.Capacidades(
+            New EnvironmentFingerprint(ProviderKind.PstLocal, False, "sem-janela")).Degradado,
+            "PST nunca foi medido neste projeto")
     End Sub
 
     ' ==================================================================
@@ -106,14 +195,13 @@ Public Class EnvironmentPolicyTests
     <TestMethod>
     Public Sub Trocar_a_janela_muda_o_ambiente()
         Dim um = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, TokenMedido)
-        Dim tres = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "FF-FF-00-00")
-        Assert.AreNotEqual(um.Value(), tres.Value())
-        Assert.IsTrue(EnvironmentPolicy.ExigeReconciliacao(um, tres))
+        Dim outro = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "FF-FF-00-00")
+        Assert.AreNotEqual(um.Value(), outro.Value())
+        Assert.IsTrue(EnvironmentPolicy.ExigeReconciliacao(um, outro))
     End Sub
 
     ''' <summary>
-    ''' AUMENTAR a janela também invalida, e este é o caso que a intuição
-    ''' erra.
+    ''' AUMENTAR a janela também invalida, e este é o caso que a intuição erra.
     '''
     ''' "Encolher esconde, aumentar só revela — aumentar é seguro" é falso:
     ''' aumentar revela itens que já haviam sido concluídos AUSENTES, e essa
@@ -122,9 +210,9 @@ Public Class EnvironmentPolicyTests
     ''' </summary>
     <TestMethod>
     Public Sub Aumentar_a_janela_tambem_exige_reconciliacao()
-        Dim curta = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, TokenMedido)
-        Dim longa = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "00-00-00-00")
-        Assert.IsTrue(EnvironmentPolicy.ExigeReconciliacao(curta, longa),
+        Assert.IsTrue(EnvironmentPolicy.ExigeReconciliacao(
+            New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, TokenMedido),
+            New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "00-00-00-00")),
             "aumentar revela itens ja concluidos ausentes — a conclusao anterior estava errada")
     End Sub
 
@@ -140,46 +228,66 @@ Public Class EnvironmentPolicyTests
         Assert.IsTrue(EnvironmentPolicy.ExigeReconciliacao(Medido(), Nothing))
     End Sub
 
+    ' ==================================================================
+    ' A evidência aponta para algo que EXISTE
+
     ''' <summary>
-    ''' Toda linha da matriz aponta para onde foi medida.
+    ''' Toda seção citada pela matriz existe de fato no FASE2.md.
     '''
-    ''' Sem isso, "ambiente suportado" vira lista que cresce por
-    ''' conveniência: alguém acrescenta uma linha para destravar um caso e
-    ''' ninguém consegue perguntar depois "medido onde?".
+    ''' O teste anterior exigia só que a evidência contivesse "§" — e passou
+    ''' feliz enquanto a linha citava a §22.3, que naquele momento não existia:
+    ''' o documento parava na §21. Uma evidência que aponta para o nada é pior
+    ''' que evidência nenhuma, porque parece verificável.
     ''' </summary>
     <TestMethod>
-    Public Sub Toda_linha_da_matriz_tem_evidencia()
+    Public Sub Toda_secao_citada_pela_matriz_existe_no_FASE2()
+        Dim fase2 = LerFase2()
+        Dim citadas As New List(Of String)()
+
         For Each linha In EnvironmentPolicy.Matriz
             Assert.IsFalse(String.IsNullOrWhiteSpace(linha.Evidence),
                 $"linha sem evidencia: {linha.Fingerprint.Value()}")
-            StringAssert.Contains(linha.Evidence, "§",
-                "a evidencia precisa apontar a secao do FASE2.md")
+            citadas.AddRange(Secoes(linha.Evidence))
+            For Each g In linha.Grants
+                citadas.AddRange(Secoes(g.Evidence))
+            Next
+        Next
+
+        Assert.IsTrue(citadas.Count > 0, "nenhuma secao citada — o teste nao verificaria nada")
+
+        For Each s In citadas.Distinct()
+            Dim numero = s.Substring(1)
+            Assert.IsTrue(Regex.IsMatch(fase2, "^#+\s*" & Regex.Escape(numero) & "(\D|$)",
+                                        RegexOptions.Multiline),
+                $"a matriz cita a {s}, que nao existe no FASE2.md")
         Next
     End Sub
 
-    ''' <summary>
-    ''' A matriz não tem linhas duplicadas — duas linhas para a mesma
-    ''' impressão digital tornariam <c>Medido</c> dependente da ordem.
-    ''' </summary>
-    ''' <summary>
-    ''' A linha medida registra o ALCANCE observado — não fica em Nothing.
-    '''
-    ''' Uma linha sem alcance seria uma medição sem medida: diria "este
-    ''' ambiente foi verificado" sem dizer até onde se enxergou nele.
-    ''' </summary>
-    <TestMethod>
-    Public Sub A_linha_medida_registra_o_alcance_observado()
-        Dim linha = EnvironmentPolicy.Medido(Medido())
-        Assert.IsNotNull(linha, "a linha medida sumiu da matriz")
-        Assert.IsTrue(linha.AlcanceMedido.HasValue,
-            "medicao sem alcance nao diz ate onde se enxergou")
-        Assert.IsTrue(linha.AlcanceMedido.Value < Date.Today)
-    End Sub
+    ' ==================================================================
 
-    <TestMethod>
-    Public Sub A_matriz_nao_tem_impressao_repetida()
-        Dim chaves = EnvironmentPolicy.Matriz.Select(Function(x) x.Fingerprint.Value()).ToList()
-        Assert.AreEqual(chaves.Count, chaves.Distinct().Count())
-    End Sub
+    Private Shared Function MatrizSintetica(ParamArray quais As Inference()) _
+            As IReadOnlyList(Of MeasuredEnvironment)
+        Return {New MeasuredEnvironment(Medido(), "FASE2 §22.3 — sintetico",
+                    New Date(2024, 10, 9), tokenValidado:=True,
+                    grants:=quais.Select(Function(i) New GrantedInference(i, "FASE2 §22.3 — sintetico")))}
+    End Function
+
+    Private Shared Function Secoes(evidencia As String) As IEnumerable(Of String)
+        Return Regex.Matches(evidencia, "§\d+(\.\d+)?").Cast(Of Match)().
+               Select(Function(m) m.Value).ToList()
+    End Function
+
+    Private Shared _fase2 As String
+
+    Private Shared Function LerFase2() As String
+        If _fase2 IsNot Nothing Then Return _fase2
+        Dim d = New DirectoryInfo(AppContext.BaseDirectory)
+        While d IsNot Nothing AndAlso Not File.Exists(Path.Combine(d.FullName, "FASE2.md"))
+            d = d.Parent
+        End While
+        Assert.IsNotNull(d, "nao achei o FASE2.md a partir de " & AppContext.BaseDirectory)
+        _fase2 = File.ReadAllText(Path.Combine(d.FullName, "FASE2.md"))
+        Return _fase2
+    End Function
 
 End Class

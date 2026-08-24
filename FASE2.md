@@ -2590,3 +2590,229 @@ tenant. Ficou lá, vazia.
 raiz de Itens Excluídos, não apaga.** Esvaziar a pasta jogou 100 itens
 meus soltos na pasta do usuário; só um segundo `Delete()`, já na raiz, os
 eliminou. Quem escrever limpeza precisa saber que **são dois passos**.
+
+---
+
+## 22. Marco 2.1 — a persistência, e o que ela obrigou a admitir
+
+O 2.1 fecha os itens **9** e **10** do pronto da Fase 2 (§8) e dá à **Q8** a
+única resposta que ela admite hoje. São quatro passos implementados —
+presença/varredura, gate de schema, banco real, primitivas transacionais — e
+uma medição que me corrigiu no meio.
+
+### 22.1 Critério 9 — morrer entre gravar, marcar e publicar
+
+O critério pede que **gravar as linhas**, **avançar o checkpoint** e
+**publicar** sobrevivam a morrer no meio. A resposta não é "tentar de novo":
+é escolher as fronteiras de forma que **todos os estados intermediários
+possíveis sejam aceitáveis**.
+
+**Linhas e checkpoint vão na MESMA transação.** Separados, morrer entre os
+dois produz um de dois males:
+
+| Ordem | O que acontece na retomada | Gravidade |
+|---|---|---|
+| Checkpoint à frente das linhas | **pula mensagens** | perda silenciosa — sem erro, sem log |
+| Linhas à frente do checkpoint | relê a página | inofensivo, porque a gravação é idempotente |
+
+Juntos, nenhum dos dois acontece.
+
+**A publicação é uma LINHA, não um evento.** Se publicar fosse disparar um
+evento para a UI, morrer depois do commit e antes do evento deixaria a
+geração no banco e a UI sem saber dela — e **nada no disco registrando essa
+dívida**. Com `publication_log` gravado na mesma transação da geração, os
+únicos estados possíveis são: nada, ou geração com dívida registrada e
+consultável.
+
+Os quatro pontos, medidos matando o processo e reabrindo o arquivo com um
+leitor independente (python `sqlite3`, não o código do teste):
+
+| Morre em | stage | cursor | linhas | geração | dívida | cabeça |
+|---|---|---|---|---|---|---|
+| dentro da página | `aberta` | — | 0 | 0 | 0 | — |
+| depois do commit da página | `varrendo` | `cursor-1` | 2 | 0 | 0 | — |
+| dentro da publicação | `varrendo` | `cursor-3` | 6 | 0 | 0 | — |
+| depois do commit da publicação | `publicada` | `cursor-3` | 6 | 1 | **1 não drenada** | 1 |
+| não morre | `publicada` | `cursor-3` | 6 | 1 | 1 | 1 |
+
+**O que está provado e o que não está.** Provado: recuperação após término
+abrupto do processo no Windows, com WAL, nos pontos transacionais
+exercitados. **Não** provado: falta de energia, corrupção de mídia, morte do
+kernel. E — ponto que o Codex cobrou, e é justo — não existe consumidor de
+`PublicacoesPendentes` no produto ainda, só o teste. Está provado que a
+dívida **persiste e é consultável**, não que "a UI drena ao voltar". A
+integração é do 2.2, e a entrega será **ao menos uma vez**.
+
+**Matar não é lançar.** O harness usa `Process.Kill()` = `TerminateProcess`.
+`Environment.Exit` roda finalizadores e handlers de saída — deixa o processo
+**arrumar a casa** antes de morrer, e um teste que "mata" assim exercita o
+caminho de encerramento limpo e chama isso de crash. Injetar exceção prova
+**atomicidade**; matar prova **durabilidade**.
+
+**O controle negativo.** Ligo o defeito "avançar o checkpoint em transação
+própria antes de gravar as linhas" — o desenho ingênuo *salva o progresso
+primeiro* — e o mesmo cenário **perde a página 1**, sem erro e sem log. Sem
+esse controle, os quatro testes acima passariam idênticos num escritor que
+não grava nada.
+
+### 22.2 Critério 10 — a chave que ordena, e a armadilha
+
+Geração velha terminando tarde não pode sobrescrever a nova. A armadilha
+está em **qual chave ordena**:
+
+> `generation_key` é atribuída no INSERT, que só acontece ao **publicar**. A
+> varredura velha que termina tarde recebe a chave **maior** — e um teste de
+> monotonicidade sobre ela aprovaria exatamente o caso que deveria barrar.
+
+`scan_attempt.attempt_key` é atribuída ao **abrir**. Há teste medindo que a
+velha receberia a chave maior; não é hipótese.
+
+**Mas a política é "a tentativa aberta por último vence", e isso não é o
+mesmo que "os dados mais frescos vencem".** Tentativas sobrepostas
+intercalam leituras: a mais velha pode, em tese, ter lido parte dos dados
+depois da mais nova. Ordem de abertura é uma **aproximação conservadora** —
+erra para o lado de descartar trabalho bom, nunca para o lado de deixar a
+cabeça recuar. Não trava o sistema: a guarda compara só com a cabeça
+**publicada**, então uma tentativa nova abandonada não bloqueia ninguém.
+Afirmar frescor de verdade exigiria serializar varreduras por pasta ou
+leitura com snapshot, e nenhuma das duas existe.
+
+### 22.3 Q8 — o que foi medido em 2026-08-24
+
+**O OOM não expõe a janela de sincronização.** Medido enumerando os membros
+de `Store`: só `IsCachedExchange` e `ExchangeStoreType`, nenhum `Sync*`,
+nenhum `Window*`. O valor existe apenas no registro do perfil.
+
+```
+store 'conta.do.dono@empresa.com'  IsCachedExchange=True  ExchangeStoreType=0
+
+HKCU\...\Outlook\Profiles\Outlook\1ed55df826d22a4c8add1bed4cf69a00
+    00036601 = 84-09-00-00          <- a conta
+HKCU\...\Outlook\Profiles\Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
+    00036601 = 80-01-00-00          <- outro valor, outra chave
+```
+
+Varredura da árvore inteira, mesmo dia:
+
+| Medida | Valor |
+|---|---|
+| pastas varridas | 108 |
+| pastas reportando zero | 95 |
+| pastas com itens | 13 |
+| mensagens datadas alcançadas | 1.979 |
+| mais antiga alcançada | 2024-10-09 |
+| mais nova | 2026-08-24 |
+
+**Alcance, não fronteira.** A mensagem mais antiga alcançada é onde os dados
+por acaso acabam: pode ser mais nova que o limite da janela (não existe
+correio mais velho) ou mais velha que ele. Serve para **descrever** o que
+foi visto, nunca para concluir "mais antigo que isto está fora da janela". O
+script `q8-corte.ps1` chamava isso de "corte de observabilidade" e foi
+reescrito.
+
+### 22.4 O token da janela: estável, sensibilidade NÃO medida
+
+A janela entra na impressão digital do ambiente (§18.4) como **token
+opaco** — os bytes crus de `00036601`. Não preciso decodificar o blob: a
+impressão digital exige ser **estável** e **sensível**, e nenhuma das duas
+propriedades depende de saber o que os bytes significam.
+
+**Mas não decodificar não é o mesmo que não verificar**, e eu tinha escrito
+no código que "não preciso verificar". Era falso, e o Codex pegou.
+
+| Propriedade | Estado |
+|---|---|
+| **Estável** — não muda sozinho | **medido**: 5 leituras idênticas |
+| **Sensível** — muda quando a janela muda | **NÃO MEDIDO** |
+
+Eu tinha suposto que medir a sensibilidade custava GB de download. Custa não
+— o que custa GB é medir o **universo resultante**; ler o token é
+instantâneo. O protocolo está em `tools/q8-sensibilidade.md` e leva minutos,
+mas exige mover o cursor da janela, que é mudança de configuração da conta
+do usuário.
+
+**Enquanto a sensibilidade não for medida, a linha não autoriza nada.** Se o
+token não mudar quando a janela mudar, a impressão digital não distingue os
+dois universos, e toda autorização concedida ao antigo continua valendo no
+novo. O mecanismo inteiro vira decoração.
+
+### 22.5 Reconhecer não é autorizar — a correção que doeu
+
+A primeira versão da `EnvironmentPolicy` reconhecia o ambiente do usuário e
+daí concedia **três** inferências: concluir ausência, afirmar cobertura
+completa, usar incremental. O Codex apontou o salto, e ele é grande:
+
+> "Medi quantos itens o OOM alcançou" não implica "medi a correção das três
+> inferências".
+
+E nenhuma das três está medida. Pior: duas têm evidência **contra**, nesta
+mesma fase. A §19.2 mediu pastas cheias reportando zero — cobertura não vem
+de contagem. A §16.3 mediu que a pasta de origem não distingue movido de
+excluído.
+
+Hoje a matriz **autoriza zero inferências**. Não é bug nem pendência
+escondida: é o estado honesto. A consequência de produto é real e fica
+declarada aqui — **o Iris não pode, hoje, concluir que uma mensagem sumiu de
+uma pasta.** Cada inferência passou a exigir evidência própria, com citação
+de seção, e há teste que verifica que a seção citada **existe**.
+
+### 22.6 O erro que a medição pegou, e ele é o erro do projeto inteiro
+
+Eu escrevi a linha da matriz com janela **"1 mês"**. Esse número veio de uma
+**frase do usuário em conversa** e da §18/§19 de dois dias antes — não de
+leitura nenhuma. Era uma afirmação não medida **dentro da classe que existe
+para impedir afirmações não medidas**.
+
+A medição de hoje me contradisse: 1.979 mensagens até 2024-10-09, contra as
+1.004 de 2026-08-22. A janela tinha mudado. Mesma caixa, mesma conta, dois
+universos.
+
+É a §18.5 outra vez, em forma nova: **fonte que parece medição e não é**. Lá
+foram três caminhos concordando porque liam o mesmo OST; aqui foi uma frase
+virando constante.
+
+### 22.7 O defeito de FK que onze testes verdes não viram
+
+O gerador de DDL supunha que a chave primária de `x` se chama `x_key`.
+`environment_profile` tem `environment_key`. O SQLite **aceita**
+`REFERENCES pai(coluna_inexistente)` no `CREATE TABLE` e só reclama no
+primeiro `INSERT`, com `foreign key mismatch` — longe de onde o erro foi
+escrito.
+
+Os 11 testes do passo 3 passaram por cima porque a introspecção comparava só
+a **tabela** alvo da FK, nunca a **coluna**. Quem acusou foi o primeiro
+`INSERT` real, no teste de crash.
+
+Corrigido em dois lugares, mais um teste que **só olha o banco** —
+`foreign_key_list` × `table_info` — e teria pego sem consultar o modelo.
+
+**E a asserção fraca que deixou passar:** o teste de crash aceitava "saiu com
+código ≠ 0" como prova de "morreu no ponto pedido". Isso cobre também
+"explodiu antes de começar". Hoje o harness falha o teste se o stderr tiver
+exceção não tratada.
+
+### 22.8 Estado dos 10 critérios da §8
+
+| # | Critério | Estado |
+|---|---|---|
+| 1 | Q1,Q3,Q4,Q7,Q8 com número; Q2,Q5,Q6,Q9 semânticas | **parcial** — Q8 respondida como escopo declarado, não como matriz |
+| 2 | Limitação escrita em cada resposta | ok |
+| 3 | Recomendação de tamanho de cada marco seguinte | ok |
+| 4 | Revisão externa do RESULTADO | ok — Codex revisou o 2.1 e achou 4 defeitos reais |
+| 5 | Itens de teste devolvidos | ok |
+| 6 | Corpus adversarial da Q2 com oráculo prévio | ok |
+| 7 | Critério operacional de invalidação, com dado | ok — S6 |
+| 8 | Latência máxima por lote | **D5 decidido (100 ms); NÃO medido** |
+| 9 | Crash entre commit, checkpoint e publicação | **ok** — §22.1 |
+| 10 | Reconciliação antiga não sobrescreve nova | **ok** — §22.2 |
+
+### 22.9 O que ficou de fora do 2.1, e por quê
+
+- **Passos 5, 6 e 7** do plano — orquestração do `Iris.Sync` contra provider
+  falso mutável; adaptador Outlook + DTO de manifesto; importação real e
+  retomada. Não foram feitos. O 2.1 entregou as primitivas e as provas de
+  crash; a orquestração que as usa é o 2.2.
+- **Sensibilidade do token** — exige o usuário (§22.4).
+- **Latência por lote (D5)** — decidida em 100 ms, não medida, porque medir
+  exige a orquestração do passo 6.
+- **Consumidor de `publication_log`** — a UI que drena a dívida.

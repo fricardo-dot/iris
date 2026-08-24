@@ -13,6 +13,44 @@ Namespace Global.Iris.Sync
     End Enum
 
     ''' <summary>
+    ''' As inferências que o ambiente pode ou não autorizar.
+    '''
+    ''' São enumeradas uma a uma, e não agrupadas num "ambiente suportado",
+    ''' porque cada uma exige uma demonstração <b>própria</b>. Medir que o OOM
+    ''' alcança 1.979 mensagens não demonstra nenhuma das três: diz quanto se
+    ''' enxergou, não que "não encontrei" signifique excluído.
+    ''' </summary>
+    Public Enum Inference
+        ''' <summary>Transformar <c>NaoEncontrado</c> em <c>AusenteDaPasta</c>.</summary>
+        ConcluirAusencia
+        ''' <summary>Declarar que uma varredura teve cobertura completa.</summary>
+        AfirmarCoberturaCompleta
+        ''' <summary>Usar o incremental da Q3 no lugar da varredura cheia.</summary>
+        UsarIncremental
+    End Enum
+
+    ''' <summary>
+    ''' Uma inferência autorizada, com a evidência que a autoriza.
+    '''
+    ''' A evidência é obrigatória por construção. Sem isso a lista de
+    ''' autorizações cresce por conveniência — alguém acrescenta uma entrada
+    ''' para destravar um caso e ninguém consegue perguntar depois "medido
+    ''' onde?".
+    ''' </summary>
+    Public NotInheritable Class GrantedInference
+        Public ReadOnly Property Inference As Inference
+        Public ReadOnly Property Evidence As String
+
+        Public Sub New(inference As Inference, evidence As String)
+            If String.IsNullOrWhiteSpace(evidence) Then
+                Throw New ArgumentException("inferencia autorizada exige evidencia", NameOf(evidence))
+            End If
+            Me.Inference = inference
+            Me.Evidence = evidence
+        End Sub
+    End Class
+
+    ''' <summary>
     ''' O ambiente em que uma medição vale, e ele inclui a JANELA.
     '''
     ''' A §18.4 mudou o que "ambiente" significa neste projeto. "Exchange em
@@ -21,10 +59,10 @@ Namespace Global.Iris.Sync
     ''' custa. O mesmo Iris, no mesmo Outlook, com o cursor num lugar ou
     ''' noutro, enxerga caixas diferentes.
     '''
-    ''' Por isso a janela entra na impressão digital. Mudar a janela produz
-    ''' um ambiente DIFERENTE, e nenhuma conclusão de ausência tirada no
-    ''' anterior sobrevive: itens que "sumiram" quando a janela encolheu não
-    ''' foram excluídos.
+    ''' Por isso a janela entra na impressão digital. Mudar a janela produz um
+    ''' ambiente DIFERENTE, e nenhuma conclusão de ausência tirada no anterior
+    ''' sobrevive: itens que "sumiram" quando a janela encolheu não foram
+    ''' excluídos.
     ''' </summary>
     Public NotInheritable Class EnvironmentFingerprint
 
@@ -41,12 +79,16 @@ Namespace Global.Iris.Sync
         ''' perfil, em <c>00036601</c>, num blob cuja codificação eu não
         ''' verifiquei.
         '''
-        ''' E não preciso verificar. A impressão digital exige duas
-        ''' propriedades — ser <b>estável</b> enquanto o ambiente não muda e
-        ''' <b>sensível</b> quando ele muda — e nenhuma das duas exige saber o
-        ''' que os bytes significam. Decodificar o blob por palpite para
-        ''' escrever "3 meses" num relatório acrescentaria uma afirmação não
-        ''' medida a uma classe que existe justamente para impedir isso.
+        ''' <b>Não decodificar não é o mesmo que não verificar.</b> Eu escrevi
+        ''' aqui, antes, que "não preciso verificar" porque não preciso
+        ''' decodificar, e isso era falso: dispensar o significado dos bytes
+        ''' não dispensa saber se o valor serve de impressão digital. Ele
+        ''' precisa de duas propriedades:
+        '''
+        '''   - ESTÁVEL enquanto o ambiente não muda — §22.4, medido: cinco
+        '''     leituras idênticas;
+        '''   - SENSÍVEL quando o ambiente muda — <b>NÃO MEDIDO</b>. Ver
+        '''     <see cref="MeasuredEnvironment.TokenValidado"/>.
         '''
         ''' <c>Nothing</c> = não foi lido, e isso NÃO é o mesmo que "sem janela".
         ''' </summary>
@@ -93,56 +135,60 @@ Namespace Global.Iris.Sync
     ''' </summary>
     Public NotInheritable Class EnvironmentCapabilities
 
-        ''' <summary>
-        ''' Se <c>NaoEncontrado</c> pode virar <c>AusenteDaPasta</c>. Falso num
-        ''' ambiente não medido — ali "não encontrei" não distingue excluído de
-        ''' fora-da-janela.
-        ''' </summary>
-        Public ReadOnly Property PodeConcluirAusencia As Boolean
+        Private ReadOnly _permitidas As HashSet(Of Inference)
 
-        ''' <summary>
-        ''' Se a varredura pode se declarar de cobertura COMPLETA. Falso sem
-        ''' medição: a §19.2 mediu pastas cheias reportando zero itens, e uma
-        ''' varredura que lê zero e se declara completa apaga a pasta.
-        ''' </summary>
-        Public ReadOnly Property PodeAfirmarCoberturaCompleta As Boolean
-
-        ''' <summary>
-        ''' Se o incremental da Q3 pode substituir a varredura cheia. Falso sem
-        ''' medição: incremental sobre universo desconhecido não tem como
-        ''' provar que não pulou nada.
-        ''' </summary>
-        Public ReadOnly Property PodeUsarIncremental As Boolean
-
-        ''' <summary>Por que degradou. Vazio quando não degradou.</summary>
+        ''' <summary>Por que não autorizou tudo. Vazio quando autorizou.</summary>
         Public ReadOnly Property Reason As String
 
-        Friend Sub New(ausencia As Boolean, cobertura As Boolean, incremental As Boolean,
-                       reason As String)
-            PodeConcluirAusencia = ausencia
-            PodeAfirmarCoberturaCompleta = cobertura
-            PodeUsarIncremental = incremental
+        Friend Sub New(permitidas As IEnumerable(Of Inference), reason As String)
+            _permitidas = New HashSet(Of Inference)(If(permitidas, Enumerable.Empty(Of Inference)()))
             Me.Reason = reason
         End Sub
 
+        Public Function Permite(i As Inference) As Boolean
+            Return _permitidas.Contains(i)
+        End Function
+
+        Public ReadOnly Property PodeConcluirAusencia As Boolean
+            Get
+                Return Permite(Inference.ConcluirAusencia)
+            End Get
+        End Property
+
+        Public ReadOnly Property PodeAfirmarCoberturaCompleta As Boolean
+            Get
+                Return Permite(Inference.AfirmarCoberturaCompleta)
+            End Get
+        End Property
+
+        Public ReadOnly Property PodeUsarIncremental As Boolean
+            Get
+                Return Permite(Inference.UsarIncremental)
+            End Get
+        End Property
+
         Public ReadOnly Property Degradado As Boolean
             Get
-                Return Not (PodeConcluirAusencia AndAlso PodeAfirmarCoberturaCompleta AndAlso
-                            PodeUsarIncremental)
+                Return _permitidas.Count < [Enum].GetValues(GetType(Inference)).Length
             End Get
         End Property
     End Class
 
     ''' <summary>
-    ''' Uma linha da matriz da Q8: um ambiente que foi MEDIDO, com a seção do
-    ''' FASE2.md onde a medição está registrada.
+    ''' Uma linha da matriz da Q8: um ambiente RECONHECIDO, e o que nele foi
+    ''' demonstrado.
     '''
-    ''' A referência não é enfeite. Sem ela, "ambiente suportado" vira uma
-    ''' lista que cresce por conveniência — alguém acrescenta uma linha para
-    ''' destravar um caso e ninguém consegue perguntar depois "medido onde?".
+    ''' Reconhecer e autorizar são coisas separadas, e a separação é a correção
+    ''' central que esta classe sofreu. A versão anterior tinha uma linha só
+    ''' com a evidência do reconhecimento, e daí concedia as três inferências —
+    ''' ou seja, "medi quantos itens o OOM alcança" virava "medi que ausência,
+    ''' cobertura e incremental funcionam". São coisas diferentes e nenhuma das
+    ''' três estava medida.
     ''' </summary>
     Public NotInheritable Class MeasuredEnvironment
         Public ReadOnly Property Fingerprint As EnvironmentFingerprint
+
+        ''' <summary>Onde o ambiente foi RECONHECIDO. Não autoriza nada sozinho.</summary>
         Public ReadOnly Property Evidence As String
 
         ''' <summary>
@@ -159,11 +205,33 @@ Namespace Global.Iris.Sync
         ''' </summary>
         Public ReadOnly Property AlcanceMedido As Date?
 
+        ''' <summary>
+        ''' Se a SENSIBILIDADE do token da janela foi verificada — isto é, se
+        ''' alguém confirmou que ele muda quando o cursor da janela se move.
+        '''
+        ''' Enquanto for falso, a linha não autoriza inferência nenhuma, mesmo
+        ''' que traga evidências. O motivo é direto: se o token não mudar
+        ''' quando a janela muda, a impressão digital não distingue os dois
+        ''' universos, e toda autorização concedida ao universo antigo continua
+        ''' valendo no novo. O mecanismo inteiro vira decoração.
+        '''
+        ''' O protocolo para medir está em <c>tools/q8-sensibilidade.md</c> e
+        ''' leva minutos: o que custa GB é medir o universo resultante, não ler
+        ''' o token.
+        ''' </summary>
+        Public ReadOnly Property TokenValidado As Boolean
+
+        Public ReadOnly Property Grants As IReadOnlyList(Of GrantedInference)
+
         Public Sub New(fp As EnvironmentFingerprint, evidence As String,
-                       Optional alcanceMedido As Date? = Nothing)
+                       Optional alcanceMedido As Date? = Nothing,
+                       Optional tokenValidado As Boolean = False,
+                       Optional grants As IEnumerable(Of GrantedInference) = Nothing)
             Fingerprint = fp
             Me.Evidence = evidence
             Me.AlcanceMedido = alcanceMedido
+            Me.TokenValidado = tokenValidado
+            Me.Grants = If(grants, Enumerable.Empty(Of GrantedInference)()).ToList()
         End Sub
     End Class
 
@@ -179,6 +247,13 @@ Namespace Global.Iris.Sync
     ''' suportado</b>, com fallback conservador para todo o resto. Fingir a
     ''' matriz cheia seria pior que declará-la parcial, porque um número
     ''' inventado não avisa quando está errado.
+    '''
+    ''' <b>Hoje a matriz autoriza ZERO inferências.</b> Isso não é um bug nem
+    ''' uma pendência escondida: é o estado honesto. O ambiente do usuário está
+    ''' reconhecido, a estabilidade do token está medida, e nenhuma das três
+    ''' inferências foi demonstrada. A consequência de produto — o Iris não
+    ''' pode, hoje, concluir que uma mensagem sumiu de uma pasta — está
+    ''' registrada na §22.5, não escondida atrás de um default permissivo.
     ''' </summary>
     Public NotInheritable Class EnvironmentPolicy
 
@@ -187,21 +262,24 @@ Namespace Global.Iris.Sync
         Private Shared Function Construir() As IReadOnlyList(Of MeasuredEnvironment)
             Dim m As New List(Of MeasuredEnvironment)()
 
-            ' UNICA linha medida, e ela e a medicao de 2026-08-24, registrada
-            ' na §22.3. O token da janela e o valor CRU do perfil, nao um
-            ' numero de meses: ver EnvironmentFingerprint.WindowToken.
+            ' UNICA linha, e ela RECONHECE sem AUTORIZAR.
             '
-            ' A tentacao aqui era escrever "1 mes", que e o que o usuario
-            ' tinha dito em conversa e o que a §18/§19 mediram em 2026-08-22.
-            ' Seria uma afirmacao nao medida DENTRO da classe que existe para
-            ' impedir afirmacoes nao medidas: a janela mudou desde entao (o
-            ' usuario aumentou o cache), e a medicao de hoje alcanca 1.979
-            ' mensagens ate 2024-10-09, contra as 1.004 de dois dias atras.
+            ' O token da janela e o valor CRU do perfil, nao um numero de
+            ' meses: ver EnvironmentFingerprint.WindowToken. A tentacao aqui
+            ' era escrever "1 mes", que e o que o usuario tinha dito em
+            ' conversa e o que a §18/§19 mediram em 2026-08-22. Seria uma
+            ' afirmacao nao medida DENTRO da classe que existe para impedir
+            ' afirmacoes nao medidas: a janela mudou desde entao, e a medicao
+            ' de hoje alcanca 1.979 mensagens ate 2024-10-09, contra as 1.004
+            ' de dois dias atras.
+            '
+            ' Grants vazio e TokenValidado falso sao deliberados. Ver §22.5.
             m.Add(New MeasuredEnvironment(
                 New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "84-09-00-00"),
                 "FASE2 §22.3 — caixa corporativa do usuario, medido em 2026-08-24: " &
                 "108 pastas, 95 reportando zero, 1.979 mensagens datadas alcancadas",
-                New Date(2024, 10, 9)))
+                New Date(2024, 10, 9),
+                tokenValidado:=False))
 
             Return m
         End Function
@@ -213,37 +291,67 @@ Namespace Global.Iris.Sync
         End Property
 
         Public Shared Function Medido(fp As EnvironmentFingerprint) As MeasuredEnvironment
+            Return Medido(fp, _matriz)
+        End Function
+
+        Friend Shared Function Medido(fp As EnvironmentFingerprint,
+                                      matriz As IReadOnlyList(Of MeasuredEnvironment)) As MeasuredEnvironment
             If fp Is Nothing Then Return Nothing
-            Return _matriz.FirstOrDefault(Function(x) x.Fingerprint.Equals(fp))
+            Return matriz.FirstOrDefault(Function(x) x.Fingerprint.Equals(fp))
         End Function
 
         ''' <summary>
-        ''' O que este ambiente autoriza. FALHA FECHADO: qualquer coisa que não
-        ''' esteja na matriz recebe o mínimo.
+        ''' O que este ambiente autoriza. FALHA FECHADO em três degraus: fora
+        ''' da matriz, token não validado, e inferência sem evidência própria.
         ''' </summary>
         Public Shared Function Capacidades(fp As EnvironmentFingerprint) As EnvironmentCapabilities
+            Return Capacidades(fp, _matriz)
+        End Function
+
+        ''' <summary>
+        ''' Sobrecarga com matriz injetada. Existe para o teste poder exercitar
+        ''' o caminho de AUTORIZAÇÃO — sem ela, com a matriz de produção
+        ''' autorizando zero, uma política que negasse tudo incondicionalmente
+        ''' passaria em todos os testes.
+        ''' </summary>
+        Friend Shared Function Capacidades(fp As EnvironmentFingerprint,
+                                           matriz As IReadOnlyList(Of MeasuredEnvironment)) As EnvironmentCapabilities
             If fp Is Nothing Then
-                Return Degradar("ambiente nao identificado")
+                Return Negar("ambiente nao identificado")
             End If
             If fp.Provider = ProviderKind.Desconhecido Then
-                Return Degradar("provider desconhecido")
+                Return Negar("provider desconhecido")
             End If
             If fp.CachedMode AndAlso fp.WindowToken Is Nothing Then
                 ' O caso mais traicoeiro: sabe-se que ha janela e nao se sabe
                 ' qual. Pior que nao saber nada, porque parece identificado.
-                Return Degradar("modo cached com janela nao lida")
+                Return Negar("modo cached com janela nao lida")
             End If
 
-            Dim linha = Medido(fp)
+            Dim linha = Medido(fp, matriz)
             If linha Is Nothing Then
-                Return Degradar($"ambiente fora da matriz medida: {fp.Value()}")
+                Return Negar($"ambiente fora da matriz medida: {fp.Value()}")
             End If
 
-            Return New EnvironmentCapabilities(True, True, True, "")
+            If Not linha.TokenValidado Then
+                ' Sem sensibilidade verificada, a impressao digital nao
+                ' distingue dois universos, e autorizar aqui vazaria a
+                ' autorizacao para o universo seguinte sem ninguem notar.
+                Return Negar("sensibilidade do token da janela nao verificada (§22.4)")
+            End If
+
+            If linha.Grants.Count = 0 Then
+                Return Negar("ambiente reconhecido, nenhuma inferencia demonstrada")
+            End If
+
+            Return New EnvironmentCapabilities(
+                linha.Grants.Select(Function(g) g.Inference),
+                If(linha.Grants.Count < [Enum].GetValues(GetType(Inference)).Length,
+                   "autorizacao parcial: so o que foi demonstrado", ""))
         End Function
 
-        Private Shared Function Degradar(motivo As String) As EnvironmentCapabilities
-            Return New EnvironmentCapabilities(False, False, False, motivo)
+        Private Shared Function Negar(motivo As String) As EnvironmentCapabilities
+            Return New EnvironmentCapabilities(Nothing, motivo)
         End Function
 
         ''' <summary>
