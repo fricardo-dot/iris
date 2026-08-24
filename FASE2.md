@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 22 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+**Versão:** 23 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
 Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
 e `Restrict` de verdade (16)**. **Gate de sincronização (17)**, com o sinal
 operacional que fecha a parte principal da Q4.
@@ -25,6 +25,9 @@ invariante, e o que depende de número.
 > feitas sobre **~6% da Entrada** — um mês de correio.
 >
 > Elas não estão erradas: estão **escopadas**. Ver §18.
+>
+> E a §19 mostra o que essa cegueira faz na prática: **pasta cheia que
+> o OOM reporta com ZERO itens**.
 
 ## 1. Por que esta fase existe
 
@@ -2155,3 +2158,123 @@ o filtro estava quebrado do mesmo jeito nas três. **Controle positivo é o
 que distingue "concordam" de "estão certos"** — e aqui o controle positivo
 era simplesmente olhar a tela do Outlook, coisa que o usuário fez e eu
 não.
+
+---
+
+## 19. A cegueira do OOM, confirmada na tela
+
+A §18 concluiu que o OOM vê o OST, não o servidor. Isso parecia uma nota
+de escopo. **Não é** — e a confirmação veio de um jeito que nenhum script
+meu produziria.
+
+### 19.1 O que aconteceu
+
+O usuário abriu a janela de cache de 1 para 3 meses. Reiniciei o Outlook.
+Durante o backfill, ele mandou uma captura da tela dele:
+
+- a lista da Caixa de Entrada mostrando mensagens de **10/10/2024**;
+- uma delas **aberta no painel de leitura**, com corpo, assinatura e anexo
+  renderizados;
+- a barra de status marcando **18.155 itens**.
+
+No mesmo instante, o OOM respondia:
+
+```
+Caixa de Entrada: 1.458 itens
+distribuicao por ano: 2026 (1.458)   <- e so
+```
+
+> **O Outlook mostrava 2024 na lista enquanto o OOM jurava que a pasta
+> inteira era de 2026.** Não é atraso de sincronização nem cache frio: são
+> duas visões diferentes da mesma pasta, e o Iris só tem acesso à menor.
+
+### 19.2 O corolário que assusta
+
+Varrendo as pastas, apareceram dentro de Itens Excluídos as pastas antigas
+do usuário — `01. Projetos Novos`, `02. Reunião Gerencial`, até
+`16. Feiras`, mais `Barentz`, `Apsen`, `EMS`, `Dux`, `Sanavita`, dezenas
+delas. **Todas reportando 0 itens.**
+
+Elas não estão vazias. Estão **fora da janela**.
+
+> ### `Items.Count == 0` NÃO significa "pasta vazia".
+> Significa **"nada dentro da janela de cache"**.
+
+Um Iris que varresse aquelas pastas, visse zero e concluísse "tudo foi
+excluído" marcaria anos de correspondência como ausente — e faria isso com
+todos os sinais da §17.1 concordando, porque **linhas lidas = 0, `Count`
+antes = 0, `Count` depois = 0**. O S6 passa. O desastre acontece.
+
+Isso vira invariante:
+
+> **S7 — Nenhuma conclusão sobre ausência sem saber se a pasta está
+> INTEIRA no cache.** A cobertura do provider é um fato sobre a pasta, não
+> sobre a varredura, e tem de ser conhecida **antes** de a varredura
+> significar alguma coisa.
+>
+> Violação: tratar `Count == 0` como "vazia". Nesta caixa, dezenas de
+> pastas satisfazem isso e nenhuma está vazia.
+
+O S6 (concordância de contagens) e o S7 (cobertura conhecida) são
+**independentes**: o caso das pastas antigas passa no S6 com folga.
+
+### 19.3 O custo de alargar a janela, medido no susto
+
+O experimento de abrir para 3 meses foi interrompido, e o motivo é um dado
+em si:
+
+```
+Outlook: "Atualizando Caixa de Entrada (19,1 GB, 2 horas)"
+taxa medida     : 255 MB/min
+livre no disco  : 7,98 GB
+tempo ate encher: ~32 min
+```
+
+> **Alargar a janela de cache não é um experimento barato.** É uma
+> operação de horas, dezenas de GB, e pode encher o disco antes de
+> terminar. O Outlook anuncia o total, e não avisa que não cabe.
+
+Baixou ~890 MB em ~4 minutos antes de o usuário parar. A janela voltou
+para 1 mês.
+
+**Consequência para a Q8:** a matriz de providers **não pode** ser
+levantada só mexendo no cursor desta máquina. "Exchange em cache, 3 meses"
+custa horas e dezenas de GB por medição. A cobertura vira, na prática,
+**declaração de escopo suportado** — e cada ambiente não medido precisa
+escolher entre *fora do escopo* ou *fallback conservador*, que é
+exatamente o que o Codex tinha exigido quando eu quis cortar a Q8.
+
+### 19.4 O que isto faz com a Q9'
+
+Reforça o **acúmulo**, e por um motivo novo.
+
+A §18.3 mediu que guardar o metadado da caixa inteira custa **11,7 MB**.
+A §19.3 mediu que fazer o **Outlook** guardar o equivalente custa
+**dezenas de GB e horas**. A razão entre as duas coisas é de trÊs ordens de
+grandeza.
+
+> O Iris não compete com o OST: ele guarda o que o OST **descarta**, por um
+> custo que a máquina do usuário nem sente.
+
+Mas o acúmulo só começa a valer **a partir do momento em que o Iris
+existe**. Os ~16.700 itens que hoje estão fora da janela **nunca** entrarão
+no cache por essa via — o OOM não os alcança. Isso precisa estar dito na
+interface, não só aqui: *"o Iris conhece daqui para frente"*.
+
+### 19.5 O método, de novo
+
+Três vezes hoje o usuário olhou a tela e discordou de uma medição minha.
+**Nas três ele estava certo:**
+
+1. "129 pastas" — eram 2 dele, e 45 eram artefatos meus;
+2. "Itens: 17.668" contra os meus 1.004 — janela de cache;
+3. "tem e-mail até de 2024" contra a minha distribuição toda-2026 — a
+   cegueira do OOM.
+
+O padrão é sempre o mesmo: eu media pelo OOM, três caminhos concordavam, e
+os três liam **a mesma fonte limitada**. Concordância entre caminhos que
+compartilham a fonte não é corroboração.
+
+**O controle positivo, aqui, era a tela do Outlook** — a única visão
+disponível que não vem do OOM. Ela deveria ter sido a primeira coisa a
+conferir, e foi a última.
