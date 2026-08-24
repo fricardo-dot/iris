@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 24 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+**Versão:** 25 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
 Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
 e `Restrict` de verdade (16)**. **Gate de sincronização (17)**, com o sinal
 operacional que fecha a parte principal da Q4.
@@ -2320,3 +2320,103 @@ compartilham a fonte não é corroboração.
 **O controle positivo, aqui, era a tela do Outlook** — a única visão
 disponível que não vem do OOM. Ela deveria ter sido a primeira coisa a
 conferir, e foi a última.
+
+---
+
+## 20. Q7 — custo do conteúdo. RESPONDIDA.
+
+`tools/q7-corpo.ps1`. Autorizado pelo usuário. **Nenhum conteúdo sai do
+script**: só comprimento, tempo e contagem — nem corpo, nem trecho, nem
+assunto. O próprio plano proíbe persistir corpo antes de criptografia e
+retenção estarem decididas, porque seria criar o R2-I **durante** o
+experimento que deveria informá-lo.
+
+Amostra de 200 itens estratificados da Entrada (1 mês, §18), só
+`DownloadState = olFullItem` — ler corpo de item que só tem cabeçalho
+dispararia download, e medir é uma coisa, provocar tráfego é outra.
+
+### 20.1 O custo
+
+| | por item | 1.004 msgs | 17.668 msgs |
+|---|---|---|---|
+| metadado, `Table` | **0,13 ms** | 0,1 s | 2,3 s |
+| `.Body` (texto) | **4,51 ms** | 4,5 s | **80 s** |
+| `.HTMLBody` | 3,08 ms | — | — |
+
+> **Ler o corpo custa 35x o metadado.**
+
+Tamanhos: **10.693 caracteres/item** em texto, **52.999** em HTML — 5x mais.
+Maior texto observado: 328 mil caracteres; maior HTML: **1,86 milhão**.
+
+| faixa do corpo em texto | itens | |
+|---|---|---|
+| até 1k | 48 | 24% |
+| 1–5k | 78 | 39% |
+| 5–20k | 50 | 25% |
+| 20–100k | 22 | 11% |
+| 100k+ | 2 | 1% |
+
+Curioso e útil: o `HTMLBody` é **maior e mais rápido** que o `.Body`. O
+texto puro parece ser convertido no acesso — não está pronto.
+
+### 20.2 O que isto decide
+
+**1. Guardar TEXTO, nunca HTML.** 10,7k contra 53k caracteres por item, e
+para busca o HTML não acrescenta nada. Cinco vezes menos, de graça.
+
+**2. O índice de texto liga-se ao ITEM LÓGICO, nunca à encarnação.** Esta é
+a metade que a Q2 acrescentou à pergunta. A §11.1 mediu que um `Move` cria
+encarnação nova; se o índice pender dela, **cada arrastar de mensagem
+reindexa o corpo inteiro** — 4,51 ms mais escrita, por mensagem, para
+nada. Ligado ao item lógico, o `Move` custa **zero**. É decisão de
+**schema**, não otimização posterior.
+
+**3. Indexar corpo NÃO pode ficar no caminho crítico.** 80 s para a Entrada
+inteira, na **fila única da STA**, são 80 s em que abrir uma mensagem não
+responde. Lote interrompível deixa de ser recomendação e vira requisito —
+o mesmo que a §13 já dizia da varredura, agora com um número 25x maior.
+
+**4. E a decisão da Q9' se PARTE EM DUAS.** Eu vinha tratando "acumular"
+como uma coisa só:
+
+| | caixa inteira | contra o OST de 1 mês (1.511 MB) |
+|---|---|---|
+| só metadado | **11,7 MB** | 0,8% |
+| metadado + texto | **372 MB** | 25% |
+
+Acumular **metadado** é praticamente de graça e já dá lista, tria e
+correlação. Acumular **texto** é 31x mais caro, e — mais importante —
+significa **correspondência em claro no disco**, que é exatamente o R2-I
+que a §4 mandou não criar antes de criptografia e retenção estarem
+decididas.
+
+> São **duas** decisões, e a primeira não obriga a segunda. Metadado pode
+> começar agora; texto espera a decisão de criptografia.
+
+### 20.3 NÃO medido
+
+- **Anexos.** Não foram tocados. A Fase 1 já registra "anexos grandes não
+  medidos" como débito, e isto não o quita.
+- **Item fora da janela**, que é a maioria (§19). Ler o corpo dele
+  dispararia download, e o custo seria outro por ordens de grandeza.
+- **Custo de ESCRITA no índice.** Aqui só se mediu a leitura pelo OOM.
+- A amostra é de **1 mês** de correio. A distribuição de tamanhos pode ser
+  outra num histórico maior.
+
+### 20.4 Terceiro filtro que devolveu vazio hoje
+
+A primeira execução leu **0 de 201** itens e imprimiu a tabela inteira
+zerada, com aparência de medição limpa. **Dois** bugs independentes, cada
+um bastando sozinho:
+
+1. `$it -as [Microsoft.Office.Interop.Outlook.MailItem]` devolve **NULO**
+   no PowerShell — o objeto vem como `System.__ComObject` e o assembly de
+   interop não está carregado. Sem erro. Filtrar por `MessageClass` é o que
+   funciona.
+2. `olHeaderOnly = 0` e **`olFullItem = 1`**. Eu tinha invertido, e o
+   filtro pulava exatamente os itens completos.
+
+É o terceiro caso hoje de **filtro que devolve vazio parecendo resposta** —
+depois do `Restrict` sem controle positivo (§16.5) e da coluna `Permission`
+da Q1. O script agora **falha e recusa publicar** quando a amostra sai
+vazia.
