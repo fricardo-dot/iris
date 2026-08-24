@@ -2631,6 +2631,13 @@ independência não é preciosismo: os testes reabrem com `CacheDatabase.Open`,
 que é o próprio código sob teste, e um defeito lá poderia mascarar o estado
 no disco sem o teste ver.
 
+O script compara cada cenário com um **estado esperado** — código de saída,
+`stage`, cursor, contagens, e as *chaves* de geração contra as do log, não só
+as contagens. A primeira versão dele só cobrava três invariantes fracos, e o
+defeito `checkpoint-antes` passava por todos: nenhum cobrava "cursor avançado
+com zero linhas". Hoje o último cenário é o **controle negativo** — liga o
+defeito e exige que a conferência acuse, o que ela faz, com três divergências.
+
 | Morre em | stage | cursor | linhas | geração | dívida | cabeça |
 |---|---|---|---|---|---|---|
 | dentro da página | `aberta` | — | 0 | 0 | 0 | — |
@@ -2852,19 +2859,20 @@ Daí a regra que eu recomendo, e ela é sobre **composição**, não sobre
 contagem:
 
 > **Um marco não deve misturar trabalho que se verifica de graça com
-> trabalho que exige a caixa do usuário.** Quando os dois estão no mesmo
-> marco, o segundo atrasa e o primeiro fica represado atrás dele —
-> pronto pela metade, sem poder fechar.
+> trabalho que exige a caixa do usuário.**
 
-O 2.1 tinha os dois tipos e fechou só o primeiro. Foi sorte que o corte
-tenha caído numa fronteira limpa.
+No 2.1 os dois tipos estavam no mesmo marco, e o que dependia da caixa
+ficou para trás. É uma observação, não uma lei: uma amostra não estabelece
+causalidade, e pode muito bem ter sido só a ordem em que eu ataquei os
+passos. Recomendo a separação porque o custo dela é zero e o custo de estar
+errado é um marco que não fecha — não porque esteja demonstrada.
 
 #### O que fazer com o que sobrou
 
 | Marco | Conteúdo | Verificação | Tamanho |
 |---|---|---|---|
-| **2.2a** | Orquestração do `Iris.Sync` contra provider falso mutável: truncamento, mutação balanceada, zero enganoso, cancelamento, geração velha terminando depois da nova | de graça, em memória + SQLite | **3–4 passos** — igual aos passos 1–4 do 2.1, que couberam |
-| **2.2b** | Adaptador Outlook + DTO de manifesto; consumidor do `publication_log` na UI; ligar a `EnvironmentPolicy` ao cumprimento; medir D5 (100 ms) | exige a caixa real e o usuário | **2 passos, no máximo** |
+| **2.2a** | Orquestração do `Iris.Sync` contra provider falso mutável (truncamento, mutação balanceada, zero enganoso, cancelamento, geração velha terminando depois da nova); DTO de manifesto; consumidor do `publication_log`; ligar a `EnvironmentPolicy` ao cumprimento | de graça, em memória + SQLite | **3–4 passos** — igual aos passos 1–4 do 2.1, que couberam |
+| **2.2b** | Adaptador Outlook; medir D5 (100 ms) | exige a caixa real e o usuário | **2 passos, no máximo** |
 | **2.3** | Q8: validar o token (§22.4) e, se ele servir, começar a demonstrar as inferências uma a uma | exige o usuário mover a janela | **1 passo** |
 
 #### Três razões para 2.2b ser pequeno
@@ -2872,10 +2880,11 @@ tenha caído numa fronteira limpa.
 1. **Cada medição na caixa real custa uma janela de atenção do usuário.**
    A §19.3 mediu que mexer no cursor da janela custa horas e dezenas de GB.
    Um marco que precise de três dessas mudanças não cabe numa manhã.
-2. **O 2.1 mediu que defeito em COM aparece longe da causa.** O
+2. **O 2.1 mediu que defeito de integração aparece longe da causa.** O
    `foreign key mismatch` da §22.7 e o `Table.Sort` da §22.3 são dois
-   exemplos do mesmo dia. Marco pequeno encurta a distância entre escrever
-   o defeito e vê-lo.
+   exemplos do mesmo dia — e só o segundo é COM; o primeiro é geração de
+   schema. A tese é sobre integração, não sobre COM. Marco pequeno encurta
+   a distância entre escrever o defeito e vê-lo.
 3. **A verificação do 2.2b é serial por natureza** — uma caixa, um
    Outlook, um usuário. Não adianta empilhar trabalho paralelizável atrás
    de um gargalo que não paraleliza.

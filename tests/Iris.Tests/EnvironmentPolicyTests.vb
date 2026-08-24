@@ -179,22 +179,49 @@ Public Class EnvironmentPolicyTests
     ''' <summary>
     ''' A razão da degradação nunca fica vazia enquanto <c>Degradado</c> é
     ''' verdadeiro. É o invariante que o defeito das duplicatas violava.
+    '''
+    ''' Cobre <b>todos</b> os retornos de <c>Capacidades</c>, um por um, e não
+    ''' uma amostra que eu escolhi. Um invariante transversal testado sobre
+    ''' quatro casos escolhidos a dedo continua verdadeiro se eu acrescentar um
+    ''' quinto degrau e esquecer o texto — e é exatamente aí que ele quebraria.
     ''' </summary>
     <TestMethod>
     Public Sub Degradado_sempre_vem_com_motivo_escrito()
-        Dim casos = {
-            EnvironmentPolicy.Capacidades(Nothing),
-            EnvironmentPolicy.Capacidades(Medido()),
-            EnvironmentPolicy.Capacidades(
-                New EnvironmentFingerprint(ProviderKind.PstLocal, False, "x")),
-            EnvironmentPolicy.Capacidades(Medido(), MatrizSintetica(Inference.UsarIncremental))}
+        Dim casos As New List(Of (Nome As String, Cap As EnvironmentCapabilities))() From {
+            ("fp nulo", EnvironmentPolicy.Capacidades(Nothing)),
+            ("provider desconhecido", EnvironmentPolicy.Capacidades(
+                New EnvironmentFingerprint(ProviderKind.Desconhecido, True, TokenMedido))),
+            ("cached sem janela", EnvironmentPolicy.Capacidades(
+                New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing))),
+            ("fora da matriz", EnvironmentPolicy.Capacidades(
+                New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "00-00-00-00"))),
+            ("token nao validado", EnvironmentPolicy.Capacidades(Medido())),
+            ("grants vazios", EnvironmentPolicy.Capacidades(Medido(), {
+                New MeasuredEnvironment(Medido(), "FASE2 §22.3 — t", Nothing, tokenValidado:=True)})),
+            ("autorizacao parcial", EnvironmentPolicy.Capacidades(Medido(),
+                MatrizSintetica(Inference.UsarIncremental))),
+            ("autorizacao completa", EnvironmentPolicy.Capacidades(Medido(),
+                MatrizSintetica(Inference.ConcluirAusencia,
+                                Inference.AfirmarCoberturaCompleta,
+                                Inference.UsarIncremental)))}
 
+        ' Um por degrau de Capacidades, mais o caminho que autoriza tudo.
+        Assert.AreEqual(8, casos.Count)
+
+        Dim degradados = 0
         For Each c In casos
-            If c.Degradado Then
-                Assert.IsFalse(String.IsNullOrWhiteSpace(c.Reason),
-                    "degradado sem motivo escrito: quem investigar nao tem o que ler")
+            If c.Cap.Degradado Then
+                degradados += 1
+                Assert.IsFalse(String.IsNullOrWhiteSpace(c.Cap.Reason),
+                    $"'{c.Nome}' degradou sem motivo escrito: quem investigar nao tem o que ler")
+            Else
+                Assert.AreEqual("", c.Cap.Reason,
+                    $"'{c.Nome}' nao degradou mas trouxe motivo")
             End If
         Next
+
+        ' Controle: nem todos degradam, senao o laco acima nao verificaria nada.
+        Assert.AreEqual(7, degradados)
     End Sub
 
     ' ==================================================================
