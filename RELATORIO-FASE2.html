@@ -437,6 +437,10 @@ footer {
       três vezes e o registro do perfil não mudou uma linha. A identidade de
       ambiente ficou <strong>incompleta por construção</strong> em modo cached —
       permanentemente, não como pendência.</li>
+    <li><strong>A contagem do servidor é inalcançável pelo OOM.</strong> 65.536
+      tags varridos, 22 legíveis, nenhuma devolve o número. A cobertura vai ter
+      de vir do manifesto do próprio Iris, e por isso <strong>se acumula com o
+      tempo</strong> em vez de existir na primeira varredura.</li>
     <li><strong>A suíte imprime "Passed!" pulando os testes que tocam o
       Outlook.</strong> Descoberto hoje, sem conserto ainda.</li>
     <li><strong>O teste de crash cobre morte do processo, não falta de energia.</strong></li>
@@ -714,17 +718,81 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
 </p>
 
 <p>
-  Se o Iris conseguir ler o total do servidor, ele <em>mede</em> a própria
-  cobertura — "esta pasta tem 145, eu enxergo 35" — em vez de suspeitar dela. É
-  melhor que qualquer token de configuração: mede o <strong>efeito</strong>, e
-  continua valendo quando o efeito vier de outra causa.
+  A aba <em>Sincronização</em> de cada pasta confirmou os números exatos, e a
+  interpretação com eles:
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>Propriedades da pasta → Sincronização</caption>
+  <thead><tr><th>Pasta</th><th class="n">Servidor contém</th><th class="n">Offline contém</th></tr></thead>
+  <tbody>
+    <tr><td>1. Backup</td><td class="n">145</td><td class="n">35</td></tr>
+    <tr><td>Caixa de Entrada</td><td class="n">17.728</td><td class="n">1.018</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Então cacei a propriedade MAPI. Primeiro em três faixas <em>plausíveis</em> —
+  e faixa plausível é palpite disfarçado de método: se o valor estivesse fora
+  dela, o negativo diria mais sobre onde eu procurei do que sobre onde ele está.
+  É o mesmo erro do token, um degrau acima. Então varri o espaço inteiro.
+</p>
+
+<div class="wide numeros">
+  <div><span class="v">65.536</span><span class="k">tags testados</span></div>
+  <div><span class="v">22</span><span class="k">legíveis na pasta</span></div>
+  <div><span class="v">0</span><span class="k">que devolvem 145</span></div>
+</div>
+
+<div class="principio">
+  <p><strong>A contagem do servidor não é alcançável por
+  <code>Folder.PropertyAccessor</code>.</strong></p>
+  <p>E a formulação importa: isso não é "a propriedade não existe". O
+  <code>PropertyAccessor</code> recusa parte do espaço MAPI, e recusa
+  <em>lançando</em> — o que é indistinguível de "não existe" de onde eu estou
+  olhando. O que está medido é a <strong>inalcançabilidade</strong>, e para o
+  Iris dá no mesmo.</p>
+</div>
+
+<p class="nota">
+  Antes disso, <code>Items.Count</code>, <code>PR_CONTENT_COUNT</code> e a
+  <code>Table</code> deram os mesmos 1.018 e 35 — três caminhos concordando por
+  lerem o <strong>mesmo OST</strong>. Terceira vez nesta fase.
+  <br><br>
+  E um dado de capacidade que vale guardar: uma pasta expõe <strong>22</strong>
+  propriedades <code>PT_LONG</code> legíveis por essa via, de 65.536 possíveis. O
+  <code>PropertyAccessor</code> sobre <code>Folder</code> é uma janela bem mais
+  estreita do que eu supunha.
+</p>
+
+<h3>O que sobra, e a recomendação</h3>
+
+<p>
+  <strong>Extended MAPI</strong> — <code>IMAPIFolder</code> direto ou Redemption.
+  O número existe abaixo do OOM, na camada de replicação. Mas é dependência nova
+  e uma superfície que a Fase 1 evitou de propósito. Não vale o preço ainda.
+</p>
+
+<p>
+  <strong>O próprio manifesto do Iris como referência</strong> — se a varredura
+  de hoje enxerga menos do que a de ontem na mesma pasta, alguma coisa encolheu,
+  e isso basta para invalidar conclusões de ausência sem precisar saber por quê.
+</p>
+
+<p>
+  A segunda é melhor do que parece, e não por ser barata: ela mede o que
+  <strong>o Iris enxerga</strong>, que é a grandeza que importa. A contagem do
+  servidor responderia "quanto existe"; o manifesto responde "quanto eu alcanço,
+  e mudou?" — e é a segunda pergunta que decide se uma conclusão de ausência
+  ainda vale.
 </p>
 
 <p class="nota">
-  Já tentei e falhou: <code>Items.Count</code>, <code>PR_CONTENT_COUNT</code> e a
-  <code>Table</code> dão os mesmos 1.018 e 35. As três concordam porque leem o
-  <strong>mesmo OST</strong> — é a terceira vez nesta fase que três caminhos
-  concordam por compartilharem a fonte, e desta vez eu testei esperando isso.
+  O custo: a primeira varredura de cada pasta não tem com o que comparar, então
+  não autoriza nada. A cobertura passa a ser uma propriedade que <strong>se
+  acumula com o tempo</strong>, em vez de existir na primeira leitura.
 </p>
 
 <h3>Reconhecer não é autorizar</h3>
@@ -822,18 +890,18 @@ Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
 
 <div class="wide acoes">
   <div>
-    <span class="tempo">≈ 1 minuto · aponta o caminho do 2.3</span>
-    <h3>Abrir a aba Sincronização de uma pasta</h3>
+    <span class="tempo">decisão · abre ou fecha uma porta</span>
+    <h3>Extended MAPI entra no projeto?</h3>
     <p>
-      Botão direito em <strong>"1. Backup"</strong> → Propriedades → aba
-      <strong>Sincronização</strong>. Ela mostra duas linhas, algo como <em>"a pasta
-      do servidor contém N itens"</em> e <em>"a pasta offline contém M itens"</em>.
+      A contagem do servidor existe abaixo do OOM. Chegar nela exige
+      <code>IMAPIFolder</code> direto ou Redemption — dependência nova, e uma
+      superfície que a Fase 1 evitou de propósito.
     </p>
     <p>
-      Se der <strong>145 e 35</strong>, está confirmado que o Outlook tem os dois
-      números — e então <strong>existe</strong> uma propriedade MAPI carregando o
-      count do servidor. Achar qual é a primeira coisa do 2.3, e é o que pode
-      destravar a cobertura.
+      Minha recomendação é <strong>não</strong>, por enquanto: o manifesto do
+      próprio Iris responde a pergunta que importa ("quanto eu alcanço, e
+      mudou?") sem dependência nenhuma. Mas é porta que você pode querer aberta,
+      e vale saber que ela está aí.
     </p>
   </div>
   <div>
