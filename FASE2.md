@@ -2084,10 +2084,42 @@ As duas respostas são defensáveis e levam a produtos diferentes:
   diante.
 
 O acúmulo é viável justamente porque o Iris guarda **metadado, não
-conteúdo**. Estimativa de ordem de grandeza, **não medida**: ~600 bytes por
-`MailSummary` (o `EntryID` sozinho tem 140 caracteres, e o `StoreID` ~300)
-dão ~10 MB para 17 mil itens — contra os **1,5 GB** que um mês de conteúdo
-custa no OST. **Medir isso é barato e deveria vir antes da decisão.**
+conteúdo**. E agora está **medido**, não estimado (`tools/q9-metadado.ps1`,
+1.004 itens da Entrada):
+
+| campo | média |
+|---|---|
+| `EntryID` longo | 140 B |
+| Message-ID | 80 B |
+| Subject | 46 B |
+| `SearchKey` | 32 B |
+| SenderName | 19 B |
+| demais (datas, tamanho, flags, classe) | 32 B |
+| **soma** | **349 B** |
+
+Com fator 2x de folga para índice e página do SQLite:
+
+| | metadado no Iris | conteúdo no OST |
+|---|---|---|
+| 1 mês (1.004 msgs) | 0,7 MB | **1.511 MB** |
+| 3 meses (~3.000) | 2,0 MB | — |
+| Entrada inteira (17.668) | **11,7 MB** | — |
+| 50 mil msgs | 33 MB | — |
+
+> Guardar o metadado da **caixa inteira** custa **menos de 1%** do que **um
+> mês** de conteúdo já ocupa. A minha estimativa de ~600 B era conservadora
+> por quase o dobro.
+
+Dois detalhes que a medição revelou:
+
+- **`StoreID` tem 594 bytes** — mais que todos os outros campos somados.
+  Guardá-lo por linha **mais que dobraria** o custo. Ele vira tabela de
+  stores com id interno pequeno, que é o **I1** — que agora tem argumento
+  de custo além do de correção.
+- **252 dos 349 bytes são identificadores.** Assunto e remetente, que é o
+  que o usuário vê, dão 65. O preço do cache é quase todo o preço de saber
+  **de que item se está falando** — que é exatamente o que a Q2 mostrou
+  não ser barato.
 
 E ele cria um risco novo, que o gate precisa cobrir: se o Iris guarda item
 que saiu da janela, **"não está no OST" deixa de significar "não existe"**.
