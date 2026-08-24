@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 21 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+**Versão:** 22 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
 Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
 e `Restrict` de verdade (16)**. **Gate de sincronização (17)**, com o sinal
 operacional que fecha a parte principal da Q4.
@@ -14,6 +14,17 @@ Esta versão separa as duas coisas: o que já está decidido porque é
 invariante, e o que depende de número.
 
 ---
+
+> ## ⚠ LEIA ANTES DE USAR QUALQUER NÚMERO DESTE DOCUMENTO
+>
+> **A caixa está em Modo Cache com janela de 1 MÊS**, por decisão do
+> usuário (memória da máquina). O OST tem 1,5 GB.
+>
+> Consequência: o OOM enxerga **1.004 itens** na Caixa de Entrada; o
+> servidor tem **~17.668**. Todas as medições das seções 9 a 17 foram
+> feitas sobre **~6% da Entrada** — um mês de correio.
+>
+> Elas não estão erradas: estão **escopadas**. Ver §18.
 
 ## 1. Por que esta fase existe
 
@@ -1997,3 +2008,118 @@ nas duas leituras; este teste **não consegue distinguir** um do outro.
 
 A Q3 já entregou o mais importante: **não pode ser base de completude**. O
 que resta dela é caracterizar onde ainda ajuda.
+
+---
+
+## 18. A janela de cache de 1 mês, e o que ela muda
+
+Descoberto porque o usuário olhou a barra de status do Outlook e viu
+**"Itens: 17.668"** enquanto eu vinha reportando **1.004**. A desconfiança
+dele estava certa e a minha medição estava incompleta — não por erro de
+código, mas por eu nunca ter perguntado **o que o OST contém**.
+
+### 18.1 O que foi medido
+
+`tools/diag-contagem.ps1`. Os três caminhos **concordam**:
+
+```
+Items.Count                 : 1004
+PR_CONTENT_COUNT            : 1004
+Table, varredura completa   : 1004 linhas
+PR_CONTENT_UNREAD           : 181     <- bate com a tela do usuario
+a pasta e a MESMA que o Explorer mostra? SIM
+
+item MAIS ANTIGO no OST : 23/07/2026
+item MAIS NOVO no OST   : 23/08/2026     <- exatamente UM MES
+```
+
+Store: um só, `IsCachedExchange=True`, OST de **1,5 GB**. E a
+configuração da conta confirma: *"Baixar emails dos últimos: **1 mês**"*.
+
+> **O OOM não vê o servidor. Ele vê o OST.** A janela de cache não é uma
+> questão de desempenho: é uma **fronteira de capacidade**. O que está
+> fora dela não existe para o Iris.
+
+### 18.2 O que isso faz com os números já publicados
+
+Nada foi medido errado. Tudo foi medido num **universo menor do que eu
+supunha**, e o rótulo estava faltando:
+
+| § | número | escopo real |
+|---|---|---|
+| 9 | travessia de 1.003 itens em ~1,0 s | **1 mês** da Entrada |
+| 12 | `ReadPage` 10,6x (1.826 ms x 19.383 ms) | idem |
+| 13 | caixa inteira, 2.285 itens, ~3,2 s | **1 mês**, mais o histórico de pastas locais |
+| 16 | truncagem, matriz temporal | pastas próprias, tamanho pequeno |
+
+O ganho relativo de 10,6x provavelmente **se mantém** — a Q1 mediu que o
+caminho por `Table` é plano com a profundidade, e o caminho por iteração
+não é. Se a janela abrir, a diferença tende a **crescer**, não a encolher.
+
+Os **absolutos**, não. "~3,2 s para a caixa inteira" vira "~3,2 s para um
+mês". Com 17x mais itens na Entrada, a varredura completa por pasta — que
+a §16.2 acabou de promover a **mecanismo de completude** — passa a custar
+algo entre um e dois dígitos de segundos. Isso muda o desenho de lote
+interrompível de "requisito" para "requisito com orçamento apertado".
+
+### 18.3 O que isso faz com a Q9 (retenção)
+
+A pergunta da Q9 muda de dono. Eu perguntava ao usuário *"todas as pastas
+e todo o histórico, ou uma janela?"*. Acontece que **a janela já existe, e
+não foi o Iris que a escolheu** — o Outlook a impõe, por restrição de
+memória da máquina.
+
+Reformulada:
+
+> **Q9' — O cache do Iris deve ser limitado à janela do OST, ou deve
+> ACUMULAR histórico que o OST descarta?**
+
+As duas respostas são defensáveis e levam a produtos diferentes:
+
+- **espelho**: o Iris nunca mostra o que o Outlook não mostra. Simples,
+  sem surpresa, e inútil para busca histórica;
+- **acúmulo**: o Iris guarda o **metadado** de tudo que passou pela janela
+  enquanto ele estava rodando. Não recupera o passado — os ~16.664 itens
+  mais antigos são invisíveis ao OOM — mas **para de perder** dali em
+  diante.
+
+O acúmulo é viável justamente porque o Iris guarda **metadado, não
+conteúdo**. Estimativa de ordem de grandeza, **não medida**: ~600 bytes por
+`MailSummary` (o `EntryID` sozinho tem 140 caracteres, e o `StoreID` ~300)
+dão ~10 MB para 17 mil itens — contra os **1,5 GB** que um mês de conteúdo
+custa no OST. **Medir isso é barato e deveria vir antes da decisão.**
+
+E ele cria um risco novo, que o gate precisa cobrir: se o Iris guarda item
+que saiu da janela, **"não está no OST" deixa de significar "não existe"**.
+Isso é exatamente o I7 e o S5 — e agora eles têm um caso real, não
+hipotético.
+
+### 18.4 A Q8 virou a pergunta mais importante, e eu queria cortá-la
+
+Eu propus tirar a Q8 (matriz de providers) do bloqueio do 2.1, com o
+argumento de que esta máquina tem um provider só e o critério era
+insatisfazível. O Codex chamou de relaxamento; esta seção mostra que era
+pior que isso.
+
+**A própria máquina já exibe a variação que a Q8 investiga.** "Exchange em
+cache" não é um ambiente: é uma família parametrizada pela janela, e o
+parâmetro muda **o que existe**, não só o que custa. Um mesmo Iris, no
+mesmo Outlook, com o cursor em "1 mês" ou em "Tudo", enxerga caixas
+diferentes.
+
+A Q8 passa a exigir, no mínimo: janela de 1 mês (medido), janela maior, e
+**o comportamento na fronteira** — o que o OOM faz quando um item sai da
+janela enquanto o Iris o observa.
+
+### 18.5 O erro de método, e ele é velho
+
+Eu medi `Items.Count` e nunca perguntei **de onde vinha aquele número**.
+Todas as três fontes concordavam, então pareciam confirmação mútua — e as
+três liam **o mesmo OST**. Concordância entre caminhos que compartilham a
+fonte não é corroboração, é a mesma leitura três vezes.
+
+É o mesmo formato do erro da §16.5, onde três execuções concordaram porque
+o filtro estava quebrado do mesmo jeito nas três. **Controle positivo é o
+que distingue "concordam" de "estão certos"** — e aqui o controle positivo
+era simplesmente olhar a tela do Outlook, coisa que o usuário fez e eu
+não.
