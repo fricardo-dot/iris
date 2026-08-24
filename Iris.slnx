@@ -4,6 +4,7 @@
     <Project Path="src/Iris.Core/Iris.Core.vbproj" />
     <Project Path="src/Iris.Model/Iris.Model.vbproj" />
     <Project Path="src/Iris.Outlook/Iris.Outlook.vbproj" />
+    <Project Path="src/Iris.Cache/Iris.Cache.vbproj" />
     <Project Path="src/Iris.Sync/Iris.Sync.vbproj" />
   </Folder>
   <Folder Name="/tests/">
