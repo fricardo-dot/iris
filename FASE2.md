@@ -2986,17 +2986,68 @@ vez nesta fase, e desta vez eu testei esperando encontrá-la.
 propriedade está sendo lida certo. O problema não é acesso: é que a pasta do
 OOM **é** a réplica local.
 
-#### O próximo passo, e ele é barato
+#### O Outlook tem os dois números. Conferido.
 
-O Outlook exibe os dois números em *Propriedades da pasta → aba
-Sincronização*: "a pasta do servidor contém N itens" e "a pasta offline contém
-M itens". Se estiverem lá, **existe** uma propriedade MAPI carregando o count
-do servidor, e vale caçar qual. É a primeira coisa do 2.3.
+*Propriedades da pasta → aba Sincronização*, nas duas pastas:
 
-Se não houver como ler pelo OOM, a alternativa é pior mas existe: usar o
-**próprio manifesto do Iris** como referência. Se a varredura de hoje enxerga
-menos do que a de ontem na mesma pasta, alguma coisa encolheu — e isso basta
-para invalidar conclusões de ausência sem precisar saber por quê.
+| Pasta | Última sincronização | Servidor contém | Offline contém |
+|---|---|---|---|
+| 1. Backup | 24/08/2026 20:03 | **145** | **35** |
+| Caixa de Entrada | 24/08/2026 20:03 | **17728** | **1018** |
+
+Exatamente os números previstos. A interpretação está confirmada: a UI mostra
+o servidor, o OOM mostra o OST, e o não lido coincide porque mensagem não lida
+é recente.
+
+#### E a contagem do servidor NÃO é alcançável pelo `PropertyAccessor`
+
+Primeiro varri três faixas "plausíveis" — `0x0E00`, `0x3600`, `0x6600` — e não
+achei. Mas *faixa plausível* é palpite disfarçado de método: se o valor
+estivesse fora dela, o resultado negativo diria mais sobre onde eu procurei do
+que sobre onde ele está. É o mesmo erro do `00036601`, um degrau acima.
+
+Então varri o espaço **inteiro**: `0x0000`–`0xFFFF` em `PT_LONG`, na pasta
+menor, procurando o valor 145.
+
+| | |
+|---|---|
+| identificadores testados | 65.536 |
+| propriedades PT_LONG legíveis na pasta | **22** |
+| que devolvem 145 | **nenhuma** |
+
+> A contagem do servidor **não é alcançável por
+> `Folder.PropertyAccessor`**. E a formulação importa: isso não é "a
+> propriedade não existe" — o `PropertyAccessor` do OOM recusa parte do
+> espaço MAPI, e recusa lançando, o que é indistinguível de "não existe" de
+> onde eu estou olhando. O que está medido é a **inalcançabilidade**, e para
+> o Iris dá no mesmo.
+
+De passagem, um dado de capacidade que vale guardar: uma pasta expõe **22**
+propriedades `PT_LONG` legíveis por essa via, de 65.536 possíveis. O
+`PropertyAccessor` sobre `Folder` é uma janela bem mais estreita do que eu
+supunha.
+
+#### O que sobra
+
+Duas saídas, e a segunda é a que eu recomendo.
+
+**Extended MAPI.** O número existe abaixo do OOM, na camada de replicação.
+Chegar lá significa `IMAPIFolder` direto ou Redemption — dependência nova e
+uma superfície que a Fase 1 deliberadamente evitou. Não vale pelo preço, ainda.
+
+**O próprio manifesto do Iris como referência.** Se a varredura de hoje enxerga
+menos do que a de ontem **na mesma pasta**, alguma coisa encolheu — e isso
+basta para invalidar conclusões de ausência sem precisar saber por quê.
+
+A segunda é melhor do que parece, e não é só por ser barata: ela mede o que
+**o Iris enxerga**, que é exatamente a grandeza que importa. A contagem do
+servidor responderia "quanto existe"; o manifesto responde "quanto eu alcanço,
+e mudou?" — e é a segunda pergunta que decide se uma conclusão de ausência
+ainda vale.
+
+Custo: a primeira varredura de cada pasta não tem com o que comparar, então
+não autoriza nada. A cobertura passa a ser uma propriedade que **se acumula
+com o tempo**, em vez de existir na primeira leitura.
 
 ### 22.12 A suíte diz "Passed!" pulando os testes que tocam o Outlook
 
