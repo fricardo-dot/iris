@@ -1,9 +1,14 @@
 ﻿# Q4 com MATRIZ TEMPORAL, e Q3 com o Restrict DE VERDADE.
 #
 # ESCREVE. So em pastas criadas por este script e em itens marcados com um
-# GUID gerado agora. A limpeza usa os EntryIDs CAPTURADOS e o marcador —
-# nunca varre pasta do usuario lendo assunto, que era o que a versao
-# anterior fazia enquanto o cabecalho prometia o contrario.
+# GUID gerado agora. Nenhuma mensagem do usuario e criada, movida ou
+# apagada.
+#
+# RESSALVA HONESTA: a limpeza PERCORRE os Rascunhos lendo Subject, para
+# achar os proprios artefatos que possam ter ficado entre o Save e o Move.
+# O marcador GUID torna a exclusao segura contra colisao; nao torna
+# verdadeira a frase "nao le nada do usuario". A versao anterior prometia
+# exatamente isso no cabecalho e fazia o contrario.
 #
 # ------------------------------------------------------------------
 # POR QUE ESTA VERSAO EXISTE
