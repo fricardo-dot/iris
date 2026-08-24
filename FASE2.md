@@ -2625,7 +2625,11 @@ dívida**. Com `publication_log` gravado na mesma transação da geração, os
 consultável.
 
 Os quatro pontos, medidos matando o processo e reabrindo o arquivo com um
-leitor independente (python `sqlite3`, não o código do teste):
+leitor **independente**: `tools/conferir-crash.py`, que usa o `sqlite3` do
+Python — outra biblioteca, outro processo, nenhuma linha de Iris. A
+independência não é preciosismo: os testes reabrem com `CacheDatabase.Open`,
+que é o próprio código sob teste, e um defeito lá poderia mascarar o estado
+no disco sem o teste ver.
 
 | Morre em | stage | cursor | linhas | geração | dívida | cabeça |
 |---|---|---|---|---|---|---|
@@ -2683,6 +2687,11 @@ leitura com snapshot, e nenhuma das duas existe.
 de `Store`: só `IsCachedExchange` e `ExchangeStoreType`, nenhum `Sync*`,
 nenhum `Window*`. O valor existe apenas no registro do perfil.
 
+**Havia um único store**, e isso importa: o script agrega a árvore inteira,
+então hoje o agregado e o store coincidem. Quando existir um segundo, o
+mesmo script produzirá um número global enquanto a linha da matriz continua
+descrevendo uma caixa específica — armadilha registrada, não corrigida.
+
 ```
 store 'conta.do.dono@empresa.com'  IsCachedExchange=True  ExchangeStoreType=0
 
@@ -2722,8 +2731,15 @@ no código que "não preciso verificar". Era falso, e o Codex pegou.
 
 | Propriedade | Estado |
 |---|---|
-| **Estável** — não muda sozinho | **medido**: 5 leituras idênticas |
+| **Estável** — não muda sozinho | **parcial**: 5 leituras idênticas em ~1,2 s, mesma sessão, sem mudança deliberada |
 | **Sensível** — muda quando a janela muda | **NÃO MEDIDO** |
+
+E "5 leituras em 1,2 segundo" não é "não muda sozinho". Reinício do Outlook,
+reinício da máquina, atualização do Office e recriação do perfil podem mexer
+no valor, e nada disso foi exercitado. Um token que mude sozinho ao reiniciar
+faria o Iris reconciliar a caixa inteira toda vez que o usuário abrisse o
+Outlook — por isso `TokenValidado` exige **as duas** propriedades, e o
+protocolo ganhou um passo de reinício.
 
 Eu tinha suposto que medir a sensibilidade custava GB de download. Custa não
 — o que custa GB é medir o **universo resultante**; ler o token é
@@ -2749,6 +2765,13 @@ E nenhuma das três está medida. Pior: duas têm evidência **contra**, nesta
 mesma fase. A §19.2 mediu pastas cheias reportando zero — cobertura não vem
 de contagem. A §16.3 mediu que a pasta de origem não distingue movido de
 excluído.
+
+**E há uma distinção que precisa ficar escrita para ninguém confundir depois:
+a `EnvironmentPolicy` ainda não é consumida por código de produção.** Ela é o
+*modelo* da autorização, não o *cumprimento* dela — nada impede hoje um
+chamador de passar `FolderCoverage.Completa` direto para a `PresencePolicy`
+sem passar por aqui. Ligar as duas coisas é do 2.2. "A matriz concede zero"
+não é o mesmo que "o produto já impõe zero".
 
 Hoje a matriz **autoriza zero inferências**. Não é bug nem pendência
 escondida: é o estado honesto. A consequência de produto é real e fica
@@ -2797,13 +2820,13 @@ exceção não tratada.
 |---|---|---|
 | 1 | Q1,Q3,Q4,Q7,Q8 com número; Q2,Q5,Q6,Q9 semânticas | **parcial** — Q8 respondida como escopo declarado, não como matriz |
 | 2 | Limitação escrita em cada resposta | ok |
-| 3 | Recomendação de tamanho de cada marco seguinte | ok |
+| 3 | Recomendação de tamanho de cada marco seguinte | ok — §22.10 |
 | 4 | Revisão externa do RESULTADO | ok — Codex revisou o 2.1 e achou 4 defeitos reais |
-| 5 | Itens de teste devolvidos | ok |
+| 5 | Itens de teste devolvidos | ok, **com exceção declarada** — três cópias ficaram em Itens Excluídos (§11), por segurança, e a pasta `Iris Q4R` vazia que o tenant recusou excluir (§21.4) |
 | 6 | Corpus adversarial da Q2 com oráculo prévio | ok |
 | 7 | Critério operacional de invalidação, com dado | ok — S6 |
 | 8 | Latência máxima por lote | **D5 decidido (100 ms); NÃO medido** |
-| 9 | Crash entre commit, checkpoint e publicação | **ok** — §22.1 |
+| 9 | Crash entre commit, checkpoint e publicação | **parcial** — §22.1: a persistência da dívida está provada; a **entrega à UI** não existe ainda |
 | 10 | Reconciliação antiga não sobrescreve nova | **ok** — §22.2 |
 
 ### 22.9 O que ficou de fora do 2.1, e por quê
@@ -2816,3 +2839,51 @@ exceção não tratada.
 - **Latência por lote (D5)** — decidida em 100 ms, não medida, porque medir
   exige a orquestração do passo 6.
 - **Consumidor de `publication_log`** — a UI que drena a dívida.
+
+### 22.10 Recomendação de tamanho dos marcos seguintes
+
+O critério 3 da §8 pede isto explicitamente, e a base para responder é o
+próprio 2.1: **planejei 7 passos e entreguei 4**. O dado não é "fui
+otimista" — é *quais* passos sobraram. Sobraram exatamente os três que
+dependiam de coisa fora do meu alcance: orquestração com muitos estados
+concorrentes, adaptador COM, e a caixa real do usuário.
+
+Daí a regra que eu recomendo, e ela é sobre **composição**, não sobre
+contagem:
+
+> **Um marco não deve misturar trabalho que se verifica de graça com
+> trabalho que exige a caixa do usuário.** Quando os dois estão no mesmo
+> marco, o segundo atrasa e o primeiro fica represado atrás dele —
+> pronto pela metade, sem poder fechar.
+
+O 2.1 tinha os dois tipos e fechou só o primeiro. Foi sorte que o corte
+tenha caído numa fronteira limpa.
+
+#### O que fazer com o que sobrou
+
+| Marco | Conteúdo | Verificação | Tamanho |
+|---|---|---|---|
+| **2.2a** | Orquestração do `Iris.Sync` contra provider falso mutável: truncamento, mutação balanceada, zero enganoso, cancelamento, geração velha terminando depois da nova | de graça, em memória + SQLite | **3–4 passos** — igual aos passos 1–4 do 2.1, que couberam |
+| **2.2b** | Adaptador Outlook + DTO de manifesto; consumidor do `publication_log` na UI; ligar a `EnvironmentPolicy` ao cumprimento; medir D5 (100 ms) | exige a caixa real e o usuário | **2 passos, no máximo** |
+| **2.3** | Q8: validar o token (§22.4) e, se ele servir, começar a demonstrar as inferências uma a uma | exige o usuário mover a janela | **1 passo** |
+
+#### Três razões para 2.2b ser pequeno
+
+1. **Cada medição na caixa real custa uma janela de atenção do usuário.**
+   A §19.3 mediu que mexer no cursor da janela custa horas e dezenas de GB.
+   Um marco que precise de três dessas mudanças não cabe numa manhã.
+2. **O 2.1 mediu que defeito em COM aparece longe da causa.** O
+   `foreign key mismatch` da §22.7 e o `Table.Sort` da §22.3 são dois
+   exemplos do mesmo dia. Marco pequeno encurta a distância entre escrever
+   o defeito e vê-lo.
+3. **A verificação do 2.2b é serial por natureza** — uma caixa, um
+   Outlook, um usuário. Não adianta empilhar trabalho paralelizável atrás
+   de um gargalo que não paraleliza.
+
+#### E uma recomendação sobre o 2.2a que não é sobre tamanho
+
+O provider falso precisa **mutar durante a leitura**, não antes dela. Um
+falso que devolve uma lista fixa testa o algoritmo contra um mundo que não
+existe: a Fase 2 inteira foi sobre o mundo mudando embaixo da varredura. Se
+o falso não fizer isso, o 2.2a vai passar verde e não provar nada — que é o
+formato do erro da §16.5.

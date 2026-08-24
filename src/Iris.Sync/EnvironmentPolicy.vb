@@ -85,8 +85,12 @@ Namespace Global.Iris.Sync
         ''' não dispensa saber se o valor serve de impressão digital. Ele
         ''' precisa de duas propriedades:
         '''
-        '''   - ESTÁVEL enquanto o ambiente não muda — §22.4, medido: cinco
-        '''     leituras idênticas;
+        '''   - ESTÁVEL enquanto o ambiente não muda — medido só em SESSÃO
+        '''     CURTA: cinco leituras idênticas em ~1,2 s, mesma sessão do
+        '''     Outlook, sem mudança deliberada (§22.4). Isso não é o mesmo
+        '''     que "não muda sozinho": reinício, atualização do Office ou
+        '''     recriação do perfil ainda podem mexer no valor, e nada disso
+        '''     foi exercitado;
         '''   - SENSÍVEL quando o ambiente muda — <b>NÃO MEDIDO</b>. Ver
         '''     <see cref="MeasuredEnvironment.TokenValidado"/>.
         '''
@@ -206,18 +210,28 @@ Namespace Global.Iris.Sync
         Public ReadOnly Property AlcanceMedido As Date?
 
         ''' <summary>
-        ''' Se a SENSIBILIDADE do token da janela foi verificada — isto é, se
-        ''' alguém confirmou que ele muda quando o cursor da janela se move.
+        ''' Se o token da janela foi validado como impressão digital. Exige
+        ''' <b>as duas</b> propriedades, não só a sensibilidade:
+        '''
+        '''   - SENSIBILIDADE: muda quando o cursor da janela se move;
+        '''   - ESTABILIDADE OPERACIONAL: não muda por conta própria ao longo
+        '''     de reinícios do Outlook e do computador.
+        '''
+        ''' A §22.4 mediu apenas estabilidade de leitura em sessão curta, que
+        ''' é bem menos que a segunda. Marcar isto como <c>True</c> só depois
+        ''' de cobrir reinício é parte do protocolo, não zelo extra: um token
+        ''' que muda sozinho ao reiniciar faria o Iris reconciliar a caixa
+        ''' inteira toda vez que o usuário abrisse o Outlook.
         '''
         ''' Enquanto for falso, a linha não autoriza inferência nenhuma, mesmo
-        ''' que traga evidências. O motivo é direto: se o token não mudar
-        ''' quando a janela muda, a impressão digital não distingue os dois
-        ''' universos, e toda autorização concedida ao universo antigo continua
-        ''' valendo no novo. O mecanismo inteiro vira decoração.
+        ''' que traga evidências. Se o token não mudar quando a janela muda, a
+        ''' impressão digital não distingue os dois universos, e toda
+        ''' autorização concedida ao antigo continua valendo no novo — o
+        ''' mecanismo inteiro vira decoração.
         '''
-        ''' O protocolo para medir está em <c>tools/q8-sensibilidade.md</c> e
-        ''' leva minutos: o que custa GB é medir o universo resultante, não ler
-        ''' o token.
+        ''' O protocolo está em <c>tools/q8-sensibilidade.md</c> e leva
+        ''' minutos: o que custa GB é medir o universo resultante, não ler o
+        ''' token.
         ''' </summary>
         Public ReadOnly Property TokenValidado As Boolean
 
@@ -231,7 +245,27 @@ Namespace Global.Iris.Sync
             Me.Evidence = evidence
             Me.AlcanceMedido = alcanceMedido
             Me.TokenValidado = tokenValidado
-            Me.Grants = If(grants, Enumerable.Empty(Of GrantedInference)()).ToList()
+
+            Dim lista = If(grants, Enumerable.Empty(Of GrantedInference)()).ToList()
+
+            ' Duplicata nao e detalhe estetico: a autorizacao e deduplicada por
+            ' conjunto, e se a razao fosse calculada da CONTAGEM DA LISTA, tres
+            ' grants iguais de UsarIncremental produziriam "autorizou tudo" com
+            ' uma permissao so — degradado sem motivo escrito, que e o pior
+            ' estado possivel: errado e silencioso.
+            Dim vistas As New HashSet(Of Inference)()
+            For Each g In lista
+                If Not [Enum].IsDefined(GetType(Inference), g.Inference) Then
+                    Throw New ArgumentException(
+                        $"inferencia fora do enum: {CInt(g.Inference)}", NameOf(grants))
+                End If
+                If Not vistas.Add(g.Inference) Then
+                    Throw New ArgumentException(
+                        $"inferencia autorizada duas vezes: {g.Inference}", NameOf(grants))
+                End If
+            Next
+
+            Me.Grants = lista
         End Sub
     End Class
 
@@ -247,6 +281,13 @@ Namespace Global.Iris.Sync
     ''' suportado</b>, com fallback conservador para todo o resto. Fingir a
     ''' matriz cheia seria pior que declará-la parcial, porque um número
     ''' inventado não avisa quando está errado.
+    '''
+    ''' <b>Esta política ainda não é consumida por código de produção.</b>
+    ''' Ela é o MODELO da autorização, não o cumprimento dela: nada impede
+    ''' hoje um chamador de passar <c>FolderCoverage.Completa</c> direto para
+    ''' a <see cref="PresencePolicy"/> sem passar por aqui. Ligar as duas
+    ''' coisas é do 2.2, e "a matriz concede zero" não é o mesmo que "o
+    ''' produto já impõe zero".
     '''
     ''' <b>Hoje a matriz autoriza ZERO inferências.</b> Isso não é um bug nem
     ''' uma pendência escondida: é o estado honesto. O ambiente do usuário está
@@ -337,16 +378,17 @@ Namespace Global.Iris.Sync
                 ' Sem sensibilidade verificada, a impressao digital nao
                 ' distingue dois universos, e autorizar aqui vazaria a
                 ' autorizacao para o universo seguinte sem ninguem notar.
-                Return Negar("sensibilidade do token da janela nao verificada (§22.4)")
+                Return Negar("token da janela nao validado: sensibilidade nao medida (§22.4)")
             End If
 
             If linha.Grants.Count = 0 Then
                 Return Negar("ambiente reconhecido, nenhuma inferencia demonstrada")
             End If
 
-            Return New EnvironmentCapabilities(
-                linha.Grants.Select(Function(g) g.Inference),
-                If(linha.Grants.Count < [Enum].GetValues(GetType(Inference)).Length,
+            ' A razao vem do conjunto DISTINTO, nunca da contagem da lista.
+            Dim permitidas = linha.Grants.Select(Function(g) g.Inference).Distinct().ToList()
+            Return New EnvironmentCapabilities(permitidas,
+                If(permitidas.Count < [Enum].GetValues(GetType(Inference)).Length,
                    "autorizacao parcial: so o que foi demonstrado", ""))
         End Function
 

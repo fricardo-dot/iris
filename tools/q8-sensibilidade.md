@@ -14,7 +14,7 @@ Um token opaco serve se tiver duas propriedades:
 
 | Propriedade | O que significa | Estado |
 |---|---|---|
-| **Estável** | não muda sozinho | **medido** — §22.4, 5 leituras idênticas |
+| **Estável** | não muda sozinho | **parcial** — §22.4 mediu 5 leituras idênticas em ~1,2 s, na mesma sessão. Reinício não foi coberto. |
 | **Sensível** | muda quando a janela muda | **NÃO MEDIDO** |
 
 Se ele não for sensível, todo o mecanismo é decoração: o Iris não distinguiria
@@ -44,21 +44,33 @@ e hoje eles são `84-09-00-00` e `80-01-00-00`.
 4. Volte o cursor para **onde estava**. OK.
 5. **Leia** o token uma terceira vez. Anote.
 6. Feche e reabra o Outlook, **leia** de novo.
+7. Se der, reinicie o computador e **leia** uma última vez — este passo é o
+   que fecha a estabilidade que a §22.4 deixou pela metade.
 
 Se quiser evitar o download, pode cancelar/pausar a sincronização depois do
-passo 2 — o token já terá mudado (ou não) no momento em que você clicou OK.
+passo 2. **Eu não sei em que momento o registro é escrito** — pode ser no OK,
+ao fechar o diálogo, no reinício, ou em outro ponto. É justamente isso que o
+protocolo vai revelar: leia depois de cada passo e veja quando o valor muda.
 
 ## O que cada resultado significa
 
 - **Passo 3 diferente do passo 1, e passo 5 igual ao passo 1** → o token é
-  sensível e reversível. É o resultado esperado. Marque
-  `TokenValidado:=True` na linha da matriz em
-  `src/Iris.Sync/EnvironmentPolicy.vb` e registre os três valores na §22.4.
+  sensível e reversível. É o resultado esperado. Marque `TokenValidado:=True`
+  na linha da matriz em `src/Iris.Sync/EnvironmentPolicy.vb` **desde que** o
+  passo 7 também tenha dado igual ao 5, e registre todos os valores na §22.4.
 
-- **Passo 3 igual ao passo 1** → o token **não** é sensível. O mecanismo não
-  serve como está, e a impressão digital precisa de outra fonte — provavelmente
-  medir o alcance (a mensagem mais antiga alcançável) e usá-lo como parte da
-  identidade, o que é caro mas funciona. Não marque nada; me avise.
+  Se o passo 7 não for feito, **não marque**: `TokenValidado` exige as duas
+  propriedades — sensibilidade e estabilidade através de reinício —, e a §22.4
+  só mediu leituras numa sessão curta. Um token que mude sozinho ao reiniciar
+  faria o Iris reconciliar a caixa inteira toda vez que você abrisse o Outlook.
+
+- **Passo 3 igual ao passo 1 em todas as leituras seguintes** → o token não é
+  sensível **onde foi lido**. O mecanismo não serve como está e a impressão
+  digital precisa de outra fonte. Uma alternativa **a investigar** — não
+  demonstrada, e com problema conhecido — é usar o alcance (a mensagem mais
+  antiga alcançável) como parte da identidade: é caro, e pior, o alcance muda
+  sem a configuração mudar, porque correio novo chega e a mensagem mais antiga
+  pode ser excluída ou movida. Não marque nada; me avise.
 
 - **Passo 6 diferente do passo 5** → o token muda com reinício, ou seja, não é
   estável do jeito que a §22.4 mediu, e a medição de estabilidade precisa ser

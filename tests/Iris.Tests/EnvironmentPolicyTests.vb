@@ -138,6 +138,65 @@ Public Class EnvironmentPolicyTests
             End Sub)
     End Sub
 
+    ''' <summary>
+    ''' Inferência autorizada DUAS VEZES não se constrói, e o motivo não é
+    ''' estética.
+    '''
+    ''' A autorização é deduplicada por conjunto, mas a razão da degradação era
+    ''' calculada da contagem da LISTA. Três grants iguais de
+    ''' <c>UsarIncremental</c> davam uma permissão só, contagem três, e daí
+    ''' <c>Reason = ""</c> com <c>Degradado = True</c>: degradado sem motivo
+    ''' escrito. É o pior estado possível — errado e silencioso, porque quem
+    ''' fosse investigar não teria o que ler.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Inferencia_autorizada_duas_vezes_nao_se_constroi()
+        Assert.ThrowsException(Of ArgumentException)(
+            Sub()
+                Dim x = New MeasuredEnvironment(Medido(), "FASE2 §22.3 — teste",
+                    Nothing, tokenValidado:=True,
+                    grants:={New GrantedInference(Inference.UsarIncremental, "FASE2 §22.3 — a"),
+                             New GrantedInference(Inference.UsarIncremental, "FASE2 §22.3 — b")})
+            End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' E valor fora do enum também não. <c>CType(999, Inference)</c> compila
+    ''' em VB sem reclamar — o enum não é um conjunto fechado em tempo de
+    ''' execução, e um valor inválido passaria direto para o <c>HashSet</c>,
+    ''' virando uma permissão que nenhuma checagem consegue negar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Valor_fora_do_enum_nao_se_constroi()
+        Assert.ThrowsException(Of ArgumentException)(
+            Sub()
+                Dim x = New MeasuredEnvironment(Medido(), "FASE2 §22.3 — teste",
+                    Nothing, tokenValidado:=True,
+                    grants:={New GrantedInference(CType(999, Inference), "FASE2 §22.3 — teste")})
+            End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' A razão da degradação nunca fica vazia enquanto <c>Degradado</c> é
+    ''' verdadeiro. É o invariante que o defeito das duplicatas violava.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Degradado_sempre_vem_com_motivo_escrito()
+        Dim casos = {
+            EnvironmentPolicy.Capacidades(Nothing),
+            EnvironmentPolicy.Capacidades(Medido()),
+            EnvironmentPolicy.Capacidades(
+                New EnvironmentFingerprint(ProviderKind.PstLocal, False, "x")),
+            EnvironmentPolicy.Capacidades(Medido(), MatrizSintetica(Inference.UsarIncremental))}
+
+        For Each c In casos
+            If c.Degradado Then
+                Assert.IsFalse(String.IsNullOrWhiteSpace(c.Reason),
+                    "degradado sem motivo escrito: quem investigar nao tem o que ler")
+            End If
+        Next
+    End Sub
+
     ' ==================================================================
     ' Degradação fora da matriz
 
