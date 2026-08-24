@@ -2595,8 +2595,9 @@ eliminou. Quem escrever limpeza precisa saber que **são dois passos**.
 
 ## 22. Marco 2.1 — a persistência, e o que ela obrigou a admitir
 
-O 2.1 fecha os itens **9** e **10** do pronto da Fase 2 (§8) e dá à **Q8** a
-única resposta que ela admite hoje. São quatro passos implementados —
+O 2.1 fecha o item **10** do pronto da Fase 2 (§8), entrega a **parte
+persistente** do item 9 — a dívida sobrevive ao crash; a entrega à UI não
+existe ainda — e dá à **Q8** a única resposta que ela admite hoje. São quatro passos implementados —
 presença/varredura, gate de schema, banco real, primitivas transacionais — e
 uma medição que me corrigiu no meio.
 
@@ -2851,9 +2852,9 @@ exceção não tratada.
 
 O critério 3 da §8 pede isto explicitamente, e a base para responder é o
 próprio 2.1: **planejei 7 passos e entreguei 4**. O dado não é "fui
-otimista" — é *quais* passos sobraram. Sobraram exatamente os três que
-dependiam de coisa fora do meu alcance: orquestração com muitos estados
-concorrentes, adaptador COM, e a caixa real do usuário.
+otimista" — é *quais* passos sobraram, e que eles são de **duas classes
+diferentes**: orquestração com muitos estados concorrentes, que se verifica
+de graça, e adaptador COM contra a caixa real, que não.
 
 Daí a regra que eu recomendo, e ela é sobre **composição**, não sobre
 contagem:
@@ -2864,7 +2865,7 @@ contagem:
 No 2.1 os dois tipos estavam no mesmo marco, e o que dependia da caixa
 ficou para trás. É uma observação, não uma lei: uma amostra não estabelece
 causalidade, e pode muito bem ter sido só a ordem em que eu ataquei os
-passos. Recomendo a separação porque o custo dela é zero e o custo de estar
+passos. Recomendo a separação porque o custo dela é baixo e o custo de estar
 errado é um marco que não fecha — não porque esteja demonstrada.
 
 #### O que fazer com o que sobrou
