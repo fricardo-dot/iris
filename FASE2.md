@@ -1,6 +1,6 @@
 # Fase 2 — Cache e sincronização
 
-**Versão:** 25 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
+**Versão:** 26 — Q1 e **Q2 fechadas** (9 a 11). Melhoria da Fase 1 (12).
 Gate arquitetural (14). Q6a (15). **Q4/Q5/Q3 refeitos com matriz temporal
 e `Restrict` de verdade (16)**. **Gate de sincronização (17)**, com o sinal
 operacional que fecha a parte principal da Q4.
@@ -2420,3 +2420,105 @@ um bastando sozinho:
 depois do `Restrict` sem controle positivo (§16.5) e da coluna `Permission`
 da Q1. O script agora **falha e recusa publicar** quando a amostra sai
 vazia.
+
+---
+
+## 21. Q4 — o Outlook morrendo no meio da varredura
+
+`tools/q4-morte.ps1`. Autorizado. Pasta e 100 itens próprios, marcador
+GUID.
+
+A varredura por `Table` leva milissegundos e um reinício leva segundos —
+não dá para interceptar naturalmente. Então: lotes de 10, e o `Quit()`
+disparado **entre dois lotes, com o cursor aberto**. É o cenário real de
+uma varredura lenta dividindo a fila da STA com a UI.
+
+### 21.1 O desfecho é o BOM
+
+```
+lote 1     : 10 linhas, EndOfTable=False
+Quit()     : aceito; Outlook fechou em 3 s
+EndOfTable : respondeu VAZIO (nao lancou, nao devolveu bool utilizavel)
+GetArray   : COMException, HRESULT = 0x800706BA
+             "The RPC server is unavailable"
+lidos      : 10 de 100
+```
+
+> **`Quit()` funciona mesmo com a `Table` aberta.** Um cliente COM segurando
+> um cursor **não** impede o Outlook de fechar — eu esperava que
+> impedisse.
+>
+> E a leitura seguinte **falha declarando**, com HRESULT reconhecível. Não
+> é o vazio silencioso da §16.1.
+
+**O `OutlookFailurePolicy` da Fase 1 já acerta este caso:** `0x800706BA` é
+`RPC_S_SERVER_UNAVAILABLE`, está na lista de `NotConnected` e em
+`IsSessionDead`. **É a primeira vez que aquele classificador é validado
+contra um caso real** — até aqui ele só tinha testes sintéticos.
+
+Detalhe sutil, e não resolvido: **`EndOfTable` respondeu vazio antes de o
+`GetArray` lançar**. Em VB, `While Not t.EndOfTable` sobre um valor
+inutilizável pode se comportar de forma diferente do PowerShell. O laço de
+varredura não pode confiar em `EndOfTable` como única condição de parada.
+
+### 21.2 O achado que atinge o produto
+
+Depois do teste, o Outlook voltou — **e o broker não conseguiria
+reconectar**.
+
+```
+processo OUTLOOK.EXE : rodando, PID 20456
+Responding           : True
+janela               : "Caixa de Entrada - ricardo.fernandes@... - Outlook"
+memoria              : 232 MB, 40 threads
+
+GetActiveObject      : FALHOU por mais de 240 s
+New-Object -ComObject: anexou IMEDIATAMENTE
+```
+
+> **`GetActiveObject` pode falhar por minutos com o Outlook rodando,
+> saudável e visível na tela.** Ele depende do registro no **ROT**, e o
+> registro pode não acontecer — ou demorar — após um reinício.
+
+O `ComHelpers.GetRunningInstance` usa **só** `GetActiveObject`, e devolve
+`Unavailable`. O broker então reporta sessão indisponível, o watchdog
+sonda, falha de novo, e o usuário vê *"Outlook não disponível"* com o
+Outlook aberto na frente dele. **Indefinidamente.**
+
+A regra do ESCOPO — *"nunca iniciar o aplicativo; `CreateObject` produz
+instância sem perfil interativo"* — continua certa, **e não proíbe a
+saída**: o Outlook é *single-instance*, então quando ele **já está
+rodando** o `CoCreateInstance` **anexa** ao existente em vez de iniciar
+outro. Foi o que aconteceu aqui.
+
+**Correção proposta**, com guarda para preservar a regra:
+
+> Se `GetActiveObject` falhar **e** existir um processo `OUTLOOK.EXE` na
+> mesma sessão, tentar `CoCreateInstance`. Sem processo, continuar
+> devolvendo `NotRunning` — aí sim iniciar seria proibido.
+
+Isso ainda **não está implementado**: mexe no caminho de conexão, que é
+encanamento do broker, e merece revisão antes.
+
+Nota: isto **não é** o F1-M da Fase 1, que era `Connected -> Connected` sem
+transição. É um modo novo — e pior, porque não se resolve sozinho.
+
+### 21.3 O que ainda falta na Q4
+
+- **Cancelamento no meio** da enumeração.
+- **Falha COM que NÃO seja morte do processo** — `RPC_E_CALL_REJECTED` com
+  a sessão viva, que é o caso comum e o único retentável.
+- Se o desfecho muda quando o Outlook morre **sem** `Quit()` — travamento,
+  atualização automática, fim de sessão do Windows.
+
+### 21.4 Duas notas de limpeza
+
+**Pasta em Itens Excluídos pode recusar exclusão.** A `Iris Q4R`, mesmo
+**vazia** e criada por mim, devolveu *"não é possível excluir esta pasta...
+verifique suas permissões"* em três tentativas. Provavelmente política do
+tenant. Ficou lá, vazia.
+
+**E `Item.Delete()` dentro de uma subpasta de Itens Excluídos MOVE para a
+raiz de Itens Excluídos, não apaga.** Esvaziar a pasta jogou 100 itens
+meus soltos na pasta do usuário; só um segundo `Delete()`, já na raiz, os
+eliminou. Quem escrever limpeza precisa saber que **são dois passos**.
