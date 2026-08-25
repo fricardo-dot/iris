@@ -3073,8 +3073,7 @@ propósito: não vale o preço antes de alguém gastar meio dia investigando.
 
 **O próprio manifesto do Iris como DETECTOR DE CONTRAÇÃO.** Se a varredura de
 hoje enxerga menos do que a de ontem na mesma pasta, alguma coisa encolheu —
-e isso basta para **invalidar** conclusões de ausência sem precisar saber por
-quê.
+e isso basta para **avisar** que o ambiente mudou, sem precisar saber por quê.
 
 E aqui vale ser exato sobre o que ele faz, porque a tentação de transformar
 uma derrota em recurso é grande e eu já escrevi a versão inflada:
@@ -3089,8 +3088,10 @@ conclusões anteriores caem"*, e o Codex mostrou que o que acontecia era *"o
 detector consegue devolver um diagnóstico, se alguém o chamar"* — nenhum código
 de produção o chamava, e ele não mexia em época, cobertura nem associação.
 
-Agora o `ManifestReader` o consulta e a contração entra na **ressalva**, que é o
-que a UI mostra. E o efeito é **aviso**, não invalidação: <b>não há conclusão a
+Agora o `ManifestReader` o consulta e a contração entra na **ressalva do
+manifesto**, destinada à apresentação pela UI. E "destinada" é o verbo certo:
+não há uso de `ManifestReader` nem de `Ressalva` no `Iris.App`. O mecanismo de
+backend está fechado; a apresentação é da integração futura. E o efeito é **aviso**, não invalidação: <b>não há conclusão a
 invalidar</b>, porque em cached a cobertura já é sempre parcial e ausência já é
 proibida (§23). Aviso é a única consequência que o escopo aceito comporta.
 
@@ -3106,8 +3107,8 @@ Os buracos, e são estruturais, não detalhes:
 
 Ou seja: histórico de alcance observado **se acumula**; **cobertura não**.
 Cobertura exige uma referência externa do universo, e essa referência
-continua sem fonte. O detector é legítimo como mecanismo conservador de
-invalidação; seria racionalização vendê-lo como resposta à Q8.
+continua sem fonte. O detector é legítimo como aviso conservador de
+contração; seria racionalização vendê-lo como resposta à Q8.
 
 ### 22.12 A suíte diz "Passed!" pulando os testes que tocam o Outlook
 
@@ -3293,7 +3294,7 @@ operação. Depois de uma geração com A e B e outra só com A, o B continuava
 `presente`. Corrigido, com controle negativo: desliguei o UPDATE, o teste
 falhou; religuei, passou.
 
-### 24.3 O critério 9 fechado
+### 24.3 O que foi fechado do critério 9
 
 O `PublicationDrain` é o **entregador** que faltava — não o consumidor. Ele recebe um `IPublicationConsumer` de fora e chama `Receber`; quem implementa essa interface hoje é só o teste. A ordem das duas linhas **é**
 a escolha: consumir vem antes de marcar drenada, então morrer entre as duas
@@ -3356,8 +3357,15 @@ normativa, com lote de 100 linhas. Cabe, com folga de 42 ms.
 
 E o tamanho do lote é o botão, medido também — 25, 50 e 100 linhas, três
 execuções cada, todas abaixo do orçamento. O custo por lote quase não varia com
-o tamanho (máx 50–90 ms em 25 linhas contra 52–57 em 100), o que diz que o
-custo dominante é a **ida ao COM**, e não o número de linhas.
+o tamanho (máx 50–90 ms em 25 linhas contra 52–57 em 100), o que é **compatível** com o
+custo dominante ser a ida ao COM e não o número de linhas. Compatível, e não
+demonstrado: os dados não isolam a causa, e o lote de 25 chegou a 90 ms
+enquanto o de 100 ficou em 57.
+
+E uma limitação do resultado inteiro: a condição isolada não estabelece limite
+sob **carga arbitrária** do Outlook ou do sistema. A medição com dois testes
+COM concorrentes — também abaixo do orçamento — é o controle contra a objeção
+de "máquina ociosa", mas dois não é muitos.
 
 ### 24.5 Dois defeitos que só a caixa real revelava
 
@@ -3423,12 +3431,12 @@ O conteúdo original do 2.3 era validar o token da janela e, se servisse,
 demonstrar as inferências. O token morreu na §22.4 e a contagem do servidor é
 inalcançável pela §22.11. Sobra o que o próprio Iris já guardou.
 
-**Ele invalida, nunca autoriza**, e a distinção precisa ficar escrita porque
-eu já escrevi a versão inflada uma vez.
+**Ele avisa, nunca autoriza**, e a distinção precisa ficar escrita porque eu
+já escrevi a versão inflada uma vez.
 
 | | |
 |---|---|
-| **Serve para** | invalidar. Encolheu → as conclusões anteriores caem |
+| **Serve para** | avisar. Encolheu → o manifesto passa a carregar a ressalva |
 | **Não serve para** | autorizar. Nunca transforma cobertura desconhecida em completa |
 
 Compara **conjuntos**, não contagens: encolhimento compensado por correio novo

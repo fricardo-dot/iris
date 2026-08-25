@@ -59,8 +59,9 @@ Namespace Global.Iris.Integration
         ''' caem", quando o que acontecia era "o detector consegue devolver um
         ''' diagnóstico, se alguém o chamar".
         '''
-        ''' O efeito real é este: a contração entra na <see cref="Ressalva"/>, e
-        ''' a ressalva é o que a UI mostra. Não é invalidação de conclusão —
+        ''' O efeito real é este: a contração entra na <see cref="Ressalva"/>,
+        ''' destinada à apresentação pela UI — que ainda não a consome. Não é
+        ''' invalidação de conclusão —
         ''' <b>não há conclusão a invalidar</b>, porque em cached a cobertura já
         ''' é sempre parcial e ausência já é proibida (§23). É aviso, e o aviso
         ''' é a única consequência que o escopo aceito comporta.
@@ -91,7 +92,8 @@ Namespace Global.Iris.Integration
         End Property
 
         ''' <summary>
-        ''' Como a UI deve qualificar o que está mostrando. Texto e não
+        ''' Como a UI <b>deve</b> qualificar o que está mostrando — hoje nenhuma
+        ''' o consome. Texto e não
         ''' booleano porque "por que não é o estado corrente" é a informação
         ''' que o usuário precisa, e um booleano a joga fora.
         ''' </summary>

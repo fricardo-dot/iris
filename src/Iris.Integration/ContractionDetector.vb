@@ -64,7 +64,7 @@ Namespace Global.Iris.Integration
     ''' varredura de hoje enxerga menos do que a de ontem <b>na mesma
     ''' pasta</b>, alguma coisa encolheu.
     '''
-    ''' <b>Isto INVALIDA, nunca AUTORIZA.</b> A distinção não é retórica, e a
+    ''' <b>Isto AVISA, nunca AUTORIZA.</b> A distinção não é retórica, e a
     ''' §22.11 registra que eu já escrevi a versão inflada disto uma vez —
     ''' "a cobertura passa a se acumular com o tempo", que era transformar uma
     ''' derrota em recurso. O que se acumula é histórico de alcance observado.
@@ -78,8 +78,14 @@ Namespace Global.Iris.Integration
     '''   - <b>Encolhimento compensado</b> por correio novo: a contagem não se
     '''     mexe. Por isso este detector compara <b>conjuntos</b>, não
     '''     contagens — o que fecha esse buraco em particular, e só ele.
+    '''
     '''   - Um item que sumiu não se distingue entre excluído, movido e saído
     '''     da janela. O detector diz que sumiu; não diz por quê, e não deve.
+    '''
+    ''' E o efeito é <b>aviso</b>: o <c>ManifestReader</c> o consulta e a
+    ''' contração entra na ressalva do manifesto. Não mexe em época, cobertura
+    ''' nem associação — e não precisa: em cached a cobertura já é sempre
+    ''' parcial e ausência já é proibida (§23). Não há conclusão a invalidar.
     ''' </summary>
     Public NotInheritable Class ContractionDetector
 
