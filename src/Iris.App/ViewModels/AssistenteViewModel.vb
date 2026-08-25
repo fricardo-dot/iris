@@ -57,13 +57,27 @@ Namespace Global.Iris.App.ViewModels
 
         Private _cancelamento As CancellationTokenSource
 
+        Private ReadOnly _contexto As IAssistContext
+        Private ReadOnly _rascunho As IRascunho
+
         Public Sub New(ui As Dispatcher, transmissor As AssistTransmitter,
                        politica As DisclosurePolicy, relogio As Func(Of DateTimeOffset),
-                       reconciliacao As ReconciliationResult)
+                       reconciliacao As ReconciliationResult,
+                       contexto As IAssistContext, rascunho As IRascunho)
             _ui = ui
             _transmissor = transmissor
             _politica = politica
             _relogio = relogio
+            _contexto = If(contexto, CType(New ContextoIndisponivel(), IAssistContext))
+            _rascunho = rascunho
+
+            ' Comandos declarados a mao, e nao pelo gerador do
+            ' CommunityToolkit: ele so roda em C#. Em VB o atributo compila e
+            ' NAO gera nada — e o sintoma seria um botao que nunca faz nada.
+            ResumirCommand = New AsyncRelayCommand(AddressOf Resumir, Function() PodePedir)
+            RedigirCommand = New AsyncRelayCommand(AddressOf Redigir, Function() PodeRedigir)
+            CancelarCommand = New RelayCommand(AddressOf Cancelar, Function() PodeCancelar)
+            DesfazerCommand = New RelayCommand(AddressOf Desfazer, Function() PodeDesfazer)
             ' Me. OBRIGATORIO: sem ele, 'reconciliacao' eclipsa 'Reconciliacao'
             ' — VB e case-insensitive, e a atribuicao vira o parametro para ele
             ' mesmo. O compilador nao avisa; o sintoma aparece longe, como uma
@@ -77,6 +91,18 @@ Namespace Global.Iris.App.ViewModels
         ''' <summary>O que aconteceu na reconciliação da abertura.</summary>
         Public ReadOnly Property Reconciliacao As ReconciliationResult
 
+        ''' <summary>
+        ''' <b>Visível sempre, habilitado só quando dá.</b>
+        '''
+        ''' Um botão que some quando a IA está desligada esconde a funcionalidade
+        ''' <i>e</i> o motivo — e o motivo é exatamente o que o usuário precisa
+        ''' ler, no lugar onde ele procuraria a ação.
+        ''' </summary>
+        Public ReadOnly Property ResumirCommand As AsyncRelayCommand
+        Public ReadOnly Property RedigirCommand As AsyncRelayCommand
+        Public ReadOnly Property CancelarCommand As RelayCommand
+        Public ReadOnly Property DesfazerCommand As RelayCommand
+
         Private _ocupado As Boolean
         ''' <summary>Há um pedido em andamento.</summary>
         Public Property Ocupado As Boolean
@@ -86,7 +112,9 @@ Namespace Global.Iris.App.ViewModels
             Private Set(value As Boolean)
                 SetProperty(_ocupado, value)
                 OnPropertyChanged(NameOf(PodePedir))
+                OnPropertyChanged(NameOf(PodeRedigir))
                 OnPropertyChanged(NameOf(PodeCancelar))
+                Avisar()
             End Set
         End Property
 
@@ -126,12 +154,27 @@ Namespace Global.Iris.App.ViewModels
             Private Set(value As String)
                 SetProperty(_aviso, value)
                 OnPropertyChanged(NameOf(TemAviso))
+                OnPropertyChanged(NameOf(TemAlgoADizer))
             End Set
         End Property
 
         Public ReadOnly Property TemAviso As Boolean
             Get
                 Return Aviso.Length > 0
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>A faixa tem algo a dizer?</b> Aviso <b>ou</b> reconciliação.
+        '''
+        ''' A visibilidade olhava só o <see cref="Aviso"/>, e com ativação válida
+        ''' ele fica vazio — então uma reconciliação que achou envios ambíguos
+        ''' ficaria <b>invisível</b> justamente no caso em que ela tem algo grave
+        ''' a contar.
+        ''' </summary>
+        Public ReadOnly Property TemAlgoADizer As Boolean
+            Get
+                Return TemAviso OrElse Reconciliacao.Aviso.Length > 0
             End Get
         End Property
 
@@ -171,12 +214,26 @@ Namespace Global.Iris.App.ViewModels
         ''' É o preflight: sem autorização não se gasta uma ida ao COM lendo
         ''' rótulo de coisa nenhuma.
         ''' </summary>
+        ''' <summary>Reavalia com o contexto corrente.</summary>
+        Public Sub Avaliar()
+            Avaliar(_contexto.Pedido(AssistOperation.Resumir))
+        End Sub
+
         Public Sub Avaliar(pedido As PreflightRequest)
             Dim d = _politica.Preflight(pedido, _relogio())
             _portaoAceita = d.Permitido
             Aviso = If(d.Permitido, "", d.Explicacao)
             OnPropertyChanged(NameOf(Disponivel))
             OnPropertyChanged(NameOf(PodePedir))
+            OnPropertyChanged(NameOf(PodeRedigir))
+            Avisar()
+        End Sub
+
+        ''' <summary>Os comandos reavaliam o que podem fazer.</summary>
+        Private Sub Avisar()
+            ResumirCommand.NotifyCanExecuteChanged()
+            RedigirCommand.NotifyCanExecuteChanged()
+            CancelarCommand.NotifyCanExecuteChanged()
         End Sub
 
         ''' <summary>
@@ -192,10 +249,80 @@ Namespace Global.Iris.App.ViewModels
             Cancelar()
         End Sub
 
-        <RelayCommand>
         Public Sub Cancelar()
             _cancelamento?.Cancel()
         End Sub
+
+        ''' <summary>
+        ''' <b>Resumir.</b> Visível sempre, habilitado só quando dá.
+        '''
+        ''' Um botão que some quando a IA está desligada esconderia a
+        ''' funcionalidade e o motivo dela estar desligada — e o motivo é
+        ''' exatamente o que o usuário precisa ler, no lugar onde ele procuraria a
+        ''' ação. Um botão que executa e sempre recusa seria o outro extremo.
+        ''' Visível e desabilitado, com o motivo ao lado, é o meio.
+        ''' </summary>
+        Public Async Function Resumir() As Task
+            Await Executar(AssistOperation.Resumir, "Resuma estas mensagens.")
+        End Function
+
+        ''' <summary>
+        ''' <b>Redigir.</b> Escreve no rascunho — e guarda o que estava lá.
+        '''
+        ''' Escrever por cima do que o usuário digitou é mutação local, e mutação
+        ''' local sem volta é a que ele descobre tarde demais. O texto anterior
+        ''' fica guardado, e <see cref="Desfazer"/> o devolve.
+        '''
+        ''' <b>Nada é enviado por e-mail</b>: a redação para no compositor.
+        ''' </summary>
+        Public Async Function Redigir() As Task
+            Await Executar(AssistOperation.Redigir, "Redija uma resposta.")
+        End Function
+
+        ''' <summary>Devolve o rascunho como estava antes da redação.</summary>
+        Public Sub Desfazer()
+            If _rascunho Is Nothing OrElse _anterior Is Nothing Then Return
+            _rascunho.Texto = _anterior
+            _anterior = Nothing
+            OnPropertyChanged(NameOf(PodeDesfazer))
+            DesfazerCommand.NotifyCanExecuteChanged()
+        End Sub
+
+        ''' <summary>O que estava no rascunho antes da última redação.</summary>
+        Private _anterior As String
+
+        Public ReadOnly Property PodeRedigir As Boolean
+            Get
+                Return PodePedir AndAlso _rascunho IsNot Nothing
+            End Get
+        End Property
+
+        Public ReadOnly Property PodeDesfazer As Boolean
+            Get
+                Return _anterior IsNot Nothing
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' O caminho comum dos dois comandos: monta o contexto, executa, e para
+        ''' a redação, escreve no rascunho guardando o que estava lá.
+        ''' </summary>
+        Private Async Function Executar(operacao As AssistOperation,
+                                        instrucao As String) As Task
+            Dim antesDoPedido = If(_rascunho Is Nothing, Nothing, _rascunho.Texto)
+
+            Await Pedir(_contexto.Pedido(operacao),
+                        AddressOf _contexto.Classificar,
+                        Function() _contexto.Montar(operacao, instrucao))
+
+            If operacao <> AssistOperation.Redigir Then Return
+            If _rascunho Is Nothing OrElse Not TemResultado Then Return
+
+            _anterior = antesDoPedido
+            _rascunho.Texto = Resultado
+            OnPropertyChanged(NameOf(PodeDesfazer))
+            DesfazerCommand.NotifyCanExecuteChanged()
+        End Function
 
         ''' <summary>
         ''' Pede a operação. O resultado só é publicado se a geração ainda for a
@@ -242,7 +369,9 @@ Namespace Global.Iris.App.ViewModels
                 Case AssistOutcomeKind.Ambiguo,
                      AssistOutcomeKind.AmbiguoSemFechamentoDoDiario
                     Resultado = ""
-                    Aviso = "A operação não terminou, e **não dá para saber** se o " &
+                    ' Sem asterisco: num TextBlock ele aparece literalmente, e
+                    ' "**nao da para saber**" na tela e desleixo visivel.
+                    Aviso = "A operação não terminou, e não dá para saber se o " &
                             "conteúdo chegou ao provedor. Isso ficou registrado."
                 Case Else
                     Resultado = ""

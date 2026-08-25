@@ -45,7 +45,7 @@ Public Class AssistenteViewModelTests
         Return New ActivationRecord("ativacao-1", 1, "teste", Agora.AddDays(-1),
                                     "provedor-de-teste", Endereco, "modelo-de-teste",
                                     "local", "sem retenção",
-                                    {AssistOperation.Resumir}, {Pasta},
+                                    {AssistOperation.Resumir, AssistOperation.Redigir}, {Pasta},
                                     Array.Empty(Of String)(),
                                     {LabelReadingKind.Absent}, {0})
     End Function
@@ -132,14 +132,47 @@ Public Class AssistenteViewModelTests
         End Function
     End Class
 
+    ''' <summary>O contexto de teste: um voo válido e uma mensagem.</summary>
+    Friend NotInheritable Class ContextoDeTeste
+        Implements IAssistContext
+
+        Friend Property Classificou As Integer
+
+        Public Function Pedido(operacao As AssistOperation) As PreflightRequest _
+                               Implements IAssistContext.Pedido
+            Return New PreflightRequest(operacao, Pasta, Destino())
+        End Function
+
+        Public Function Classificar() As IReadOnlyList(Of MessageClassification) _
+                                        Implements IAssistContext.Classificar
+            Classificou += 1
+            Return {Classificada(1)}
+        End Function
+
+        Public Function Montar(operacao As AssistOperation, instrucao As String) _
+                               As EnvelopeResult Implements IAssistContext.Montar
+            Return New EnvelopeBuilder().Montar(operacao, instrucao, {Preparada(1)})
+        End Function
+    End Class
+
+    Friend NotInheritable Class RascunhoFalso
+        Implements IRascunho
+        Public Property Texto As String = "" Implements IRascunho.Texto
+    End Class
+
     Private Shared Function Montar(ativacao As ActivationRecord,
                                    provedor As IAssistantProvider,
-                                   reconciliacao As ReconciliationResult) As AssistenteViewModel
+                                   reconciliacao As ReconciliationResult,
+                                   Optional contexto As IAssistContext = Nothing,
+                                   Optional rascunho As IRascunho = Nothing) _
+                                   As AssistenteViewModel
         Dim relogio As Func(Of DateTimeOffset) = Function() Agora
         Dim politica As New DisclosurePolicy(ativacao)
         Dim t As New AssistTransmitter(politica, New CapabilityLedger(),
                                        New DiarioDeMemoria(), provedor, relogio)
-        Dim vm As New AssistenteViewModel(Nothing, t, politica, relogio, reconciliacao)
+        Dim vm As New AssistenteViewModel(Nothing, t, politica, relogio, reconciliacao,
+                                          If(contexto, New ContextoDeTeste()),
+                                          If(rascunho, New RascunhoFalso()))
         vm.Avaliar(Voo())
         Return vm
     End Function
@@ -394,5 +427,136 @@ Public Class AssistenteViewModelTests
         End While
         Return cond()
     End Function
+
+
+    ' ==================================================================
+    ' Os comandos — a acao existe na tela
+
+    ''' <summary>
+    ''' <b>O botão existe sempre, e fica desabilitado quando a IA está
+    ''' desligada.</b>
+    '''
+    ''' Um botão que some esconderia a funcionalidade <i>e</i> o motivo dela estar
+    ''' desligada — e o motivo é exatamente o que o usuário precisa ler, no lugar
+    ''' onde ele procuraria a ação. Um botão que executa e sempre recusa seria o
+    ''' outro extremo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Sem_ativacao_o_comando_existe_e_fica_DESABILITADO()
+        Dim vm = Montar(ActivationRecord.DaProducao, New ProvedorControlado(), Pronta())
+
+        Assert.IsNotNull(vm.ResumirCommand, "o comando tem de existir")
+        Assert.IsFalse(vm.ResumirCommand.CanExecute(Nothing))
+        Assert.IsFalse(vm.RedigirCommand.CanExecute(Nothing))
+    End Sub
+
+    ''' <summary>
+    ''' <b>Com ativação válida, o comando habilita e atravessa o fluxo real.</b>
+    '''
+    ''' Sem isto, o botão seria decoração: nem uma ativação futura tornaria a
+    ''' funcionalidade utilizável.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Com_ativacao_o_comando_HABILITA_e_funciona() As Task
+        Dim ctx As New ContextoDeTeste()
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta(), ctx)
+
+        Assert.IsTrue(vm.ResumirCommand.CanExecute(Nothing))
+
+        Await vm.ResumirCommand.ExecuteAsync(Nothing)
+
+        Assert.AreEqual("resumo", vm.Resultado)
+        Assert.AreEqual(1, ctx.Classificou, "o fluxo real passou pelo contexto")
+    End Function
+
+    ''' <summary>
+    ''' E sem ativação o comando <b>não classifica nada</b> — o portão para antes
+    ''' de qualquer ida ao COM.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Sem_ativacao_o_comando_nao_classifica_nada() As Task
+        Dim ctx As New ContextoDeTeste()
+        Dim vm = Montar(ActivationRecord.DaProducao, New ProvedorControlado(), Pronta(), ctx)
+
+        Await vm.ResumirCommand.ExecuteAsync(Nothing)
+
+        Assert.AreEqual(0, ctx.Classificou)
+    End Function
+
+    ' ==================================================================
+    ' Redigir, e desfazer
+
+    ''' <summary>
+    ''' <b>Redigir escreve no rascunho — e o que estava lá volta.</b>
+    '''
+    ''' Escrever por cima do que o usuário digitou é mutação local, e mutação
+    ''' local sem volta é a que ele descobre tarde demais.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Redigir_escreve_no_rascunho_e_DESFAZER_devolve() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu ja tinha escrito"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing), "nada a desfazer ainda")
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+
+        Assert.AreEqual("resposta redigida pela IA", r.Texto)
+        Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
+
+        vm.DesfazerCommand.Execute(Nothing)
+
+        Assert.AreEqual("o que eu ja tinha escrito", r.Texto)
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing), "desfazer duas vezes nao")
+    End Function
+
+    ''' <summary>
+    ''' <b>Redação que não veio não mexe no rascunho.</b>
+    '''
+    ''' O contraponto: sem ele, um comando que sempre escrevesse apagaria o texto
+    ''' do usuário toda vez que a IA falhasse.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Redacao_que_nao_veio_NAO_mexe_no_rascunho() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu ja tinha escrito"}
+        Dim vm = Montar(ActivationRecord.DaProducao, New ProvedorControlado(),
+                        Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+
+        Assert.AreEqual("o que eu ja tinha escrito", r.Texto)
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
+    End Function
+
+    ' ==================================================================
+    ' A faixa
+
+    ''' <summary>
+    ''' <b>Ambíguos aparecem mesmo com a IA funcionando.</b>
+    '''
+    ''' A visibilidade olhava só o <c>Aviso</c>, e com ativação válida ele fica
+    ''' vazio — então uma reconciliação que achou envios ambíguos ficaria
+    ''' <b>invisível</b> justamente no caso em que ela tem algo grave a contar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ambiguos_aparecem_MESMO_com_a_IA_funcionando()
+        Dim comAmbiguos = ReconciliationResult.Rodar(
+            New DiarioDeMemoria() With {.Ambiguas = 2}, Agora)
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), comAmbiguos)
+
+        Assert.IsTrue(vm.Disponivel, "controle: a IA esta ligada")
+        Assert.IsFalse(vm.TemAviso, "e nao ha aviso de portao")
+        Assert.IsTrue(vm.TemAlgoADizer,
+            "mas ha dois envios sem desfecho conhecido, e isso NAO pode sumir")
+    End Sub
+
+    ''' <summary>E sem nada a dizer, a faixa some — faixa vazia é ruído.</summary>
+    <TestMethod>
+    Public Sub Sem_nada_a_dizer_a_faixa_some()
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta())
+
+        Assert.IsFalse(vm.TemAlgoADizer)
+    End Sub
 
 End Class

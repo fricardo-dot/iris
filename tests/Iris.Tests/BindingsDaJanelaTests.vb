@@ -117,6 +117,27 @@ Public Class BindingsDaJanelaTests
     End Sub
 
     ''' <summary>
+    ''' <b>A ação existe na janela.</b>
+    '''
+    ''' Sem os botões, o 3.5 seria uma tela de status: os comandos existiriam no
+    ''' ViewModel e ninguém os alcançaria, e nem uma ativação futura tornaria a
+    ''' funcionalidade utilizável.
+    '''
+    ''' Eles ficam <b>visíveis e desabilitados</b> quando a IA está desligada —
+    ''' esconder o botão esconderia junto o motivo, que é o que o usuário
+    ''' precisa ler no lugar onde procuraria a ação.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_acao_da_IA_existe_na_janela()
+        Dim xaml = LerXaml()
+        For Each comando In {"Assistente.ResumirCommand", "Assistente.RedigirCommand",
+                             "Assistente.DesfazerCommand", "Assistente.CancelarCommand"}
+            StringAssert.Contains(xaml, comando,
+                comando & " nao esta na janela — o comando existiria sem ninguem alcancar")
+        Next
+    End Sub
+
+    ''' <summary>
     ''' <b>A resposta do modelo aparece num <c>TextBlock</c>.</b>
     '''
     ''' Não num controle que interprete Markdown, HTML ou link: ela vem de um

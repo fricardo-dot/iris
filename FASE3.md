@@ -907,7 +907,53 @@ para garantir que nenhum vaza como nome de código para a tela.
 A tradução mora no ViewModel e **não** no diário — lá o motivo é enum fechado,
 justamente para não haver campo por onde texto arbitrário entre.
 
-### 38.6 O que ficou de fora, por recorte
+### 38.6 A ação existe na janela, e o fluxo está ligado
+
+Quatro coisas que o Codex pegou, e as três primeiras tinham o mesmo feitio: a
+proteção existia no ViewModel e **não estava ligada a nada**.
+
+**Não havia botão.** `Pedir` exigia três parâmetros e não estava ligado a
+comando nenhum — nem uma ativação futura tornaria a funcionalidade utilizável.
+Agora há `Resumir`, `Redigir resposta`, `Desfazer` e `Cancelar`, **visíveis e
+desabilitados** quando a IA está desligada: um botão que some esconderia a
+funcionalidade *e* o motivo dela estar desligada, e o motivo é o que o usuário
+precisa ler no lugar onde procuraria a ação.
+
+De onde a operação tira o que precisa é uma **porta** (`IAssistContext`), porque
+classificar exige ir ao COM e montar exige o corpo — nada disso pode viver no
+ViewModel sem arrastar o Outlook para dentro da tela. A produção usa
+`ContextoIndisponivel`, e ligar o contexto de verdade é **pendência declarada**:
+só faz sentido depois de haver para onde mandar.
+
+**`Trocou()` não estava ligado à seleção.** Os testes chamavam o método direto e
+na aplicação ninguém chamava — a proteção contra resposta obsoleta existia
+isoladamente. Agora troca de mensagem, troca de pasta e sessão nova invalidam a
+geração.
+
+**O aviso da reconciliação podia ficar invisível.** A visibilidade olhava só o
+`Aviso`, e com ativação válida ele fica vazio — então uma reconciliação que achou
+envios ambíguos sumiria justamente no caso em que tem algo grave a contar.
+Virou `TemAlgoADizer`, composto.
+
+**Redigir com desfazer.** Escrever por cima do que o usuário digitou é mutação
+local, e mutação local sem volta é a que ele descobre tarde demais. O texto
+anterior fica guardado. Com contraponto: redação que **não veio** não mexe no
+rascunho — senão a IA falhando apagaria o texto dele.
+
+### 38.7 E a faixa foi medida
+
+`FaixaDaIaRenderizaTests` faz `Measure`/`Arrange` fora do vídeo, como o
+equivalente da Fase 2. Binding correto não detecta faixa com altura zero nem
+controle colapsado — e aqui há um risco a mais: **o aviso e o resultado ocupam a
+mesma `Grid.Row`**. Um teste mostra que, com os dois visíveis, um cobre o outro;
+o ViewModel garante que isso não aconteça, e o teste é o que acusa se um dia
+acontecer.
+
+A montagem precisa de **duas passadas** de layout: a primeira mede antes de os
+bindings de `Visibility` terem sido aplicados, e o `Grid` sai com altura de quem
+não tem nada a mostrar.
+
+### 38.8 O que ficou de fora, por recorte
 
 Configuração de credencial, escolha de provedor ou modelo, e qualquer UX moldada
 pelas capacidades de um fornecedor específico. Sem provedor escolhido, isso seria

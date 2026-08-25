@@ -1119,13 +1119,39 @@
                  barreira da §29.5 mora aqui e no ViewModel, e nao numa
                  instrucao ao modelo. -->
             <Border Grid.Row="2"
-                    Visibility="{Binding Assistente.TemAviso, Converter={StaticResource BoolToVis},
+                    Visibility="{Binding Assistente.TemAlgoADizer, Converter={StaticResource BoolToVis},
                                          FallbackValue=Collapsed}"
                     Background="{DynamicResource Brush.Surface.1}"
                     BorderBrush="{DynamicResource Brush.Border.Subtle}"
                     BorderThickness="0,1,0,0"
                     Padding="16,8">
                 <StackPanel>
+                    <!-- OS BOTOES: visiveis sempre, habilitados so quando da.
+
+                         Um botao que some quando a IA esta desligada esconderia
+                         a funcionalidade E o motivo dela estar desligada - e o
+                         motivo e exatamente o que o usuario precisa ler, no
+                         lugar onde ele procuraria a acao. Um botao que executa
+                         e sempre recusa seria o outro extremo. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <Button Content="Resumir"
+                                Command="{Binding Assistente.ResumirCommand}"
+                                Padding="10,3" Margin="0,0,8,0"
+                                AutomationProperties.Name="Resumir com IA" />
+                        <Button Content="Redigir resposta"
+                                Command="{Binding Assistente.RedigirCommand}"
+                                Padding="10,3" Margin="0,0,8,0"
+                                AutomationProperties.Name="Redigir resposta com IA" />
+                        <Button Content="Desfazer"
+                                Command="{Binding Assistente.DesfazerCommand}"
+                                Padding="10,3" Margin="0,0,8,0"
+                                AutomationProperties.Name="Desfazer a redacao da IA" />
+                        <Button Content="Cancelar"
+                                Command="{Binding Assistente.CancelarCommand}"
+                                Padding="10,3"
+                                AutomationProperties.Name="Cancelar o pedido a IA" />
+                    </StackPanel>
+
                     <TextBlock Text="{Binding Assistente.Aviso}"
                                TextWrapping="Wrap"
                                FontSize="12"

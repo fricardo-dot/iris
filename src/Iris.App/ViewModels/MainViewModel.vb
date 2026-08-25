@@ -239,6 +239,11 @@ Namespace Global.Iris.App.ViewModels
             ' O compositor é avisado, não limpo: o texto é do usuário.
             Composer.OnSessionReplaced(novaEpoca)
 
+            ' A IA perde o contexto: sessão nova é outra ligação com o Outlook,
+            ' e um resumo pedido na anterior descreve mensagens que talvez nem
+            ' sejam mais as mesmas.
+            Assistente?.Trocou()
+
             _watcher.OnSessionReplaced()
 
             ' Guarda o CAMINHO antes do Clear, que zera a seleção. A
@@ -330,6 +335,10 @@ Namespace Global.Iris.App.ViewModels
         Private Sub OnFoldersChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
             If e.PropertyName <> NameOf(FolderTreeViewModel.Selected) Then Return
 
+            ' Trocar de PASTA tambem: o contexto da IA e a mensagem aberta, e
+            ' ela muda junto.
+            Assistente?.Trocou()
+
             Dim pasta = Folders.Selected
             If pasta Is Nothing Then
                 Messages.Clear()
@@ -367,6 +376,14 @@ Namespace Global.Iris.App.ViewModels
             If Messages.Selected Is Nothing AndAlso Messages.IsRestoringSelection Then Return
 
             Detail.Show(Messages.Selected)
+
+            ' TROCOU DE MENSAGEM. Sem isto, um resumo pedido para a anterior
+            ' voltaria e apareceria embaixo desta — um resumo errado com cara de
+            ' certo, que e pior que resumo nenhum porque ninguem desconfia.
+            '
+            ' A protecao existia no ViewModel e nao estava LIGADA a nada: os
+            ' testes chamavam Trocou() direto, e na aplicacao ninguem chamava.
+            Assistente?.Trocou()
             AtualizarComandosDeComposicao()
         End Sub
 
@@ -407,12 +424,17 @@ Namespace Global.Iris.App.ViewModels
                 If(diario, CType(New DiarioAusente(), IDisclosureJournal)),
                 New AssistenteIndisponivel(), relogio)
 
-            Dim vm As New AssistenteViewModel(ui, transmissor, politica, relogio, reconciliacao)
+            ' O contexto de verdade — broker le corpo e PR_CHANGE_KEY numa
+            ' operacao, pipeline prepara, envelope monta — so faz sentido depois
+            ' de haver para onde mandar. Ate la, ContextoIndisponivel recusa de
+            ' um jeito que nao engana. Pendencia declarada, §38.
+            Dim vm As New AssistenteViewModel(ui, transmissor, politica, relogio,
+                                              reconciliacao, New ContextoIndisponivel(),
+                                              New RascunhoDoCompositor(Composer))
 
             ' O aviso da abertura entra na tela mesmo sem ninguem pedir nada:
             ' "pode ter saido conteudo e ninguem sabe" nao espera interacao.
-            vm.Avaliar(New PreflightRequest(AssistOperation.Resumir, Nothing,
-                                            New AssistDestination("", "", "")))
+            vm.Avaliar()
             Return vm
         End Function
 
