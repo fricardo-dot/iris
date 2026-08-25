@@ -3665,56 +3665,90 @@ Com o critério 9 fechado, os **dez** critérios da §8 estão cumpridos — com
 exceções declaradas nas linhas 1 e 5 da tabela da §22.8, e com a Q8 respondida
 por escopo (§23) em vez de por matriz.
 
-### 27.8 A falha que não reproduziu, e o que ela era
+### 27.8 Uma falha sem explicação, e quatro achados que não são a explicação
 
-Numa das dez primeiras execuções da suíte apareceu **1 falha**. Ela não voltou
-em **mais 24 execuções**, nem com `trx` capturando o nome — e a execução em que
-aconteceu foi justamente a única sem captura. **Eu perdi a evidência, não é que
-ela não existisse.**
+**A causa da falha continua desconhecida.** O que segue é o que a investigação
+dela produziu — e nada disto foi ligado à ocorrência original.
 
-Sem poder reproduzir, sobrou olhar o código atrás de asserções que uma caixa
-viva pode derrubar sozinha. Havia quatro, e todas do mesmo tipo: **proibiam um
-desfecho que o ambiente produz legitimamente**.
+#### O que aconteceu, e o que se perdeu
 
-#### O cruzamento da Q1 exigia que a caixa não mudasse
+Numa das dez primeiras execuções da suíte apareceu **1 falha**. Essa execução
+foi justamente a única sem `trx`, então se perderam o **nome do teste**, a
+**mensagem da asserção**, o **stack** e o **desfecho do runner**. **Eu perdi a
+evidência, não é que ela não existisse** — e sem ela o único sintoma conhecido
+é *"algum teste falhou"*.
 
-`Table_e_iteracao_leem_o_MESMO_conjunto` faz duas travessias completas da Caixa
-de Entrada e exige conjuntos idênticos. Uma mensagem chegando entre elas produz
-**exatamente o mesmo sintoma** que a Table perdendo uma. A caixa do usuário
-recebe correio, duas travessias levam perto de um segundo, e em vinte execuções
-uma chegada é plausível — é o suspeito mais forte da falha isolada.
+Isso é pouco demais para escolher culpado. Caixa mudando durante a travessia,
+contenção no COM, Outlook ocupado, preparo de fixture, outro teste intermitente
+e regressão real rara **competem em pé de igualdade**. Nenhuma foi eliminada.
 
-O conserto é o que esta fase inventou para o mesmo problema: **o S6, aplicado
-ao próprio teste**. A primeira travessia é repetida no fim, e a comparação do
-meio só vale se as duas pontas concordarem. Ponta divergente significa universo
-trocado, e comparação sobre universo trocado não conclui nada — nem a favor nem
-contra, então o teste sai **inconclusivo**.
+#### O que a investigação achou de fato
 
-Isso **não afrouxa**: a propriedade cobrada continua exata — sobre uma pasta que
-ficou parada, os dois caminhos veem o mesmo conjunto. O que deixou de ser
-cobrado é uma propriedade da **caixa**, que o teste nunca teve como garantir.
+Sem reproduzir, sobrou ler o código de teste atrás de asserções que o ambiente
+pode derrubar sozinho. Apareceram **quatro**, e são achados independentes: são
+fragilidades reais, encontradas *durante* a caça, não a origem dela.
 
-#### E os três que proibiam `Falhou`
+**O cruzamento da Q1 exigia que a caixa não mudasse.**
+`Table_e_iteracao_leem_o_MESMO_conjunto` fazia duas travessias da Caixa de
+Entrada e exigia conjuntos idênticos — o que afirma que a pasta não muda, e
+"não muda" não é propriedade do código sob teste.
 
-Os testes de importação real recusavam `SweepConclusion.Falhou` por inteiro. Mas
-o Outlook pode recusar uma chamada a qualquer momento, e quando isso acontece o
-runner descarta e não publica — que é o comportamento **certo**. Proibir
-`Falhou` era exigir que o ambiente não tivesse soluço.
+A primeira correção repetia a travessia no fim e saía **inconclusiva** se as
+pontas divergissem. **Isso afrouxava**, e o Codex mostrou como: bastava a Table
+perder de verdade uma mensagem *e* chegar outra na janela para o defeito real
+sair rotulado de "caixa viva".
 
-Aceitar `Falhou` em silêncio seria o outro erro: uma regressão que falha
-**sempre** passaria. Então a distinção é **pela causa**. Falha do provider é
-ambiente; *"cursor nao avancou"*, *"fonte devolveu N linhas"* e *"passou de
-MaxPaginas"* são defeitos meus e continuam reprovando. E a invariante de
-segurança é cobrada em todos os desfechos, inclusive no aceito: nada fica pela
-metade.
+A correção que ficou tolera **exatamente o que mudou, e nada além**. Três
+travessias — Table (T₁), iteração (I), Table (T₂) — e a asserção é
 
-#### O que fica declarado
+> `T₁ ∩ T₂ ⊆ I ⊆ T₁ ∪ T₂`
 
-A falha original **não foi reproduzida**, então a causa é inferida, não medida.
-O que está medido é que existiam quatro asserções capazes de produzir
-exatamente aquele sintoma, e que elas foram corrigidas — não silenciadas.
-Trinta execuções limpas depois disso não provam que era essa; provam que, se
-era, não é mais.
+O **núcleo** `T₁ ∩ T₂` é o que a Table viu nas duas pontas; some e volta com o
+mesmo `EntryID` não acontece, então existiu durante a janela inteira e a
+iteração tinha de tê-lo visto. O **universo** `T₁ ∪ T₂` é tudo o que a Table viu
+em algum momento; o que a iteração viu e a Table não viu em ponta nenhuma é
+perda da Table.
+
+Com a pasta parada, `T₁ = T₂` e a dupla inclusão **vira a igualdade original** —
+nenhuma detecção foi trocada por sossego. O ponto cego que sobra está declarado
+no XML doc do teste: perda da Table restrita a **uma** das pontas, numa janela
+em que a pasta também mudou, cai em `universo \ núcleo` e é tolerada. É perda
+intermitente; a Q1 existe pela sistemática, que continua sendo pega.
+
+**Três testes proibiam `Falhou` por inteiro.** O Outlook pode recusar uma
+chamada a qualquer momento, e quando recusa o runner descarta e não publica —
+o comportamento certo. Proibir `Falhou` era exigir que o ambiente não tivesse
+soluço.
+
+A primeira correção aceitava `Falhou` quando o **texto** do motivo continha
+`"GetMessagePageAsync falhou"`, `"COMException"`, `"RPC_E_"` ou `"TotalAtStart"`.
+O Codex derrubou, e com razão: a primeira frase é emitida para **todo**
+`ErrorKind`, então `Unexpected`, `Stale`, `Denied` e `NotImplemented` passavam
+de soluço do ambiente. E `TotalAtStart` é **violação de contrato** — a primeira
+página tem de trazer o total, e há teste cobrando isso — e estava na lista.
+
+A causa agora é **estruturada**. `SourceUnavailableException` carrega o
+`ErrorKind`, `SweepResult.CausaDaFonte` o preserva, e o critério é `Busy` ou
+`NotConnected` — a mesma lista do `OperationResult.IsRetryable`, com teste
+cobrando que as duas não divirjam. Defeito de contrato da fonte sai como
+exceção comum, chega **sem causa**, e reprova.
+
+Isso vive em `CausaDaFalhaTests.vb` porque a regra não pode morar só num teste
+que **só falha quando o Outlook tem soluço** — ali ela nunca seria exercitada
+de propósito.
+
+#### O que fica registrado como risco
+
+| | |
+|---|---|
+| Causa da falha original | **desconhecida** |
+| Nome do teste que falhou | perdido |
+| Relação entre os quatro achados e a falha | **não estabelecida** |
+| Execuções limpas desde a falha | **29** — 24 antes de qualquer correção, 5 depois da versão final |
+
+As 29 execuções limpas **não** dizem que a causa foi eliminada. Dizem que, se
+existir, é rara o bastante para não ter aparecido em 29 tentativas — e ela
+volta a ser observável, porque toda execução desde então grava `trx`.
 
 ---
 

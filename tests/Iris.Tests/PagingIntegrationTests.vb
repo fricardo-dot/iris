@@ -171,28 +171,45 @@ Public Class PagingIntegrationTests
     ''' divergem — que é exatamente o sintoma que a Q1 levou horas para ver.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>O S6, APLICADO AO PRÓPRIO TESTE</b>
+    ''' <b>DUAS TRAVESSIAS DE UMA PASTA VIVA NÃO SÃO IGUAIS</b>
     '''
-    ''' Duas travessias de uma pasta VIVA não podem ser exigidas idênticas:
-    ''' isso afirma que a caixa não muda, e não muda não é propriedade do
-    ''' código sob teste. Uma mensagem chegando entre elas produz exatamente o
-    ''' mesmo sintoma que a Table perdendo uma — e a Q1 existe porque perder em
-    ''' silêncio é grave, não porque chegar correio seja defeito.
+    ''' Exigir conjuntos idênticos afirma que a caixa não muda — e "não muda"
+    ''' não é propriedade do código sob teste. Uma mensagem chegando entre as
+    ''' travessias produz exatamente o mesmo sintoma que a Table perdendo uma.
     '''
-    ''' Foi essa a causa provável da falha isolada registrada na §27.8: a
-    ''' Caixa de Entrada do usuário recebe correio, e duas travessias levam
-    ''' perto de um segundo. Em vinte execuções, uma chegada é plausível.
+    ''' A primeira tentativa de conserto foi repetir a travessia da Table no
+    ''' fim e sair <c>Inconclusive</c> se as pontas divergissem. Isso
+    ''' <b>afrouxava</b>, e o Codex mostrou como: bastava a Table perder de
+    ''' verdade uma mensagem <i>e</i> chegar outra na janela para o defeito
+    ''' real sair rotulado de "caixa viva".
     '''
-    ''' A resposta é a que esta fase inventou para o mesmo problema: <b>a
-    ''' primeira travessia é repetida no fim</b>, e a comparação do meio só vale
-    ''' se as duas pontas concordarem. Ponta divergente significa que a pasta
-    ''' mudou durante a janela, e comparação sobre universo que mudou não
-    ''' conclui nada — nem a favor nem contra.
+    ''' ------------------------------------------------------------------
+    ''' <b>O CONSERTO: TOLERAR EXATAMENTE A MUDANÇA, E NADA ALÉM</b>
     '''
-    ''' Isso NÃO afrouxa o teste. A propriedade que ele cobra continua exata:
-    ''' sobre uma pasta que ficou parada, os dois caminhos veem o mesmo
-    ''' conjunto. O que deixou de ser cobrado é uma propriedade da CAIXA, que
-    ''' ele nunca teve como garantir.
+    ''' Três travessias, nesta ordem: Table (T1), iteração (I), Table (T2).
+    ''' Duas quantidades saem daí:
+    '''
+    '''   <c>Núcleo = T1 ∩ T2</c> — o que a Table viu nas <b>duas</b> pontas.
+    '''   Uma mensagem some e volta com o MESMO EntryID? Não acontece: apagar
+    '''   e receber de novo gera identidade nova. Então o núcleo existiu
+    '''   durante a janela inteira, e a iteração tinha de tê-lo visto.
+    '''
+    '''   <c>Universo = T1 ∪ T2</c> — tudo o que a Table viu em algum momento.
+    '''   O que a iteração viu e a Table não viu em ponta nenhuma é perda da
+    '''   Table, não chegada de correio.
+    '''
+    ''' A asserção é <c>Núcleo ⊆ I ⊆ Universo</c>.
+    '''
+    ''' <b>Com a pasta parada isso é IDÊNTICO ao teste original</b>: T1 = T2
+    ''' faz núcleo e universo colapsarem no mesmo conjunto, e a dupla inclusão
+    ''' vira igualdade. Nenhuma detecção foi trocada por sossego. Com a pasta
+    ''' mexendo, a tolerância é <b>exatamente</b> o que mexeu — e nada mais.
+    '''
+    ''' <b>O ponto cego que sobra, declarado:</b> uma perda da Table que
+    ''' aconteça em UMA das duas pontas só, numa janela em que a pasta também
+    ''' mudou, cai em <c>Universo \ Núcleo</c> e é tolerada. É perda
+    ''' intermitente, não sistemática; a Q1 existe pela sistemática, que
+    ''' continua sendo pega.
     ''' </summary>
     <TestMethod, TestCategory("Integracao")>
     Public Async Function Table_e_iteracao_leem_o_MESMO_conjunto() As Task
@@ -201,40 +218,36 @@ Public Class PagingIntegrationTests
             Dim entrada = Await AcharEntradaAsync(broker)
 
             ' ReceivedDesc usa Table + cursor; SubjectAsc usa iteracao. Duas
-            ' implementacoes independentes sobre a mesma pasta.
+            ' implementacoes independentes sobre a mesma pasta. A ordem
+            ' cronologica importa: a iteracao fica ENTRE as duas Tables.
             Dim rapido = Await PercorrerAsync(broker, entrada, MessageSort.ReceivedDesc)
             Dim lento = Await PercorrerAsync(broker, entrada, MessageSort.SubjectAsc)
-
-            ' A PONTA: repete a primeira travessia. Se ela nao der o mesmo
-            ' conjunto, a pasta mudou durante a janela e a comparacao do meio
-            ' nao conclui nada.
             Dim conferencia = Await PercorrerAsync(broker, entrada, MessageSort.ReceivedDesc)
 
             Dim porTabela = New HashSet(Of ItemKey)(rapido.Chaves)
             Dim porIteracao = New HashSet(Of ItemKey)(lento.Chaves)
             Dim naConferencia = New HashSet(Of ItemKey)(conferencia.Chaves)
 
-            If Not porTabela.SetEquals(naConferencia) Then
-                Dim entraram = naConferencia.Except(porTabela).Count()
-                Dim sairam = porTabela.Except(naConferencia).Count()
-                Assert.Inconclusive(
-                    $"a pasta MUDOU durante a verificacao (+{entraram} / -{sairam} entre a " &
-                    "primeira travessia e a repeticao). Comparar dois caminhos sobre universos " &
-                    "diferentes nao conclui nada — nem a favor nem contra.")
-            End If
-
             Assert.AreEqual(rapido.Chaves.Count, porTabela.Count,
                             "a Table devolveu chave REPETIDA")
             Assert.AreEqual(lento.Chaves.Count, porIteracao.Count,
                             "a iteracao devolveu chave REPETIDA")
+            Assert.AreEqual(conferencia.Chaves.Count, naConferencia.Count,
+                            "a Table devolveu chave REPETIDA na conferencia")
 
+            Dim nucleo = New HashSet(Of ItemKey)(porTabela)
+            nucleo.IntersectWith(naConferencia)
+            Dim universo = New HashSet(Of ItemKey)(porTabela)
+            universo.UnionWith(naConferencia)
+
+            Dim mexeu = universo.Count - nucleo.Count
             Console.WriteLine($"por Table   : {porTabela.Count} chaves, {rapido.Paginas} paginas")
             Console.WriteLine($"por iteracao: {porIteracao.Count} chaves, {lento.Paginas} paginas")
-            ' A comparacao de comprimento anterior pegava a PRIMEIRA chave
-            ' de cada travessia — e as ordenacoes sao diferentes, entao eram
-            ' MENSAGENS diferentes. Agora compara a mesma mensagem, achada
-            ' na intersecao. E o valor inteiro nao vai para o log: ele
-            ' carrega o endereco do usuario em hex.
+            Console.WriteLine($"conferencia : {naConferencia.Count} chaves — a pasta mexeu em {mexeu}")
+
+            ' A MESMA mensagem tem de ter a MESMA chave nos dois caminhos. O
+            ' valor inteiro nao vai para o log: ele carrega o endereco do
+            ' usuario em hex.
             Dim comum = porTabela.Intersect(porIteracao).FirstOrDefault()
             If comum IsNot Nothing Then
                 Dim naTabela = rapido.Chaves.First(Function(k) k.Equals(comum))
@@ -244,14 +257,21 @@ Public Class PagingIntegrationTests
                                 "a MESMA mensagem tem de ter a MESMA chave nos dois caminhos")
             End If
 
-            Dim soNaTabela = porTabela.Except(porIteracao).Count()
-            Dim soNaIteracao = porIteracao.Except(porTabela).Count()
+            ' Nucleo ⊆ I: a Table viu nas DUAS pontas, entao existia durante a
+            ' iteracao inteira. Faltar aqui e perda da ITERACAO.
+            Dim perdidasPelaIteracao = nucleo.Except(porIteracao).Count()
+            Assert.AreEqual(0, perdidasPelaIteracao,
+                $"a ITERACAO perdeu {perdidasPelaIteracao} de {nucleo.Count} que a Table " &
+                "viu nas duas pontas — essas existiram durante a travessia toda")
 
-            Assert.AreEqual(0, soNaIteracao,
-                $"a Table PERDEU {soNaIteracao} de {porIteracao.Count} " &
+            ' I ⊆ Universo: a iteracao viu o que a Table nao viu em ponta
+            ' nenhuma. Isso e perda da TABLE — o sintoma classico de fuso no
+            ' filtro DASL, e o motivo de a Q1 existir.
+            Dim perdidasPelaTabela = porIteracao.Except(universo).Count()
+            Assert.AreEqual(0, perdidasPelaTabela,
+                $"a TABLE perdeu {perdidasPelaTabela} de {porIteracao.Count}: a iteracao " &
+                "viu chaves que NENHUMA das duas travessias por Table trouxe " &
                 "(sintoma classico de fuso no filtro DASL)")
-            Assert.AreEqual(0, soNaTabela,
-                $"a Table inventou {soNaTabela} itens que a iteracao nao viu")
 
             Assert.IsTrue(porTabela.Count > 0, "pasta vazia nao prova nada")
         Finally

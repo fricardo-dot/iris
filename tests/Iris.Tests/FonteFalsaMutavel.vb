@@ -1,6 +1,7 @@
 Imports System.Collections.Generic
 Imports System.Linq
 Imports System.Threading
+Imports Iris.Model
 Imports Iris.Sync
 
 ''' <summary>
@@ -29,6 +30,13 @@ Friend Class FonteFalsaMutavel
     Friend Property TruncarApos As Integer? = Nothing
     Friend Property LancarNaPagina As Integer? = Nothing
     Friend Property LancarNaContagem As Integer? = Nothing
+    ''' <summary>
+    ''' A fonte RECUSA a pagina 1 com este <c>ErrorKind</c> — recusa
+    ''' classificada, como o adaptador real emite, e nao excecao qualquer.
+    ''' </summary>
+    Friend Property RecusarNaPagina As ErrorKind? = Nothing
+    ''' <summary>A fonte RECUSA a contagem com este <c>ErrorKind</c>.</summary>
+    Friend Property RecusarNaContagem As ErrorKind? = Nothing
     Friend Property CursorTravado As Boolean = False
     Friend Property UniversoNulo As Boolean = False
     Friend Property PaginaNula As Boolean = False
@@ -88,6 +96,9 @@ Friend Class FonteFalsaMutavel
         If LancarNaContagem.HasValue AndAlso VezesQueContou = LancarNaContagem.Value Then
             Throw New InvalidOperationException($"fonte falhou na contagem {VezesQueContou}")
         End If
+        If RecusarNaContagem.HasValue Then
+            Throw New SourceUnavailableException(RecusarNaContagem.Value, "contagem")
+        End If
         If VezesQueContou = 1 Then Disparar(0)
         If ContagemNula Then Return Nothing
         Return New SourceCount(If(ContagemDeclarada, _chaves.Count), UniversoDaLeitura())
@@ -105,6 +116,9 @@ Friend Class FonteFalsaMutavel
 
         If LancarNaPagina.HasValue AndAlso PaginasLidas = LancarNaPagina.Value Then
             Throw New InvalidOperationException($"fonte falhou na pagina {PaginasLidas}")
+        End If
+        If RecusarNaPagina.HasValue Then
+            Throw New SourceUnavailableException(RecusarNaPagina.Value, $"pagina {PaginasLidas}")
         End If
         If PaginaNula Then Return Nothing
 

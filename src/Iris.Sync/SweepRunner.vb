@@ -1,6 +1,7 @@
 Imports System.Collections.Generic
 Imports System.Linq
 Imports System.Threading
+Imports Iris.Model
 
 Namespace Global.Iris.Sync
 
@@ -164,14 +165,28 @@ Namespace Global.Iris.Sync
         Public ReadOnly Property Paginas As Integer
         Public ReadOnly Property Cobertura As FolderCoverage
 
+        ''' <summary>
+        ''' Quando a varredura morreu porque a <b>fonte</b> recusou, o
+        ''' <see cref="ErrorKind"/> da recusa. <c>Nothing</c> em todo o resto —
+        ''' inclusive numa falha que veio de defeito de contrato da fonte.
+        '''
+        ''' Existe para que quem julga o desfecho julgue sobre o enum e não
+        ''' sobre o texto do <see cref="Motivo"/>. Classificar falha por
+        ''' substring da mensagem aceita como "soluço do ambiente" qualquer
+        ''' regressão cuja mensagem por acaso contenha a palavra certa.
+        ''' </summary>
+        Public ReadOnly Property CausaDaFonte As ErrorKind?
+
         Friend Sub New(c As SweepConclusion, a As SweepAttempt, motivo As String,
                        paginas As Integer,
-                       Optional cobertura As FolderCoverage = FolderCoverage.Desconhecida)
+                       Optional cobertura As FolderCoverage = FolderCoverage.Desconhecida,
+                       Optional causaDaFonte As ErrorKind? = Nothing)
             Conclusion = c
             Attempt = a
             Me.Motivo = motivo
             Me.Paginas = paginas
             Me.Cobertura = cobertura
+            Me.CausaDaFonte = causaDaFonte
         End Sub
 
         Public ReadOnly Property Publicou As Boolean
@@ -354,6 +369,11 @@ Namespace Global.Iris.Sync
 
             Catch ex As OperationCanceledException
                 Return Cancelar(a, paginas, tentativa, abriuNoDestino)
+            Catch ex As SourceUnavailableException
+                ' A fonte recusou, e disse POR QUE. O desfecho e o mesmo -
+                ' descarta, nunca publica metade - mas a causa sobrevive
+                ' classificada, em vez de virar texto para alguem interpretar.
+                Return Falhar(a, ex.Message, paginas, tentativa, abriuNoDestino, ex.Kind)
             Catch ex As Exception
                 ' Falha da fonte ou do destino. Em qualquer fronteira o efeito
                 ' e o mesmo: descarta. Nunca publica metade.
@@ -377,10 +397,12 @@ Namespace Global.Iris.Sync
         End Function
 
         Private Function Falhar(a As SweepAttempt, motivo As String, paginas As Integer,
-                                tentativa As Long, abriuNoDestino As Boolean) As SweepResult
+                                tentativa As Long, abriuNoDestino As Boolean,
+                                Optional causaDaFonte As ErrorKind? = Nothing) As SweepResult
             Dim r = SweepModel.Falhar(a, motivo)
             Descartar(tentativa, abriuNoDestino, r.Rejection)
-            Return New SweepResult(SweepConclusion.Falhou, r.State, r.Rejection, paginas)
+            Return New SweepResult(SweepConclusion.Falhou, r.State, r.Rejection, paginas,
+                                   causaDaFonte:=causaDaFonte)
         End Function
 
         ''' <summary>

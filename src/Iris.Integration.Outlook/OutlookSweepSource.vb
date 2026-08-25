@@ -71,6 +71,11 @@ Namespace Global.Iris.Integration.Outlook
                 ' Sem total nao ha S6, e sem S6 nao ha como distinguir "li
                 ' tudo" de "a fonte parou de devolver". Falhar aqui e melhor
                 ' que publicar sem a guarda.
+                '
+                ' Excecao COMUM, e nao SourceUnavailableException: a primeira
+                ' pagina TEM de trazer o total, e ha teste cobrando isso. Nao
+                ' trazer e defeito de contrato, nao soluco do ambiente, e nao
+                ' pode sair classificado de um jeito que alguem tolere.
                 Throw New InvalidOperationException(
                     "a pagina nao trouxe TotalAtStart: sem contagem nao ha S6")
             End If
@@ -99,8 +104,9 @@ Namespace Global.Iris.Integration.Outlook
             Dim q As New MessageQuery(_pasta, MessageSort.ReceivedDesc, _geracaoDaConsulta)
             Dim r = _broker.GetMessagePageAsync(q, cursor, alvo, ct).GetAwaiter().GetResult()
             If Not r.Succeeded Then
-                Throw New InvalidOperationException(
-                    $"GetMessagePageAsync falhou: {r.Kind} {r.Detail}")
+                ' Recusa do provider vai CLASSIFICADA. Quem julga o desfecho
+                ' julga sobre o ErrorKind, nao sobre esta frase.
+                Throw New SourceUnavailableException(r.Kind, r.Detail)
             End If
             Return r.Value
         End Function

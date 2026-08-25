@@ -263,18 +263,34 @@ Public Class ImportacaoRealTests
 
     ''' <summary>
     ''' O desfecho tem de ser um dos previstos — e <c>Falhou</c> só é previsto
-    ''' quando a causa <b>veio do provider</b>.
+    ''' quando a <b>fonte</b> recusou por motivo que o ambiente produz sozinho.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE NÃO É "PROIBIDO FALHAR"</b>
     '''
     ''' Este teste roda contra uma caixa VIVA, e o Outlook pode recusar uma
-    ''' chamada a qualquer momento. Quando isso acontece, o runner descarta e
-    ''' não publica — que é o comportamento certo. Proibir <c>Falhou</c> por
+    ''' chamada a qualquer momento. Quando recusa, o runner descarta e não
+    ''' publica — que é o comportamento certo. Proibir <c>Falhou</c> por
     ''' inteiro seria exigir que o ambiente não tivesse soluço, o que não é
-    ''' propriedade do código sob teste, e transforma o teste em intermitente.
+    ''' propriedade do código sob teste.
     '''
-    ''' Mas aceitar <c>Falhou</c> em silêncio seria afrouxar: uma regressão que
-    ''' falha SEMPRE passaria. Então a distinção é <b>pela causa</b> — falha do
-    ''' provider é ambiente; "cursor nao avancou", "fonte devolveu N linhas" ou
-    ''' "passou de MaxPaginas" são <b>meus</b> defeitos, e continuam reprovando.
+    ''' ------------------------------------------------------------------
+    ''' <b>E POR QUE NÃO É PELO TEXTO DO MOTIVO</b>
+    '''
+    ''' A primeira versão disto aceitava <c>Falhou</c> quando o motivo continha
+    ''' <c>"GetMessagePageAsync falhou"</c>, <c>"COMException"</c>,
+    ''' <c>"RPC_E_"</c> ou <c>"TotalAtStart"</c>. O Codex derrubou, e com
+    ''' razão: aquela primeira frase é emitida para <b>todo</b>
+    ''' <c>ErrorKind</c>, então <c>Unexpected</c>, <c>Stale</c>, <c>Denied</c>
+    ''' e <c>NotImplemented</c> passavam de "soluço do ambiente". Pior,
+    ''' <c>TotalAtStart</c> é <b>defeito de contrato</b> — a primeira página
+    ''' tem de trazer o total, e há teste cobrando isso — e estava na lista.
+    '''
+    ''' Agora a causa vem estruturada em
+    ''' <see cref="SweepResult.CausaDaFonte"/>, e o critério é
+    ''' <see cref="SourceUnavailableException.DoAmbiente"/>: só
+    ''' <c>Busy</c> e <c>NotConnected</c>. Defeito de contrato da fonte não
+    ''' chega classificado, então cai aqui como falha sem causa — e reprova.
     '''
     ''' E a invariante de segurança é cobrada em TODOS os desfechos, inclusive
     ''' no aceito: nada pode ficar pela metade.
@@ -283,16 +299,16 @@ Public Class ImportacaoRealTests
         If r.Conclusion <> SweepConclusion.Falhou Then Return
 
         Dim motivo = If(r.Motivo, "")
-        Dim doProvider =
-            motivo.Contains("GetMessagePageAsync falhou") OrElse
-            motivo.Contains("COMException") OrElse
-            motivo.Contains("RPC_E_") OrElse
-            motivo.Contains("TotalAtStart")
 
-        Assert.IsTrue(doProvider,
-            "falha que NAO veio do provider e defeito meu, nao soluco da caixa: " & motivo)
+        Assert.IsTrue(r.CausaDaFonte.HasValue,
+            "falha SEM causa da fonte e defeito meu, nao soluco da caixa: " & motivo)
 
-        Anotar($"AVISO: o provider falhou e a varredura foi descartada — {motivo}")
+        Dim k = r.CausaDaFonte.Value
+        Assert.IsTrue(k = ErrorKind.Busy OrElse k = ErrorKind.NotConnected,
+            $"a fonte recusou com {k}, que NAO e recusa que o ambiente produz " &
+            "sozinho — Busy e NotConnected sao; o resto e defeito: " & motivo)
+
+        Anotar($"AVISO: a fonte recusou com {k} e a varredura foi descartada")
     End Sub
 
     ' ==================================================================
