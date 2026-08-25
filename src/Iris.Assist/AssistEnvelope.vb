@@ -13,10 +13,39 @@ Namespace Global.Iris.Assist
     ''' Assunto, remetente e destinatários <b>são conteúdo</b> — a lista de
     ''' quem recebeu uma mensagem pode ser tão sensível quanto o corpo, e
     ''' tratá-los como "cabeçalho" seria mandá-los sem ninguém ter decidido.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>SÓ O <see cref="ContentPipeline"/> CONSTRÓI</b>
+    '''
+    ''' O construtor era público, e isso deixava o pipeline inteiro
+    ''' contornável: qualquer chamador montava um <c>MessagePart</c> com HTML
+    ''' cru, com um <c>cid:</c>, ou com corpo pela metade marcado como completo,
+    ''' usava o <c>ItemKey</c> aprovado, e o grant aceitava.
+    '''
+    ''' Esconder o construtor não <i>prova</i> a origem — mas fecha o desvio
+    ''' trivial, e faz a ordem ser a única: broker lê corpo e change key →
+    ''' <see cref="ContentPipeline"/> → <c>MessagePart</c> →
+    ''' <see cref="EnvelopeBuilder"/>.
     ''' </summary>
     Public NotInheritable Class MessagePart
 
         Public ReadOnly Property Item As ItemKey
+        ''' <summary>
+        ''' A <c>PR_CHANGE_KEY</c> da <b>mesma leitura</b> que produziu este
+        ''' corpo.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O TOCTOU QUE ISTO FECHA</b>
+        '''
+        ''' O portão aprova "o item X na versão CK-1", porque foi essa a versão
+        ''' cujo rótulo ele leu. Sem a versão aqui, o corpo podia ser extraído
+        ''' depois — já em CK-2, com outro conteúdo e talvez outra
+        ''' classificação — e o envelope continuaria dizendo apenas "item X".
+        '''
+        ''' A capability guardava as versões aprovadas e nunca as comparava com
+        ''' a proveniência do envelope. Agora compara.
+        ''' </summary>
+        Public ReadOnly Property ChangeKey As String
         Public ReadOnly Property Assunto As String
         Public ReadOnly Property Remetente As String
         Public ReadOnly Property Destinatarios As IReadOnlyList(Of String)
@@ -32,10 +61,11 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Public ReadOnly Property CorpoCompleto As Boolean
 
-        Public Sub New(item As ItemKey, assunto As String, remetente As String,
-                       destinatarios As IEnumerable(Of String), corpo As String,
-                       corpoCompleto As Boolean)
+        Friend Sub New(item As ItemKey, changeKey As String, assunto As String,
+                       remetente As String, destinatarios As IEnumerable(Of String),
+                       corpo As String, corpoCompleto As Boolean)
             Me.Item = item
+            Me.ChangeKey = If(changeKey, "")
             Me.Assunto = If(assunto, "")
             Me.Remetente = If(remetente, "")
             ' AsReadOnly sobre um ARRAY proprio: um IReadOnlyList(Of T) que
@@ -117,6 +147,14 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Comprimento As Integer
         ''' <summary>Os itens que entraram, na ordem em que entraram.</summary>
         Public ReadOnly Property Itens As IReadOnlyList(Of ItemKey)
+        ''' <summary>
+        ''' A versão de cada item, na <b>mesma ordem</b> — a versão de que o
+        ''' corpo foi extraído.
+        '''
+        ''' Sem isto, "item X" no envelope e "item X" no grant casavam mesmo
+        ''' quando o corpo tinha vindo de outra versão do item.
+        ''' </summary>
+        Public ReadOnly Property Versoes As IReadOnlyList(Of String)
         ''' <summary>Alguma mensagem ficou de fora por causa do limite.</summary>
         Public ReadOnly Property Truncado As Boolean
         ''' <summary>Quantas ficaram de fora.</summary>
@@ -125,11 +163,13 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property CorpoIncompleto As Boolean
 
         Friend Sub New(bytes As Byte(), itens As IEnumerable(Of ItemKey),
+                       versoes As IEnumerable(Of String),
                        truncado As Boolean, omitidas As Integer, corpoIncompleto As Boolean)
             _bytes = bytes
             Comprimento = bytes.Length
             Hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()
             Me.Itens = Array.AsReadOnly(itens.ToArray())
+            Me.Versoes = Array.AsReadOnly(versoes.ToArray())
             Me.Truncado = truncado
             Me.Omitidas = omitidas
             Me.CorpoIncompleto = corpoIncompleto
@@ -266,6 +306,7 @@ Namespace Global.Iris.Assist
 
             Return New EnvelopeResult(
                 New AssistEnvelope(bytes, entram.Select(Function(p) p.Item),
+                                   entram.Select(Function(p) p.ChangeKey),
                                    truncado, omitidas, incompleto),
                 EnvelopeRefusal.Nenhuma)
         End Function

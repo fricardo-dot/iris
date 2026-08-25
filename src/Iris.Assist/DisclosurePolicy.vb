@@ -138,10 +138,20 @@ Namespace Global.Iris.Assist
         ''' Ordinal e por posição: item a mais, item a menos e item trocado de
         ''' lugar são três coisas diferentes, e nenhuma delas foi aprovada.
         ''' </summary>
-        Public Function Cobre(itens As IReadOnlyList(Of ItemKey)) As Boolean
-            If itens Is Nothing OrElse itens.Count <> Me.Itens.Count Then Return False
+        Public Function Cobre(itens As IReadOnlyList(Of ItemKey),
+                              versoes As IReadOnlyList(Of String)) As Boolean
+            If itens Is Nothing OrElse versoes Is Nothing Then Return False
+            If itens.Count <> Me.Itens.Count OrElse versoes.Count <> Me.Versoes.Count Then
+                Return False
+            End If
             For i = 0 To itens.Count - 1
                 If Not Me.Itens(i).Equals(itens(i)) Then Return False
+                ' A VERSAO tambem. Aprovar "o item X" nao e aprovar "o item X
+                ' como estiver": o rotulo foi lido de uma versao, e um corpo
+                ' extraido de outra nao passou por portao nenhum.
+                If Not String.Equals(Me.Versoes(i), versoes(i), StringComparison.Ordinal) Then
+                    Return False
+                End If
             Next
             Return True
         End Function

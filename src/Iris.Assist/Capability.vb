@@ -191,7 +191,7 @@ Namespace Global.Iris.Assist
             If envelope.Truncado OrElse envelope.CorpoIncompleto Then Return Nothing
 
             ' E os itens tem de ser EXATAMENTE os aprovados, na ordem aprovada.
-            If Not g.Cobre(envelope.Itens) Then Return Nothing
+            If Not g.Cobre(envelope.Itens, envelope.Versoes) Then Return Nothing
 
             ' O prazo e o MENOR entre a validade curta da capability e o fim da
             ' propria ativacao. Uma capability que sobrevivesse a autorizacao
@@ -232,9 +232,20 @@ Namespace Global.Iris.Assist
                                  destino As AssistDestination, operacao As AssistOperation,
                                  agora As DateTimeOffset) As CapabilityUse
 
-            If c Is Nothing OrElse Not _emitidas.ContainsKey(c.Id) Then
+            ' A CANONICA, e nao o objeto apresentado. O ledger conferia os
+            ' campos de 'c' - outro objeto com o mesmo Id, construivel dentro
+            ' do assembly ou por desserializacao futura, apresentaria hash,
+            ' destino e operacao diferentes dos que o ledger emitiu, e a
+            ' conferencia bateria consigo mesma.
+            Dim canonica As DisclosureCapability = Nothing
+            If c Is Nothing OrElse Not _emitidas.TryGetValue(c.Id, canonica) Then
                 Return Recusar(CapabilityRefusal.Desconhecida)
             End If
+            If Not ReferenceEquals(c, canonica) Then
+                Return Recusar(CapabilityRefusal.Desconhecida)
+            End If
+            c = canonica
+
             If _consumidas.ContainsKey(c.Id) Then Return Recusar(CapabilityRefusal.JaConsumida)
 
             If agora > c.Expira Then Return Recusar(CapabilityRefusal.Expirada)
@@ -251,7 +262,8 @@ Namespace Global.Iris.Assist
             ' entao dois envelopes com o mesmo texto e itens diferentes tem o
             ' mesmo hash. Sem esta conferencia, conteudo aprovado para uma
             ' mensagem sairia registrado como vindo de outra.
-            If Not MesmosItens(envelope.Itens, c.Itens) Then
+            If Not MesmosItens(envelope.Itens, c.Itens) OrElse
+               Not MesmasVersoes(envelope.Versoes, c.Versoes) Then
                 Return Recusar(CapabilityRefusal.ProveniencaDiferente)
             End If
 
@@ -273,6 +285,15 @@ Namespace Global.Iris.Assist
             End If
 
             Return New CapabilityUse(True, CapabilityRefusal.Nenhuma)
+        End Function
+
+        Private Shared Function MesmasVersoes(a As IReadOnlyList(Of String),
+                                              b As IReadOnlyList(Of String)) As Boolean
+            If a Is Nothing OrElse b Is Nothing OrElse a.Count <> b.Count Then Return False
+            For i = 0 To a.Count - 1
+                If Not String.Equals(a(i), b(i), StringComparison.Ordinal) Then Return False
+            Next
+            Return True
         End Function
 
         Private Shared Function MesmosItens(a As IReadOnlyList(Of ItemKey),

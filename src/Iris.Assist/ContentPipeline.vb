@@ -17,6 +17,10 @@ Namespace Global.Iris.Assist
         SemTexto
         ''' <summary>Algum campo passa do teto declarado.</summary>
         CampoLongoDemais
+        ''' <summary>Falta a <c>PR_CHANGE_KEY</c> da leitura que produziu o corpo.</summary>
+        SemVersao
+        ''' <summary>HTML que o pipeline não consegue interpretar com confiança.</summary>
+        HtmlIlegivel
     End Enum
 
     Public NotInheritable Class ContentResult
@@ -90,8 +94,13 @@ Namespace Global.Iris.Assist
         ''' Prepara uma mensagem. Recusa em vez de "dar um jeito": conteúdo que
         ''' não dá para preparar com segurança é conteúdo que não sai.
         ''' </summary>
-        Public Shared Function Preparar(item As Model.ItemKey, assunto As String,
-                                        remetente As String,
+        ''' <param name="changeKey">
+        ''' A <c>PR_CHANGE_KEY</c> da leitura que produziu este corpo. É ela que
+        ''' prende o corpo à versão que o portão classificou — sem isso, corpo
+        ''' de uma versão sai autorizado pelo rótulo de outra.
+        ''' </param>
+        Public Shared Function Preparar(item As Model.ItemKey, changeKey As String,
+                                        assunto As String, remetente As String,
                                         destinatarios As IEnumerable(Of String),
                                         corpo As String, ehHtml As Boolean,
                                         corpoCompleto As Boolean) As ContentResult
@@ -107,7 +116,14 @@ Namespace Global.Iris.Assist
             ' junto com o atributo, e a mensagem passaria — mas um cid: no HTML
             ' significa que existe ANEXO INLINE, e anexo esta fora desta fase
             ' por inteiro. Limpar esconderia o fato em vez de tratar.
-            If Embutido.IsMatch(If(corpo, "")) Then
+            '
+            ' E procurada TAMBEM na forma decodificada: <img src="cid&#58;x">
+            ' nao contem "cid:" no cru, e o navegador do provedor le a entidade
+            ' do mesmo jeito. Procurar so no cru era uma barreira que qualquer
+            ' remetente atravessava escrevendo dois pontos de outro jeito.
+            Dim cru = If(corpo, "")
+            If Embutido.IsMatch(cru) OrElse
+               Embutido.IsMatch(Net.WebUtility.HtmlDecode(cru)) Then
                 Return Recusar(ContentRefusal.ReferenciaEmbutida)
             End If
 
@@ -131,8 +147,15 @@ Namespace Global.Iris.Assist
                 Return Recusar(ContentRefusal.CampoLongoDemais)
             End If
 
+            If String.IsNullOrEmpty(changeKey) Then
+                ' Sem versao nao da para prender o corpo a leitura que o
+                ' classificou. O 3.0 mediu PR_CHANGE_KEY vindo em 20 de 20;
+                ' faltar aqui e sinal de que alguem montou por outro caminho.
+                Return Recusar(ContentRefusal.SemVersao)
+            End If
+
             Return New ContentResult(True, ContentRefusal.Nenhuma,
-                                     New MessagePart(item, tema, de, quem, texto, True))
+                                     New MessagePart(item, changeKey, tema, de, quem, texto, True))
         End Function
 
         ''' <summary>

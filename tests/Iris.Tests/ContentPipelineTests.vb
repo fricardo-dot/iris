@@ -30,7 +30,7 @@ Public Class ContentPipelineTests
                                      Optional assunto As String = "assunto",
                                      Optional de As String = "fulano@exemplo.invalido",
                                      Optional para As String() = Nothing) As ContentResult
-        Return ContentPipeline.Preparar(Chave(), assunto, de,
+        Return ContentPipeline.Preparar(Chave(), "CK-1", assunto, de,
                                         If(para, {"beltrano@exemplo.invalido"}),
                                         corpo, html, completo)
     End Function
@@ -234,6 +234,58 @@ Public Class ContentPipelineTests
     Public Sub Corpo_que_some_na_limpeza_RECUSA()
         Assert.AreEqual(ContentRefusal.SemTexto, Preparar("<style>.a{}</style>", html:=True).Recusa)
         Assert.AreEqual(ContentRefusal.SemTexto, Preparar("   " & vbTab & "  ").Recusa)
+    End Sub
+
+
+    ' ==================================================================
+    ' Referência codificada
+
+    ''' <summary>
+    ''' <b>Referência escrita com entidade HTML também recusa.</b>
+    '''
+    ''' <c>&lt;img src="cid&amp;#58;logo"&gt;</c> não contém <c>cid:</c> no cru, e
+    ''' a remoção da tag apagaria a evidência — mas o navegador do provedor lê a
+    ''' entidade do mesmo jeito. Procurar só no cru era uma barreira que
+    ''' qualquer remetente atravessava escrevendo dois pontos de outro jeito.
+    ''' </summary>
+    <DataTestMethod>
+    <DataRow("<img src=""cid&#58;logo"">texto</img>")>
+    <DataRow("<img src=""data&#58;image/png;base64,AAAA"">texto</img>")>
+    <DataRow("&#99;&#105;&#100;&#58;abc")>
+    Public Sub Referencia_com_ENTIDADE_tambem_recusa(corpo As String)
+        Dim r = Preparar(corpo, html:=True)
+
+        Assert.IsFalse(r.Ok, "passou: " & corpo)
+        Assert.AreEqual(ContentRefusal.ReferenciaEmbutida, r.Recusa)
+    End Sub
+
+    ' ==================================================================
+    ' A versão
+
+    ''' <summary>
+    ''' <b>Sem <c>PR_CHANGE_KEY</c>, o pipeline recusa.</b>
+    '''
+    ''' É ela que prende o corpo à leitura que o classificou. O 3.0 mediu a
+    ''' propriedade vindo em 20 de 20 itens; faltar aqui é sinal de que alguém
+    ''' montou por outro caminho.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Sem_ChangeKey_o_pipeline_RECUSA()
+        Dim r = ContentPipeline.Preparar(Chave(), "", "assunto", "de@x.invalido",
+                                         {"para@x.invalido"}, "corpo", False, True)
+
+        Assert.IsFalse(r.Ok)
+        Assert.AreEqual(ContentRefusal.SemVersao, r.Recusa)
+    End Sub
+
+    ''' <summary>E ela sai na parte, para o envelope prender.</summary>
+    <TestMethod>
+    Public Sub A_ChangeKey_sai_na_parte()
+        Dim r = ContentPipeline.Preparar(Chave(), "CK-7", "assunto", "de@x.invalido",
+                                         {"para@x.invalido"}, "corpo", False, True)
+
+        Assert.IsTrue(r.Ok)
+        Assert.AreEqual("CK-7", r.Parte.ChangeKey)
     End Sub
 
 End Class

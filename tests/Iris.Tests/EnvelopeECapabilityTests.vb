@@ -30,10 +30,27 @@ Public Class EnvelopeECapabilityTests
         Return New ItemKey($"E-{n}", "store-1")
     End Function
 
+    ''' <summary>
+    ''' Passa pelo <c>ContentPipeline</c>, e não pelo construtor — que agora é
+    ''' <c>Friend</c> justamente para não haver segundo caminho.
+    ''' </summary>
     Private Shared Function Parte(n As Integer, Optional corpo As String = "olá",
-                                  Optional completo As Boolean = True) As MessagePart
-        Return New MessagePart(Chave(n), $"assunto {n}", "fulano@exemplo.invalido",
-                               {"beltrano@exemplo.invalido"}, corpo, completo)
+                                  Optional completo As Boolean = True,
+                                  Optional changeKey As String = Nothing) As MessagePart
+        Dim r = ContentPipeline.Preparar(Chave(n), If(changeKey, $"CK-{n}"),
+                                         $"assunto {n}", "fulano@exemplo.invalido",
+                                         {"beltrano@exemplo.invalido"}, corpo,
+                                         ehHtml:=False, corpoCompleto:=completo)
+        If completo Then
+            Assert.IsTrue(r.Ok, $"a fixture nao passou no pipeline: {r.Recusa}")
+            Return r.Parte
+        End If
+        ' Corpo incompleto e RECUSADO pelo pipeline. Para os testes que
+        ' precisam de um MessagePart incompleto, o construtor Friend serve —
+        ' e o teste de arquitetura cobra que ele nao seja Public.
+        Return New MessagePart(Chave(n), $"CK-{n}", $"assunto {n}",
+                               "fulano@exemplo.invalido",
+                               {"beltrano@exemplo.invalido"}, corpo, False)
     End Function
 
     Private Shared Function Destino(Optional modelo As String = "modelo-de-teste") _
@@ -563,9 +580,14 @@ Public Class EnvelopeECapabilityTests
     End Sub
 
     ''' <summary>Duas mensagens com o mesmo texto e itens diferentes.</summary>
-    Private Shared Function Gemea(n As Integer) As MessagePart
-        Return New MessagePart(Chave(n), "mesmo assunto", "mesmo@remetente.invalido",
-                               {"mesmo@destino.invalido"}, "mesmo corpo", True)
+    Private Shared Function Gemea(n As Integer,
+                                  Optional changeKey As String = Nothing) As MessagePart
+        Dim r = ContentPipeline.Preparar(Chave(n), If(changeKey, $"CK-{n}"),
+                                         "mesmo assunto", "mesmo@remetente.invalido",
+                                         {"mesmo@destino.invalido"}, "mesmo corpo",
+                                         ehHtml:=False, corpoCompleto:=True)
+        Assert.IsTrue(r.Ok)
+        Return r.Parte
     End Function
 
     ''' <summary>
@@ -638,6 +660,117 @@ Public Class EnvelopeECapabilityTests
                     $"teto {teto}: saiu com {r.Envelope.Comprimento}")
             End If
         Next
+    End Sub
+
+
+    ' ==================================================================
+    ' O TOCTOU do corpo
+
+    ''' <summary>
+    ''' <b>Corpo extraído de OUTRA versão do mesmo item não emite.</b>
+    '''
+    ''' O buraco central do 3.2, e ele era sutil: o grant guardava a
+    ''' <c>PR_CHANGE_KEY</c> aprovada, o envelope carregava só o
+    ''' <c>ItemKey</c>, e <c>Cobre()</c> comparava apenas os itens.
+    '''
+    ''' Então isto passava: o rótulo do item X é lido em <c>CK-1</c>, o portão
+    ''' aprova X em <c>CK-1</c>, o corpo muda, o corpo é extraído em
+    ''' <c>CK-2</c>, e o envelope continua dizendo apenas "item X". A capability
+    ''' guardava as versões e nunca as comparava com a proveniência do envelope.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Corpo_de_OUTRA_versao_do_mesmo_item_nao_emite()
+        Dim cofre As New CapabilityLedger()
+        Dim b As New EnvelopeBuilder()
+        Dim aprovado = Permitida(1)
+
+        Assert.IsNotNull(cofre.Emitir(aprovado,
+            Env(b, AssistOperation.Resumir, "x", {Parte(1, changeKey:="CK-1")}), Agora),
+            "controle: a versao aprovada emite")
+
+        Assert.IsNull(cofre.Emitir(aprovado,
+            Env(b, AssistOperation.Resumir, "x", {Parte(1, changeKey:="CK-2")}), Agora),
+            "o item e o mesmo, a VERSAO nao — e foi a versao que passou pelo portao")
+    End Sub
+
+    ''' <summary>E a troca de versão também é pega no consumo.</summary>
+    <TestMethod>
+    Public Sub Versao_trocada_no_consumo_e_ProveniencaDiferente()
+        Dim cofre As New CapabilityLedger()
+        Dim b As New EnvelopeBuilder()
+        Dim c = cofre.Emitir(Permitida(1),
+                             Env(b, AssistOperation.Resumir, "x", {Gemea(1, "CK-1")}), Agora)
+
+        Dim uso = cofre.Consumir(c, Env(b, AssistOperation.Resumir, "x", {Gemea(1, "CK-9")}),
+                                 Destino(), AssistOperation.Resumir, Agora)
+
+        Assert.AreEqual(CapabilityRefusal.ProveniencaDiferente, uso.Recusa)
+    End Sub
+
+    ' ==================================================================
+    ' A capability canônica
+
+    ''' <summary>
+    ''' <b>O cofre confere a capability que ELE emitiu, não a apresentada.</b>
+    '''
+    ''' A versão anterior só olhava se o <c>Id</c> estava no dicionário e depois
+    ''' validava os campos do objeto recebido. Outro objeto com o mesmo <c>Id</c>
+    ''' — construível dentro do assembly, ou por desserialização futura —
+    ''' apresentaria hash, destino e operação diferentes dos emitidos, e a
+    ''' conferência bateria consigo mesma.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Objeto_com_o_MESMO_Id_e_campos_outros_e_recusado()
+        Dim cofre As New CapabilityLedger()
+        Dim b As New EnvelopeBuilder()
+        Dim e = Env(b, AssistOperation.Resumir, "x", {Parte(1)})
+        Dim boa = cofre.Emitir(Permitida(1), e, Agora)
+
+        ' Um sosia: mesmo Id, hash de outro envelope.
+        Dim outroEnvelope = Env(b, AssistOperation.Resumir, "y", {Parte(1)})
+        Dim sosia As New DisclosureCapability(boa.Id, Guid.NewGuid(), Permitida(1).Grant,
+                                              outroEnvelope.Hash, outroEnvelope.Comprimento,
+                                              Agora, Agora.AddMinutes(1))
+
+        Dim uso = cofre.Consumir(sosia, outroEnvelope, Destino(), AssistOperation.Resumir, Agora)
+
+        Assert.IsFalse(uso.Autorizado)
+        Assert.AreEqual(CapabilityRefusal.Desconhecida, uso.Recusa)
+        Assert.IsTrue(cofre.Consumir(boa, e, Destino(), AssistOperation.Resumir, Agora).Autorizado,
+                      "e a de verdade continua valendo — o sosia nao a queimou")
+    End Sub
+
+    ' ==================================================================
+    ' A construção opaca
+
+    ''' <summary>
+    ''' <b><c>MessagePart</c> não tem construtor público.</b>
+    '''
+    ''' Enquanto tinha, o pipeline inteiro era contornável: bastava montar um
+    ''' com HTML cru, com um <c>cid:</c>, ou com corpo pela metade marcado como
+    ''' completo, usar o <c>ItemKey</c> aprovado, e o grant aceitava.
+    '''
+    ''' Esconder o construtor não <i>prova</i> a origem — este teste não afirma
+    ''' isso. Ele fixa que o desvio trivial está fechado, e que a única ordem é
+    ''' broker → <c>ContentPipeline</c> → <c>MessagePart</c>.
+    ''' </summary>
+    <TestMethod>
+    Public Sub MessagePart_nao_tem_construtor_PUBLICO()
+        Dim publicos = GetType(MessagePart).GetConstructors(
+            Reflection.BindingFlags.Public Or Reflection.BindingFlags.Instance)
+
+        Assert.AreEqual(0, publicos.Length,
+            "construtor publico reabre o desvio do pipeline")
+    End Sub
+
+    ''' <summary>E o <c>ContentPipeline</c> continua sendo caminho de verdade.</summary>
+    <TestMethod>
+    Public Sub O_pipeline_continua_produzindo_MessagePart()
+        Dim r = ContentPipeline.Preparar(Chave(1), "CK-1", "assunto", "de@x.invalido",
+                                         {"para@x.invalido"}, "corpo", False, True)
+
+        Assert.IsTrue(r.Ok, $"recusou por {r.Recusa}")
+        Assert.AreEqual("CK-1", r.Parte.ChangeKey)
     End Sub
 
 End Class
