@@ -23,6 +23,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' Daí os cinco passos, e daí a reconciliação da abertura.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class DiarioTests
 
     Private _pasta As String

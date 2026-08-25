@@ -27,6 +27,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' usuário. O cache vai para um arquivo temporário e é apagado no fim.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class ImportacaoRealTests
 
     Private _pasta As String

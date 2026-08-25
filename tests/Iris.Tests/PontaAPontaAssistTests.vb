@@ -46,6 +46,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' como pendência em vez de simulado.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class PontaAPontaAssistTests
 
     Private _pasta As String

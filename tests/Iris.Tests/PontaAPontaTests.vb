@@ -23,6 +23,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' <see cref="SqliteSweepSink"/> de verdade, num arquivo SQLite de verdade.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class PontaAPontaTests
 
     Private _pasta As String

@@ -63,23 +63,32 @@ Namespace Global.Iris.Tests
         Private Shared ReadOnly Pasta As New FolderKey("store-1", "pasta-1")
         Private Const Endereco As String = "https://provedor.invalido/v1"
 
-        Private _pasta As String
-        Private _caminho As String
-
-        <TestInitialize>
-        Public Sub Preparar()
-            _pasta = Path.Combine(Path.GetTempPath(), "iris-adv-" & Guid.NewGuid().ToString("N"))
-            Directory.CreateDirectory(_pasta)
-            _caminho = Path.Combine(_pasta, "cache.db")
-        End Sub
+        ''' <summary>
+        ''' <b>Todas</b> as pastas criadas, e não só a última.
+        '''
+        ''' Os testes que varrem variantes abriam um banco por variante, e a
+        ''' limpeza apagava só a pasta corrente — as outras ficavam no
+        ''' <c>%TEMP%</c> do usuário para sempre. Lixo que o teste deixa é
+        ''' problema do teste.
+        ''' </summary>
+        Private ReadOnly _pastas As New List(Of String)()
 
         <TestCleanup>
         Public Sub Limpar()
+            ' ClearAllPools e GLOBAL: ele derruba conexao de qualquer classe que
+            ' esteja abrindo banco ao mesmo tempo, e foi a causa provavel da
+            ' intermitencia 'Cannot access a disposed object: SQLitePCL.sqlite3'.
+            ' Por isso esta classe — e as outras que tocam SQLite — nao roda em
+            ' paralelo: ver <DoNotParallelize> em cima.
             SqliteConnection.ClearAllPools()
-            Try
-                If Directory.Exists(_pasta) Then Directory.Delete(_pasta, True)
-            Catch
-            End Try
+            For Each caminho In _pastas
+                Try
+                    If Directory.Exists(caminho) Then Directory.Delete(caminho, True)
+                Catch
+                    ' Nao e problema do teste se o arquivo continuar preso.
+                End Try
+            Next
+            _pastas.Clear()
         End Sub
 
         ' ==================================================================
@@ -164,9 +173,18 @@ Namespace Global.Iris.Tests
             End Function
         End Class
 
+        ''' <summary>
+        ''' Um banco novo, em pasta própria, a cada chamada — e a pasta fica
+        ''' registrada para a limpeza.
+        ''' </summary>
         Private Function Abrir() As CacheDatabase
+            Dim pasta = Path.Combine(Path.GetTempPath(), "iris-adv-" & Guid.NewGuid().ToString("N"))
+            Directory.CreateDirectory(pasta)
+            _pastas.Add(pasta)
+
             Dim falha As OpenFailure = Nothing
-            Dim db = CacheDatabase.Open(_caminho, CacheSchema.Intended(), falha)
+            Dim db = CacheDatabase.Open(Path.Combine(pasta, "cache.db"),
+                                        CacheSchema.Intended(), falha)
             Assert.IsNotNull(db, $"{falha}")
             Return db
         End Function
@@ -204,16 +222,22 @@ Namespace Global.Iris.Tests
         ''' O broker que responde bem para todos os itens pedidos. Cada teste
         ''' adversarial estraga <b>uma</b> coisa a partir daqui.
         ''' </summary>
-        Private Shared Function BrokerBom(ParamArray itens As Integer()) As FakeBroker
-            Dim quais = If(itens.Length = 0, {1}, itens)
+        ''' <summary>
+        ''' O broker que responde bem — <b>para as chaves que recebeu</b>.
+        '''
+        ''' Responder uma lista fixa, ignorando o que foi pedido, faria os testes
+        ''' de seleção provarem outra coisa: a recusa viria de o portão ter
+        ''' classificado item que ninguém pediu, e não da corrida que o teste diz
+        ''' montar.
+        ''' </summary>
+        Private Shared Function BrokerBom() As FakeBroker
             Dim b As New FakeBroker()
             b.Rotulos = Function(chaves) OperationResult(Of IReadOnlyList(Of LabelReading)).
-                                         Ok(quais.Select(Function(n) Listado(n)).ToList())
+                Ok(chaves.Select(Function(k) Listado(Numero(k))).ToList())
             b.Anexos = Function(chaves) OperationResult(Of IReadOnlyList(Of AttachmentPresence)).
-                                        Ok(quais.Select(
-                                            Function(n) New AttachmentPresence(Chave(n), False)).ToList())
+                Ok(chaves.Select(Function(k) New AttachmentPresence(k, False)).ToList())
             b.Instantaneos = Function(k) OperationResult(Of MessageSnapshot).
-                                         Ok(Instantaneo(Numero(k), "olá, tudo bem?"))
+                Ok(Instantaneo(Numero(k), "olá, tudo bem?"))
             Return b
         End Function
 
@@ -418,7 +442,6 @@ Namespace Global.Iris.Tests
                     CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshot",
                         "a recusa tem de ser do pipeline, e nao de uma parada anterior")
                 End Using
-                Preparar()
             Next
         End Function
 
@@ -449,7 +472,6 @@ Namespace Global.Iris.Tests
                         "o script atravessou o pipeline")
                 End Using
             End Using
-            Preparar()
 
             ' 2. so script: nao sobra texto
             Using db = Abrir()
@@ -463,7 +485,6 @@ Namespace Global.Iris.Tests
 
                 Assert.AreEqual(0, p.Chamadas, "sem texto nao ha o que resumir")
             End Using
-            Preparar()
 
             ' 3. desbalanceado: nao da para interpretar
             Using db = Abrir()
@@ -532,7 +553,6 @@ Namespace Global.Iris.Tests
                     Assert.AreEqual(0, p.Chamadas, $"saiu com rotulo {este}")
                     Assert.AreNotEqual("", vm.Aviso, $"{este} negou sem dizer por que")
                 End Using
-                Preparar()
             Next
         End Function
 
@@ -594,7 +614,6 @@ Namespace Global.Iris.Tests
                     CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshot",
                         "a recusa tem de acontecer DEPOIS da leitura do corpo")
                 End Using
-                Preparar()
             Next
         End Function
 
@@ -677,7 +696,7 @@ Namespace Global.Iris.Tests
         <TestMethod>
         Public Async Function Thread_montada_pela_METADE_NAO_transmite() As Task
             Using db = Abrir()
-                Dim b = BrokerBom(1, 2)
+                Dim b = BrokerBom()
                 b.Instantaneos = Function(k) If(k.EntryId = "E-2",
                     OperationResult(Of MessageSnapshot).Fail(ErrorKind.NotFound, "sumiu"),
                     OperationResult(Of MessageSnapshot).Ok(Instantaneo(1, "olá")))
@@ -699,7 +718,7 @@ Namespace Global.Iris.Tests
         <TestMethod>
         Public Async Function Controle_thread_INTEIRA_transmite_as_duas() As Task
             Using db = Abrir()
-                Dim b = BrokerBom(1, 2)
+                Dim b = BrokerBom()
                 Dim p As New ProvedorQueRegistra()
                 Dim vm = Montar(b, p, db, itens:={1, 2})
 
@@ -723,13 +742,25 @@ Namespace Global.Iris.Tests
         <TestMethod>
         Public Async Function Selecao_que_MUDA_no_meio_NAO_transmite() As Task
             Using db = Abrir()
-                Dim b = BrokerBom(1, 2)
-                ' A selecao devolve A ate classificar, e B a partir dai.
-                Dim visitas = 0
+                ' A SELECAO VIRA B NO INSTANTE EM QUE A CLASSIFICACAO DE A
+                ' TERMINA — e nao depois de N visitas.
+                '
+                ' Contar visitas era fragil e estava errado: os dois preflights
+                ' do Avaliar() ja gastavam as duas primeiras, e quando a
+                ' operacao comecava a selecao ja era B do inicio ao fim. O teste
+                ' passava provando outra coisa.
+                Dim classificouA = False
+                Dim b = BrokerBom()
+                Dim rotulosBons = b.Rotulos
+                b.Rotulos = Function(chaves)
+                                Dim r = rotulosBons(chaves)
+                                classificouA = True
+                                Return r
+                            End Function
+
                 Dim selecao As Func(Of (Pasta As FolderKey, Itens As IReadOnlyList(Of ItemKey))) =
                     Function()
-                        visitas += 1
-                        Dim qual = If(visitas <= 2, 1, 2)
+                        Dim qual = If(classificouA, 2, 1)
                         Return (Pasta, CType({Chave(qual)}, IReadOnlyList(Of ItemKey)))
                     End Function
 
@@ -748,8 +779,65 @@ Namespace Global.Iris.Tests
 
                 Await vm.ResumirCommand.ExecuteAsync(Nothing)
 
+                Assert.IsTrue(classificouA, "a classificacao de A tinha de ter acontecido")
                 Assert.AreEqual(0, p.Chamadas,
                     "os bytes eram de outra mensagem que nao a autorizada")
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Controle da seleção móvel: com a seleção <b>parada</b>, a mesma
+        ''' montagem transmite.
+        '''
+        ''' Sem ele, o teste de cima passaria com um equipamento que nunca
+        ''' transmite — e foi exatamente assim que a primeira versão dele passava.
+        ''' </summary>
+        <TestMethod>
+        Public Async Function Controle_selecao_PARADA_transmite() As Task
+            Using db = Abrir()
+                Dim classificou = False
+                Dim b = BrokerBom()
+                Dim rotulosBons = b.Rotulos
+                b.Rotulos = Function(chaves)
+                                Dim r = rotulosBons(chaves)
+                                classificou = True
+                                Return r
+                            End Function
+
+                Dim p As New ProvedorQueRegistra()
+                Dim vm = Montar(b, p, db)
+
+                Await vm.ResumirCommand.ExecuteAsync(Nothing)
+
+                Assert.IsTrue(classificou)
+                Assert.AreEqual(1, p.Chamadas)
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' <b>Classificação de item que ninguém pediu: nada sai.</b>
+        '''
+        ''' O broker devolve o rótulo de uma mensagem a mais. O portão aprova as
+        ''' duas — ele decide sobre o que recebeu —, e o envelope tem uma só: o
+        ''' grant cobre um conjunto e os bytes são de outro.
+        '''
+        ''' Não é hipótese acadêmica: uma leitura por <c>Table</c> que devolvesse
+        ''' linha a mais, ou um filtro frouxo, produziria exatamente isto.
+        ''' </summary>
+        <TestMethod>
+        Public Async Function Classificacao_de_item_NAO_PEDIDO_nao_transmite() As Task
+            Using db = Abrir()
+                Dim b = BrokerBom()
+                b.Rotulos = Function(chaves) OperationResult(Of IReadOnlyList(Of LabelReading)).
+                    Ok({Listado(1), Listado(2)})
+                Dim p As New ProvedorQueRegistra()
+                Dim vm = Montar(b, p, db)
+
+                Assert.IsTrue(vm.ResumirCommand.CanExecute(Nothing))
+                Await vm.ResumirCommand.ExecuteAsync(Nothing)
+
+                Assert.AreEqual(0, p.Chamadas,
+                    "o grant cobria dois itens e os bytes eram de um")
             End Using
         End Function
 
@@ -848,6 +936,33 @@ Namespace Global.Iris.Tests
         End Function
 
         ''' <summary>
+        ''' <b>Resposta só de espaço é resposta sem texto.</b>
+        '''
+        ''' Três espaços e uma quebra de linha escapavam do aviso — a checagem
+        ''' era <c>Length > 0</c> —, deixavam a faixa visualmente vazia, e na
+        ''' redação eram <b>aplicados por cima do rascunho do usuário</b>. Trocar
+        ''' o texto dele por espaços é perda de trabalho com cara de sucesso.
+        ''' </summary>
+        <TestMethod>
+        Public Async Function Resposta_so_de_ESPACO_nao_e_resposta() As Task
+            Using db = Abrir()
+                Dim r As New AssistenteViewModelTests.RascunhoFalso() With {
+                    .Texto = "o que eu ja tinha escrito"}
+                Dim p As New ProvedorQueRegistra() With {.Texto = "   " & vbCrLf & vbTab}
+                Dim vm = Montar(BrokerBom(), p, db, rascunho:=r)
+
+                Await vm.RedigirCommand.ExecuteAsync(Nothing)
+
+                Assert.AreEqual(1, p.Chamadas, "o conteudo saiu")
+                Assert.IsFalse(vm.TemResultado, "espaco em branco nao e resultado")
+                StringAssert.Contains(vm.Aviso, "sem texto")
+                Assert.AreEqual("o que eu ja tinha escrito", r.Texto,
+                    "o rascunho do usuario foi trocado por espacos")
+                Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
+            End Using
+        End Function
+
+        ''' <summary>
         ''' Controle do grupo: resposta <b>normal</b> aparece, e sem aviso.
         ''' </summary>
         <TestMethod>
@@ -894,6 +1009,93 @@ Namespace Global.Iris.Tests
             Await vm.ResumirCommand.ExecuteAsync(Nothing)
 
             Assert.AreEqual(0, p.Chamadas, "saiu sem poder registrar que saiu")
+        End Function
+
+        ''' <summary>
+        ''' Um diário que <b>não deixa reconciliar</b>.
+        '''
+        ''' É o que sobra de uma execução que morreu: o que ficou em voo precisa
+        ''' virar ambíguo antes de a IA voltar a transmitir, e se isso não for
+        ''' possível o egress fica fechado. Ativação válida não basta.
+        ''' </summary>
+        Private NotInheritable Class DiarioQueNaoReconcilia
+            Implements IDisclosureJournal
+
+            Public Function Intencao(c As DisclosureCapability, q As DateTimeOffset) As Boolean _
+                Implements IDisclosureJournal.Intencao
+                Return True
+            End Function
+
+            Public Function Iniciando(r As Guid, q As DateTimeOffset) As Boolean _
+                Implements IDisclosureJournal.Iniciando
+                Return True
+            End Function
+
+            Public Function Concluir(r As Guid, q As DateTimeOffset) As Boolean _
+                Implements IDisclosureJournal.Concluir
+                Return True
+            End Function
+
+            Public Function Falhar(r As Guid, q As DateTimeOffset, n As DisclosureNote,
+                                   a As Boolean) As Boolean Implements IDisclosureJournal.Falhar
+                Return True
+            End Function
+
+            Public Function NaoEnviou(r As Guid, q As DateTimeOffset, n As DisclosureNote,
+                                      Optional motivo As DisclosureReason =
+                                          DisclosureReason.NaoDecidido) As Boolean _
+                                      Implements IDisclosureJournal.NaoEnviou
+                Return True
+            End Function
+
+            Public Function Reconciliar(q As DateTimeOffset) As Integer _
+                Implements IDisclosureJournal.Reconciliar
+                Throw New InvalidOperationException("o banco nao respondeu")
+            End Function
+
+            Public Function Ler(n As Integer) As IReadOnlyList(Of DisclosureEntry) _
+                Implements IDisclosureJournal.Ler
+                Return Array.Empty(Of DisclosureEntry)()
+            End Function
+        End Class
+
+        ''' <summary>
+        ''' <b>Reconciliação que falhou fecha o egress — e fecha na execução.</b>
+        '''
+        ''' Chamado <b>direto</b>, por cima do <c>CanExecute</c>: um botão
+        ''' desabilitado é conveniência, e o que se cobra aqui é que a cadeia
+        ''' inteira não vá ao Outlook nem ao provedor.
+        '''
+        ''' Zero leituras do broker importa tanto quanto zero chamadas: ir ao COM
+        ''' ler corpo de mensagem para depois recusar é gastar leitura sem
+        ''' autorização, que é o que o preflight existe para evitar.
+        ''' </summary>
+        <TestMethod>
+        Public Async Function Reconciliacao_que_FALHOU_fecha_a_cadeia_inteira() As Task
+            Dim b = BrokerBom()
+            Dim p As New ProvedorQueRegistra()
+
+            Dim contexto As New ContextoDoOutlook(
+                b, p.Destino, Function() (Pasta, CType({Chave(1)}, IReadOnlyList(Of ItemKey))))
+            Dim relogio As Func(Of DateTimeOffset) = Function() Agora
+            Dim politica As New DisclosurePolicy(Ativacao())
+            Dim quebrado As IDisclosureJournal = New DiarioQueNaoReconcilia()
+            Dim t As New AssistTransmitter(politica, New CapabilityLedger(),
+                                           quebrado, p, relogio)
+
+            Dim reconciliacao = ReconciliationResult.Rodar(quebrado, Agora)
+            Assert.IsFalse(reconciliacao.Terminou, "a reconciliacao tinha de ter falhado")
+
+            Dim vm As New AssistenteViewModel(
+                Nothing, t, politica, relogio, reconciliacao, contexto,
+                New AssistenteViewModelTests.RascunhoFalso())
+            vm.Avaliar()
+
+            Assert.IsFalse(vm.ResumirCommand.CanExecute(Nothing))
+            Await vm.Resumir()
+
+            Assert.AreEqual(0, p.Chamadas, "saiu sem a recuperacao ter terminado")
+            Assert.AreEqual(0, b.Chamadas.Count, "foi ao Outlook sem autorizacao para ir")
         End Function
 
         ' ==================================================================

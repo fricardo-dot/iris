@@ -26,6 +26,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' diferente do que rodava contra o Outlook.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class DrenoAposCrashTests
 
     Private _pasta As String

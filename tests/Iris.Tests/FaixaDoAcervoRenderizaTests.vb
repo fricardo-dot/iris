@@ -34,6 +34,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' árvore visual é percorrida atrás do texto que o usuário leria.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class FaixaDoAcervoRenderizaTests
 
     Private _pasta As String

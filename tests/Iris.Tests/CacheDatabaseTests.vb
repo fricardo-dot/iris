@@ -18,6 +18,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' §16.5 com o <c>Restrict</c>: <b>"não lançou" não é "funciona"</b>.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class CacheDatabaseTests
 
     Private _pasta As String

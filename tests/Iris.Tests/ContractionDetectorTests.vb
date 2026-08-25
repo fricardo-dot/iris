@@ -21,6 +21,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' histórico em cobertura.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class ContractionDetectorTests
 
     Private _pasta As String

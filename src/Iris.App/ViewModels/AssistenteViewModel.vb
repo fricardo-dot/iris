@@ -149,9 +149,18 @@ Namespace Global.Iris.App.ViewModels
             End Set
         End Property
 
+        ''' <summary>
+        ''' <b>Há resultado?</b> — e espaço em branco <b>não</b> é resultado.
+        '''
+        ''' Era <c>Length > 0</c>, e por isso uma resposta de três espaços ou de
+        ''' uma quebra de linha escapava do aviso de "respondeu sem texto",
+        ''' deixava a faixa visualmente vazia, e — pior — era <b>aplicada por
+        ''' cima do rascunho do usuário</b> na redação. Trocar o texto dele por
+        ''' espaços é perda de trabalho com cara de sucesso.
+        ''' </summary>
         Public ReadOnly Property TemResultado As Boolean
             Get
-                Return Resultado.Length > 0
+                Return Not String.IsNullOrWhiteSpace(Resultado)
             End Get
         End Property
 

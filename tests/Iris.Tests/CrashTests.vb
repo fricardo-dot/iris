@@ -25,6 +25,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' arquivos continua lá.
 ''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class CrashTests
 
     Private _pasta As String

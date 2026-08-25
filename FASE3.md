@@ -1208,25 +1208,34 @@ parte do correio real.
 
 ### 39.5 O que o controle negativo revelou, e nenhum teste unitário revelaria
 
-A recusa de conteúdo — anexo, referência embutida, HTML ilegível — faz o pipeline
-**descartar a mensagem**. Numa seleção de uma mensagem só, o resultado é um
-envelope **vazio** — e envelope vazio é válido, por decisão declarada no 3.2.
+Duas barreiras diferentes, e cada uma faz metade do trabalho:
 
-Ou seja: **não é a recusa do pipeline que impede a transmissão**. É a cobertura
-do grant, que exige que os itens do envelope sejam exatamente os aprovados. As
-duas coisas estão em série, e cada uma sozinha seria insuficiente:
+- o **pipeline** impede que conteúdo recusado — anexo, referência embutida, HTML
+  ilegível — entre nos bytes: ele descarta a mensagem;
+- a **cobertura do grant** impede que o envelope resultante, vazio ou parcial,
+  seja enviado.
 
-- desligando só a verificação de anexo do pipeline, um teste cai;
-- desligando só a cobertura, **nenhum** cai — porque o consumo da capability
-  reconfere a proveniência por conta própria;
+O que só a prova integrada mostra é que a segunda é indispensável para a
+primeira. Descartar a mensagem numa seleção de um item só produz um envelope
+**vazio**, e envelope vazio é válido por decisão declarada no 3.2 — o
+`EnvelopeBuilder` não conhece o conjunto aprovado, e não teria como julgar. Quem
+recusa é o cofre.
+
+Os controles negativos, medidos:
+
+- desligando só a verificação de anexo do pipeline, cai um teste adversarial;
+- desligando só a cobertura no `Emitir`, **nenhum dos 21 adversariais** cai —
+  porque o consumo da capability reconfere a proveniência por conta própria. (Os
+  testes unitários de `Emitir` caem, como devem.)
 - desligando a cobertura **e** a reconferência do consumo, caem seis — inclusive
   os três de conteúdo, que passariam a mandar envelope vazio.
 
-Isso não estava escrito em lugar nenhum, e nenhum teste de camada poderia
-mostrar: cada um deles fabrica a camada de baixo, e por isso nunca vê o envelope
-vazio chegar ao cofre.
+O encadeamento omissão → cobertura já estava escrito no `ContextoDoOutlook`; o
+que não existia era a prova de que ele é o que segura. Nenhum teste de camada
+poderia mostrar: cada um fabrica a camada de baixo, e por isso nunca vê o
+envelope vazio chegar ao cofre.
 
-### 39.6 A resposta vazia ganhou contrato
+### 39.6 A resposta vazia ganhou contrato — e espaço em branco é vazio
 
 `Respondeu` com texto vazio fechava o diário como sucesso e não deixava nada na
 tela: nem resultado, nem aviso. A operação **sumia**, e o usuário não teria como
@@ -1234,6 +1243,12 @@ distinguir "o provedor não tinha o que dizer" de "o botão não funciona".
 
 Não é ambíguo — o conteúdo saiu e a resposta chegou —, então o diário fecha como
 concluída e a faixa diz exatamente isso.
+
+A primeira versão do contrato tinha um buraco: `TemResultado` era
+`Resultado.Length > 0`, então três espaços ou uma quebra de linha escapavam do
+aviso, deixavam a faixa visualmente vazia e — pior — eram **aplicados por cima do
+rascunho do usuário** na redação. Trocar o texto dele por espaços é perda de
+trabalho com cara de sucesso. Hoje é `IsNullOrWhiteSpace`.
 
 ### 39.7 A resposta hostil tem dois consumidores
 
@@ -1252,6 +1267,23 @@ estável, resposta normal, e a cadeia inteira funcionando.
 Além disso, todo teste de "zero chamadas" confere antes que o preflight
 **passou** — `CanExecute` habilitado — e que o broker chegou até onde deveria. Sem
 isso, uma recusa acidental mais cedo faria a prova passar dizendo outra coisa.
+
+### 39.9 A suíte deixou de brigar consigo mesma
+
+`SqliteConnection.ClearAllPools()` é **global**: ele derruba a conexão de
+qualquer classe que esteja abrindo banco no mesmo instante. Dez classes de teste
+o chamavam — todas para poder apagar o arquivo temporário no Windows — enquanto o
+MSTest rodava métodos em paralelo. Foi a causa provável do
+`Cannot access a disposed object: SQLitePCL.sqlite3` que apareceu três vezes hoje,
+sempre na primeira execução depois de uma compilação.
+
+As dez classes passaram a `<DoNotParallelize>`. A suíte foi de 38 s para 58 s, e
+o preço é justo: uma suíte que falha uma vez em vinte não prova o que diz provar,
+e uma falha intermitente treina quem a vê a reexecutar em vez de olhar.
+
+Junto disso, os testes que varrem variantes abriam um banco por variante e
+limpavam só a última pasta — as outras ficavam no `%TEMP%` do usuário para
+sempre. Agora cada abertura registra a sua, e a limpeza apaga todas.
 
 ---
 
