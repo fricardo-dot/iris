@@ -406,15 +406,15 @@ footer {
   <p class="eyebrow">Iris · Relatório de fim de fase</p>
   <h1>Fase 2 — o que ficou medido</h1>
   <p class="dek">
-    Cinco marcos, do schema executável à varredura real contra a sua caixa. O
-    que a fase produziu de mais valioso não foram as respostas — foram as
-    perguntas que se revelaram mal feitas, e três medições que derrubaram
-    coisas que eu tinha escrito como certas.
+    Seis marcos, do schema executável à varredura real contra a sua caixa e ao
+    acervo aparecendo na janela. O que a fase produziu de mais valioso não foram
+    as respostas — foram as perguntas que se revelaram mal feitas, e três
+    medições que derrubaram coisas que eu tinha escrito como certas.
   </p>
   <div class="meta">
     <span><b>24 de agosto de 2026</b></span>
-    <span>320 testes · <b>0 falhas</b> · 0 pulados</span>
-    <span>8 passadas de revisão com o Codex</span>
+    <span>329 testes · <b>0 falhas</b> · 0 pulados</span>
+    <span>9 passadas de revisão com o Codex</span>
     <span><code>f83f4e3</code> → <code>HEAD</code></span>
   </div>
 </header>
@@ -422,10 +422,8 @@ footer {
 <section class="resumo">
   <h2>O essencial, sem suavizar</h2>
   <ul>
-    <li><strong>A Fase 2 fecha, com uma exceção que é decisão sua</strong> — o
-      critério 9 está parcial: o mecanismo de publicação está completo e
-      testado, mas não há UI consumindo. Ou você aceita levar isso ao 2.4, ou a
-      fase não fecha.</li>
+    <li><strong>A Fase 2 está encerrada.</strong> Os dez critérios cumpridos, com
+      as exceções declaradas — e o Codex aprovou o fechamento na nona passada.</li>
     <li><strong>O Iris varre e publica a sua Caixa de Entrada</strong> —
       1.013 itens, cobertura <em>parcial</em>. Retomada após cancelamento
       converge sem duplicata.</li>
@@ -475,6 +473,12 @@ footer {
         negativos</td>
       <td><span class="chip medido">Fechado</span></td>
     </tr>
+    <tr class="s-ok">
+      <td class="st"><strong>2.4</strong></td>
+      <td>O consumidor real ligado ao dreno, o acervo na janela com a ressalva, e
+        a morte do processo entre <code>Receber</code> e <code>MarcarDrenada</code></td>
+      <td><span class="chip medido">Fechado</span></td>
+    </tr>
   </tbody>
 </table>
 </div>
@@ -498,8 +502,8 @@ footer {
     <tr class="s-ok"><td class="st n">7</td><td>Critério operacional de invalidação, com dado</td><td><span class="chip medido">ok</span> <span class="dim">S6</span></td></tr>
     <tr class="s-ok"><td class="st n">8</td><td>Latência máxima por lote</td>
       <td><span class="chip medido">ok</span> <span class="dim">máx <strong>58 ms</strong> contra orçamento de 100</span></td></tr>
-    <tr class="s-par"><td class="st n">9</td><td>Crash entre commit, checkpoint e publicação</td>
-      <td><span class="chip parcial">Parcial</span> <span class="dim">mecanismo provado; <strong>falta a UI consumir</strong></span></td></tr>
+    <tr class="s-ok"><td class="st n">9</td><td>Crash entre commit, checkpoint e publicação</td>
+      <td><span class="chip medido">ok</span> <span class="dim">consumidor real, e o processo morto entre <code>Receber</code> e <code>MarcarDrenada</code></span></td></tr>
     <tr class="s-ok"><td class="st n">10</td><td>Reconciliação antiga não sobrescreve nova</td><td><span class="chip medido">ok</span></td></tr>
   </tbody>
 </table>
@@ -646,47 +650,94 @@ footer {
   a janela sempre foi pequena e o Iris nunca viu o que falta.
 </p>
 
-<h2><span class="num">06</span>O que precisa de você</h2>
+<h2><span class="num">06</span>O 2.4, e a condição que ele tinha de cumprir</h2>
+
+<p>
+  A exceção do critério 9 foi aceita com uma <strong>condição vinculante</strong>
+  — não um gatilho. Gatilho espera alguém notar; condição é cobrada.
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>§26.2 — item por item, conferido pelo Codex</caption>
+  <thead><tr><th>Exigência</th><th>Estado</th></tr></thead>
+  <tbody>
+    <tr><td>Consumidor real, não de teste</td><td><span class="chip medido">ok</span></td></tr>
+    <tr><td>Idempotente</td><td><span class="chip medido">ok</span> <span class="dim">não acumula: relê e substitui</span></td></tr>
+    <tr><td>Ligado ao dreno na <strong>inicialização</strong></td><td><span class="chip medido">ok</span></td></tr>
+    <tr><td>E <strong>durante a execução</strong></td><td><span class="chip medido">ok</span> <span class="dim">a cada 30 s</span></td></tr>
+    <tr><td>Processo morto entre <code>Receber</code> e <code>MarcarDrenada</code></td><td><span class="chip medido">ok</span> <span class="dim"><code>TerminateProcess</code></span></td></tr>
+    <tr><td>Convergência sem perda na reabertura</td><td><span class="chip medido">ok</span></td></tr>
+    <tr><td>Falha persistente visível ao usuário</td><td><span class="chip medido">ok</span> <span class="dim"><code>TravadoEm</code> na faixa</span></td></tr>
+    <tr><td>UI não contorna o dreno</td><td><span class="chip medido">ok</span> <span class="dim">teste sobre o IL compilado</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<h3>E o modo de falha que nenhum teste pegava</h3>
+
+<p>
+  Binding com caminho errado no WPF <strong>falha em silêncio</strong>: a
+  propriedade não existe, o controle fica vazio, nada é lançado, nada aparece no
+  log — e a suíte continua verde porque nenhum teste toca em XAML.
+</p>
+
+<div class="principio">
+  <p>Se <code>Acervo.Ressalva</code> virasse <code>Acervo.Ressalvas</code> num
+  refactor, <strong>a ressalva que a §23 obriga a mostrar sumiria da tela</strong>,
+  e o produto voltaria a exibir o acervo como se fosse o estado corrente da
+  caixa — sem nenhum sinal de que algo quebrou.</p>
+</div>
+
+<p class="nota">
+  Agora há teste que lê o XAML, extrai os bindings de raízes conhecidas e valida
+  o primeiro membro contra o ViewModel. Mais um que exige que a ressalva
+  <em>esteja</em> na janela — binding ausente não é binding quebrado, e passaria
+  pelo primeiro.
+</p>
+
+<h2><span class="num">07</span>O que precisa de você</h2>
 
 <div class="wide acoes">
   <div>
-    <span class="tempo">decisão · é o que falta para fechar</span>
-    <h3>O critério 9 fecha no 2.4?</h3>
+    <span class="tempo">quando abrir o Iris</span>
+    <h3>Olhar a faixa do acervo</h3>
     <p>
-      O critério pede que a <em>publicação para a UI</em> sobreviva ao crash. A
-      persistência da dívida está provada, o dreno está testado, a entrega é
-      ao-menos-uma-vez — mas quem implementa <code>IPublicationConsumer</code>
-      hoje é só o teste. Não há UI consumindo.
+      Ela compila, os bindings resolvem e há teste cobrando que estejam lá — mas
+      <strong>não foi verificada visualmente</strong>. Abrir o app conectaria ao
+      seu Outlook, e isso não é coisa de fazer sem você pedir.
     </p>
     <p>
-      <strong>Se você aceitar levar o consumidor real para o 2.4</strong>, a
-      Fase 2 fecha com essa exceção declarada. Se o pronto original continua
-      exigindo a entrega efetiva, falta trabalho de integração e a fase não
-      fecha.
+      Numa máquina limpa ela dirá <em>"esta pasta ainda não foi varrida"</em>,
+      que é a verdade: o app não varre, e o cache só tem o que uma importação
+      manual colocou nele.
     </p>
   </div>
   <div>
     <span class="tempo">quando quiser</span>
-    <h3>Ler a §23 e a §24 do FASE2.md</h3>
+    <h3>Ler a §26 e a §27 do FASE2.md</h3>
     <p>
-      A §23 é a decisão de escopo que você aceitou, com o custo listado e os
-      cinco gatilhos de reabertura. A §24 é o 2.2 em detalhe, incluindo as três
-      condições da D5 e por que nenhuma delas sozinha era a medição.
+      A §26 é a exceção aceita e a condição vinculante que ela carregou. A §27 é
+      o 2.4 em detalhe — incluindo por que o consumidor mora fora da UI, e o
+      erro do CLAUDE.md que eu cometi no caminho.
     </p>
   </div>
 </div>
 
-<h2><span class="num">07</span>Onde eu ainda posso estar errado</h2>
+<h2><span class="num">08</span>Onde eu ainda posso estar errado</h2>
 
 <div class="wide tabela-wrap">
 <table>
   <caption>Limitações conhecidas</caption>
   <thead><tr><th>O quê</th><th>Por que importa</th></tr></thead>
   <tbody>
-    <tr><td><strong>Não há UI</strong></td>
-      <td>Nem o dreno da publicação, nem a ressalva do manifesto, nem o aviso de
-        contração são consumidos por código de produção. O backend está pronto;
-        a apresentação não existe.</td></tr>
+    <tr><td><strong>A faixa não foi vista</strong></td>
+      <td>Compila, os bindings resolvem, há teste cobrando que estejam lá — mas
+        ninguém olhou a tela. Verificação visual continua desejável antes de
+        distribuir.</td></tr>
+    <tr><td><strong>O app não varre</strong></td>
+      <td>O cache só tem o que uma importação manual colocou. Disparar a varredura
+        pelo app é a fase seguinte, e a pasta do acervo está fixa em 1.</td></tr>
     <tr><td><strong>Identidade de ambiente incompleta</strong></td>
       <td>A janela não é legível, então o Iris não detecta quando ela muda — e
         mudança de janela invalidaria toda conclusão de ausência. Degradação
@@ -713,11 +764,11 @@ footer {
 </div>
 
 <footer>
-  Iris · Fase 2 · marcos 2.0 a 2.3<br>
-  Detalhe completo em <code>FASE2.md</code> §§22–25 · medições reproduzíveis em
+  Iris · Fase 2 · marcos 2.0 a 2.4 · <b>encerrada</b><br>
+  Detalhe completo em <code>FASE2.md</code> §§22–27 · medições reproduzíveis em
   <code>tools/medir-d5.ps1</code>, <code>tools/conferir-crash.py</code> e
   <code>tools/q8-*.ps1</code><br>
-  320 testes, 0 falhas, 0 pulados · <code>dotnet test Iris.slnx</code> com o
+  329 testes, 0 falhas, 0 pulados · <code>dotnet test Iris.slnx</code> com o
   Outlook aberto
 </footer>
 
