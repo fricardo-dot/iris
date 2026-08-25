@@ -27,6 +27,7 @@
     <ProjectReference Include="..\..\src\Iris.Outlook\Iris.Outlook.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Cache\Iris.Cache.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Sync\Iris.Sync.vbproj" />
+    <ProjectReference Include="..\..\src\Iris.Assist\Iris.Assist.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Integration\Iris.Integration.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Integration.Outlook\Iris.Integration.Outlook.vbproj" />
 

@@ -518,6 +518,103 @@ motivo.
 
 ---
 
+## 35. Marco 3.1 — o portão
+
+`Iris.Assist`, `net10.0`, sem COM, sem WPF, sem SQLite e sem HTTP. O TFM é
+quem garante — a mesma disciplina do `Iris.Sync` na Fase 2.
+
+### 35.1 Permissão é conjunção fechada de provas positivas
+
+Nunca *"não achei motivo suficiente para negar"*. A diferença não é
+estilística: um portão escrito como lista de negativas libera todo caso que
+ninguém pensou em proibir, e o caso que ninguém pensou é exatamente o que vaza.
+
+Cada prova é uma pergunta cuja resposta tem de ser **sim**:
+
+| Prova | Nega com |
+|---|---|
+| Existe autorização | `SemAtivacao` |
+| Ela está completa | `AtivacaoIncompleta` |
+| Está vigente | `AtivacaoForaDeVigencia` |
+| O endpoint é HTTPS | `EndpointInseguro` |
+| A operação está listada | `OperacaoNaoAutorizada` |
+| Provedor e modelo são os autorizados | `ProvedorNaoAutorizado` |
+| A pasta está listada | `PastaNaoAutorizada` |
+| Há mensagem no pedido | `PedidoVazio` |
+| **Por mensagem:** está na pasta autorizada | `MensagemDeOutraPasta` |
+| **Por mensagem:** não tem anexo | `AnexoForaDeEscopo` |
+| **Por mensagem:** o desfecho da leitura está listado | `LeituraNaoAceita` |
+| **Por mensagem:** há evidência de versão | `SemEvidenciaDeVersao` |
+| **Por registro ativo:** o GUID está listado | `RotuloNaoPermitido` |
+| **Por registro ativo:** o `ContentBits` veio e é legível | `ContentBitsDesconhecido` |
+| **Por registro ativo:** o `ContentBits` está listado | `ContentBitsNaoAceito` |
+
+O `ActivationRecord` lista tudo **pelo nome**: as operações, as pastas, os
+GUIDs, os `LabelReadingKind` aceitos e os valores de `ContentBits`. Não existe
+"aceita os seguros" nem "aceita os conclusivos" — um estado que ninguém listou
+nega, **inclusive um que ainda não existe**.
+
+### 35.2 A ordem das provas também é decisão
+
+As provas sobre a autorização vêm **antes** das provas por mensagem, e não é só
+lógica. O 3.0 mediu ~17 ms por item para classificar; classificar uma thread
+inteira para depois descobrir que a IA está desligada seria pagar meio segundo
+de fila da STA para nada. Há teste cobrando essa ordem.
+
+### 35.3 Um membro que não passa nega a thread inteira
+
+Não a mensagem — a **thread**. Resumo parcial é fácil demais de confundir com
+resumo completo, e o usuário não tem como saber que faltou pedaço.
+
+E isso importa mais nesta caixa do que pareceria: rótulo é raro **por
+mensagem** — 10 em 554 — e justamente por isso deixa de ser raro **por thread**.
+Uma thread de trinta com vinte e nove permitidas e uma não é uma thread que não
+passa.
+
+### 35.4 O que a produção tem
+
+`ActivationRecord.DaProducao` é `Nothing`. Em produção o portão nega **tudo**,
+sempre, com `SemAtivacao`, e a explicação que chega ao usuário é em português:
+
+> A IA externa não está habilitada. Nada deste computador é enviado para fora
+> enquanto você não autorizar, com a política da empresa e um provedor à sua
+> escolha.
+
+Isso é a §28.2, não uma pendência de implementação.
+
+### 35.5 As duas propriedades que a suíte cobra
+
+**Exaustividade.** `TODO_desfecho_nao_listado_NEGA` percorre
+`Enum.GetValues(GetType(LabelReadingKind))`. Acrescentar um estado e esquecer de
+reler o portão **quebra a suíte** em vez de abrir uma porta que ninguém sabe que
+abriu. E o contraponto `TODO_desfecho_LISTADO_passa` impede que isso seja
+satisfeito por um portão que ignore a lista e negue sempre.
+
+**Monotonicidade de segurança.** Acrescentar mensagem, tirar item da lista de
+permitidos ou trocar um `ContentBits` conhecido por outro **nunca** transforma
+um "não" em "sim". Três testes, um por eixo.
+
+**E o controle positivo**, que é o que separa decisão de defeito: sem
+`Autorizada_com_TUDO_no_lugar_PERMITE`, um portão que negasse por bug passaria
+em todos os outros testes do arquivo, e "nega tudo" deixaria de ser uma escolha
+para virar uma quebra que ninguém veria.
+
+### 35.6 O que o portão deliberadamente NÃO faz
+
+- **Não infere severidade pelo GUID.** GUID desconhecido nega; ninguém tenta
+  adivinhar se "parece um rótulo baixo".
+- **Não trata `ContentBits` ausente como zero.** "Não vi proteção" e "comprovei
+  que não há proteção" são coisas diferentes, e só a segunda autorizaria.
+- **Não usa o rótulo como autoridade positiva.** A P16 vale: `MSIP_Labels` mora
+  no namespace de cabeçalhos de internet, então lê-lo com perfeição não prova
+  que ninguém apresenta uma classificação baixa falsa. Rótulo entra como mais
+  uma condição; o que autoriza é a autorização.
+- **Não confere registro desligado.** Rótulo já removido não vale, então o GUID
+  dele não precisa estar na lista — senão uma mensagem que um dia teve rótulo
+  seria recusada para sempre, o que não é o que a autorização diz.
+
+---
+
 ## 33. O que esta fase NÃO faz
 
 - Não envia e-mail.

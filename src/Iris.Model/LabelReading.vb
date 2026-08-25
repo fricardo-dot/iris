@@ -1,4 +1,5 @@
 Imports System.Collections.Generic
+Imports System.Linq
 
 Namespace Global.Iris.Model
 
@@ -174,15 +175,29 @@ Namespace Global.Iris.Model
         Public ReadOnly Property RawLength As Integer
 
         ''' <summary>
-        ''' Os <b>nomes de campo</b> vistos no valor — <c>Enabled</c>,
-        ''' <c>SetDate</c>, <c>Method</c>, <c>ContentBits</c>, o que houver.
-        ''' Ordenados e sem repetição.
+        ''' Os registros do valor, <b>um por GUID</b>, com os campos preservados
+        ''' e não interpretados.
         '''
-        ''' Nomes, não valores. Serve para responder estruturalmente o que o
-        ''' formato traz nesta conta (a P9 pergunta se proteção vem separada da
-        ''' classificação) sem que nenhum conteúdo de rótulo saia daqui.
+        ''' Por GUID e não achatado: um item pode carregar mais de um registro,
+        ''' e o <c>ContentBits</c> pertence ao registro do seu GUID. Um campo
+        ''' único por leitura misturaria registros diferentes, e o portão
+        ''' decidiria sobre a mistura.
+        ''' </summary>
+        Public ReadOnly Property Registros As IReadOnlyList(Of LabelRecord)
+
+        ''' <summary>
+        ''' Os <b>nomes de campo</b> vistos, de todos os registros juntos.
+        ''' Nomes, não valores — o valor de <c>Name</c> é texto escolhido pela
+        ''' empresa e pode ele próprio ser sensível.
         ''' </summary>
         Public ReadOnly Property Campos As IReadOnlyList(Of String)
+            Get
+                Return Registros.SelectMany(Function(r) r.Campos).
+                                 Distinct(StringComparer.OrdinalIgnoreCase).
+                                 OrderBy(Function(c) c, StringComparer.OrdinalIgnoreCase).
+                                 ToList()
+            End Get
+        End Property
         Public ReadOnly Property Version As LabelVersionEvidence
 
         Public Sub New(item As ItemKey, kind As LabelReadingKind,
@@ -191,7 +206,7 @@ Namespace Global.Iris.Model
                        Optional labelIds As IReadOnlyList(Of String) = Nothing,
                        Optional rawLength As Integer = 0,
                        Optional version As LabelVersionEvidence = Nothing,
-                       Optional campos As IReadOnlyList(Of String) = Nothing)
+                       Optional registros As IReadOnlyList(Of LabelRecord) = Nothing)
             Me.Item = item
             Me.Kind = kind
             Me.Stage = stage
@@ -199,7 +214,8 @@ Namespace Global.Iris.Model
             Me.LabelIds = If(labelIds, CType(Array.Empty(Of String)(), IReadOnlyList(Of String)))
             Me.RawLength = rawLength
             Me.Version = version
-            Me.Campos = If(campos, CType(Array.Empty(Of String)(), IReadOnlyList(Of String)))
+            Me.Registros = If(registros,
+                              CType(Array.Empty(Of LabelRecord)(), IReadOnlyList(Of LabelRecord)))
         End Sub
 
         ''' <remarks>

@@ -41,7 +41,7 @@ Public Class RotuloParserTests
     Private Shared Function Ler(texto As String) _
                                 As (Tipo As LabelReadingKind,
                                     Ativos As IReadOnlyList(Of String),
-                                    Campos As IReadOnlyList(Of String))
+                                    Registros As IReadOnlyList(Of LabelRecord))
         Return SensitivityLabels.Analisar(texto)
     End Function
 
@@ -199,7 +199,7 @@ Public Class RotuloParserTests
                     Registro(G1, "CampoQueAindaNaoExiste", "seja-o-que-for"))
 
         Assert.AreEqual(LabelReadingKind.Present, r.Tipo)
-        CollectionAssert.Contains(r.Campos.ToArray(), "CampoQueAindaNaoExiste")
+        CollectionAssert.Contains(r.Registros(0).Campos.ToArray(), "CampoQueAindaNaoExiste")
     End Sub
 
     ''' <summary>Valor com <c>=</c> dentro não quebra o registro.</summary>
@@ -223,8 +223,11 @@ Public Class RotuloParserTests
                     Registro(G1, "SetDate", "2026-01-01T00:00:00Z") & ";" &
                     Registro(G1, "ContentBits", "2"))
 
+        Assert.AreEqual(1, r.Registros.Count)
         CollectionAssert.AreEquivalent({"Enabled", "SetDate", "ContentBits"},
-                                       r.Campos.ToArray())
+                                       r.Registros(0).Campos.ToArray())
+        Assert.AreEqual(2, r.Registros(0).ContentBits.Value,
+                        "o ContentBits e PRESERVADO, nao interpretado")
     End Sub
 
     ''' <summary>Maiúsculas no nome do campo não mudam a leitura.</summary>

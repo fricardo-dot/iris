@@ -326,7 +326,7 @@ Namespace Global.Iris.Outlook
             Dim lido = Analisar(texto)
             Return New LabelReading(item, lido.Tipo, LabelReadStage.Parse,
                                     labelIds:=lido.Ativos, rawLength:=texto.Length,
-                                    version:=versao, campos:=lido.Campos)
+                                    version:=versao, registros:=lido.Registros)
         End Function
 
         ''' <summary>
@@ -337,14 +337,13 @@ Namespace Global.Iris.Outlook
         ''' </summary>
         Friend Function Analisar(texto As String) _
                                  As (Tipo As LabelReadingKind, Ativos As IReadOnlyList(Of String),
-                                     Campos As IReadOnlyList(Of String))
+                                     Registros As IReadOnlyList(Of LabelRecord))
             Const prefixo = "MSIP_Label_"
             Dim vazio = CType(Array.Empty(Of String)(), IReadOnlyList(Of String))
+            Dim semRegistro = CType(Array.Empty(Of LabelRecord)(), IReadOnlyList(Of LabelRecord))
 
-            Dim ativos As New SortedSet(Of String)(StringComparer.Ordinal)
-            Dim inativos As New SortedSet(Of String)(StringComparer.Ordinal)
-            Dim campos As New SortedSet(Of String)(StringComparer.OrdinalIgnoreCase)
-            Dim algumReconhecido = False
+            Dim porId As New Dictionary(Of String, LabelRecordBuilder)(StringComparer.Ordinal)
+            Dim ordem As New List(Of String)()
             Dim contaminado = False
 
             For Each bruto In texto.Split(";"c)
@@ -383,55 +382,58 @@ Namespace Global.Iris.Outlook
 
                 Dim id As Guid
                 If Not Guid.TryParse(resto.Substring(0, corte), id) Then
-                    ' GUID invalido num registro que se diz de rotulo. Isto e
-                    ' exatamente o caso que a versao anterior engolia.
+                    ' GUID invalido num registro que se diz de rotulo.
                     contaminado = True
                     Continue For
                 End If
 
-                algumReconhecido = True
-                Dim campo = resto.Substring(corte + 1)
-                campos.Add(campo)
-                If Not String.Equals(campo, "Enabled",
-                                     StringComparison.OrdinalIgnoreCase) Then Continue For
-
+                Dim construtor As LabelRecordBuilder = Nothing
                 Dim g = id.ToString("D", CultureInfo.InvariantCulture)
-                If String.Equals(valor, "True", StringComparison.OrdinalIgnoreCase) Then
-                    ativos.Add(g)
-                ElseIf String.Equals(valor, "False", StringComparison.OrdinalIgnoreCase) Then
-                    inativos.Add(g)
-                Else
-                    ' Enabled com valor que nao e nem True nem False.
-                    contaminado = True
+                If Not porId.TryGetValue(g, construtor) Then
+                    construtor = New LabelRecordBuilder(id)
+                    porId(g) = construtor
+                    ordem.Add(g)
                 End If
+                construtor.Aceitar(resto.Substring(corte + 1), valor)
             Next
 
             ' Contaminacao vence tudo: valor que eu nao entendo inteiro e o caso
             ' em que eu NAO posso decidir.
-            If contaminado OrElse Not algumReconhecido Then
-                Return (LabelReadingKind.Malformed, vazio, campos.ToList())
+            If contaminado OrElse porId.Count = 0 Then
+                Return (LabelReadingKind.Malformed, vazio, semRegistro)
             End If
 
-            ' O MESMO GUID dizendo as duas coisas. A versao anterior devolvia
-            ' Present aqui, porque o conjunto de ativos terminava com um so.
-            If ativos.Overlaps(inativos) Then
-                Return (LabelReadingKind.Conflicting, ativos.ToList(), campos.ToList())
+            ordem.Sort(StringComparer.Ordinal)
+            Dim registros = ordem.Select(Function(g) porId(g).Construir()).ToList()
+
+            ' Campo com valor que nao da para ler e MALFORMADO, nao conflito.
+            If ordem.Any(Function(g) porId(g).Ilegivel) Then
+                Return (LabelReadingKind.Malformed, vazio, registros)
             End If
 
+            ' O MESMO campo dizendo duas coisas dentro de um registro. Era isto
+            ' que saia como Present na primeira versao do parser.
+            If ordem.Any(Function(g) porId(g).Contraditorio) Then
+                Return (LabelReadingKind.Conflicting, vazio, registros)
+            End If
+
+            Dim ativos = registros.Where(Function(r) r.Ativo).Select(Function(r) r.Id).ToList()
             If ativos.Count > 1 Then
-                Return (LabelReadingKind.Conflicting, ativos.ToList(), campos.ToList())
+                Return (LabelReadingKind.Conflicting, ativos, registros)
             End If
             If ativos.Count = 1 Then
-                Return (LabelReadingKind.Present, ativos.ToList(), campos.ToList())
+                Return (LabelReadingKind.Present, ativos, registros)
             End If
 
-            ' Forma boa, historico presente, nenhum ativo: rotulo removido.
-            If inativos.Count > 0 Then
-                Return (LabelReadingKind.HistoricalOnly, vazio, campos.ToList())
+            ' Todo registro reconhecido esta Enabled=False. Descreve o FORMATO;
+            ' "rotulo removido" e leitura plausivel, nao fato provado.
+            If registros.Any(Function(r) r.Enabled.HasValue) Then
+                Return (LabelReadingKind.HistoricalOnly, vazio, registros)
             End If
 
-            ' Reconheceu registro de rotulo mas nenhum campo Enabled.
-            Return (LabelReadingKind.Malformed, vazio, campos.ToList())
+            ' Reconheceu registro de rotulo e nenhum campo Enabled em lugar
+            ' nenhum: nao da para dizer se ha rotulo valendo.
+            Return (LabelReadingKind.Malformed, vazio, registros)
         End Function
 
         ''' <summary>
