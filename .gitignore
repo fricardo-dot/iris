@@ -13,3 +13,6 @@ spike/relatorio-fase0.md
 # Capturas de tela: contêm dados da caixa de correio real.
 *.png
 medicoes/
+
+# Saida de execucao de teste — ruido, nao fonte.
+TestResults/
