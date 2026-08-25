@@ -3647,4 +3647,22 @@ Com o critério 9 fechado, os **dez** critérios da §8 estão cumpridos — com
 exceções declaradas nas linhas 1 e 5 da tabela da §22.8, e com a Q8 respondida
 por escopo (§23) em vez de por matriz.
 
+### 27.8 Uma falha que não reproduziu
+
+Numa das dez execuções da suíte apareceu **1 falha**, e ela não reproduziu nas
+nove seguintes. O nome não ficou registrado, e a caçada com `trx` em seis
+execuções não a trouxe de volta.
+
+O suspeito é contenção: os testes que tocam o Outlook rodam em paralelo com o
+resto, e a §24.4 mediu que sob a suíte inteira a latência por lote vai de 58 ms
+para 184 ms. Um `RPC_E_CALL_REJECTED` sob carga produziria
+`SweepConclusion.Falhou`, que os testes de importação real recusam.
+
+Mas **suspeito não é medido**, e fica registrado como está: uma falha
+observada, não reproduzida, causa não identificada. Uma suíte que passa nove
+vezes e falha uma não é "0 falhas" — é 0 falhas *nas execuções que eu consegui
+observar*, e a diferença entre as duas coisas é o assunto desta fase inteira.
+
+---
+
 **A Fase 2 está encerrada.**
