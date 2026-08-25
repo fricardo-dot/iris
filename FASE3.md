@@ -853,6 +853,68 @@ está declarado em vez de simulado.
 
 ---
 
+## 38. Marco 3.5 — a UI
+
+### 38.1 O que o usuário vê hoje
+
+Uma frase dizendo que a IA externa **não está habilitada**, e por quê. Não é
+"recurso em construção": o mecanismo está inteiro e testado, e o que falta é
+decisão dele — a política da empresa e um provedor à escolha dele.
+
+Se algum envio ficou sem desfecho conhecido numa execução anterior, isso aparece
+**junto**: *"pode ter saído conteúdo, e não dá para saber"*. Um número desses não
+vive só no banco.
+
+### 38.2 A reconciliação roda na composição, e é pré-condição
+
+O que ficou *em voo* numa execução que morreu vira ambíguo na abertura seguinte.
+Isso é **recuperação de segurança**, não um número para mostrar: roda no
+`MainViewModel`, antes de a IA ficar apta a transmitir, e **se falhar o egress
+fica fechado** — ativação válida não basta.
+
+Sem cache aberto não há diário, e sem diário a IA fica desligada: transmitir sem
+poder registrar seria pior que não transmitir. O `DiarioAusente` existe para isso
+em vez de `Nothing`, porque `Nothing` vira `NullReferenceException` em algum
+caminho esquecido, e "explodiu" e "recusou por decisão" não são a mesma coisa
+para quem lê depois.
+
+### 38.3 Resposta velha não aparece em contexto novo
+
+O modo de falha mais fácil de escrever e mais difícil de perceber: o usuário pede
+o resumo da mensagem A, troca para a B enquanto a IA pensa, e a resposta de A
+volta e é exibida. **Um resumo errado com cara de certo é pior que resumo
+nenhum**, porque ninguém desconfia.
+
+Cada pedido carrega uma **geração**; trocar de mensagem incrementa; um resultado
+só é publicado se a geração dele ainda for a corrente. Com contraponto: sem
+troca, a resposta aparece — senão um ViewModel que descartasse tudo passaria.
+
+### 38.4 A resposta é dado, e a barreira é estrutural
+
+O texto do modelo vem de um lugar que **leu o e-mail**, que por sua vez veio de
+fora. Ele atravessa passivo até a tela, e a tela o mostra num `TextBlock` — não
+num controle que interprete Markdown, HTML ou link.
+
+Há teste que lê o XAML e confere que o elemento que recebe o binding é mesmo um
+`TextBlock`. A barreira da §29.5 não é uma instrução ao modelo; é onde o texto
+para.
+
+### 38.5 Os motivos em português
+
+Todo `DisclosureReason` tem frase própria, e há teste percorrendo o enum inteiro
+para garantir que nenhum vaza como nome de código para a tela.
+
+A tradução mora no ViewModel e **não** no diário — lá o motivo é enum fechado,
+justamente para não haver campo por onde texto arbitrário entre.
+
+### 38.6 O que ficou de fora, por recorte
+
+Configuração de credencial, escolha de provedor ou modelo, e qualquer UX moldada
+pelas capacidades de um fornecedor específico. Sem provedor escolhido, isso seria
+inventar requisito.
+
+---
+
 ## 33. O que esta fase NÃO faz
 
 - Não envia e-mail.

@@ -36,6 +36,8 @@ Public Class BindingsDaJanelaTests
     Private Shared Function Raizes() As Dictionary(Of String, Type)
         Return New Dictionary(Of String, Type) From {
             {"Acervo.", GetType(AcervoViewModel)},
+            {"Assistente.Reconciliacao.", GetType(ReconciliationResult)},
+            {"Assistente.", GetType(AssistenteViewModel)},
             {"Connection.", GetType(ConnectionViewModel)},
             {"Composer.", GetType(ComposerViewModel)},
             {"Detail.", GetType(MessageDetailViewModel)},
@@ -90,6 +92,51 @@ Public Class BindingsDaJanelaTests
         StringAssert.Contains(xaml, "AcervoIndisponivel",
             "cache que nao abre tem de aparecer — vazio silencioso e " &
             "indistinguivel de 'nao ha nada guardado'")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A janela mostra a situação da IA — e o que ficou sem desfecho.</b>
+    '''
+    ''' Binding ausente não é binding quebrado, e passaria pelo teste de cima
+    ''' sem reclamar. O que a §28.2 obriga a mostrar é o motivo de a IA não
+    ''' estar habilitada; o que a §29.6 obriga é o número de envios que
+    ''' ficaram ambíguos numa execução anterior.
+    '''
+    ''' "Pode ter saído conteúdo desta caixa e ninguém sabe" não pode viver só
+    ''' no banco.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_janela_mostra_a_situacao_da_IA()
+        Dim xaml = LerXaml()
+        StringAssert.Contains(xaml, "Assistente.Aviso",
+            "o motivo de a IA nao estar habilitada tem de aparecer")
+        StringAssert.Contains(xaml, "Assistente.Reconciliacao.Aviso",
+            "envios sem desfecho conhecido nao podem viver so no banco")
+        StringAssert.Contains(xaml, "Assistente.Resultado",
+            "e a resposta do modelo tem de ter onde aparecer")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A resposta do modelo aparece num <c>TextBlock</c>.</b>
+    '''
+    ''' Não num controle que interprete Markdown, HTML ou link: ela vem de um
+    ''' lugar que leu o e-mail, que por sua vez veio de fora. A barreira da
+    ''' §29.5 é estrutural, e este teste é onde ela fica presa ao XAML.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_resposta_do_modelo_aparece_em_TEXTBLOCK()
+        Dim xaml = LerXaml()
+        Dim i = xaml.IndexOf("Assistente.Resultado", StringComparison.Ordinal)
+        Assert.IsTrue(i > 0, "o binding tem de existir")
+
+        ' O elemento que abre antes do binding tem de ser um TextBlock.
+        Dim antes = xaml.Substring(0, i)
+        Dim abertura = antes.LastIndexOf("<"c)
+        Dim elemento = antes.Substring(abertura)
+
+        StringAssert.StartsWith(elemento, "<TextBlock",
+            "a resposta do modelo nao pode ir para um controle que INTERPRETE: " &
+            "ela e dado, e dado que veio de fora")
     End Sub
 
     ''' <summary>

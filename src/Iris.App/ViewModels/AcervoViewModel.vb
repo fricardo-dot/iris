@@ -4,6 +4,7 @@ Imports CommunityToolkit.Mvvm.ComponentModel
 Imports CommunityToolkit.Mvvm.Input
 Imports Iris.Cache
 Imports Iris.Core
+Imports Iris.Assist
 Imports Iris.Integration
 
 Namespace Global.Iris.App.ViewModels
@@ -51,6 +52,16 @@ Namespace Global.Iris.App.ViewModels
         Private _disposed As Boolean
 
         ''' <summary>
+        ''' O diário do egress, sobre o mesmo banco.
+        '''
+        ''' Mora aqui porque é aqui que o cache está aberto — e não porque o
+        ''' acervo tenha algo a ver com a IA. Sem cache não há diário, e sem
+        ''' diário a IA fica desligada: transmitir sem poder registrar seria
+        ''' pior que não transmitir.
+        ''' </summary>
+        Public ReadOnly Property Diario As IDisclosureJournal
+
+        ''' <summary>
         ''' Onde o cache mora. Em <c>%LOCALAPPDATA%</c> e não ao lado do
         ''' executável: o executável pode estar em Program Files, onde escrever
         ''' exige elevação, e um cache que só funciona com privilégio não é um
@@ -95,6 +106,7 @@ Namespace Global.Iris.App.ViewModels
             _db = db
             _servico = New AcervoService(db, folderKey)
             _dreno = New PublicationDrain(db)
+            Diario = New SqliteDisclosureJournal(db)
 
             AddHandler _servico.Mudou, AddressOf AoMudar
 

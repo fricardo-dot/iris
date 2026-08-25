@@ -2,6 +2,7 @@ Imports System.Threading.Tasks
 Imports CommunityToolkit.Mvvm.ComponentModel
 Imports CommunityToolkit.Mvvm.Input
 Imports Iris.Core
+Imports Iris.Assist
 Imports Iris.Model
 
 Namespace Global.Iris.App.ViewModels
@@ -45,6 +46,16 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property Acervo As AcervoViewModel
         Public ReadOnly Property AcervoIndisponivel As String
 
+        ''' <summary>
+        ''' A IA — que hoje serve para dizer que <b>não está habilitada</b>.
+        '''
+        ''' A composição usa <c>ActivationRecord.DaProducao</c>, que é
+        ''' <c>Nothing</c>, e <see cref="AssistenteIndisponivel"/> como provedor.
+        ''' As duas coisas são a §28.2 em forma de código: o mecanismo está
+        ''' inteiro e o que falta é decisão do usuário.
+        ''' </summary>
+        Public ReadOnly Property Assistente As AssistenteViewModel
+
         Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher,
                        saveFile As ISaveFileService, pickFile As IPickFileService)
             _broker = broker
@@ -72,6 +83,8 @@ Namespace Global.Iris.App.ViewModels
             Dim motivo As String = Nothing
             Acervo = AcervoViewModel.Abrir(ui, folderKeyDoAcervo, motivo)
             AcervoIndisponivel = motivo
+
+            Assistente = MontarAssistente(ui)
 
             NewMessageCommand = New AsyncRelayCommand(Function() Composer.NewMessageAsync(),
                                                       Function() PodeCompor)
@@ -356,6 +369,52 @@ Namespace Global.Iris.App.ViewModels
             Detail.Show(Messages.Selected)
             AtualizarComandosDeComposicao()
         End Sub
+
+        ''' <summary>
+        ''' <b>A composição da IA — e ela é fechada.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A RECONCILIAÇÃO RODA AQUI, E NÃO NA TELA</b>
+        '''
+        ''' O que ficou <i>em voo</i> numa execução que morreu vira ambíguo na
+        ''' abertura seguinte. Isso é recuperação de segurança, não um número
+        ''' para mostrar: roda na <b>composição</b>, antes de a IA ficar apta a
+        ''' transmitir, e se falhar o egress fica fechado.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE A PRODUÇÃO MONTA</b>
+        '''
+        ''' <c>ActivationRecord.DaProducao</c> é <c>Nothing</c>, e o provedor é
+        ''' <see cref="AssistenteIndisponivel"/>. Não é lacuna: é a §28.2 — a
+        ''' política corporativa aplicável não é inferível desta máquina, e a
+        ''' escolha do provedor e da credencial é do usuário.
+        '''
+        ''' Sem cache aberto não há diário, e sem diário a IA fica desligada:
+        ''' transmitir sem poder registrar seria pior que não transmitir.
+        ''' </summary>
+        Private Function MontarAssistente(ui As Global.System.Windows.Threading.Dispatcher) _
+                                          As AssistenteViewModel
+            Dim relogio As Func(Of DateTimeOffset) = Function() DateTimeOffset.Now
+            Dim politica = DisclosurePolicy.DaProducao()
+
+            Dim diario As IDisclosureJournal = Acervo?.Diario
+            Dim reconciliacao = If(diario Is Nothing,
+                                   ReconciliationResult.NaoRodou(),
+                                   ReconciliationResult.Rodar(diario, relogio()))
+
+            Dim transmissor As New AssistTransmitter(
+                politica, New CapabilityLedger(),
+                If(diario, CType(New DiarioAusente(), IDisclosureJournal)),
+                New AssistenteIndisponivel(), relogio)
+
+            Dim vm As New AssistenteViewModel(ui, transmissor, politica, relogio, reconciliacao)
+
+            ' O aviso da abertura entra na tela mesmo sem ninguem pedir nada:
+            ' "pode ter saido conteudo e ninguem sabe" nao espera interacao.
+            vm.Avaliar(New PreflightRequest(AssistOperation.Resumir, Nothing,
+                                            New AssistDestination("", "", "")))
+            Return vm
+        End Function
 
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return

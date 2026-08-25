@@ -1104,6 +1104,57 @@
                            Foreground="{DynamicResource Brush.Text.Secondary}"
                            AutomationProperties.Name="Acervo indisponivel" />
             </Border>
+
+            <!-- A FAIXA DA IA.
+
+                 Ela existe hoje para dizer que a IA externa NAO esta
+                 habilitada, e por que. Nao e "recurso em construcao": o
+                 mecanismo esta inteiro e testado, e o que falta e decisao do
+                 usuario - a politica da empresa e um provedor a escolha dele.
+                 E a §28.2 do FASE3.md.
+
+                 O texto do modelo aparece como TEXTO, e so. Nao vira Markdown
+                 ativo, nao vira link clicavel, nao vira comando: ele vem de um
+                 lugar que leu o e-mail, que por sua vez veio de fora. A
+                 barreira da §29.5 mora aqui e no ViewModel, e nao numa
+                 instrucao ao modelo. -->
+            <Border Grid.Row="2"
+                    Visibility="{Binding Assistente.TemAviso, Converter={StaticResource BoolToVis},
+                                         FallbackValue=Collapsed}"
+                    Background="{DynamicResource Brush.Surface.1}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16,8">
+                <StackPanel>
+                    <TextBlock Text="{Binding Assistente.Aviso}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               AutomationProperties.Name="Situacao da IA" />
+                    <TextBlock Text="{Binding Assistente.Reconciliacao.Aviso}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               AutomationProperties.Name="Envios sem desfecho conhecido" />
+                </StackPanel>
+            </Border>
+
+            <!-- O RESULTADO. TextBlock e nao qualquer coisa que interprete:
+                 texto passivo e a barreira, e ela e estrutural. -->
+            <Border Grid.Row="2"
+                    Visibility="{Binding Assistente.TemResultado, Converter={StaticResource BoolToVis},
+                                         FallbackValue=Collapsed}"
+                    Background="{DynamicResource Brush.Surface.1}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16,8">
+                <TextBlock Text="{Binding Assistente.Resultado}"
+                           TextWrapping="Wrap"
+                           FontSize="12"
+                           Foreground="{DynamicResource Brush.Text.Primary}"
+                           AutomationProperties.Name="Resposta da IA" />
+            </Border>
         </Grid>
     </Border>
 </Window>
