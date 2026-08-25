@@ -90,6 +90,74 @@ Namespace Global.Iris.Assist
     End Enum
 
     ''' <summary>
+    ''' <b>Que combinações de nota e motivo fazem sentido.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ENUM DO .NET NÃO É FECHADO</b>
+    '''
+    ''' Trocar <c>String</c> por enum tirou o texto arbitrário, e não fechou a
+    ''' porta: <c>CType(999, DisclosureNote)</c> compila e roda. E mesmo entre
+    ''' valores definidos há combinações que não descrevem nada —
+    ''' <c>PortaoNegou</c> sem dizer o que o portão negou, ou <c>Timeout</c>
+    ''' acompanhado de um motivo de portão que não teve nada a ver.
+    '''
+    ''' Um diário com registro incoerente é pior que um diário sem o registro:
+    ''' ele parece resposta.
+    ''' </summary>
+    Public Module DisclosureNotes
+
+        ''' <summary>O valor está definido no enum? <c>CType(999, …)</c> não está.</summary>
+        Public Function Definida(n As DisclosureNote) As Boolean
+            Return [Enum].IsDefined(GetType(DisclosureNote), n)
+        End Function
+
+        Public Function Definido(r As DisclosureReason) As Boolean
+            Return [Enum].IsDefined(GetType(DisclosureReason), r)
+        End Function
+
+        ''' <summary>
+        ''' A dupla é coerente? <c>PortaoNegou</c> <b>exige</b> um motivo; toda
+        ''' outra nota exige <c>NaoDecidido</c>.
+        ''' </summary>
+        Public Function Coerente(n As DisclosureNote, r As DisclosureReason) As Boolean
+            If Not Definida(n) OrElse Not Definido(r) Then Return False
+            If n = DisclosureNote.PortaoNegou Then Return r <> DisclosureReason.NaoDecidido
+            Return r = DisclosureReason.NaoDecidido
+        End Function
+
+        ''' <summary>
+        ''' Notas que descrevem um envio que <b>já tinha começado</b> ou que
+        ''' terminou mal — as únicas que <c>Falhar</c> aceita.
+        ''' </summary>
+        Public Function DeTransporte(n As DisclosureNote) As Boolean
+            Select Case n
+                Case DisclosureNote.Timeout, DisclosureNote.Cancelado,
+                     DisclosureNote.ConexaoCaiu, DisclosureNote.ProvedorRecusou,
+                     DisclosureNote.ProcessoMorreuEmVoo
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
+
+        ''' <summary>
+        ''' Notas de coisa que impediu o envio <b>antes</b> dele — as únicas que
+        ''' <c>NaoEnviou</c> aceita.
+        ''' </summary>
+        Public Function AnteriorAoEnvio(n As DisclosureNote) As Boolean
+            Select Case n
+                Case DisclosureNote.PortaoNegou, DisclosureNote.CapabilityRecusada,
+                     DisclosureNote.EnvelopeRecusado, DisclosureNote.ConteudoRecusado,
+                     DisclosureNote.ProcessoMorreuAntesDeTransmitir
+                    Return True
+                Case Else
+                    Return False
+            End Select
+        End Function
+
+    End Module
+
+    ''' <summary>
     ''' Uma linha do diário. <b>Nunca carrega conteúdo</b> — nem trecho, nem
     ''' assunto, nem nome de rótulo, nem texto vindo do provedor.
     '''
@@ -215,8 +283,13 @@ Namespace Global.Iris.Assist
         ''' e de forma durável — se não durar, não serve.
         ''' </summary>
         ''' <returns><c>False</c> se já existe registro para este pedido.</returns>
-        Function Intencao(c As DisclosureCapability, mensagens As Integer,
-                          quando As DateTimeOffset) As Boolean
+        ''' <remarks>
+        ''' A contagem de mensagens vem da <b>própria capability</b>, e não como
+        ''' parâmetro. Enquanto vinha de fora, o diário podia registrar uma
+        ''' quantidade diferente da autorizada — e o número de mensagens é
+        ''' justamente o que alguém confere quando a pergunta for quanto saiu.
+        ''' </remarks>
+        Function Intencao(c As DisclosureCapability, quando As DateTimeOffset) As Boolean
 
         ''' <summary>
         ''' A transmissão vai começar. Daqui em diante, morrer é ambíguo.
@@ -237,12 +310,22 @@ Namespace Global.Iris.Assist
         ''' de começar, conexão caindo. Vira <see cref="DisclosureStage.Ambigua"/>,
         ''' e <b>nunca</b> volta a ser "não enviou".
         ''' </param>
+        ''' <remarks>
+        ''' Só aceita nota de <b>transporte</b>
+        ''' (<see cref="DisclosureNotes.DeTransporte"/>). "O portão negou" não é
+        ''' um jeito de a transmissão falhar: ela nem teria começado.
+        ''' </remarks>
         Function Falhar(requestId As Guid, quando As DateTimeOffset,
                         nota As DisclosureNote, podeTerChegado As Boolean) As Boolean
 
         ''' <summary>
         ''' Registra uma divulgação que <b>não aconteceu</b> — o portão negou, a
         ''' capability foi recusada, o conteúdo não passou. Sem hash novo.
+        '''
+        ''' Só aceita nota <b>anterior ao envio</b>
+        ''' (<see cref="DisclosureNotes.AnteriorAoEnvio"/>), e a dupla nota/motivo
+        ''' tem de ser coerente: <c>PortaoNegou</c> exige dizer o que o portão
+        ''' negou.
         ''' </summary>
         Function NaoEnviou(requestId As Guid, quando As DateTimeOffset,
                            nota As DisclosureNote,

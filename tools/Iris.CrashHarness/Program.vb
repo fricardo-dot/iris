@@ -154,7 +154,7 @@ Namespace Global.Iris.CrashHarness
                 Console.Out.WriteLine($"requestId={c.RequestId}")
                 Console.Out.Flush()
 
-                If Not j.Intencao(c, mensagens:=2, quando:=DateTimeOffset.UtcNow) Then
+                If Not j.Intencao(c, DateTimeOffset.UtcNow) Then
                     Console.Error.WriteLine("a intencao nao pegou")
                     Return 4
                 End If

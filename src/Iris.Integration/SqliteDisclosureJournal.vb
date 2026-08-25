@@ -51,10 +51,13 @@ Namespace Global.Iris.Integration
 
         ' ==============================================================
 
-        Public Function Intencao(c As DisclosureCapability, mensagens As Integer,
+        Public Function Intencao(c As DisclosureCapability,
                                  quando As DateTimeOffset) As Boolean _
                                  Implements IDisclosureJournal.Intencao
             If c Is Nothing Then Throw New ArgumentNullException(NameOf(c))
+            ' A contagem vem da propria capability. Enquanto vinha de fora, o
+            ' diario podia registrar quantidade diferente da autorizada.
+            Dim mensagens = c.Itens.Count
 
             Return Executar(
                 "INSERT OR IGNORE INTO disclosure_log (" &
@@ -108,6 +111,10 @@ Namespace Global.Iris.Integration
             ' jure que nao chegou. Ele nao pode saber: entre "a conexao caiu" e
             ' "a conexao caiu depois de o servidor ler o corpo" nao ha
             ' diferenca observavel deste lado.
+            ' Nota que nao descreve transporte nao entra: "o portao negou" nao
+            ' e um jeito de a transmissao falhar, porque ela nem comecaria.
+            If Not DisclosureNotes.DeTransporte(nota) Then Return False
+
             If podeTerChegado Then
                 Return Terminar(requestId, DisclosureStage.Ambigua, quando, nota,
                                 DisclosureReason.NaoDecidido,
@@ -131,6 +138,9 @@ Namespace Global.Iris.Integration
                                   Optional motivoDoPortao As DisclosureReason =
                                       DisclosureReason.NaoDecidido) As Boolean _
                                   Implements IDisclosureJournal.NaoEnviou
+            If Not DisclosureNotes.AnteriorAoEnvio(nota) Then Return False
+            If Not DisclosureNotes.Coerente(nota, motivoDoPortao) Then Return False
+
             Return Terminar(requestId, DisclosureStage.NaoEnviada, quando, nota,
                             motivoDoPortao, {DisclosureStage.Intencionada})
         End Function
@@ -218,6 +228,11 @@ Namespace Global.Iris.Integration
                                   quando As DateTimeOffset, nota As DisclosureNote,
                                   portao As DisclosureReason,
                                   de As DisclosureStage()) As Boolean
+            ' Valor inventado - CType(999, DisclosureNote) compila - e dupla
+            ' incoerente nao entram. Um registro incoerente e pior que um
+            ' registro ausente: ele PARECE resposta.
+            If Not DisclosureNotes.Coerente(nota, portao) Then Return False
+
             Dim aceitos = String.Join(",", de.Select(Function(e) "'" & e.ToString() & "'"))
             Return Executar(
                 "UPDATE disclosure_log SET stage = $s, finished_at = $t, " &

@@ -117,7 +117,7 @@ Public Class DiarioTests
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
 
-            j.Intencao(a.Cap, mensagens:=1, quando:=Agora)
+            j.Intencao(a.Cap, Agora)
             Assert.AreEqual(DisclosureStage.Intencionada, j.Ler(1)(0).Estagio)
 
             j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
@@ -137,7 +137,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
-            j.Intencao(a.Cap, mensagens:=1, quando:=Agora)
+            j.Intencao(a.Cap, Agora)
 
             Dim e = j.Ler(1)(0)
             Assert.AreEqual(a.Cap.Hash, e.Hash)
@@ -167,7 +167,7 @@ Public Class DiarioTests
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
             id = a.Cap.RequestId
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
             j.Iniciando(id, Agora.AddSeconds(1))
             ' E o processo morre aqui. Nenhum Concluir, nenhum Falhar.
         End Using
@@ -196,7 +196,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
         End Using
 
         Using db = Abrir()
@@ -214,7 +214,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
             j.Concluir(a.Cap.RequestId, Agora)
 
@@ -234,7 +234,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
             j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.Timeout, podeTerChegado:=True)
             Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio)
@@ -257,7 +257,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
 
             j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.ConexaoCaiu, podeTerChegado:=False)
@@ -272,7 +272,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
 
             j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.CapabilityRecusada)
 
@@ -291,7 +291,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
 
             j.Concluir(a.Cap.RequestId, Agora)
 
@@ -317,7 +317,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada(corpo:=isca)
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
             j.Concluir(a.Cap.RequestId, Agora)
         End Using
@@ -345,7 +345,7 @@ Public Class DiarioTests
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
             j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou,
                         DisclosureReason.PastaNaoAutorizada)
 
@@ -367,9 +367,9 @@ Public Class DiarioTests
             Dim j As New SqliteDisclosureJournal(db)
 
             Dim primeira = Autorizada("um")
-            j.Intencao(primeira.Cap, 1, Agora)
+            j.Intencao(primeira.Cap, Agora)
             Dim segunda = Autorizada("dois")
-            j.Intencao(segunda.Cap, 1, Agora.AddMinutes(1))
+            j.Intencao(segunda.Cap, Agora.AddMinutes(1))
 
             Dim tudo = j.Ler(10)
             Assert.AreEqual(2, tudo.Count)
@@ -541,7 +541,7 @@ Public Class DiarioTests
             Assert.IsFalse(j.Concluir(a.Cap.RequestId, Agora))
             Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou))
 
-            Assert.IsTrue(j.Intencao(a.Cap, 1, Agora), "controle: com o pedido novo, pega")
+            Assert.IsTrue(j.Intencao(a.Cap, Agora), "controle: com o pedido novo, pega")
             Assert.IsFalse(j.Concluir(a.Cap.RequestId, Agora),
                            "concluir sem iniciar nao pega")
             Assert.IsTrue(j.Iniciando(a.Cap.RequestId, Agora))
@@ -558,8 +558,8 @@ Public Class DiarioTests
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
 
-            Assert.IsTrue(j.Intencao(a.Cap, 1, Agora))
-            Assert.IsFalse(j.Intencao(a.Cap, 1, Agora))
+            Assert.IsTrue(j.Intencao(a.Cap, Agora))
+            Assert.IsFalse(j.Intencao(a.Cap, Agora))
             Assert.AreEqual(1, j.Ler(10).Count)
         End Using
     End Sub
@@ -581,7 +581,7 @@ Public Class DiarioTests
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
 
-            j.Intencao(a.Cap, 1, Agora)
+            j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(5))
             j.Concluir(a.Cap.RequestId, Agora.AddSeconds(9))
 
@@ -605,11 +605,11 @@ Public Class DiarioTests
             Dim j As New SqliteDisclosureJournal(db)
 
             Dim antiga = Autorizada("um")
-            j.Intencao(antiga.Cap, 1, Agora.AddMonths(-6))
+            j.Intencao(antiga.Cap, Agora.AddMonths(-6))
             j.Iniciando(antiga.Cap.RequestId, Agora.AddMonths(-6))
 
             Dim recente = Autorizada("dois")
-            j.Intencao(recente.Cap, 1, Agora)
+            j.Intencao(recente.Cap, Agora)
 
             j.Reconciliar(Agora.AddHours(1))
 
@@ -636,12 +636,111 @@ Public Class DiarioTests
 
             Dim primeira = Autorizada("um")
             Dim segunda = Autorizada("dois")
-            j.Intencao(primeira.Cap, 1, Agora)
-            j.Intencao(segunda.Cap, 1, Agora)
+            j.Intencao(primeira.Cap, Agora)
+            j.Intencao(segunda.Cap, Agora)
 
             Dim tudo = j.Ler(10)
             Assert.AreEqual(segunda.Cap.RequestId, tudo(0).RequestId)
             Assert.IsTrue(tudo(0).Sequencia > tudo(1).Sequencia)
+        End Using
+    End Sub
+
+
+    ' ==================================================================
+    ' O que NAO entra no diário
+
+    ''' <summary>
+    ''' <b>Enum do .NET não é fechado, e o diário não aceita valor inventado.</b>
+    '''
+    ''' Trocar <c>String</c> por enum tirou o texto arbitrário e não fechou a
+    ''' porta: <c>CType(999, DisclosureNote)</c> compila e roda. Um diário com
+    ''' registro incoerente é pior que um diário sem o registro — ele parece
+    ''' resposta.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Nota_INVENTADA_nao_entra()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+
+            Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, CType(999, DisclosureNote)))
+            Assert.IsFalse(j.Falhar(a.Cap.RequestId, Agora, CType(999, DisclosureNote), True))
+            Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou,
+                                       CType(999, DisclosureReason)))
+
+            Assert.AreEqual(DisclosureStage.Intencionada, j.Ler(1)(0).Estagio,
+                            "nenhuma delas pode ter mexido na linha")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Combinação incoerente também não entra.</b>
+    '''
+    ''' <c>PortaoNegou</c> sem dizer o que o portão negou não descreve nada; e
+    ''' uma nota que não é do portão acompanhada de um motivo de portão
+    ''' descreve duas coisas que não aconteceram juntas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Combinacao_INCOERENTE_nao_entra()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+
+            Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou),
+                           "PortaoNegou TEM de dizer o que foi negado")
+            Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora,
+                                       DisclosureNote.CapabilityRecusada,
+                                       DisclosureReason.PastaNaoAutorizada),
+                           "motivo de portao numa nota que nao e do portao")
+
+            Assert.AreEqual(DisclosureStage.Intencionada, j.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Cada passo aceita só as notas que fazem sentido para ele.</b>
+    '''
+    ''' "O portão negou" não é um jeito de a transmissão falhar: ela nem teria
+    ''' começado. E "timeout" não é um jeito de o envio ser impedido antes de
+    ''' acontecer.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cada_passo_aceita_so_a_nota_que_faz_sentido()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+
+            Assert.IsFalse(j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou, True),
+                           "o portao negando nao e falha de transporte")
+            Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.Timeout),
+                           "timeout nao e coisa que impede antes de comecar")
+
+            Assert.AreEqual(DisclosureStage.Intencionada, j.Ler(1)(0).Estagio)
+
+            ' E o controle: as notas certas passam.
+            Assert.IsTrue(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou,
+                                      DisclosureReason.PastaNaoAutorizada))
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>A contagem de mensagens vem da capability, não de fora.</b>
+    '''
+    ''' Enquanto vinha como parâmetro, o diário podia registrar uma quantidade
+    ''' diferente da autorizada — e o número de mensagens é justamente o que
+    ''' alguém confere quando a pergunta for quanto saiu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_contagem_vem_da_CAPABILITY()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+
+            Assert.AreEqual(a.Cap.Itens.Count, j.Ler(1)(0).Mensagens)
         End Using
     End Sub
 
