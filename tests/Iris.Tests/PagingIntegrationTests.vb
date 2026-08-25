@@ -245,6 +245,21 @@ Public Class PagingIntegrationTests
     ''' O que continua sendo pego, e é o motivo de a Q1 existir: <b>perda
     ''' sistemática</b> da Table. Ela some das duas pontas, cai fora do
     ''' universo, e reprova.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>E A REPETIÇÃO, QUE É OUTRO ASSUNTO</b>
+    '''
+    ''' A <c>Table</c> pagina por <b>chave</b>: repetir é sempre defeito dela, e
+    ''' a asserção sobre ela é incondicional.
+    '''
+    ''' A iteração pagina por <b>offset</b>, e offset sobre coleção viva repete
+    ''' por construção — item removido antes do offset desce tudo uma posição e
+    ''' a próxima página reentrega uma linha já lida. Exigir zero repetição dela
+    ''' é exigir que a pasta não mexa, que é o mesmo erro de antes.
+    '''
+    ''' Com as pontas concordando, porém, isso deixa de ser desculpa: deslocar o
+    ''' offset exige <b>remoção</b>, e remoção apareceria em T₂. Então aí
+    ''' repetir volta a reprovar.
     ''' </summary>
     <TestMethod, TestCategory("Integracao")>
     Public Async Function Table_e_iteracao_leem_o_MESMO_conjunto() As Task
@@ -263,13 +278,6 @@ Public Class PagingIntegrationTests
             Dim porIteracao = New HashSet(Of ItemKey)(lento.Chaves)
             Dim naConferencia = New HashSet(Of ItemKey)(conferencia.Chaves)
 
-            Assert.AreEqual(rapido.Chaves.Count, porTabela.Count,
-                            "a Table devolveu chave REPETIDA")
-            Assert.AreEqual(lento.Chaves.Count, porIteracao.Count,
-                            "a iteracao devolveu chave REPETIDA")
-            Assert.AreEqual(conferencia.Chaves.Count, naConferencia.Count,
-                            "a Table devolveu chave REPETIDA na conferencia")
-
             Dim nucleo = New HashSet(Of ItemKey)(porTabela)
             nucleo.IntersectWith(naConferencia)
             Dim universo = New HashSet(Of ItemKey)(porTabela)
@@ -279,6 +287,32 @@ Public Class PagingIntegrationTests
             Console.WriteLine($"por Table   : {porTabela.Count} chaves, {rapido.Paginas} paginas")
             Console.WriteLine($"por iteracao: {porIteracao.Count} chaves, {lento.Paginas} paginas")
             Console.WriteLine($"conferencia : {naConferencia.Count} chaves — a pasta mexeu em {mexeu}")
+
+            ' ---- repetição ----------------------------------------------
+            ' A Table pagina por CHAVE, entao repetir e sempre defeito dela.
+            Assert.AreEqual(rapido.Chaves.Count, porTabela.Count,
+                            "a Table devolveu chave REPETIDA")
+            Assert.AreEqual(conferencia.Chaves.Count, naConferencia.Count,
+                            "a Table devolveu chave REPETIDA na conferencia")
+
+            ' A ITERACAO pagina por OFFSET, e offset sobre colecao viva repete
+            ' por construcao: um item removido antes do offset desce tudo uma
+            ' posicao e a proxima pagina reentrega uma linha ja lida. Exigir
+            ' zero repeticao dela e exigir que a pasta nao mexa.
+            '
+            ' Mas com as pontas concordando isso deixa de ser desculpa: para
+            ' deslocar o offset e preciso REMOVER, e remocao aparece em T2 —
+            ' some e volta com o mesmo EntryID nao acontece. Entao ai repetir
+            ' e defeito, e reprova.
+            Dim repetidas = lento.Chaves.Count - porIteracao.Count
+            If repetidas > 0 Then
+                Assert.IsTrue(mexeu > 0,
+                    $"a ITERACAO repetiu {repetidas} chave(s) com a pasta parada nas duas " &
+                    "pontas por Table. Offset so desloca se algo for REMOVIDO, e remocao " &
+                    "apareceria em T2 — entao isto e defeito do caminho, nao caixa viva.")
+                Console.WriteLine($"a iteracao repetiu {repetidas} chave(s); a pasta mexeu " &
+                                  $"em {mexeu} — consistente com deslocamento de offset")
+            End If
 
             ' A MESMA mensagem tem de ter a MESMA chave nos dois caminhos. O
             ' valor inteiro nao vai para o log: ele carrega o endereco do

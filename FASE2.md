@@ -3783,6 +3783,33 @@ Isso vive em `CausaDaFalhaTests.vb` porque a regra não pode morar só num teste
 que **só falha quando o Outlook tem soluço** — ali ela nunca seria exercitada
 de propósito.
 
+#### Atualização de 25/08/2026 — um mecanismo, reproduzido
+
+Durante a Fase 3, a suíte falhou de novo neste mesmo teste, e desta vez **com a
+evidência na mão**:
+
+> `Assert.AreEqual failed. Expected:<993>. Actual:<992>. a iteracao devolveu
+> chave REPETIDA`
+
+A travessia por `SubjectAsc` — o **caminho por iteração** — devolveu 993 linhas
+com 992 chaves distintas. Uma repetida.
+
+E a causa está no código, não no acaso: esse caminho pagina **por offset** sobre
+uma coleção viva. Item removido antes do offset desce tudo uma posição, e a
+página seguinte reentrega uma linha já lida. Item inserido antes do offset sobe
+tudo uma posição, e um item nunca é visitado. **Isso é o que offset significa**;
+não é defeito do laço.
+
+Está agora escrito no XML doc do `LerPorIteracao`, onde faltava.
+
+**O que isso muda, e o que não muda.** Encontrei um mecanismo que produz
+*exatamente* esta classe de falha, é raro pelo mesmo motivo, e vive no teste que
+a §27.8 já apontava como o mais frágil. É o **candidato mais forte**, com larga
+margem.
+
+Mas o nome do teste original continua perdido, então **continua sendo inferência
+e não identificação**. A tabela abaixo fica como está.
+
 #### O que fica registrado como risco
 
 | | |

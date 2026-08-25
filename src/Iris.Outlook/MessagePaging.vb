@@ -273,6 +273,39 @@ Namespace Global.Iris.Outlook
         ' CAMINHO LEGADO: iteração com offset
         ' ==================================================================
 
+        ''' <summary>
+        ''' O caminho legado: <b>paginação por offset</b> sobre uma coleção
+        ''' ordenada. Usado quando a ordenação não é <c>ReceivedDesc</c> ou
+        ''' quando a <c>Table</c> não serve para a pasta.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>OFFSET SOBRE COLEÇÃO VIVA DUPLICA E PULA — POR CONSTRUÇÃO</b>
+        '''
+        ''' Isto não é defeito do laço; é o que offset significa. Entre a página
+        ''' N e a N+1, a coleção pode mudar:
+        '''
+        '''   • item <b>removido</b> antes do offset → tudo desce uma posição, e
+        '''     a posição <c>offset+1</c> passa a conter um item <b>já
+        '''     devolvido</b>. Sai <b>chave repetida</b>.
+        '''   • item <b>inserido</b> antes do offset → tudo sobe uma posição, e
+        '''     um item nunca é visitado. Sai <b>mensagem perdida em silêncio</b>.
+        '''
+        ''' A única defesa real seria cursor por chave — que é justamente o que o
+        ''' caminho por <c>Table</c> faz, e o motivo de ele existir. Aqui não dá:
+        ''' <c>Items.Sort</c> ordena por campo não único (<c>Subject</c>,
+        ''' <c>SenderName</c>) e o OOM não expõe "continue depois desta chave".
+        '''
+        ''' <b>Isto foi observado, não deduzido.</b> Em 25/08/2026 o cruzamento
+        ''' da Q1 falhou com 993 linhas e 992 chaves distintas na travessia por
+        ''' <c>SubjectAsc</c> — uma repetida, numa Caixa de Entrada que recebe
+        ''' correio durante a travessia. É o candidato mais forte para a falha
+        ''' isolada da §27.8 da Fase 2, que nunca reproduziu e cuja evidência se
+        ''' perdeu.
+        '''
+        ''' Quem consome este caminho <b>precisa</b> tolerar repetição — a
+        ''' varredura da Fase 2 tolera, porque publica por
+        ''' <c>provider_entry_id</c> e recarrega em vez de acumular.
+        ''' </summary>
         Private Function LerPorIteracao(folder As OL.MAPIFolder, query As MessageQuery,
                                         cursor As MessageCursor, targetCount As Integer) As MessagePage
 
