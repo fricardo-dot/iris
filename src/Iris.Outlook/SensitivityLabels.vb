@@ -290,9 +290,18 @@ Namespace Global.Iris.Outlook
         '''     ativo só. O comentário prometia detectar conflito e o código só
         '''     detectava <i>mais de um GUID</i>.
         '''
-        ''' Agora fragmento com prefixo <c>MSIP_Label_</c> que não dá para
-        ''' interpretar <b>contamina</b>, e campo contraditório para o mesmo
-        ''' GUID é conflito.
+        ''' Agora <b>tudo o que não está na gramática conhecida contamina</b>, e
+        ''' campo contraditório para o mesmo GUID é conflito.
+        '''
+        ''' A regra intermediária — contaminar só quando o fragmento mencionasse
+        ''' <c>MSIP_Label</c> — também caiu, e pelo mesmo motivo: se outro
+        ''' cabeçalho foi colado <i>dentro</i> do valor, o valor está malformado.
+        ''' Numa barreira de divulgação, "não entendi este pedaço" nunca pode
+        ''' virar "o resto vale".
+        '''
+        ''' O que continua válido é <b>campo desconhecido dentro de um registro
+        ''' bem formado</b>: ele pertence inequivocamente àquele GUID, entra na
+        ''' lista de campos observados, e não inventa semântica nenhuma.
         ''' </summary>
         Private Function Interpretar(item As ItemKey, cru As Object,
                                      versao As LabelVersionEvidence) As LabelReading
@@ -339,21 +348,31 @@ Namespace Global.Iris.Outlook
             Dim contaminado = False
 
             For Each bruto In texto.Split(";"c)
+                ' Fragmento vazio e so pontuacao: ";;" e ";" no fim.
                 If bruto.Trim().Length = 0 Then Continue For
 
-                Dim partes = bruto.Split("="c)
-                If partes.Length <> 2 Then
-                    ' So contamina se PARECE um registro de rotulo. Lixo que
-                    ' nem menciona MSIP_Label pode ser outro cabecalho colado.
-                    If bruto.IndexOf(prefixo, StringComparison.OrdinalIgnoreCase) >= 0 Then
-                        contaminado = True
-                    End If
+                ' TUDO o que nao esta na gramatica conhecida contamina.
+                '
+                ' A versao anterior so contaminava se o fragmento MENCIONASSE
+                ' MSIP_Label, com o argumento de que lixo sem o prefixo "pode
+                ' ser outro cabecalho colado". O argumento se derruba sozinho:
+                ' se outro cabecalho foi colado DENTRO do valor de MSIP_Labels,
+                ' o valor esta malformado. Numa barreira de divulgacao,
+                ' "nao entendi este pedaco" nunca pode virar "o resto vale".
+                Dim corteIgual = bruto.IndexOf("="c)
+                If corteIgual <= 0 Then
+                    contaminado = True
                     Continue For
                 End If
 
-                Dim chave = partes(0).Trim()
-                Dim valor = partes(1).Trim()
-                If Not chave.StartsWith(prefixo, StringComparison.OrdinalIgnoreCase) Then Continue For
+                ' Corta no PRIMEIRO "=": o valor pode conter "=" (um Name
+                ' escolhido pela empresa, por exemplo) sem que isso seja erro.
+                Dim chave = bruto.Substring(0, corteIgual).Trim()
+                Dim valor = bruto.Substring(corteIgual + 1).Trim()
+                If Not chave.StartsWith(prefixo, StringComparison.OrdinalIgnoreCase) Then
+                    contaminado = True
+                    Continue For
+                End If
 
                 Dim resto = chave.Substring(prefixo.Length)
                 Dim corte = resto.LastIndexOf("_"c)

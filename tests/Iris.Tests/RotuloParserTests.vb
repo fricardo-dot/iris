@@ -150,20 +150,65 @@ Public Class RotuloParserTests
     End Sub
 
     ''' <summary>
-    ''' Lixo que <b>não menciona</b> <c>MSIP_Label</c> junto de um rótulo bom
-    ''' não contamina.
+    ''' <b>Qualquer</b> fragmento fora da gramática contamina — inclusive o que
+    ''' não menciona <c>MSIP_Label</c>.
     '''
-    ''' O contraponto: se qualquer fragmento estranho contaminasse, um
-    ''' cabeçalho colado no fim do valor derrubaria a leitura de todo item
-    ''' legitimamente rotulado — e o portão negaria por ruído, não por
-    ''' classificação.
+    ''' Este teste já existiu ao contrário, fixando que lixo sem o prefixo
+    ''' <i>não</i> contaminava, com o argumento de que "pode ser outro cabeçalho
+    ''' colado". O argumento se derruba sozinho: se outro cabeçalho foi colado
+    ''' dentro do valor de <c>MSIP_Labels</c>, o valor está malformado. Numa
+    ''' barreira de divulgação, "não entendi este pedaço" nunca pode virar "o
+    ''' resto vale".
     ''' </summary>
     <TestMethod>
-    Public Sub Lixo_que_nao_se_diz_rotulo_NAO_contamina()
-        Dim r = Ler(Registro(G1, "Enabled", "True") & ";;   ;outra-coisa-qualquer")
+    Public Sub Lixo_FORA_da_gramatica_contamina_mesmo_sem_o_prefixo()
+        Dim r = Ler(Registro(G1, "Enabled", "True") & ";outra-coisa-qualquer")
+
+        Assert.AreEqual(LabelReadingKind.Malformed, r.Tipo,
+            "fragmento fora da gramatica derruba o valor inteiro, mencione " &
+            "MSIP_Label ou nao")
+        Assert.AreEqual(0, r.Ativos.Count)
+    End Sub
+
+    ''' <summary>
+    ''' Pontuação vazia — <c>;;</c> e <c>;</c> no fim — <b>não</b> contamina.
+    '''
+    ''' O contraponto necessário: sem ele, um parser que reprovasse tudo
+    ''' passaria em todos os testes de contaminação acima, e nenhum item
+    ''' legitimamente rotulado seria lido.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Pontuacao_vazia_NAO_contamina()
+        Dim r = Ler(";;" & Registro(G1, "Enabled", "True") & ";   ;")
 
         Assert.AreEqual(LabelReadingKind.Present, r.Tipo)
         CollectionAssert.AreEqual({G1}, r.Ativos.ToArray())
+    End Sub
+
+    ''' <summary>
+    ''' <b>Campo desconhecido dentro de um registro bem formado é válido.</b>
+    '''
+    ''' A gramática pode ganhar campos, e um campo novo pertence
+    ''' inequivocamente ao GUID do próprio registro. Ele entra na lista de
+    ''' campos observados e não inventa semântica nenhuma — o que é diferente
+    ''' de texto arbitrário solto no valor.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Campo_DESCONHECIDO_em_registro_bem_formado_e_valido()
+        Dim r = Ler(Registro(G1, "Enabled", "True") & ";" &
+                    Registro(G1, "CampoQueAindaNaoExiste", "seja-o-que-for"))
+
+        Assert.AreEqual(LabelReadingKind.Present, r.Tipo)
+        CollectionAssert.Contains(r.Campos.ToArray(), "CampoQueAindaNaoExiste")
+    End Sub
+
+    ''' <summary>Valor com <c>=</c> dentro não quebra o registro.</summary>
+    <TestMethod>
+    Public Sub Valor_com_igual_dentro_nao_quebra()
+        Dim r = Ler(Registro(G1, "Enabled", "True") & ";" &
+                    Registro(G1, "Name", "a=b=c"))
+
+        Assert.AreEqual(LabelReadingKind.Present, r.Tipo)
     End Sub
 
     ''' <summary>

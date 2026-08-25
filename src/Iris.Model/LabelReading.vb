@@ -65,14 +65,16 @@ Namespace Global.Iris.Model
         Conflicting
 
         ''' <summary>
-        ''' O valor tem forma boa, tem histórico de rótulo, e <b>nenhum ativo</b>
-        ''' — todos <c>Enabled=False</c>.
+        ''' Todo registro reconhecido está <c>Enabled=False</c>.
         '''
-        ''' Isto não é <see cref="Malformed"/>: o valor está perfeito e diz uma
-        ''' coisa específica, que é "houve rótulo aqui e ele foi removido".
-        ''' Também não é <see cref="Absent"/>, que é a propriedade não existir.
-        ''' Chamar de qualquer um dos dois apagaria uma informação que a
-        ''' política corporativa pode querer usar.
+        ''' Isto descreve o <b>formato</b>, e só ele. Normalmente representa
+        ''' rótulo removido — mas atualidade e autoridade não estão provadas, e
+        ''' chamar de "foi removido" seria promover leitura plausível a fato.
+        '''
+        ''' Não é <see cref="Malformed"/>, porque o valor está bem formado; nem
+        ''' <see cref="Absent"/>, que é a propriedade não existir. Colapsar em
+        ''' qualquer um dos dois apagaria uma distinção que a política
+        ''' corporativa pode querer usar.
         ''' </summary>
         HistoricalOnly
 

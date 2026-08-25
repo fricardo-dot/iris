@@ -414,7 +414,7 @@ confiança pressupõe representatividade que este recorte não tem.
 | **P6** | Vem por `Table`? | **NÃO.** `Columns.Add` recusa o DASL com `E_INVALIDARG` |
 | **P7** | Como reage a ausente? | **Lança `MAPI_E_NOT_FOUND`** — é isso que torna `Absent` distinguível de `Blank` |
 | **P8** | Múltiplos rótulos? | **Nenhum** em 554. Se fosse amostra aleatória o teto seria ≈ 0,54 %; por ser recorte, vale menos — e **nunca** impossibilidade |
-| **P9** | Proteção separada da classificação? | **SIM.** Campos observados: `Enabled`, `Name`, `SetDate`, `Method`, `SiteId` e **`ContentBits`** |
+| **P9** | Proteção separada da classificação? | **O formato separa.** Campos observados: `Enabled`, `Name`, `SetDate`, `Method`, `SiteId` e **`ContentBits`**. A *semântica* de `ContentBits` não foi validada |
 | **P10** | Evidência de versão | `PR_CHANGE_KEY` em **20 de 20**, com `EntryID` e `LastModificationTime` |
 | **P11** | Outras pastas | Entrada, Enviados e Rascunhos expõem **igual**. Outros stores e caixas compartilhadas: **não disponíveis** nesta conta |
 | **P12** | Anexos têm classificação própria? | **Não medido** — anexo está fora da fase |
@@ -437,10 +437,21 @@ entre mensagens — e não é —, uma thread de 30 já teria chance apreciável
 conter uma rotulada. É mais um argumento para a regra da §29.1: **um membro não
 comprovadamente permitido nega a thread inteira**.
 
-**`ContentBits` responde a P9, e responde bem.** A proteção vem em campo
-**separado** da classificação. Isso significa que o portão não pode olhar só o
-GUID do rótulo: dois itens com o mesmo rótulo podem ter proteção diferente. O
-campo existe; usá-lo é decisão da política, e a política ainda não autoriza nada.
+**`ContentBits` existe, e é só isso que está medido.** O formato observado
+traz `ContentBits` **separado** do GUID. A consequência que se sustenta é
+estreita: **o GUID sozinho não descreve o registro inteiro**, então o portão não
+pode decidir olhando só ele.
+
+O que eu tinha escrito — *"dois itens com o mesmo rótulo podem ter proteção
+diferente"* — vai além da evidência. Eu observei um campo, não observei valores
+divergentes para o mesmo GUID, e não demonstrei que o campo reflete a proteção
+corrente, que é autêntico, que sua ausência significa "sem proteção", que não
+está obsoleto, nem que cobre toda forma de IRM. **A P16 vale para ele também**:
+vem no mesmo cabeçalho possivelmente não autoritativo.
+
+Para o portão isso quer dizer: bit restritivo reconhecido pode contribuir para
+**negar**; valor ausente, inválido ou desconhecido **não prova ausência de
+proteção**; e `ContentBits=0` não autoriza sozinho.
 
 **O caminho barato por `Table` não existe — nesta conta, com este DASL.** Custa
 **~16 a 18 ms por item**, a mesma ordem que tornou o cache obrigatório na Fase 0.
