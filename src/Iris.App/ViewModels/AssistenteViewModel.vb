@@ -553,7 +553,21 @@ Namespace Global.Iris.App.ViewModels
             Select Case r.Kind
                 Case AssistOutcomeKind.Respondeu
                     Resultado = r.Texto
-                    Aviso = ""
+                    ' RESPOSTA VAZIA TEM DE APARECER COMO ALGUMA COISA.
+                    '
+                    ' "Respondeu" com texto vazio fechava o diario como sucesso
+                    ' e nao deixava nada na tela: nem resultado, nem aviso. A
+                    ' operacao simplesmente sumia, e o usuario nao teria como
+                    ' distinguir "o provedor nao tinha o que dizer" de "o botao
+                    ' nao funcionou".
+                    '
+                    ' Nao e ambiguo: o conteudo SAIU e a resposta CHEGOU. O
+                    ' diario fecha como concluida, e a frase diz exatamente
+                    ' isso.
+                    Aviso = If(TemResultado, "",
+                               "O provedor respondeu sem texto. O conteúdo saiu " &
+                               "desta máquina e a operação foi concluída — só não " &
+                               "veio resposta.")
                 Case AssistOutcomeKind.Negado
                     Resultado = ""
                     Aviso = "A IA não foi usada: " & EmPortugues(r.MotivoDoPortao)

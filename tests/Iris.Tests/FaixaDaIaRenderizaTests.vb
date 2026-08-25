@@ -122,7 +122,7 @@ Public Class FaixaDaIaRenderizaTests
     ''' levantado numa thread do pool, e o <c>Button</c> — que é
     ''' <c>DispatcherObject</c> — recusaria a visita.
     ''' </summary>
-    Private Shared Sub NaSTA(corpo As Func(Of Global.System.Threading.Tasks.Task))
+    Friend Shared Sub NaSTA(corpo As Func(Of Global.System.Threading.Tasks.Task))
         Dim erro As Exception = Nothing
         Dim t As New Global.System.Threading.Thread(
             Sub()

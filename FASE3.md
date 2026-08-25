@@ -1147,6 +1147,114 @@ inventar requisito.
 
 ---
 
+## 39. Marco 3.6 — o adversário, na cadeia inteira
+
+### 39.1 Até onde esta prova vai, e até onde não vai
+
+Do **contrato do broker** até a **porta do provedor**: `IOutlookBroker` →
+`ContextoDoOutlook` → `DisclosurePolicy` → `CapabilityLedger` →
+`AssistTransmitter` → provedor → diário SQLite de verdade, com o
+`AssistenteViewModel` na ponta.
+
+Não vai do COM ao socket, e dizer que vai seria mentira. O Outlook real tem
+provas próprias no 3.0; o transporte real tem as dele contra `HttpListener`.
+Juntar os dois aqui exigiria furar a exigência de HTTPS do portão, e esse furo
+seria maior que o buraco que ele fecharia.
+
+### 39.2 O que os testes unitários não pegam
+
+Cada camada já tinha prova própria — 37 testes de envelope e capability, 44 do
+portão, 19 de ordem e diário. O que faltava é o que mora **entre** elas, e que
+nenhum teste unitário vê, porque em cada um deles a camada de baixo é fabricada
+pelo próprio teste:
+
+- a classificação diz "sem anexo" e a leitura do corpo diz outra coisa;
+- a thread chega pela metade porque a leitura de um membro falhou;
+- a seleção do usuário se move entre classificar e montar;
+- a versão da mensagem muda entre uma coisa e outra.
+
+### 39.3 Injeção de prompt: a fronteira honesta
+
+O que se prova é **estrutural**, e é o que dá para provar:
+
+- o endereço chamado é o da **ativação**, e não um que apareceu dentro de um
+  e-mail;
+- a instrução de sistema é a do Iris, fixa no código;
+- a instrução do usuário é a que o **botão** manda;
+- a carga viaja no campo de conteúdo, e **não quebra o JSON**.
+
+Esta última tem teste próprio, com aspas, chaves e barras montadas para fechar o
+campo `corpo` e abrir um `instrucaoDoSistema` do remetente. A conferência é feita
+com `JsonDocument` **sobre os bytes que saíram** — não sobre o objeto que os
+produziu — e vale para assunto, remetente e destinatário também: os quatro campos
+vêm do e-mail, e uma barreira que olhasse só o corpo deixaria três portas
+abertas.
+
+O que **não** se prova, e não se finge provar: que o modelo não obedeça à frase.
+Campos separados reduzem ambiguidade e **não são barreira** contra injeção de
+prompt. Uma barreira de mentira é pior que nenhuma, porque alguém confia nela.
+
+### 39.4 HTML hostil tem três desfechos, e agrupá-los esconderia o contrato
+
+| Corpo | Desfecho |
+|---|---|
+| HTML bem-formado com `<script>` | transmite **só o texto visível** |
+| corpo só de script | para: não sobrou texto |
+| script ou comentário desbalanceado | para: não dá para interpretar |
+
+Com controle: HTML **válido e inofensivo** atravessa. Sem ele, um pipeline que
+recusasse todo HTML passaria nos dois últimos e deixaria a IA inútil para a maior
+parte do correio real.
+
+### 39.5 O que o controle negativo revelou, e nenhum teste unitário revelaria
+
+A recusa de conteúdo — anexo, referência embutida, HTML ilegível — faz o pipeline
+**descartar a mensagem**. Numa seleção de uma mensagem só, o resultado é um
+envelope **vazio** — e envelope vazio é válido, por decisão declarada no 3.2.
+
+Ou seja: **não é a recusa do pipeline que impede a transmissão**. É a cobertura
+do grant, que exige que os itens do envelope sejam exatamente os aprovados. As
+duas coisas estão em série, e cada uma sozinha seria insuficiente:
+
+- desligando só a verificação de anexo do pipeline, um teste cai;
+- desligando só a cobertura, **nenhum** cai — porque o consumo da capability
+  reconfere a proveniência por conta própria;
+- desligando a cobertura **e** a reconferência do consumo, caem seis — inclusive
+  os três de conteúdo, que passariam a mandar envelope vazio.
+
+Isso não estava escrito em lugar nenhum, e nenhum teste de camada poderia
+mostrar: cada um deles fabrica a camada de baixo, e por isso nunca vê o envelope
+vazio chegar ao cofre.
+
+### 39.6 A resposta vazia ganhou contrato
+
+`Respondeu` com texto vazio fechava o diário como sucesso e não deixava nada na
+tela: nem resultado, nem aviso. A operação **sumia**, e o usuário não teria como
+distinguir "o provedor não tinha o que dizer" de "o botão não funciona".
+
+Não é ambíguo — o conteúdo saiu e a resposta chegou —, então o diário fecha como
+concluída e a faixa diz exatamente isso.
+
+### 39.7 A resposta hostil tem dois consumidores
+
+Resumir e redigir. O primeiro é provado até o `TextBlock` da faixa **real**,
+instanciada com o ViewModel real; o segundo até o rascunho editável. Nos dois, a
+resposta chega **literal**: nada abre URL, nada interpreta markdown, nada envia
+e-mail.
+
+### 39.8 Os controles, um por mecanismo
+
+Um controle global não basta — ele prova que o equipamento funciona, e não que
+cada barreira é a que está barrando. Há um por mecanismo: HTML válido, anexo
+ausente dos dois lados, mesma `ChangeKey` dos dois lados, thread inteira, seleção
+estável, resposta normal, e a cadeia inteira funcionando.
+
+Além disso, todo teste de "zero chamadas" confere antes que o preflight
+**passou** — `CanExecute` habilitado — e que o broker chegou até onde deveria. Sem
+isso, uma recusa acidental mais cedo faria a prova passar dizendo outra coisa.
+
+---
+
 ## 33. O que esta fase NÃO faz
 
 - Não envia e-mail.

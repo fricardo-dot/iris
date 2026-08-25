@@ -443,9 +443,17 @@ Friend NotInheritable Class FakeBroker
         Return Task.FromResult(Anexos(items))
     End Function
 
+    ''' <summary>
+    ''' O instantâneo de cada item. Fora da alçada por padrão, como as outras
+    ''' duas leituras que o contexto de produção usa.
+    ''' </summary>
+    Friend Instantaneos As Func(Of ItemKey, OperationResult(Of MessageSnapshot))
+
     Public Function GetMessageSnapshotAsync(item As ItemKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessageSnapshot)) _
         Implements IOutlookBroker.GetMessageSnapshotAsync
+        Chamadas.Add("outlook.getMessageSnapshot")
+        If Instantaneos IsNot Nothing Then Return Task.FromResult(Instantaneos(item))
         Return ForaDaAlcada(Of OperationResult(Of MessageSnapshot))()
     End Function
 
