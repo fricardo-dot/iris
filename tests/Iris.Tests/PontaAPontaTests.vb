@@ -232,6 +232,77 @@ Public Class PontaAPontaTests
     End Sub
 
     ' ==================================================================
+    ' O manifesto: nao da para pegar os itens sem pegar a cobertura
+
+    ''' <summary>
+    ''' O manifesto entrega itens E cobertura no mesmo objeto, e a ressalva
+    ''' escrita — a §23 virando estrutura em vez de recomendacao.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_manifesto_declara_que_e_ACERVO_e_nao_estado_corrente()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Dim sink As New SqliteSweepSink(db, FolderKey, EnvKey)
+            Dim runner As New SweepRunner(
+                New FonteFalsaMutavel(Universo(), "E-1", "E-2", "E-3"), sink, 2)
+            Assert.IsTrue(runner.Executar(Universo(), 0, 1, Real(), CancellationToken.None).Publicou)
+
+            Dim m = New ManifestReader(db).Ler(FolderKey)
+
+            Assert.AreEqual(3, m.Items.Count)
+            Assert.AreEqual(FolderCoverage.Parcial, m.Cobertura)
+            Assert.IsFalse(m.EhEstadoCorrente,
+                "cobertura parcial nao pode ser exibida como o estado corrente da pasta")
+            StringAssert.Contains(m.Ressalva, "parcial")
+            Assert.IsNotNull(m.GenerationKey)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' Pasta nunca varrida devolve manifesto vazio com ressalva propria — nao
+    ''' devolve nulo nem lista vazia sem explicacao.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Pasta_nunca_varrida_diz_que_nunca_foi_varrida()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Dim m = New ManifestReader(db).Ler(FolderKey)
+            Assert.AreEqual(0, m.Items.Count)
+            Assert.IsNull(m.GenerationKey)
+            Assert.IsFalse(m.EhEstadoCorrente)
+            StringAssert.Contains(m.Ressalva, "nao foi varrida".Replace("nao", "não"))
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' Linhas de uma tentativa REJEITADA nao vazam para o manifesto.
+    '''
+    ''' O GravarPagina escreve encarnacao, metadado e associacao nas tabelas
+    ''' permanentes antes da publicacao — foi por isso que a "fatia de captura"
+    ''' antecipada foi rejeitada na §23.5. A fronteira que impede o vazamento e
+    ''' o generation_key: so associacao de geracao publicada entra.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Tentativa_rejeitada_nao_vaza_para_o_manifesto()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Dim fonte As New FonteFalsaMutavel(Universo(), "E-1", "E-2", "E-3", "E-4")
+            fonte.Agenda(1) = Sub(x) x.Remover("E-4")
+            Dim runner As New SweepRunner(fonte, New SqliteSweepSink(db, FolderKey, EnvKey), 2)
+            Assert.IsFalse(runner.Executar(Universo(), 0, 1, Real(), CancellationToken.None).Publicou)
+
+            ' As linhas ESTAO nas tabelas permanentes...
+            Assert.IsTrue(Contar(db, "incarnation") > 0,
+                "GravarPagina escreve antes da publicacao — e por isso que a fronteira importa")
+
+            ' ...e mesmo assim o manifesto nao as mostra.
+            Dim m = New ManifestReader(db).Ler(FolderKey)
+            Assert.AreEqual(0, m.Items.Count, "geracao nao publicada nao vaza para a UI")
+            Assert.IsNull(m.GenerationKey)
+        End Using
+    End Sub
+
+    ' ==================================================================
 
     Private Class ConsumidorFalso
         Implements IPublicationConsumer
