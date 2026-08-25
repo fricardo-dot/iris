@@ -2883,7 +2883,7 @@ exceção não tratada.
 
 | # | Critério | Estado |
 |---|---|---|
-| 1 | Q1,Q3,Q4,Q7,Q8 com número; Q2,Q5,Q6,Q9 semânticas | **parcial** — Q8 como escopo declarado, e a identidade de ambiente ficou **incompleta por construção** (§22.4) |
+| 1 | Q1,Q3,Q4,Q7,Q8 com número; Q2,Q5,Q6,Q9 semânticas | **Q8 decidida por escopo** (§23, aceita pelo usuário em 24/08/2026). Não virou matriz medida — virou limitação aceita, com gatilhos de reabertura |
 | 2 | Limitação escrita em cada resposta | ok |
 | 3 | Recomendação de tamanho de cada marco seguinte | ok — §22.10 |
 | 4 | Revisão externa do RESULTADO | ok — 3 passadas do Codex, 10 defeitos reais |
@@ -3120,3 +3120,108 @@ de erro que esta fase inteira persegue.
 Não é só documentação: a suíte precisa ou falhar quando a integração não
 pôde rodar num ambiente onde deveria, ou dizer no cabeçalho o que deixou de
 cobrir. Fica para o 2.2a.
+
+
+---
+
+## 23. Decisão de escopo: o Iris em modo cached não conclui nada de negativo
+
+Aceita pelo usuário em **24 de agosto de 2026**, depois de duas rodadas de
+recomendação — minha e do Codex — e de duas medições negativas no mesmo dia
+(§22.4 e §22.11).
+
+### 23.1 O que foi aceito
+
+> Em **Exchange em modo cached**, pelas vias hoje suportadas, o Iris **não
+> conclui ausência, não afirma cobertura completa e não usa incremental** no
+> lugar da varredura cheia.
+
+Não é pendência nem bug: é o comportamento, e ele é *fail-closed* por
+construção. A `EnvironmentPolicy` degrada no degrau da janela não legível e
+nenhuma linha da matriz chega a ser consultada.
+
+### 23.2 O que isso custa, sem suavizar
+
+Eu tinha resumido o custo como "só bloqueia *varri e não vi, logo sumiu*". O
+Codex mostrou que eu estava minimizando: são **três** inferências, e as outras
+duas doem.
+
+| Bloqueado | Custo concreto |
+|---|---|
+| Concluir ausência | Mensagem excluída fica `Suspeito` **indefinidamente**; movimento deixa fantasma na pasta de origem |
+| Cobertura completa | Nunca se pode dizer "esta pasta eu conheço inteira"; contagens por pasta ficam superestimadas; coleta de associações órfãs fica bloqueada |
+| **Incremental** | **Sempre varredura cheia.** O acelerador que a Q3 mediu fica desligado |
+
+> O produto que sai disso é **um arquivo histórico conservador, não uma
+> representação convergente da caixa atual.**
+
+Isso precisa aparecer **no produto**, não só aqui: a UI não pode exibir uma
+pasta como se fosse a verdade corrente. Requisito do 2.2a.
+
+O caminho **positivo** continua válido: `EncontradoEmOutraPasta` produz
+`AusenteDaPasta` sem depender de `ConcluirAusencia`. Mas não presumir que ele
+resolve a maioria dos movimentos — o adaptador ainda não demonstrou que
+consegue localizar e correlacionar o item na outra pasta, ainda mais depois de
+a identidade mudar (§11.1).
+
+### 23.3 Por que NÃO fazer o spike de Extended MAPI agora
+
+E aqui eu registro uma justificativa minha que foi **derrubada**, porque o erro
+é instrutivo.
+
+**O que eu argumentei:** o spike não vale porque, nesta caixa, a cobertura
+seria 1.018 / 17.728 = **5,7%** — parcial, que continua bloqueando ausência.
+Logo o spike compraria pouco.
+
+**Por que está errado:** usar o número *desta* caixa para decidir arquitetura é
+a mesma generalização indevida de sempre, só que na direção oposta. Uma caixa
+com janela "Tudo" teria cobertura completa e ausência destravada; um PST,
+idem; e pastas pequenas podem estar íntegras mesmo numa caixa cached. A
+cobertura também se decide **pasta por pasta**, não caixa por caixa.
+
+**A justificativa que fica:** o caminho degradado já existe e é seguro; o spike
+tem resultado **incerto** (está provado que o Outlook *conhece* o número, não
+que exista propriedade acessível por `IMAPIFolder` ou Redemption); e introduz
+dependência e superfície que a Fase 1 evitou de propósito. Não é necessário
+para a proposta mínima atual.
+
+E mesmo que o spike funcionasse, contagem igual **não basta** para autorizar
+ausência: seria preciso total do servidor antes, manifesto local por chaves
+distintas, total do servidor depois, os três iguais, sem falha, no mesmo
+universo. Mutação balanceada continua possível — é o S6. Extended MAPI daria
+uma condição **necessária forte**, não prova suficiente.
+
+### 23.4 Gatilhos de reabertura
+
+Sem gatilho, "adiar" vira "nunca". Qualquer um destes reabre a decisão:
+
+1. **Janela "Tudo"** entrar no escopo suportado — ali a cobertura completa
+   passa a ser alcançável, e o bloqueio deixa de ser inevitável.
+2. **Fantasmas persistentes virarem reclamação de uso** — mensagens excluídas
+   que não somem da visão do Iris.
+3. **O custo da varredura cheia incomodar** — aí o incremental deixa de ser
+   luxo, e ele depende de cobertura.
+4. **Suporte a PST ou a um segundo provider** entrar no escopo.
+5. **Redemption ou Extended MAPI ficar barato por outro motivo** — se a
+   dependência entrar por outra necessidade, o spike passa a custar quase nada.
+
+### 23.5 A ordem dos marcos, confirmada
+
+Confirmado também em 24/08/2026: **2.2a antes de 2.2b**, com o recorte da
+§22.10.
+
+E foi rejeitada uma ideia minha de antecipar uma "fatia estreita de captura" —
+ler a árvore e gravar metadado antes do 2.2a, só para bancar a cauda de 2.044
+mensagens. Dois motivos, e o segundo é técnico e eu não tinha visto:
+
+- **A cauda não corre risco de perda.** Está no servidor. O risco é perder
+  alcance local, e isso não justifica furar a sequência de segurança.
+- **`GravarPagina` já escreve encarnação, metadado e associação nas tabelas
+  permanentes antes da publicação.** Uma "captura sem publicação" deixaria
+  dados encenados misturados ao acervo, e isso só é seguro se todos os
+  leitores respeitarem a fronteira de geração — integração que **não existe
+  ainda**. A fatia "estreita" carregaria escondida quase toda a orquestração
+  que o 2.2a existe para construir.
+
+A captura da cauda vira o **primeiro resultado útil do 2.2b**, com a
+orquestração já provada contra provider falso.

@@ -371,6 +371,31 @@ Namespace Global.Iris.Sync
         ''' O que este ambiente autoriza. FALHA FECHADO em três degraus: fora
         ''' da matriz, token não validado, e inferência sem evidência própria.
         ''' </summary>
+        ''' <summary>
+        ''' <b>DECISÃO DE ESCOPO, aceita pelo usuário em 24/08/2026 (§23).</b>
+        '''
+        ''' Em Exchange cached, pelas vias hoje suportadas, o Iris não conclui
+        ''' ausência, não afirma cobertura completa e não usa incremental. Não é
+        ''' pendência: é o comportamento aceito, e o custo foi escrito antes de
+        ''' aceitar — mensagem excluída fica <c>Suspeito</c> indefinidamente,
+        ''' movimento deixa fantasma na origem, e a varredura é sempre cheia.
+        '''
+        ''' O produto resultante é <b>um arquivo histórico conservador, não uma
+        ''' representação convergente da caixa atual</b>.
+        '''
+        ''' Se você chegou aqui querendo destravar: a resposta não é passar um
+        ''' valor qualquer para a janela. É verificar se algum dos gatilhos da
+        ''' §23.4 disparou —
+        '''
+        '''   1. janela "Tudo" entrou no escopo;
+        '''   2. fantasmas persistentes viraram reclamação de uso;
+        '''   3. o custo da varredura cheia passou a incomodar;
+        '''   4. PST ou um segundo provider entrou no escopo;
+        '''   5. Redemption/Extended MAPI ficou barato por outro motivo.
+        '''
+        ''' — e, se disparou, reabrir a decisão com medição nova. Sem gatilho,
+        ''' "adiar" vira "nunca"; com gatilho, é escolha consciente.
+        ''' </summary>
         Public Shared Function Capacidades(fp As EnvironmentFingerprint) As EnvironmentCapabilities
             Return Capacidades(fp, _matriz)
         End Function
