@@ -3607,8 +3607,12 @@ verde porque nenhum teste toca em XAML.
 como se fosse o estado corrente da caixa — sem nenhum sinal de que algo
 quebrou.
 
-Agora há teste que lê o `MainWindow.xaml`, extrai os caminhos de binding e
-resolve cada um contra o ViewModel correspondente. Mais dois: um que exige que
+Agora há teste que lê o `MainWindow.xaml`, extrai os bindings cujas **raízes
+são conhecidas** e valida o **primeiro membro** de cada um contra o ViewModel
+correspondente. Não é "resolve todos": raiz desconhecida é ignorada, e
+segmentos além do primeiro dependem do tipo intermediário, que o teste não
+persegue. `Acervo.Ressalva` e `Acervo.Travado` são caminhos de um membro só,
+então caem inteiros dentro do que ele cobre. Mais dois: um que exige que
 a ressalva **esteja** na janela (binding ausente não é binding quebrado, e
 passaria pelo primeiro), e o controle de que o extrator encontra um caminho
 plantado.
