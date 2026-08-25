@@ -1,0 +1,213 @@
+Imports System.Threading
+Imports Iris.Model
+
+Namespace Global.Iris.Assist
+
+    ''' <summary>Como a operação inteira terminou, do ponto de vista de quem pediu.</summary>
+    Public Enum AssistOutcomeKind
+        ''' <summary>Zero: não decidido. Nunca significa sucesso.</summary>
+        Desconhecido = 0
+        ''' <summary>Veio resposta.</summary>
+        Respondeu
+        ''' <summary>O portão negou. Nada saiu.</summary>
+        Negado
+        ''' <summary>O cofre recusou a capability. Nada saiu.</summary>
+        Recusado
+        ''' <summary>O diário não pôde registrar. Nada saiu.</summary>
+        SemDiario
+        ''' <summary>Falhou, e <b>não</b> chegou a começar.</summary>
+        NaoComecou
+        ''' <summary>
+        ''' Falhou depois de começar. <b>Pode ter chegado</b>, e ninguém vai
+        ''' saber.
+        ''' </summary>
+        Ambiguo
+    End Enum
+
+    Public NotInheritable Class AssistOutcome
+        Public ReadOnly Property Kind As AssistOutcomeKind
+        ''' <summary>Texto passivo do modelo. Vazio quando não houve resposta.</summary>
+        Public ReadOnly Property Texto As String
+        Public ReadOnly Property RequestId As Guid
+        Public ReadOnly Property Nota As DisclosureNote
+        Public ReadOnly Property MotivoDoPortao As DisclosureReason
+
+        Friend Sub New(kind As AssistOutcomeKind, texto As String, requestId As Guid,
+                       nota As DisclosureNote, motivoDoPortao As DisclosureReason)
+            Me.Kind = kind
+            Me.Texto = If(texto, "")
+            Me.RequestId = requestId
+            Me.Nota = nota
+            Me.MotivoDoPortao = motivoDoPortao
+        End Sub
+    End Class
+
+    ' ==================================================================
+
+    ''' <summary>
+    ''' <b>O serviço de aplicação: executar a operação segura.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A ORDEM É A GARANTIA</b>
+    '''
+    '''   1. o portão decide, e emite o grant;
+    '''   2. o cofre emite a capability sobre <b>aqueles</b> bytes;
+    '''   3. o diário grava a <b>intenção</b>, durável, com o hash;
+    '''   4. o cofre <b>consome</b> a capability — conferindo bytes, itens,
+    '''      versões, destino e operação;
+    '''   5. o diário registra o <b>início do voo</b>, e só se ele
+    '''      <b>confirmar</b> é que se toca na rede;
+    '''   6. o provedor manda;
+    '''   7. o diário conclui, ou registra a falha — ambígua quando for.
+    '''
+    ''' Cada passo que falha para tudo, e o diário fica dizendo <b>onde</b>
+    ''' parou. Nenhum deles é opcional, e nenhum pode ser reordenado sem abrir
+    ''' um buraco que já foi aberto antes.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O CUSTO DECLARADO DE MARCAR O VOO ANTES</b>
+    '''
+    ''' Registrar "em voo" antes de chamar o transporte faz uma falha que
+    ''' comprovadamente não enviou nada — conexão recusada, por exemplo — ser
+    ''' contada como <b>ambígua</b>. Isso infla o número de ambíguos.
+    '''
+    ''' A alternativa seria marcar depois do primeiro byte, e para isso seria
+    ''' preciso confiar no transporte para dizer quando o byte saiu. Quem erra
+    ''' nessa direção esconde egress; quem erra nesta conta a mais. Está
+    ''' escolhido, e o preço fica escrito.
+    '''
+    ''' O que dá para tirar desse preço sem trapacear é o que
+    ''' <see cref="IAssistantProvider.Pronto"/> tira: recusas que se sabem
+    ''' <b>antes</b> de qualquer byte — endereço não-HTTPS, credencial ausente,
+    ''' provedor nenhum — são perguntadas antes de o voo ser marcado, e por isso
+    ''' não entram na contagem de ambíguos.
+    ''' </summary>
+    Public NotInheritable Class AssistTransmitter
+
+        Private ReadOnly _politica As DisclosurePolicy
+        Private ReadOnly _cofre As CapabilityLedger
+        Private ReadOnly _diario As IDisclosureJournal
+        Private ReadOnly _provedor As IAssistantProvider
+        Private ReadOnly _relogio As Func(Of DateTimeOffset)
+
+        Public Sub New(politica As DisclosurePolicy, cofre As CapabilityLedger,
+                       diario As IDisclosureJournal, provedor As IAssistantProvider,
+                       relogio As Func(Of DateTimeOffset))
+            _politica = politica
+            _cofre = cofre
+            _diario = diario
+            _provedor = provedor
+            _relogio = relogio
+        End Sub
+
+        ''' <summary>
+        ''' Faz a operação inteira, ou para no primeiro passo que não passar.
+        ''' </summary>
+        Public Function Executar(pedido As PreflightRequest,
+                                 classificar As Func(Of IReadOnlyList(Of MessageClassification)),
+                                 montar As Func(Of EnvelopeResult),
+                                 ct As CancellationToken) As AssistOutcome
+
+            ' 1. o portao. O classificador so e INVOCADO se o preflight passar
+            '    — quem garante isso e o DisclosureGate, e o motivo esta la.
+            Dim portao As New DisclosureGate(_politica, _relogio)
+            Dim decisao = portao.Avaliar(pedido, classificar)
+            If Not decisao.Permitido Then
+                Return Parar(AssistOutcomeKind.Negado, DisclosureNote.PortaoNegou, decisao.Motivo)
+            End If
+
+            Dim env = montar()
+            If Not env.Ok Then
+                Return Parar(AssistOutcomeKind.Recusado, DisclosureNote.EnvelopeRecusado)
+            End If
+
+            ' 2. a capability, sobre AQUELES bytes.
+            Dim agora = _relogio()
+            Dim cap = _cofre.Emitir(decisao, env.Envelope, agora)
+            If cap Is Nothing Then
+                Return Parar(AssistOutcomeKind.Recusado, DisclosureNote.CapabilityRecusada)
+            End If
+
+            ' 3. a INTENCAO, duravel, antes de qualquer tentativa.
+            If Not _diario.Intencao(cap, agora) Then
+                ' Sem registro nao se transmite. Um envio sem rastro e pior que
+                ' um envio que nao acontece.
+                Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", cap.RequestId,
+                                         DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
+            End If
+
+            ' 4. o consumo — e ele confere bytes, itens, versoes, destino e
+            '    operacao contra o que foi autorizado.
+            Dim uso = _cofre.Consumir(cap, env.Envelope, _provedor.Destino,
+                                      pedido.Operacao, _relogio())
+            If Not uso.Autorizado Then
+                _diario.NaoEnviou(cap.RequestId, _relogio(), DisclosureNote.CapabilityRecusada)
+                Return New AssistOutcome(AssistOutcomeKind.Recusado, "", cap.RequestId,
+                                         DisclosureNote.CapabilityRecusada,
+                                         DisclosureReason.NaoDecidido)
+            End If
+
+            ' 5a. o provedor esta pronto? A pergunta vem ANTES de marcar o
+            '     voo, e sem tocar na rede: endereco que nao e HTTPS,
+            '     credencial ausente e provedor nenhum sao recusas que se SABEM,
+            '     e marca-las como ambiguas encheria de ruido a contagem que a
+            '     UI mostra.
+            If Not _provedor.Pronto() Then
+                _diario.NaoEnviou(cap.RequestId, _relogio(), DisclosureNote.CapabilityRecusada)
+                Return New AssistOutcome(AssistOutcomeKind.NaoComecou, "", cap.RequestId,
+                                         DisclosureNote.CapabilityRecusada,
+                                         DisclosureReason.NaoDecidido)
+            End If
+
+            ' 5b. o VOO, e so depois de ele confirmar e que se toca na rede.
+            If Not _diario.Iniciando(cap.RequestId, _relogio()) Then
+                Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", cap.RequestId,
+                                         DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
+            End If
+
+            ' 6. a rede.
+            Dim r = _provedor.Enviar(env.Envelope.Bytes(), ct)
+
+            ' 7. o desfecho.
+            If r.Status = ProviderStatus.Respondeu Then
+                _diario.Concluir(cap.RequestId, _relogio())
+                Return New AssistOutcome(AssistOutcomeKind.Respondeu, r.Texto, cap.RequestId,
+                                         DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
+            End If
+
+            Dim nota = NotaDe(r.Status)
+            _diario.Falhar(cap.RequestId, _relogio(), nota, r.PodeTerChegado)
+
+            Return New AssistOutcome(
+                If(r.PodeTerChegado, AssistOutcomeKind.Ambiguo, AssistOutcomeKind.NaoComecou),
+                "", cap.RequestId, nota, DisclosureReason.NaoDecidido)
+        End Function
+
+        ' ==============================================================
+
+        ''' <summary>
+        ''' Para antes de haver capability — então <b>não há o que registrar</b>.
+        '''
+        ''' O diário registra divulgações; um pedido que o portão negou antes de
+        ''' qualquer envelope não é uma divulgação, e inventar uma linha para ele
+        ''' encheria o diário de coisas que não aconteceram — justamente onde
+        ''' alguém vai procurar o que aconteceu.
+        ''' </summary>
+        Private Shared Function Parar(kind As AssistOutcomeKind, nota As DisclosureNote,
+                                      Optional motivo As DisclosureReason =
+                                          DisclosureReason.NaoDecidido) As AssistOutcome
+            Return New AssistOutcome(kind, "", Guid.Empty, nota, motivo)
+        End Function
+
+        Private Shared Function NotaDe(s As ProviderStatus) As DisclosureNote
+            Select Case s
+                Case ProviderStatus.Timeout : Return DisclosureNote.Timeout
+                Case ProviderStatus.Cancelado : Return DisclosureNote.Cancelado
+                Case ProviderStatus.Recusou : Return DisclosureNote.ProvedorRecusou
+                Case Else : Return DisclosureNote.ConexaoCaiu
+            End Select
+        End Function
+
+    End Class
+
+End Namespace

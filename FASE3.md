@@ -733,6 +733,101 @@ que um crash não dá. O harness da Fase 2 ganhou um modo `diario` e é morto co
 
 ---
 
+## 37. Marco 3.4 — a porta, o transporte e a ordem
+
+### 37.1 O recorte, e por que ele é este
+
+O Codex recomendou **cortar o "provedor de referência"** se ele significasse o
+contrato de alguma API externa: autenticação, formato de request e response,
+streaming, códigos, identificadores. Nada disso é inferível daqui, e escrever
+seria **inventar requisito**.
+
+O que ficou:
+
+- **`IAssistantProvider`** — a porta externa. Recebe `Byte()`, e só. Se
+  recebesse um DTO, haveria uma segunda serialização, e o que foi autorizado
+  deixaria de ser o que sai.
+- **`AssistTransmitter`** — o serviço de aplicação, que é outra coisa. A
+  separação existe para ninguém confundir *chamar o modelo* com *executar a
+  operação segura*.
+- **`HttpAssistantProvider`** — transporte genérico, no único assembly com
+  egress. Não sabe o formato de ninguém.
+- **`AssistenteIndisponivel`** — o provedor da produção. Recusa **por decisão**,
+  e existe em vez de `Nothing` porque `Nothing` vira
+  `NullReferenceException` em algum caminho esquecido, e "explodiu" e "recusou"
+  não são a mesma coisa para quem lê depois.
+
+**Pendente, declarado:** o adaptador de fornecedor, a autenticação dele, o
+formato dos bytes que ele aceita, a semântica de streaming, os códigos de erro e
+os limites reais.
+
+### 37.2 A ordem, e o que ela custa
+
+```
+portão → capability sobre AQUELES bytes → intenção durável → consumo
+       → provedor pronto? → voo durável → rede → desfecho
+```
+
+Cada passo que falha para tudo, e o diário fica dizendo **onde** parou.
+
+**O custo de marcar o voo antes**, declarado: uma falha que comprovadamente não
+enviou nada seria contada como ambígua. A alternativa — marcar depois do
+primeiro byte — exigiria confiar no transporte para dizer quando o byte saiu.
+Quem erra nessa direção **esconde egress**; quem erra nesta **conta a mais**.
+
+O que dá para tirar desse custo sem trapacear é `IAssistantProvider.Pronto()`:
+endereço não-HTTPS, credencial ausente e provedor nenhum são recusas que se
+**sabem** antes de qualquer byte, e por isso são perguntadas antes do voo.
+
+### 37.3 As regras da §30, provadas contra um servidor de verdade
+
+| Regra | Como está provada |
+|---|---|
+| Redirect **não** é seguido | 302 vira recusa, e o servidor de destino **não recebe nada** |
+| Só HTTPS | o **padrão** recusa `http://`; a exceção de loopback existe para o servidor falso e é ligada explicitamente |
+| Sem credencial, nem começa | e sem tocar na rede |
+| Timeout **não** é "não chegou" | o servidor já tinha o corpo, e o teste confere que teve |
+| Cancelamento idem | |
+| O corpo do erro **não** atravessa | só o código HTTP; o corpo pode **ecoar o que foi enviado** |
+| Resposta gigante é cortada | no teto, sem travar o processo |
+| **Nenhum retry** | nem com `503`, que é o código que mais convida a repetir |
+| Credencial no cabeçalho | nunca em query string, que aparece em log e proxy |
+| Credencial lida **na hora** | o teste troca o valor entre chamadas e a segunda usa o novo |
+
+Os testes de tempo levaram um **aquecimento** antes de medir: sob a suíte
+inteira em paralelo, o custo de subir a conexão passava do limite que o teste
+dava, e ele media a corrida entre o cliente desistir e o TCP se estabelecer — não
+a propriedade.
+
+### 37.4 Egress mora num assembly só
+
+A regra do plano v1 era um teste sobre o IL do `Iris.App` provando que ele não
+instancia provedor de rede. O Codex derrubou: isso prova que **uma** camada não
+chama, e não que nenhuma outra abre rede.
+
+A regra é sobre **capacidade**: nenhum assembly de domínio referencia biblioteca
+de rede, e ninguém depende do assembly de egress — depender dele é ganhar a
+capacidade de segunda mão. Com **controle positivo**: o assembly que *deve*
+falar HTTP fala, senão o teste não estaria procurando a coisa certa.
+
+O que isso **não** prova: ausência de qualquer egress concebível — socket cru,
+processo externo, um COM que busque URL. Essas são outras portas; o que está
+fechado é a que a Fase 3 abre.
+
+### 37.5 Um recorte de prova que ficou declarado
+
+O portão exige **HTTPS**, e um servidor HTTPS local exigiria certificado — e,
+para o cliente aceitá-lo, um desvio de validação de certificado no código de
+produção. Esse desvio seria um buraco **maior** que o que ajudaria a testar:
+*"aceite qualquer certificado"* é pior que *"aceite http em loopback"*.
+
+Então as provas ficam separadas: o transporte contra servidor de verdade, e a
+ordem com provedor falso. **O que não está provado é os dois juntos** — HTTP
+real dentro da ordem inteira. Isso pertence à aceitação contra provedor real, e
+está declarado em vez de simulado.
+
+---
+
 ## 33. O que esta fase NÃO faz
 
 - Não envia e-mail.

@@ -7,6 +7,7 @@
     <Project Path="src/Iris.Cache/Iris.Cache.vbproj" />
     <Project Path="src/Iris.Sync/Iris.Sync.vbproj" />
     <Project Path="src/Iris.Assist/Iris.Assist.vbproj" />
+    <Project Path="src/Iris.Integration.Assist.Http/Iris.Integration.Assist.Http.vbproj" />
     <Project Path="src/Iris.Integration/Iris.Integration.vbproj" />
     <Project Path="src/Iris.Integration.Outlook/Iris.Integration.Outlook.vbproj" />
   </Folder>

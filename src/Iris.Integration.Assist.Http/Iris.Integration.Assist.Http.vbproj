@@ -1,0 +1,29 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      O UNICO assembly com egress de IA.
+
+      A regra nao e "o Iris.App nao instancia provedor": isso provaria que uma
+      camada nao chama, e nao que nenhuma outra abre rede. A regra e que todo
+      egress de IA mora AQUI, e ha teste arquitetural sobre as referencias de
+      rede dos outros assemblies, com controle positivo.
+
+      Sem -windows: transporte nao ve COM.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Integration.Assist.Http</RootNamespace>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Assist\Iris.Assist.vbproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Iris.Tests" />
+  </ItemGroup>
+
+</Project>
