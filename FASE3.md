@@ -784,12 +784,12 @@ endereço não-HTTPS, credencial ausente e provedor nenhum são recusas que se
 | Regra | Como está provada |
 |---|---|
 | Redirect **não** é seguido | 302 vira recusa, e o servidor de destino **não recebe nada** |
-| Só HTTPS | o **padrão** recusa `http://`; a exceção de loopback existe para o servidor falso e é ligada explicitamente |
+| Só HTTPS | a superfície **pública** é incapaz de aceitar HTTP: o parâmetro de loopback vive num construtor `Friend`. Antes era público com padrão `False`, o que prova o padrão e não impede a produção de passar `True` |
 | Sem credencial, nem começa | e sem tocar na rede |
 | Timeout **não** é "não chegou" | o servidor já tinha o corpo, e o teste confere que teve |
 | Cancelamento idem | |
 | O corpo do erro **não** atravessa | só o código HTTP; o corpo pode **ecoar o que foi enviado** |
-| Resposta gigante é cortada | no teto, sem travar o processo |
+| Resposta maior que o teto | **não** vira sucesso truncado: tem estado próprio e sem texto. Com contraponto — no teto exato, passa |
 | **Nenhum retry** | nem com `503`, que é o código que mais convida a repetir |
 | Credencial no cabeçalho | nunca em query string, que aparece em log e proxy |
 | Credencial lida **na hora** | o teste troca o valor entre chamadas e a segunda usa o novo |
@@ -799,22 +799,47 @@ inteira em paralelo, o custo de subir a conexão passava do limite que o teste
 dava, e ele media a corrida entre o cliente desistir e o TCP se estabelecer — não
 a propriedade.
 
-### 37.4 Egress mora num assembly só
+### 37.4 Depois do voo, a UI e o diário não podem discordar
+
+Duas coisas que o Codex pegou, e as duas eram a mesma:
+
+**Promessa quebrada do provedor.** Se `Pronto()` diz sim e `Enviar` depois diz
+`NaoComecou`, o diário fecha em `Ambigua` — corretamente — e o transmissor
+devolvia `NaoComecou`. A tela diria "não saiu" enquanto o registro dizia "pode
+ter saído". `Pronto()` é otimização **antes** do voo, não palavra final depois.
+
+**Transição terminal ignorada.** `Concluir` e `Falhar` devolvem `Boolean`, e o
+transmissor publicava sucesso sem conferir. HTTP respondendo com o diário sem
+fechar deixaria o registro `EmVoo` para sempre, e a reconciliação seguinte o
+marcaria ambíguo — depois de a tela ter dito sucesso.
+
+Agora **todo insucesso depois do voo é ambíguo**, e falha de persistência vira
+`SemDiario`, nunca sucesso limpo. Há teste com um diário que recusa as
+transições finais de propósito.
+
+### 37.5 Egress mora num assembly só
 
 A regra do plano v1 era um teste sobre o IL do `Iris.App` provando que ele não
 instancia provedor de rede. O Codex derrubou: isso prova que **uma** camada não
 chama, e não que nenhuma outra abre rede.
 
-A regra é sobre **capacidade**: nenhum assembly de domínio referencia biblioteca
-de rede, e ninguém depende do assembly de egress — depender dele é ganhar a
-capacidade de segunda mão. Com **controle positivo**: o assembly que *deve*
-falar HTTP fala, senão o teste não estaria procurando a coisa certa.
+A regra é sobre **capacidade**, e a asserção é **exatamente um**: nenhum
+assembly de produção além dele referencia biblioteca de rede, e ninguém depende
+dele — depender é ganhar a capacidade de segunda mão. "Exatamente um" em vez de
+"nenhum além do esperado" porque zero significaria que a busca procura a coisa
+errada, e passaria em qualquer base.
+
+E os assemblies são **descobertos**, não listados. Era uma lista escrita à mão, e
+lista prova o que está nela: um projeto novo passaria calado — que é exatamente o
+caso em que a regra importa. O padrão de busca também estava errado
+(`Iris.*.dll` não casa com `Iris.dll`, que é o assembly do `Iris.App`), então a
+camada que compõe tudo ficava de fora do teste que dizia cobri-la.
 
 O que isso **não** prova: ausência de qualquer egress concebível — socket cru,
 processo externo, um COM que busque URL. Essas são outras portas; o que está
 fechado é a que a Fase 3 abre.
 
-### 37.5 Um recorte de prova que ficou declarado
+### 37.6 Um recorte de prova que ficou declarado
 
 O portão exige **HTTPS**, e um servidor HTTPS local exigiria certificado — e,
 para o cliente aceitá-lo, um desvio de validação de certificado no código de

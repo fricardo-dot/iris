@@ -22,6 +22,15 @@ Namespace Global.Iris.Assist
         ''' credencial. Nenhum byte saiu, e isso <b>se sabe</b>.
         ''' </summary>
         NaoComecou
+
+        ''' <summary>
+        ''' A resposta passou do teto.
+        '''
+        ''' Estado próprio, e não sucesso: devolver o pedaço que coube
+        ''' apresentaria uma resposta <b>parcial</b> como se fosse completa — e um
+        ''' resumo cortado no meio parece um resumo.
+        ''' </summary>
+        RespostaGrandeDemais
     End Enum
 
     ''' <summary>

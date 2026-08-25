@@ -169,18 +169,36 @@ Namespace Global.Iris.Assist
             Dim r = _provedor.Enviar(env.Envelope.Bytes(), ct)
 
             ' 7. o desfecho.
+            '
+            ' DEPOIS DO VOO, TODO INSUCESSO E AMBIGUO. Inclusive um provedor
+            ' dizendo NaoComecou: ele prometeu estar pronto no passo 5a, e uma
+            ' promessa quebrada nao vira autoridade sobre o que saiu. Pronto()
+            ' e otimizacao ANTES do voo, nao palavra final depois.
+            '
+            ' Devolver NaoComecou aqui faria a UI dizer uma coisa e o diario
+            ' registrar outra — e a UI e o diario nao podem discordar sobre se
+            ' conteudo pode ter saido.
             If r.Status = ProviderStatus.Respondeu Then
-                _diario.Concluir(cap.RequestId, _relogio())
+                If Not _diario.Concluir(cap.RequestId, _relogio()) Then
+                    ' O HTTP respondeu e o diario nao fechou. Dizer "respondeu"
+                    ' deixaria o registro em voo para sempre, e a reconciliacao
+                    ' da proxima abertura marcaria ambiguo — a UI teria dito
+                    ' sucesso sobre algo que o diario chama de incerto.
+                    Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", cap.RequestId,
+                                             DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
+                End If
                 Return New AssistOutcome(AssistOutcomeKind.Respondeu, r.Texto, cap.RequestId,
                                          DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
             End If
 
             Dim nota = NotaDe(r.Status)
-            _diario.Falhar(cap.RequestId, _relogio(), nota, r.PodeTerChegado)
+            If Not _diario.Falhar(cap.RequestId, _relogio(), nota, podeTerChegado:=True) Then
+                Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", cap.RequestId,
+                                         nota, DisclosureReason.NaoDecidido)
+            End If
 
-            Return New AssistOutcome(
-                If(r.PodeTerChegado, AssistOutcomeKind.Ambiguo, AssistOutcomeKind.NaoComecou),
-                "", cap.RequestId, nota, DisclosureReason.NaoDecidido)
+            Return New AssistOutcome(AssistOutcomeKind.Ambiguo, "", cap.RequestId,
+                                     nota, DisclosureReason.NaoDecidido)
         End Function
 
         ' ==============================================================
@@ -203,7 +221,8 @@ Namespace Global.Iris.Assist
             Select Case s
                 Case ProviderStatus.Timeout : Return DisclosureNote.Timeout
                 Case ProviderStatus.Cancelado : Return DisclosureNote.Cancelado
-                Case ProviderStatus.Recusou : Return DisclosureNote.ProvedorRecusou
+                Case ProviderStatus.Recusou, ProviderStatus.RespostaGrandeDemais
+                    Return DisclosureNote.ProvedorRecusou
                 Case Else : Return DisclosureNote.ConexaoCaiu
             End Select
         End Function

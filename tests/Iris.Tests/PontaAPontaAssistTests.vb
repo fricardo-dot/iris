@@ -385,4 +385,165 @@ Public Class PontaAPontaAssistTests
             "o conteudo apareceu no banco depois da operacao inteira")
     End Sub
 
+
+    ' ==================================================================
+    ' Depois do voo, a UI e o diário não podem discordar
+
+    ''' <summary>
+    ''' <b>Provedor que promete estar pronto e depois diz que não começou:
+    ''' AMBÍGUO.</b>
+    '''
+    ''' O voo já está marcado, e o diário — corretamente — fecha em
+    ''' <c>Ambigua</c>. A versão anterior devolvia <c>NaoComecou</c> para quem
+    ''' pediu, e aí a tela dizia "não saiu" enquanto o registro dizia "pode ter
+    ''' saído". Os dois não podem discordar sobre isso.
+    '''
+    ''' <c>Pronto()</c> é otimização <b>antes</b> do voo, não palavra final
+    ''' depois: promessa quebrada não vira autoridade sobre o que saiu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Promessa_quebrada_do_provedor_e_AMBIGUA()
+        Using db = Abrir()
+            ' Diz que esta pronto, e na hora devolve NaoComecou.
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {
+                .EstaPronto = True,
+                .Desfecho = New ProviderOutcome(ProviderStatus.NaoComecou, "")}
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            Dim r = Executar(m.T, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.Ambiguo, r.Kind,
+                "o voo ja estava marcado — a promessa quebrada nao desfaz isso")
+            Assert.AreEqual(DisclosureStage.Ambigua, m.J.Ler(1)(0).Estagio,
+                "e o diario diz o MESMO que a UI")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Resposta grande demais também é ambígua.</b>
+    '''
+    ''' O provedor recebeu e respondeu; o que não deu foi ler a resposta inteira.
+    ''' Devolver o pedaço que coube apresentaria uma resposta <b>parcial</b> como
+    ''' completa — e um resumo cortado no meio parece um resumo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Resposta_grande_demais_e_AMBIGUA_e_sem_texto()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {
+                .Desfecho = New ProviderOutcome(ProviderStatus.RespostaGrandeDemais, "", 200)}
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            Dim r = Executar(m.T, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.Ambiguo, r.Kind)
+            Assert.AreEqual("", r.Texto, "meia resposta nao pode ser apresentada como resposta")
+        End Using
+    End Sub
+
+    ' ==================================================================
+    ' O diário que não fecha
+
+    ''' <summary>
+    ''' Um diário que recusa as transições finais — para provar que o
+    ''' transmissor <b>confere</b> o resultado delas.
+    ''' </summary>
+    Private NotInheritable Class DiarioTeimoso
+        Implements IDisclosureJournal
+
+        Private ReadOnly _dentro As IDisclosureJournal
+        Friend Property RecusarConcluir As Boolean
+        Friend Property RecusarFalhar As Boolean
+
+        Friend Sub New(dentro As IDisclosureJournal)
+            _dentro = dentro
+        End Sub
+
+        Public Function Intencao(c As DisclosureCapability, quando As DateTimeOffset) _
+                                 As Boolean Implements IDisclosureJournal.Intencao
+            Return _dentro.Intencao(c, quando)
+        End Function
+
+        Public Function Iniciando(requestId As Guid, quando As DateTimeOffset) As Boolean _
+                                  Implements IDisclosureJournal.Iniciando
+            Return _dentro.Iniciando(requestId, quando)
+        End Function
+
+        Public Function Concluir(requestId As Guid, quando As DateTimeOffset) As Boolean _
+                                 Implements IDisclosureJournal.Concluir
+            If RecusarConcluir Then Return False
+            Return _dentro.Concluir(requestId, quando)
+        End Function
+
+        Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
+                               nota As DisclosureNote, podeTerChegado As Boolean) As Boolean _
+                               Implements IDisclosureJournal.Falhar
+            If RecusarFalhar Then Return False
+            Return _dentro.Falhar(requestId, quando, nota, podeTerChegado)
+        End Function
+
+        Public Function NaoEnviou(requestId As Guid, quando As DateTimeOffset,
+                                  nota As DisclosureNote,
+                                  Optional motivo As DisclosureReason =
+                                      DisclosureReason.NaoDecidido) As Boolean _
+                                  Implements IDisclosureJournal.NaoEnviou
+            Return _dentro.NaoEnviou(requestId, quando, nota, motivo)
+        End Function
+
+        Public Function Reconciliar(quando As DateTimeOffset) As Integer _
+                                    Implements IDisclosureJournal.Reconciliar
+            Return _dentro.Reconciliar(quando)
+        End Function
+
+        Public Function Ler(quantas As Integer) As IReadOnlyList(Of DisclosureEntry) _
+                            Implements IDisclosureJournal.Ler
+            Return _dentro.Ler(quantas)
+        End Function
+    End Class
+
+    ''' <summary>
+    ''' <b>HTTP respondeu e o diário não fechou: NÃO é sucesso.</b>
+    '''
+    ''' O transmissor ignorava o resultado de <c>Concluir</c> e publicava
+    ''' <c>Respondeu</c> enquanto o registro ficava <c>EmVoo</c> para sempre — e
+    ''' a reconciliação da próxima abertura o marcaria ambíguo. A tela teria dito
+    ''' sucesso sobre algo que o diário chama de incerto.
+    ''' </summary>
+    <TestMethod>
+    Public Sub HTTP_respondeu_e_o_diario_nao_fechou_NAO_e_sucesso()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco))
+            Dim teimoso As New DiarioTeimoso(New SqliteDisclosureJournal(db)) With {
+                .RecusarConcluir = True}
+            Dim t As New AssistTransmitter(New DisclosurePolicy(Ativacao(Endereco)),
+                                           New CapabilityLedger(), teimoso, p,
+                                           Function() Agora)
+
+            Dim r = Executar(t, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.SemDiario, r.Kind,
+                "sucesso com o diario aberto e a tela discordando do registro")
+            Assert.AreEqual(DisclosureStage.EmVoo, teimoso.Ler(1)(0).Estagio,
+                "e o registro fica em voo, para a reconciliacao resolver")
+        End Using
+    End Sub
+
+    ''' <summary>E o mesmo vale quando é a falha que não persiste.</summary>
+    <TestMethod>
+    Public Sub Falha_que_o_diario_nao_registra_NAO_e_ambiguo_limpo()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {
+                .Desfecho = New ProviderOutcome(ProviderStatus.Timeout, "")}
+            Dim teimoso As New DiarioTeimoso(New SqliteDisclosureJournal(db)) With {
+                .RecusarFalhar = True}
+            Dim t As New AssistTransmitter(New DisclosurePolicy(Ativacao(Endereco)),
+                                           New CapabilityLedger(), teimoso, p,
+                                           Function() Agora)
+
+            Dim r = Executar(t, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.SemDiario, r.Kind)
+            Assert.AreEqual(DisclosureStage.EmVoo, teimoso.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
 End Class

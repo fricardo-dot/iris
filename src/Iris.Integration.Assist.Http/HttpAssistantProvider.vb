@@ -59,15 +59,26 @@ Namespace Global.Iris.Integration.Assist.Http
         ''' com a credencial dentro é um campo que vaza em dump, em log de
         ''' exceção e em serialização acidental.
         ''' </param>
-        ''' <param name="permitirLoopbackSemTls">
-        ''' <b>Só para teste.</b> Existe porque o servidor falso local não tem
-        ''' certificado. A produção nunca liga — e há teste provando que o
-        ''' padrão recusa <c>http://</c>.
-        ''' </param>
         Public Sub New(destino As AssistDestination, credencial As Func(Of String),
                        Optional cabecalho As String = "Authorization",
-                       Optional tempoLimite As TimeSpan = Nothing,
-                       Optional permitirLoopbackSemTls As Boolean = False)
+                       Optional tempoLimite As TimeSpan = Nothing)
+            Me.New(destino, credencial, cabecalho, tempoLimite, False)
+        End Sub
+
+        ''' <summary>
+        ''' <b>A porta dos fundos, e ela é <c>Friend</c>.</b>
+        '''
+        ''' O parâmetro que permite <c>http://</c> em loopback existe porque o
+        ''' servidor falso local não tem certificado. Ele era <b>público</b> com
+        ''' padrão <c>False</c>, e havia teste provando o padrão — o que prova o
+        ''' padrão e não impede a produção de passar <c>True</c>.
+        '''
+        ''' Agora a superfície pública é <b>incapaz</b> de aceitar HTTP: só quem
+        ''' está na lista de amigos alcança este construtor.
+        ''' </summary>
+        Friend Sub New(destino As AssistDestination, credencial As Func(Of String),
+                       cabecalho As String, tempoLimite As TimeSpan,
+                       permitirLoopbackSemTls As Boolean)
             _destino = destino
             _credencial = credencial
             _cabecalho = cabecalho
@@ -145,8 +156,16 @@ Namespace Global.Iris.Integration.Assist.Http
                                                        CInt(resposta.StatusCode))
                         End If
 
-                        Return New ProviderOutcome(ProviderStatus.Respondeu,
-                                                   LerLimitado(resposta, ct),
+                        Dim lido = LerLimitado(resposta, ct)
+                        If lido.Excedeu Then
+                            ' Devolver o pedaco que coube apresentaria uma
+                            ' resposta PARCIAL como se fosse completa — e um
+                            ' resumo cortado no meio parece um resumo.
+                            Return New ProviderOutcome(ProviderStatus.RespostaGrandeDemais, "",
+                                                       CInt(resposta.StatusCode))
+                        End If
+
+                        Return New ProviderOutcome(ProviderStatus.Respondeu, lido.Texto,
                                                    CInt(resposta.StatusCode))
                     End Using
                 End Using
@@ -179,20 +198,28 @@ Namespace Global.Iris.Integration.Assist.Http
         End Function
 
         ''' <summary>
-        ''' Lê a resposta até o teto e para. Uma resposta sem fim travaria o
-        ''' processo esperando bytes de um servidor que ninguém controla.
+        ''' Lê a resposta até o teto e para — e diz se havia mais.
+        '''
+        ''' O buffer tem <b>um byte a mais</b> que o teto de propósito: sem ele,
+        ''' "encheu exatamente" e "encheu e sobrou" seriam indistinguíveis, e o
+        ''' excedente sairia como resposta completa.
+        '''
+        ''' Uma resposta sem fim travaria o processo esperando bytes de um
+        ''' servidor que ninguém controla — daí o teto.
         ''' </summary>
         Private Shared Function LerLimitado(r As HttpResponseMessage,
-                                            ct As CancellationToken) As String
+                                            ct As CancellationToken) _
+                                            As (Texto As String, Excedeu As Boolean)
             Using fonte = r.Content.ReadAsStream(ct)
-                Dim buffer(MaxResposta - 1) As Byte
+                Dim buffer(MaxResposta) As Byte
                 Dim lidos = 0
                 While lidos < buffer.Length
                     Dim n = fonte.Read(buffer, lidos, buffer.Length - lidos)
                     If n = 0 Then Exit While
                     lidos += n
                 End While
-                Return Text.Encoding.UTF8.GetString(buffer, 0, lidos)
+                If lidos > MaxResposta Then Return (Nothing, True)
+                Return (Text.Encoding.UTF8.GetString(buffer, 0, lidos), False)
             End Using
         End Function
 

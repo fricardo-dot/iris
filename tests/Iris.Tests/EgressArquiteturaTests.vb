@@ -39,17 +39,30 @@ Public Class EgressArquiteturaTests
                                                   "System.Net.Requests", "System.Net.WebClient"}
 
     ''' <summary>
-    ''' Os assemblies de <b>domínio</b> — os que não têm nada a ver com rede.
+    ''' Todos os assemblies de <b>produção</b> — <b>descobertos</b>, não listados.
     '''
-    ''' <c>Iris.App</c> entra: ele é a composição, e compor não é transportar.
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE NÃO É UMA LISTA</b>
+    '''
+    ''' Era. E uma lista escrita à mão prova o que está nela: um projeto novo, ou
+    ''' um que alguém esqueceu de acrescentar, passaria calado — que é exatamente
+    ''' o caso em que a regra importa.
+    '''
+    ''' Aqui a varredura é sobre os arquivos <c>Iris.*.dll</c> ao lado do teste.
+    ''' Ficam de fora só os que são <b>aparato</b>: este assembly e o harness de
+    ''' crash.
     ''' </summary>
-    Private Shared Function Dominio() As IEnumerable(Of Assembly)
-        Return {GetType(Model.ItemKey).Assembly,
-                GetType(Core.CacheSchema).Assembly,
-                GetType(Cache.CacheDatabase).Assembly,
-                GetType(Sync.SweepRunner).Assembly,
-                GetType(DisclosurePolicy).Assembly,
-                GetType(Integration.SqliteDisclosureJournal).Assembly}
+    Private Shared Function Producao() As IEnumerable(Of Assembly)
+        Dim aparato = {"Iris.Tests", "Iris.CrashHarness"}
+
+        ' "Iris*.dll", e nao "Iris.*.dll": o Iris.App produz Iris.dll, e o
+        ' padrao com ponto o deixava de fora — justamente a camada que compoe
+        ' tudo e que o teste anterior AFIRMAVA cobrir.
+        Return IO.Directory.GetFiles(AppContext.BaseDirectory, "Iris*.dll").
+               Select(Function(f) IO.Path.GetFileNameWithoutExtension(f)).
+               Where(Function(n) Not aparato.Contains(n, StringComparer.OrdinalIgnoreCase)).
+               Select(Function(n) Assembly.Load(n)).
+               ToList()
     End Function
 
     Private Shared Function ReferenciasDeRede(a As Assembly) As IEnumerable(Of String)
@@ -61,36 +74,66 @@ Public Class EgressArquiteturaTests
     ' ==================================================================
 
     ''' <summary>
-    ''' <b>Nenhum assembly de domínio referencia biblioteca de rede.</b>
+    ''' <b>Exatamente UM assembly de produção fala HTTP.</b>
     '''
-    ''' Inclui o <c>Iris.Assist</c>, que define a porta: definir o contrato de
+    ''' Não "nenhum além do esperado": <b>um</b>. Zero significaria que a busca
+    ''' está procurando a coisa errada — nome trocado, biblioteca que o .NET
+    ''' moderno não usa mais — e passaria em qualquer base.
+    '''
+    ''' Inclui o <c>Iris.Assist</c> entre os que não podem: definir o contrato de
     ''' "chamar o modelo" não pode dar a ele a capacidade de chamar.
     ''' </summary>
     <TestMethod>
-    Public Sub Nenhum_assembly_de_dominio_fala_HTTP()
-        Dim culpados = Dominio().
-            Select(Function(a) (Nome:=a.GetName().Name, Refs:=ReferenciasDeRede(a).ToList())).
-            Where(Function(x) x.Refs.Count > 0).
-            Select(Function(x) $"{x.Nome} → {String.Join(", ", x.Refs)}").
+    Public Sub EXATAMENTE_UM_assembly_de_producao_fala_HTTP()
+        Dim comRede = Producao().
+            Where(Function(a) ReferenciasDeRede(a).Any()).
+            Select(Function(a) a.GetName().Name).
+            OrderBy(Function(n) n).
             ToList()
 
-        Assert.AreEqual(0, culpados.Count,
-            "egress de IA mora num assembly SO: " & String.Join(" | ", culpados))
+        CollectionAssert.AreEqual({"Iris.Integration.Assist.Http"}, comRede,
+            "egress de IA mora num assembly SO — achei: " & String.Join(", ", comRede))
     End Sub
 
     ''' <summary>
-    ''' <b>O controle positivo.</b> O assembly que <i>deve</i> falar HTTP fala.
-    '''
-    ''' Sem ele, um teste que procurasse a referência errada — nome trocado,
-    ''' lista vazia, biblioteca que o .NET moderno não usa mais — passaria em
-    ''' todo domínio limpo e não estaria olhando nada.
+    ''' E a varredura <b>acha</b> os assemblies: uma busca que voltasse vazia
+    ''' passaria no teste de cima por não olhar nada.
     ''' </summary>
     <TestMethod>
-    Public Sub O_assembly_de_egress_FALA_HTTP()
-        Dim http = GetType(Integration.Assist.Http.HttpAssistantProvider).Assembly
+    Public Sub A_varredura_acha_os_assemblies_de_producao()
+        Dim nomes = Producao().Select(Function(a) a.GetName().Name).ToList()
 
-        Assert.IsTrue(ReferenciasDeRede(http).Any(),
-            "se nem ele referencia rede, o teste de cima nao esta procurando a coisa certa")
+        Assert.IsTrue(nomes.Count >= 8, $"achei so {nomes.Count}: " & String.Join(", ", nomes))
+        ' 'Iris' e o assembly do Iris.App — o nome do assembly nao e o nome do
+        ' projeto, e foi por isso que ele ficou de fora da primeira varredura.
+        For Each esperado In {"Iris.Model", "Iris.Core", "Iris.Assist",
+                              "Iris.Integration.Assist.Http", "Iris"}
+            CollectionAssert.Contains(nomes, esperado)
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>E o construtor que aceita <c>http://</c> não é público.</b>
+    '''
+    ''' Ele era, com padrão <c>False</c>, e havia teste provando o padrão — o que
+    ''' prova o padrão e não impede a produção de passar <c>True</c>. A superfície
+    ''' pública tem de ser <b>incapaz</b> de aceitar HTTP.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Nenhum_construtor_PUBLICO_aceita_http()
+        Dim publicos = GetType(Integration.Assist.Http.HttpAssistantProvider).
+            GetConstructors(BindingFlags.Public Or BindingFlags.Instance)
+
+        For Each c In publicos
+            Assert.IsFalse(c.GetParameters().Any(Function(p) p.ParameterType Is GetType(Boolean)),
+                "construtor publico com booleano e por onde a excecao de loopback volta")
+        Next
+
+        ' E o Friend existe — senao os testes de transporte nao rodariam, e este
+        ' teste estaria protegendo uma porta que ninguem usa.
+        Assert.IsTrue(GetType(Integration.Assist.Http.HttpAssistantProvider).
+                      GetConstructors(BindingFlags.NonPublic Or BindingFlags.Instance).Any(),
+                      "o caminho de teste tem de existir, so nao pode ser publico")
     End Sub
 
     ''' <summary>
@@ -100,10 +143,11 @@ Public Class EgressArquiteturaTests
     ''' segunda mão — e a regra é sobre capacidade, não sobre uso.
     ''' </summary>
     <TestMethod>
-    Public Sub Ninguem_do_dominio_depende_do_assembly_de_egress()
+    Public Sub Ninguem_MAIS_depende_do_assembly_de_egress()
         Const egress = "Iris.Integration.Assist.Http"
 
-        Dim culpados = Dominio().
+        Dim culpados = Producao().
+            Where(Function(a) a.GetName().Name <> egress).
             Where(Function(a) a.GetReferencedAssemblies().
                                 Any(Function(r) r.Name = egress)).
             Select(Function(a) a.GetName().Name).ToList()

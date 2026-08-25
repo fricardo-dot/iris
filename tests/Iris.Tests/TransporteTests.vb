@@ -44,8 +44,8 @@ Public Class TransporteTests
                                      Optional limite As TimeSpan = Nothing) _
                                      As HttpAssistantProvider
         Return New HttpAssistantProvider(Destino(s.Endereco), Function() chave,
-                                         tempoLimite:=If(limite = Nothing,
-                                                         TimeSpan.FromSeconds(30), limite),
+                                         "Authorization",
+                                         If(limite = Nothing, TimeSpan.FromSeconds(30), limite),
                                          permitirLoopbackSemTls:=True)
     End Function
 
@@ -234,18 +234,45 @@ Public Class TransporteTests
         End Using
     End Sub
 
-    ''' <summary>Resposta gigante é cortada no teto, e não trava o processo.</summary>
+    ''' <summary>
+    ''' <b>Resposta maior que o teto NÃO vira sucesso truncado.</b>
+    '''
+    ''' Ela era cortada e devolvida como <c>Respondeu</c> — o que apresenta uma
+    ''' resposta <b>parcial</b> como se fosse completa, e um resumo cortado no
+    ''' meio parece um resumo.
+    '''
+    ''' Agora tem estado próprio, e sem texto.
+    ''' </summary>
     <TestMethod, TestCategory("Integracao")>
-    Public Sub Resposta_gigante_e_cortada_no_teto()
+    Public Sub Resposta_maior_que_o_teto_NAO_e_sucesso_truncado()
         Using s As New ServidorFalso()
-            s.TamanhoDaResposta = HttpAssistantProvider.MaxResposta * 2
+            s.TamanhoDaResposta = HttpAssistantProvider.MaxResposta + 1
+
+            Using p = Provedor(s)
+                Dim r = p.Enviar(Bytes("carga"), CancellationToken.None)
+
+                Assert.AreEqual(ProviderStatus.RespostaGrandeDemais, r.Status)
+                Assert.AreEqual("", r.Texto, "meia resposta nao pode ser apresentada")
+            End Using
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' E o contraponto: resposta <b>exatamente</b> no teto passa.
+    '''
+    ''' Sem ele, um leitor que recusasse por engano ao encher o buffer passaria
+    ''' no teste de cima e recusaria toda resposta grande e legítima.
+    ''' </summary>
+    <TestMethod, TestCategory("Integracao")>
+    Public Sub Resposta_EXATAMENTE_no_teto_passa()
+        Using s As New ServidorFalso()
+            s.TamanhoDaResposta = HttpAssistantProvider.MaxResposta
 
             Using p = Provedor(s)
                 Dim r = p.Enviar(Bytes("carga"), CancellationToken.None)
 
                 Assert.AreEqual(ProviderStatus.Respondeu, r.Status)
-                Assert.IsTrue(r.Texto.Length <= HttpAssistantProvider.MaxResposta,
-                              $"veio {r.Texto.Length}")
+                Assert.AreEqual(HttpAssistantProvider.MaxResposta, r.Texto.Length)
             End Using
         End Using
     End Sub
@@ -306,6 +333,7 @@ Public Class TransporteTests
         Using s As New ServidorFalso()
             Dim atual = "primeira"
             Using p As New HttpAssistantProvider(Destino(s.Endereco), Function() atual,
+                                                 "Authorization", TimeSpan.FromSeconds(30),
                                                  permitirLoopbackSemTls:=True)
                 p.Enviar(Bytes("a"), CancellationToken.None)
                 atual = "segunda"
@@ -347,6 +375,7 @@ Public Class TransporteTests
         End Using
 
         Using p As New HttpAssistantProvider(Destino(endereco), Function() "chave",
+                                             "Authorization", TimeSpan.FromSeconds(30),
                                              permitirLoopbackSemTls:=True)
             Dim r = p.Enviar(Bytes("carga"), CancellationToken.None)
 
