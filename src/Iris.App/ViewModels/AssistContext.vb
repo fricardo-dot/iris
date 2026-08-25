@@ -94,6 +94,18 @@ Namespace Global.Iris.App.ViewModels
         ''' durante a confirmação de envio, responde <c>False</c>.
         ''' </summary>
         ReadOnly Property PodeEditar As Boolean
+
+        ''' <summary>
+        ''' <b>O rascunho mudou</b> — texto, sessão ou editabilidade.
+        '''
+        ''' Sem este evento, <c>PodeDesfazer</c> ficava correto e <b>invisível</b>:
+        ''' o <c>RelayCommand</c> não se reconsulta sozinho, então digitar por
+        ''' cima da redação deixava o botão "Desfazer" habilitado até alguma
+        ''' outra mudança de estado passar por perto. Clicar recusaria com
+        ''' segurança — e a promessa da §38.6, de que a ação fica desabilitada
+        ''' quando indisponível, estaria quebrada.
+        ''' </summary>
+        Event Mudou As EventHandler
     End Interface
 
     ''' <summary>
@@ -110,6 +122,29 @@ Namespace Global.Iris.App.ViewModels
 
         Friend Sub New(compositor As ComposerViewModel)
             _compositor = compositor
+            AddHandler _compositor.PropertyChanged, AddressOf AoMudar
+        End Sub
+
+        Public Event Mudou As EventHandler Implements IRascunho.Mudou
+
+        ''' <summary>
+        ''' O que do compositor muda o rascunho: o texto, o estado de edição, e
+        ''' o fim da sessão.
+        '''
+        ''' <c>UserText</c> é o que faltava. Ele notifica <c>PropertyChanged</c>
+        ''' desde sempre, e ninguém escutava — quem escutava o compositor era o
+        ''' <c>MainViewModel</c>, e só para <c>PodeEditar</c>, <c>IsOpen</c> e
+        ''' <c>State</c>.
+        ''' </summary>
+        Private Sub AoMudar(remetente As Object,
+                            arg As ComponentModel.PropertyChangedEventArgs)
+            Select Case arg.PropertyName
+                Case NameOf(ComposerViewModel.UserText),
+                     NameOf(ComposerViewModel.PodeEditar),
+                     NameOf(ComposerViewModel.IsOpen),
+                     NameOf(ComposerViewModel.State)
+                    RaiseEvent Mudou(Me, EventArgs.Empty)
+            End Select
         End Sub
 
         Public Property Texto As String Implements IRascunho.Texto

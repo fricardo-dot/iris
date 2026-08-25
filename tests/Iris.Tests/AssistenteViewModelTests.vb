@@ -41,7 +41,7 @@ Public Class AssistenteViewModelTests
         Return New PreflightRequest(AssistOperation.Resumir, Pasta, Destino())
     End Function
 
-    Private Shared Function Ativacao() As ActivationRecord
+    Friend Shared Function Ativacao() As ActivationRecord
         Return Ativacao({AssistOperation.Resumir, AssistOperation.Redigir})
     End Function
 
@@ -68,7 +68,7 @@ Public Class AssistenteViewModelTests
     End Function
 
     ''' <summary>Um provedor falso que dá para segurar no meio da chamada.</summary>
-    Private NotInheritable Class ProvedorControlado
+    Friend NotInheritable Class ProvedorControlado
         Implements IAssistantProvider
 
         Friend Trava As ManualResetEventSlim
@@ -174,10 +174,47 @@ Public Class AssistenteViewModelTests
     ''' </summary>
     Friend NotInheritable Class RascunhoFalso
         Implements IRascunho
-        Public Property Texto As String = "" Implements IRascunho.Texto
 
-        Friend Property Sessao As Long = 1 Implements IRascunho.Sessao
-        Friend Property PodeEditar As Boolean = True Implements IRascunho.PodeEditar
+        Public Event Mudou As EventHandler Implements IRascunho.Mudou
+
+        Private _texto As String = ""
+        ''' <summary>
+        ''' Escrever avisa, como o compositor de verdade — <c>UserText</c>
+        ''' notifica <c>PropertyChanged</c>, e é isso que o adaptador reemite.
+        ''' Um duplo que não avisasse deixaria o teste de notificação passar
+        ''' sem haver notificação nenhuma.
+        ''' </summary>
+        Public Property Texto As String Implements IRascunho.Texto
+            Get
+                Return _texto
+            End Get
+            Set(value As String)
+                _texto = value
+                RaiseEvent Mudou(Me, EventArgs.Empty)
+            End Set
+        End Property
+
+        Private _sessao As Long = 1
+        Friend Property Sessao As Long Implements IRascunho.Sessao
+            Get
+                Return _sessao
+            End Get
+            Set(value As Long)
+                _sessao = value
+                RaiseEvent Mudou(Me, EventArgs.Empty)
+            End Set
+        End Property
+
+        Private _podeEditar As Boolean = True
+        Friend Property PodeEditar As Boolean Implements IRascunho.PodeEditar
+            Get
+                Return _podeEditar
+            End Get
+            Set(value As Boolean)
+                _podeEditar = value
+                RaiseEvent Mudou(Me, EventArgs.Empty)
+            End Set
+        End Property
 
         ''' <summary>Fecha este rascunho e abre outro, vazio.</summary>
         Friend Sub Trocar()
@@ -186,7 +223,7 @@ Public Class AssistenteViewModelTests
         End Sub
     End Class
 
-    Private Shared Function Montar(ativacao As ActivationRecord,
+    Friend Shared Function Montar(ativacao As ActivationRecord,
                                    provedor As IAssistantProvider,
                                    reconciliacao As ReconciliationResult,
                                    Optional contexto As IAssistContext = Nothing,
@@ -203,7 +240,7 @@ Public Class AssistenteViewModelTests
         Return vm
     End Function
 
-    Private Shared Function Pronta() As ReconciliationResult
+    Friend Shared Function Pronta() As ReconciliationResult
         Return ReconciliationResult.Rodar(New DiarioDeMemoria(), Agora)
     End Function
 
@@ -965,6 +1002,86 @@ Public Class AssistenteViewModelTests
 
         Assert.AreEqual("resposta redigida pela IA", r.Texto,
                         "escreveu num rascunho que estava travado")
+    End Function
+
+    ' ==================================================================
+    ' O botão acompanha o estado
+
+    ''' <summary>
+    ''' <b>Digitar por cima da redação desabilita o "Desfazer" na hora.</b>
+    '''
+    ''' <c>PodeDesfazer</c> já recusava, e recusar não basta: o
+    ''' <c>RelayCommand</c> não se reconsulta sozinho, então o botão continuaria
+    ''' <b>habilitado</b> até alguma outra mudança de estado passar por perto.
+    ''' Clicar recusaria com segurança — e a promessa da §38.6, de que a ação
+    ''' fica desabilitada quando indisponível, estaria quebrada.
+    '''
+    ''' O teste observa o <c>CanExecuteChanged</c>, e não só o <c>CanExecute</c>:
+    ''' perguntar diretamente passaria mesmo sem existir notificação nenhuma,
+    ''' que é exatamente o falso positivo de binding silencioso.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Digitar_apos_a_redacao_AVISA_que_o_desfazer_caiu() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu escrevi antes"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
+
+        Dim avisos = 0
+        AddHandler vm.DesfazerCommand.CanExecuteChanged,
+            Sub(remetente As Object, arg As EventArgs) avisos += 1
+
+        r.Texto = "resposta redigida pela IA, com o meu final"
+
+        Assert.IsTrue(avisos > 0,
+            "ninguem avisou o WPF: o botao fica habilitado mostrando um estado que nao existe")
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
+    End Function
+
+    ''' <summary>
+    ''' Controle negativo: sem tocar no rascunho, o botão continua habilitado e
+    ''' desfaz.
+    '''
+    ''' Sem ele, um assistente que desabilitasse o desfazer a cada aviso — ou
+    ''' que nunca o habilitasse — passaria no teste de cima.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Controle_sem_digitar_o_desfazer_continua_de_pe() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu escrevi antes"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+
+        Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
+        vm.DesfazerCommand.Execute(Nothing)
+        Assert.AreEqual("o que eu escrevi antes", r.Texto)
+    End Function
+
+    ''' <summary>
+    ''' <b>Fechar o compositor também derruba o desfazer, e avisa.</b>
+    '''
+    ''' O outro caminho pelo qual o botão ficava mentindo: a sessão muda, o
+    ''' ponto de retorno deixa de valer, e sem aviso o botão continuaria de pé.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Trocar_de_rascunho_AVISA_que_o_desfazer_caiu() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu escrevi antes"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+
+        Dim avisos = 0
+        AddHandler vm.DesfazerCommand.CanExecuteChanged,
+            Sub(remetente As Object, arg As EventArgs) avisos += 1
+
+        r.Trocar()
+
+        Assert.IsTrue(avisos > 0, "ninguem avisou o WPF")
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
     End Function
 
     ' ==================================================================

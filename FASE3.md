@@ -1087,7 +1087,37 @@ desfazer assim que o usuário digita por cima da redação — restaurar ali apa
 edição dele para desfazer algo que ele já desfez à mão. E a recusa **explica**:
 um botão que o usuário clicou e que não faz nada não se distingue de um quebrado.
 
-### 38.10 E a faixa foi medida
+### 38.10 A quinta passada: o estado estava certo e invisível
+
+Um defeito, e do tipo que só aparece quando alguém lê o binding em vez do
+`if`. `PodeDesfazer` recusava corretamente depois de o usuário digitar por cima da
+redação — e ninguém avisava o WPF. O `RelayCommand` não se reconsulta sozinho, e o
+único assinante do `Composer.PropertyChanged` era o `MainViewModel`, que escutava
+`PodeEditar`, `IsOpen` e `State`. `UserText` notificava desde sempre, e não havia
+quem ouvisse.
+
+O resultado: o botão "Desfazer" ficava **habilitado mostrando um estado que já não
+existia**, até alguma outra mudança passar por perto. Clicar recusava com
+segurança, e a promessa da §38.6 — ação desabilitada quando indisponível — estava
+quebrada.
+
+`IRascunho` ganhou um evento `Mudou`, que o adaptador do compositor levanta para
+`UserText`, `PodeEditar`, `IsOpen` e `State`; o assistente escuta e reconsulta os
+comandos.
+
+**E a prova precisou de dois níveis.** Um teste que pergunta `CanExecute` depois
+de editar passa mesmo sem existir notificação nenhuma — é o falso positivo de
+binding silencioso na sua forma mais pura. Então há um teste que observa o
+`CanExecuteChanged`, e outro que monta a **faixa de verdade** com o **ViewModel de
+verdade** e lê o `Button.IsEnabled` do botão real.
+
+O segundo custou infraestrutura: ler `IsEnabled` constrói o `InputManager`, que
+exige STA, e o `Await` precisa voltar para a mesma thread — senão o
+`CanExecuteChanged` é levantado numa thread do pool e o `Button`, que é
+`DispatcherObject`, recusa a visita. Daí o ajudante `NaSTA`, com `Dispatcher`
+próprio. É o preço de provar o que o usuário vê em vez do que o objeto responde.
+
+### 38.11 E a faixa foi medida
 
 `FaixaDaIaRenderizaTests` faz `Measure`/`Arrange` fora do vídeo, como o
 equivalente da Fase 2. Binding correto não detecta faixa com altura zero nem
@@ -1100,7 +1130,7 @@ A montagem precisa de **duas passadas** de layout: a primeira mede antes de os
 bindings de `Visibility` terem sido aplicados, e o `Grid` sai com altura de quem
 não tem nada a mostrar.
 
-### 38.11 O que ficou de fora, por recorte
+### 38.12 O que ficou de fora, por recorte
 
 Configuração de credencial, escolha de provedor ou modelo, e qualquer UX moldada
 pelas capacidades de um fornecedor específico. Sem provedor escolhido, isso seria

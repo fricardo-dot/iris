@@ -109,6 +109,125 @@ Public Class FaixaDaIaRenderizaTests
         End Sub
     End Class
 
+    ''' <summary>
+    ''' Roda o corpo numa thread <b>STA</b> com <c>Dispatcher</c> de verdade.
+    '''
+    ''' Os outros testes deste arquivo medem e arranjam sem tocar em
+    ''' <c>IsEnabled</c>, e por isso passam em MTA. Ler <c>Button.IsEnabled</c>
+    ''' constrói o <c>InputManager</c>, que exige STA.
+    '''
+    ''' O <c>Dispatcher</c> não é decoração: ele instala o
+    ''' <c>SynchronizationContext</c> que traz as continuações do <c>Await</c> de
+    ''' volta para <b>esta</b> thread. Sem isso, o <c>CanExecuteChanged</c> seria
+    ''' levantado numa thread do pool, e o <c>Button</c> — que é
+    ''' <c>DispatcherObject</c> — recusaria a visita.
+    ''' </summary>
+    Private Shared Sub NaSTA(corpo As Func(Of Global.System.Threading.Tasks.Task))
+        Dim erro As Exception = Nothing
+        Dim t As New Global.System.Threading.Thread(
+            Sub()
+                Dim d = Global.System.Windows.Threading.Dispatcher.CurrentDispatcher
+                d.BeginInvoke(
+                    Async Sub()
+                        Try
+                            Await corpo()
+                        Catch ex As Exception
+                            erro = ex
+                        Finally
+                            d.InvokeShutdown()
+                        End Try
+                    End Sub)
+                Global.System.Windows.Threading.Dispatcher.Run()
+            End Sub)
+        t.SetApartmentState(Global.System.Threading.ApartmentState.STA)
+        t.Start()
+        Assert.IsTrue(t.Join(TimeSpan.FromSeconds(30)), "a thread STA nao terminou")
+        If erro IsNot Nothing Then Throw erro
+    End Sub
+
+    ' ==================================================================
+    ' O botão de verdade, ligado ao ViewModel de verdade
+
+    ''' <summary>
+    ''' <b>O botão "Desfazer" da faixa real acompanha o estado do rascunho.</b>
+    '''
+    ''' Os outros testes deste arquivo usam <see cref="FaixaFalsa"/>, porque o
+    ''' que eles cobram é estrutura visual. Este é diferente: o que se quer
+    ''' provar é que a <b>notificação</b> do ViewModel chega ao
+    ''' <c>Button.IsEnabled</c> — e para isso os dois lados têm de ser os de
+    ''' verdade.
+    '''
+    ''' O defeito que ele fecha: <c>PodeDesfazer</c> passou a recusar quando o
+    ''' usuário digita por cima da redação, e o <c>RelayCommand</c> não se
+    ''' reconsulta sozinho. Sem alguém avisar, o botão continuaria habilitado
+    ''' mostrando um estado que já não existe. Perguntar
+    ''' <c>DesfazerCommand.CanExecute</c> não pegaria isso: a resposta estaria
+    ''' certa e o botão errado.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_botao_DESFAZER_real_cai_quando_o_usuario_digita()
+        NaSTA(Async Function() As Global.System.Threading.Tasks.Task
+        Dim rascunho As New AssistenteViewModelTests.RascunhoFalso() With {.Texto = "o que eu escrevi antes"}
+        Dim provedor As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = AssistenteViewModelTests.Montar(
+            AssistenteViewModelTests.Ativacao(), provedor,
+            AssistenteViewModelTests.Pronta(), Nothing, rascunho)
+
+        Dim faixa As New Iris.App.Views.FaixaDaIa()
+        faixa.DataContext = vm
+        For passada = 1 To 2
+            faixa.Measure(New Size(900, 600))
+            faixa.Arrange(New Rect(0, 0, 900, faixa.DesiredSize.Height))
+            faixa.UpdateLayout()
+        Next
+
+        Dim desfazer = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Desfazer")
+        Assert.IsFalse(desfazer.IsEnabled, "antes da redacao nao ha o que desfazer")
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        faixa.UpdateLayout()
+        Assert.IsTrue(desfazer.IsEnabled, "depois da redacao o botao tem de estar de pe")
+
+        ' O usuário digita por cima da redação.
+        rascunho.Texto = "resposta redigida pela IA, com o meu final"
+        faixa.UpdateLayout()
+
+        Assert.IsFalse(desfazer.IsEnabled,
+            "o botao continuou habilitado mostrando um estado que ja nao existe")
+                  End Function)
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: sem digitar, o mesmo botão real continua habilitado.
+    '''
+    ''' Sem ele, uma faixa cujo botão nunca habilitasse — ou um comando que
+    ''' recusasse sempre — passaria no teste de cima.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_o_botao_DESFAZER_real_fica_de_pe_sem_edicao()
+        NaSTA(Async Function() As Global.System.Threading.Tasks.Task
+        Dim rascunho As New AssistenteViewModelTests.RascunhoFalso() With {.Texto = "o que eu escrevi antes"}
+        Dim provedor As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = AssistenteViewModelTests.Montar(
+            AssistenteViewModelTests.Ativacao(), provedor,
+            AssistenteViewModelTests.Pronta(), Nothing, rascunho)
+
+        Dim faixa As New Iris.App.Views.FaixaDaIa()
+        faixa.DataContext = vm
+        For passada = 1 To 2
+            faixa.Measure(New Size(900, 600))
+            faixa.Arrange(New Rect(0, 0, 900, faixa.DesiredSize.Height))
+            faixa.UpdateLayout()
+        Next
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        faixa.UpdateLayout()
+
+        Dim desfazer = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Desfazer")
+        Assert.IsTrue(desfazer.IsEnabled)
+                  End Function)
+    End Sub
+
     ' ==================================================================
     ' Os botões
 

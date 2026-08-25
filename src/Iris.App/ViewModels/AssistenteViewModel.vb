@@ -71,6 +71,18 @@ Namespace Global.Iris.App.ViewModels
             _contexto = If(contexto, CType(New ContextoIndisponivel(), IAssistContext))
             _rascunho = rascunho
 
+            ' O RASCUNHO MUDOU: reconsulta os comandos.
+            '
+            ' PodeDesfazer depende do texto, da sessao e da editabilidade do
+            ' rascunho, e nenhum deles muda por acao do assistente. Sem escutar,
+            ' o estado ficaria certo e invisivel — o RelayCommand nao se
+            ' reconsulta sozinho.
+            If _rascunho IsNot Nothing Then
+                AddHandler _rascunho.Mudou, Sub(remetente As Object, arg As EventArgs)
+                                                Avisar()
+                                            End Sub
+            End If
+
             ' Comandos declarados a mao, e nao pelo gerador do
             ' CommunityToolkit: ele so roda em C#. Em VB o atributo compila e
             ' NAO gera nada — e o sintoma seria um botao que nunca faz nada.
