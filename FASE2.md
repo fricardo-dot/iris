@@ -2886,7 +2886,7 @@ exceção não tratada.
 | 1 | Q1,Q3,Q4,Q7,Q8 com número; Q2,Q5,Q6,Q9 semânticas | **Q8 decidida por escopo** (§23, aceita pelo usuário em 24/08/2026). Não virou matriz medida — virou limitação aceita, com gatilhos de reabertura |
 | 2 | Limitação escrita em cada resposta | ok |
 | 3 | Recomendação de tamanho de cada marco seguinte | ok — §22.10 |
-| 4 | Revisão externa do RESULTADO | ok — 6 passadas do Codex ao longo do 2.1/2.2, e cada uma achou defeito real |
+| 4 | Revisão externa do RESULTADO | ok — **9 passadas** do Codex ao longo do 2.1 ao 2.4, e cada uma achou defeito real |
 | 5 | Itens de teste devolvidos | ok, **com exceção declarada** — três cópias ficaram em Itens Excluídos (§11), por segurança, e a pasta `Iris Q4R` vazia que o tenant recusou excluir (§21.4) |
 | 6 | Corpus adversarial da Q2 com oráculo prévio | ok |
 | 7 | Critério operacional de invalidação, com dado | ok — S6 |
