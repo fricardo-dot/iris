@@ -378,8 +378,18 @@ Namespace Global.Iris.Core
             ' de uma divulgacao TEM de sobreviver a mensagem sumir da caixa.
             ' Um CASCADE aqui apagaria justamente o registro que alguem iria
             ' procurar.
+            ' Tres carimbos, e nao um. Um "at" unico, sobrescrito a cada
+            ' passo, fazia uma intencao abandonada ha meses aparecer como
+            ' atividade RECENTE logo depois de uma reconciliacao - e apagava a
+            ' evidencia de quando cada passo aconteceu, que e justamente o que
+            ' o protocolo de crash existe para registrar.
+            '
+            ' E os motivos sao ENUM, gravados pelo nome: nao ha campo por onde
+            ' texto de terceiro entre. Corpo de erro de provedor ECOA o que foi
+            ' enviado.
             t.Add(New SchemaTable("disclosure_log", {
                 Col("request_id", "TEXT", pk:=True, obrigatoria:=True),
+                Col("seq", "INTEGER", obrigatoria:=True),
                 Col("capability_id", "TEXT", obrigatoria:=True),
                 Col("stage", "TEXT", obrigatoria:=True),
                 Col("activation_id", "TEXT", obrigatoria:=True),
@@ -393,9 +403,12 @@ Namespace Global.Iris.Core
                     check:="payload_bytes >= 0"),
                 Col("message_count", "INTEGER", obrigatoria:=True,
                     check:="message_count >= 0"),
-                Col("at", "TEXT", obrigatoria:=True),
-                Col("reason", "TEXT")
-            }))
+                Col("intended_at", "TEXT", obrigatoria:=True),
+                Col("started_at", "TEXT"),
+                Col("finished_at", "TEXT"),
+                Col("note", "TEXT", obrigatoria:=True),
+                Col("gate_reason", "TEXT", obrigatoria:=True)
+            }, {Unico("seq")}))
 
             Return New CacheSchema(t)
         End Function

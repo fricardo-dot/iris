@@ -51,8 +51,47 @@ Namespace Global.Iris.Assist
     End Enum
 
     ''' <summary>
+    ''' Por que uma divulgação parou onde parou — <b>em código, nunca em texto</b>.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE NÃO É UMA STRING</b>
+    '''
+    ''' O campo era <c>String</c>, e "o diário nunca guarda conteúdo" virava
+    ''' convenção: qualquer adaptador podia passar a mensagem de uma exceção ou
+    ''' o corpo de erro do provedor — e corpo de erro <b>ecoa o que foi
+    ''' enviado</b>. Um diário que aceitasse texto arbitrário seria a cópia
+    ''' sensível que ele existe para não criar.
+    '''
+    ''' Enum fechado não tem esse problema, e a tradução para português mora na
+    ''' apresentação, que é onde ela serve.
+    ''' </summary>
+    Public Enum DisclosureNote
+        Nenhuma = 0
+        ''' <summary>O portão negou. O motivo específico vai em campo próprio.</summary>
+        PortaoNegou
+        ''' <summary>O cofre recusou a capability.</summary>
+        CapabilityRecusada
+        ''' <summary>O envelope não pôde ser montado.</summary>
+        EnvelopeRecusado
+        ''' <summary>O conteúdo não pôde ser preparado.</summary>
+        ConteudoRecusado
+        ''' <summary>O tempo acabou. <b>Não</b> quer dizer que não chegou.</summary>
+        Timeout
+        ''' <summary>O usuário mandou parar.</summary>
+        Cancelado
+        ''' <summary>A conexão caiu.</summary>
+        ConexaoCaiu
+        ''' <summary>O provedor respondeu com erro.</summary>
+        ProvedorRecusou
+        ''' <summary>O processo terminou em voo.</summary>
+        ProcessoMorreuEmVoo
+        ''' <summary>O processo terminou antes de transmitir.</summary>
+        ProcessoMorreuAntesDeTransmitir
+    End Enum
+
+    ''' <summary>
     ''' Uma linha do diário. <b>Nunca carrega conteúdo</b> — nem trecho, nem
-    ''' assunto, nem nome de rótulo.
+    ''' assunto, nem nome de rótulo, nem texto vindo do provedor.
     '''
     ''' O R11 do ESCOPO é explícito: <i>log do que foi enviado à IA registrando
     ''' metadados, hash, modelo e tamanho, não o conteúdo — um log com o texto
@@ -60,6 +99,8 @@ Namespace Global.Iris.Assist
     ''' </summary>
     Public NotInheritable Class DisclosureEntry
 
+        ''' <summary>Ordem de inserção. Desempate estável — o <c>Guid</c> não é.</summary>
+        Public ReadOnly Property Sequencia As Long
         Public ReadOnly Property RequestId As Guid
         Public ReadOnly Property CapabilityId As Guid
         Public ReadOnly Property Estagio As DisclosureStage
@@ -73,20 +114,38 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Hash As String
         Public ReadOnly Property Bytes As Integer
         Public ReadOnly Property Mensagens As Integer
-        Public ReadOnly Property Quando As DateTimeOffset
-        ''' <summary>
-        ''' O motivo, em forma de código — nunca texto do provedor.
-        '''
-        ''' Corpo de resposta de erro pode <b>ecoar o conteúdo enviado</b>, e um
-        ''' diário que o guardasse viraria a cópia que ele existe para não criar.
-        ''' </summary>
-        Public ReadOnly Property Motivo As String
 
-        Public Sub New(requestId As Guid, capabilityId As Guid, estagio As DisclosureStage,
-                       ativacaoId As String, ativacaoVersao As Integer,
-                       operacao As AssistOperation, provedor As String, endpoint As String,
-                       modelo As String, hash As String, bytes As Integer,
-                       mensagens As Integer, quando As DateTimeOffset, motivo As String)
+        ''' <summary>
+        ''' Quando a intenção foi gravada. <b>Imutável</b>, e é por ela que a
+        ''' ordem histórica se guia.
+        '''
+        ''' Havia um <c>at</c> único, sobrescrito a cada passo. Depois de uma
+        ''' reconciliação, uma intenção abandonada há meses aparecia como
+        ''' atividade recente — e a evidência de <i>quando</i> cada passo
+        ''' aconteceu simplesmente sumia.
+        ''' </summary>
+        Public ReadOnly Property Intencionada As DateTimeOffset
+        ''' <summary>Quando entrou em voo, se entrou.</summary>
+        Public ReadOnly Property Iniciada As DateTimeOffset?
+        ''' <summary>Quando terminou — por conclusão, falha ou reconciliação.</summary>
+        Public ReadOnly Property Terminada As DateTimeOffset?
+
+        Public ReadOnly Property Nota As DisclosureNote
+        ''' <summary>
+        ''' Quando a nota é <see cref="DisclosureNote.PortaoNegou"/>, qual foi o
+        ''' motivo. Também enum fechado.
+        ''' </summary>
+        Public ReadOnly Property MotivoDoPortao As DisclosureReason
+
+        Public Sub New(sequencia As Long, requestId As Guid, capabilityId As Guid,
+                       estagio As DisclosureStage, ativacaoId As String,
+                       ativacaoVersao As Integer, operacao As AssistOperation,
+                       provedor As String, endpoint As String, modelo As String,
+                       hash As String, bytes As Integer, mensagens As Integer,
+                       intencionada As DateTimeOffset, iniciada As DateTimeOffset?,
+                       terminada As DateTimeOffset?, nota As DisclosureNote,
+                       motivoDoPortao As DisclosureReason)
+            Me.Sequencia = sequencia
             Me.RequestId = requestId
             Me.CapabilityId = capabilityId
             Me.Estagio = estagio
@@ -99,8 +158,11 @@ Namespace Global.Iris.Assist
             Me.Hash = hash
             Me.Bytes = bytes
             Me.Mensagens = mensagens
-            Me.Quando = quando
-            Me.Motivo = If(motivo, "")
+            Me.Intencionada = intencionada
+            Me.Iniciada = iniciada
+            Me.Terminada = terminada
+            Me.Nota = nota
+            Me.MotivoDoPortao = motivoDoPortao
         End Sub
 
     End Class
@@ -116,7 +178,7 @@ Namespace Global.Iris.Assist
     ''' Um diário escrito no fim registra os envios que terminaram — e perde
     ''' justamente os que importam. Se o processo morre durante a transmissão,
     ''' não há linha nenhuma, e o registro passa a afirmar, por omissão, que
-    ''' nada saiu. Foi exatamente isso que aconteceu.
+    ''' nada saiu.
     '''
     ''' Então são <b>cinco passos</b>, nesta ordem:
     '''
@@ -126,6 +188,18 @@ Namespace Global.Iris.Assist
     '''   4. <see cref="Concluir"/> ou <see cref="Falhar"/>;
     '''   5. <see cref="Reconciliar"/> na abertura seguinte: o que ficou em voo
     '''      vira <see cref="DisclosureStage.Ambigua"/>.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>TODA TRANSIÇÃO DIZ SE PEGOU</b>
+    '''
+    ''' Os passos devolvem <c>Boolean</c>, e não é decoração. Um
+    ''' <c>Iniciando</c> que não persistisse — pedido inexistente, estado
+    ''' errado, corrida — passava em silêncio, e quem chamou seguia para o HTTP
+    ''' assim mesmo. Resultado: <b>egress sem registro de voo</b>, que é
+    ''' exatamente o buraco que o diário existe para não ter.
+    '''
+    ''' <b>Quem transmite só toca na rede depois de <c>Iniciando</c> devolver
+    ''' <c>True</c>.</b>
     '''
     ''' ------------------------------------------------------------------
     ''' <b>DECISÃO NEGADA NÃO REGISTRA HASH</b>
@@ -140,13 +214,20 @@ Namespace Global.Iris.Assist
         ''' Grava a intenção, com o hash dos bytes. <b>Antes</b> de transmitir,
         ''' e de forma durável — se não durar, não serve.
         ''' </summary>
-        Sub Intencao(c As DisclosureCapability, mensagens As Integer,
-                     quando As DateTimeOffset)
+        ''' <returns><c>False</c> se já existe registro para este pedido.</returns>
+        Function Intencao(c As DisclosureCapability, mensagens As Integer,
+                          quando As DateTimeOffset) As Boolean
 
-        ''' <summary>A transmissão começou. Daqui em diante, morrer é ambíguo.</summary>
-        Sub Iniciando(requestId As Guid, quando As DateTimeOffset)
+        ''' <summary>
+        ''' A transmissão vai começar. Daqui em diante, morrer é ambíguo.
+        ''' </summary>
+        ''' <returns>
+        ''' <c>False</c> quando a transição <b>não</b> aconteceu. Quem chama
+        ''' <b>não pode</b> tocar na rede nesse caso.
+        ''' </returns>
+        Function Iniciando(requestId As Guid, quando As DateTimeOffset) As Boolean
 
-        Sub Concluir(requestId As Guid, quando As DateTimeOffset)
+        Function Concluir(requestId As Guid, quando As DateTimeOffset) As Boolean
 
         ''' <summary>
         ''' Terminou sem sucesso.
@@ -156,14 +237,17 @@ Namespace Global.Iris.Assist
         ''' de começar, conexão caindo. Vira <see cref="DisclosureStage.Ambigua"/>,
         ''' e <b>nunca</b> volta a ser "não enviou".
         ''' </param>
-        Sub Falhar(requestId As Guid, quando As DateTimeOffset, motivo As String,
-                   podeTerChegado As Boolean)
+        Function Falhar(requestId As Guid, quando As DateTimeOffset,
+                        nota As DisclosureNote, podeTerChegado As Boolean) As Boolean
 
         ''' <summary>
         ''' Registra uma divulgação que <b>não aconteceu</b> — o portão negou, a
-        ''' capability foi recusada, o conteúdo não passou. Sem hash.
+        ''' capability foi recusada, o conteúdo não passou. Sem hash novo.
         ''' </summary>
-        Sub NaoEnviou(requestId As Guid, quando As DateTimeOffset, motivo As String)
+        Function NaoEnviou(requestId As Guid, quando As DateTimeOffset,
+                           nota As DisclosureNote,
+                           Optional motivoDoPortao As DisclosureReason =
+                               DisclosureReason.NaoDecidido) As Boolean
 
         ''' <summary>
         ''' Na abertura: o que ficou <see cref="DisclosureStage.EmVoo"/> de uma
@@ -171,8 +255,13 @@ Namespace Global.Iris.Assist
         ''' que ficou <see cref="DisclosureStage.Intencionada"/> vira
         ''' <see cref="DisclosureStage.NaoEnviada"/>.
         '''
-        ''' Devolve quantas viraram ambíguas — número que a UI mostra, porque
-        ''' "pode ter saído conteúdo e ninguém sabe" não é detalhe de log.
+        ''' <b>Não é trabalho da UI.</b> É recuperação de segurança, e roda na
+        ''' composição, antes de o assistente ficar apto a transmitir — se ela
+        ''' falhar ou não terminar, o egress fica fechado. A UI só mostra o
+        ''' número.
+        '''
+        ''' Devolve quantas viraram ambíguas, porque "pode ter saído conteúdo e
+        ''' ninguém sabe" não é detalhe de log.
         ''' </summary>
         Function Reconciliar(quando As DateTimeOffset) As Integer
 

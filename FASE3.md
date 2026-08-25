@@ -703,6 +703,29 @@ rótulo, nem corpo de resposta de erro, que pode **ecoar o que foi enviado**. O
 teste planta uma isca e varre o arquivo do banco inteiro, byte a byte, porque
 procurar coluna por coluna provaria só as colunas de que eu lembrei.
 
+**Toda transição diz se pegou.** Os passos devolvem `Boolean`. Um `Iniciando`
+que não persistisse — pedido inexistente, estado errado, corrida — passava em
+silêncio, e quem chamou seguia para o HTTP assim mesmo: **egress sem registro de
+voo**, que é o buraco que o diário existe para não ter. Quem transmite só toca
+na rede depois de `Iniciando` devolver `True`.
+
+**Os motivos são enums fechados.** Enquanto o campo era `String`, "nunca guarda
+conteúdo" era convenção: qualquer adaptador podia passar a mensagem de uma
+exceção ou o corpo de erro do provedor. Não existe mais campo por onde texto
+arbitrário entre; a tradução para português mora na apresentação.
+
+**Três carimbos, não um.** `intended_at` é imutável e é por ele que a ordem
+histórica se guia; `started_at` e `finished_at` guardam o resto. Com um carimbo
+só, sobrescrito a cada passo, uma intenção abandonada há meses aparecia como
+atividade recente logo depois de uma reconciliação. A sequência de inserção
+desempata — o `Guid` é aleatório, e uma lista que muda de ordem sozinha é uma
+lista em que ninguém confia.
+
+**A reconciliação não é trabalho da UI.** É recuperação de segurança, e roda na
+composição, antes de o assistente ficar apto a transmitir: se falhar ou não
+terminar, o egress fica fechado. A ligação é do 3.5, e até lá isso é **pendência
+declarada**, não esquecimento.
+
 **E a prova de crash é com processo morto de verdade.** Fechar o `Using` não é
 morrer: dá ao SQLite a chance de descarregar tudo com ordem, que é exatamente o
 que um crash não dá. O harness da Fase 2 ganhou um modo `diario` e é morto com

@@ -154,10 +154,19 @@ Namespace Global.Iris.CrashHarness
                 Console.Out.WriteLine($"requestId={c.RequestId}")
                 Console.Out.Flush()
 
-                j.Intencao(c, mensagens:=2, quando:=DateTimeOffset.UtcNow)
+                If Not j.Intencao(c, mensagens:=2, quando:=DateTimeOffset.UtcNow) Then
+                    Console.Error.WriteLine("a intencao nao pegou")
+                    Return 4
+                End If
                 If String.Equals(ponto, "apos-intencao", StringComparison.Ordinal) Then Morrer()
 
-                j.Iniciando(c.RequestId, DateTimeOffset.UtcNow)
+                ' So toca na "rede" depois de o voo estar DURADO. E a regra que
+                ' o Iniciando devolver Boolean existe para impor: um passo que
+                ' nao pegou e seguido de um envio produz egress sem registro.
+                If Not j.Iniciando(c.RequestId, DateTimeOffset.UtcNow) Then
+                    Console.Error.WriteLine("o inicio do voo nao pegou")
+                    Return 5
+                End If
                 If String.Equals(ponto, "em-voo", StringComparison.Ordinal) Then Morrer()
 
                 j.Concluir(c.RequestId, DateTimeOffset.UtcNow)

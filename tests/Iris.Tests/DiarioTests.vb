@@ -180,7 +180,7 @@ Public Class DiarioTests
 
             Dim e = j.Ler(1)(0)
             Assert.AreEqual(DisclosureStage.Ambigua, e.Estagio)
-            StringAssert.Contains(e.Motivo, "em voo")
+            Assert.AreEqual(DisclosureNote.ProcessoMorreuEmVoo, e.Nota)
         End Using
     End Sub
 
@@ -236,10 +236,10 @@ Public Class DiarioTests
             Dim a = Autorizada()
             j.Intencao(a.Cap, 1, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
-            j.Falhar(a.Cap.RequestId, Agora, "timeout", podeTerChegado:=True)
+            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.Timeout, podeTerChegado:=True)
             Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio)
 
-            j.Falhar(a.Cap.RequestId, Agora, "na verdade nao chegou", podeTerChegado:=False)
+            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.ConexaoCaiu, podeTerChegado:=False)
 
             Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio,
                 "uma vez que pode ter saido, nada desfaz")
@@ -260,7 +260,7 @@ Public Class DiarioTests
             j.Intencao(a.Cap, 1, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
 
-            j.Falhar(a.Cap.RequestId, Agora, "conexao caiu", podeTerChegado:=False)
+            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.ConexaoCaiu, podeTerChegado:=False)
 
             Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio)
         End Using
@@ -274,7 +274,7 @@ Public Class DiarioTests
             Dim a = Autorizada()
             j.Intencao(a.Cap, 1, Agora)
 
-            j.NaoEnviou(a.Cap.RequestId, Agora, "capability recusada")
+            j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.CapabilityRecusada)
 
             Assert.AreEqual(DisclosureStage.NaoEnviada, j.Ler(1)(0).Estagio)
         End Using
@@ -333,22 +333,25 @@ Public Class DiarioTests
     End Sub
 
     ''' <summary>
-    ''' O motivo guarda <b>código</b>, e quem chama é quem tem de respeitar
-    ''' isso — corpo de erro do provedor pode ecoar o conteúdo enviado.
+    ''' <b>O motivo é enum fechado, e não texto.</b>
     '''
-    ''' Aqui o que se cobra é que o campo exista e sobreviva, não que ele filtre
-    ''' — filtrar texto de terceiro seria fingir barreira. A regra está no XML
-    ''' doc da interface, onde quem chama a lê.
+    ''' Enquanto era <c>String</c>, "o diário nunca guarda conteúdo" era
+    ''' convenção: qualquer adaptador podia passar a mensagem de uma exceção ou
+    ''' o corpo de erro do provedor — e corpo de erro <b>ecoa o que foi
+    ''' enviado</b>. Não existe mais campo por onde texto arbitrário entre.
     ''' </summary>
     <TestMethod>
-    Public Sub O_motivo_sobrevive_e_e_lido()
+    Public Sub O_motivo_e_CODIGO_e_sobrevive()
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
             j.Intencao(a.Cap, 1, Agora)
-            j.NaoEnviou(a.Cap.RequestId, Agora, "portao negou: PastaNaoAutorizada")
+            j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou,
+                        DisclosureReason.PastaNaoAutorizada)
 
-            StringAssert.Contains(j.Ler(1)(0).Motivo, "PastaNaoAutorizada")
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(DisclosureNote.PortaoNegou, e.Nota)
+            Assert.AreEqual(DisclosureReason.PastaNaoAutorizada, e.MotivoDoPortao)
         End Using
     End Sub
 
@@ -513,5 +516,133 @@ Public Class DiarioTests
         _exe = achado
         Return _exe
     End Function
+
+
+    ' ==================================================================
+    ' Toda transição diz se pegou
+
+    ''' <summary>
+    ''' <b>Um passo que não pega devolve <c>False</c>.</b>
+    '''
+    ''' Era o buraco: <c>Avancar</c> ignorava quantas linhas mudaram, então um
+    ''' <c>Iniciando</c> que não persistisse — pedido inexistente, estado
+    ''' errado, corrida — passava em silêncio, e quem chamou seguia para o
+    ''' HTTP assim mesmo. Resultado: <b>egress sem registro de voo</b>, que é
+    ''' exatamente o buraco que o diário existe para não ter.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Passo_que_nao_pega_devolve_FALSE()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+
+            Assert.IsFalse(j.Iniciando(a.Cap.RequestId, Agora),
+                           "nao ha intencao gravada — o voo nao pode comecar")
+            Assert.IsFalse(j.Concluir(a.Cap.RequestId, Agora))
+            Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou))
+
+            Assert.IsTrue(j.Intencao(a.Cap, 1, Agora), "controle: com o pedido novo, pega")
+            Assert.IsFalse(j.Concluir(a.Cap.RequestId, Agora),
+                           "concluir sem iniciar nao pega")
+            Assert.IsTrue(j.Iniciando(a.Cap.RequestId, Agora))
+            Assert.IsFalse(j.Iniciando(a.Cap.RequestId, Agora),
+                           "iniciar duas vezes reabriria uma janela que ja fechou")
+            Assert.IsTrue(j.Concluir(a.Cap.RequestId, Agora))
+        End Using
+    End Sub
+
+    ''' <summary>Intenção repetida não duplica, e diz que não pegou.</summary>
+    <TestMethod>
+    Public Sub Intencao_repetida_nao_duplica()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+
+            Assert.IsTrue(j.Intencao(a.Cap, 1, Agora))
+            Assert.IsFalse(j.Intencao(a.Cap, 1, Agora))
+            Assert.AreEqual(1, j.Ler(10).Count)
+        End Using
+    End Sub
+
+    ' ==================================================================
+    ' Os três carimbos
+
+    ''' <summary>
+    ''' <b><c>intended_at</c> é imutável, e a ordem histórica se guia por ele.</b>
+    '''
+    ''' Havia um carimbo único, sobrescrito a cada passo. Depois de uma
+    ''' reconciliação, uma intenção abandonada há meses aparecia como
+    ''' atividade recente — e a evidência de quando cada passo aconteceu
+    ''' simplesmente sumia.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Os_tres_carimbos_sao_guardados_separados()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+
+            j.Intencao(a.Cap, 1, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(5))
+            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(9))
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(Agora, e.Intencionada)
+            Assert.AreEqual(Agora.AddSeconds(5), e.Iniciada.Value)
+            Assert.AreEqual(Agora.AddSeconds(9), e.Terminada.Value)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Uma reconciliação tardia não faz o velho parecer novo.</b>
+    '''
+    ''' O sintoma exato do carimbo único: a intenção antiga, tocada pela
+    ''' reconciliação de hoje, subia para o topo da lista como se tivesse
+    ''' acabado de acontecer.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Reconciliacao_tardia_nao_faz_o_velho_parecer_novo()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            Dim antiga = Autorizada("um")
+            j.Intencao(antiga.Cap, 1, Agora.AddMonths(-6))
+            j.Iniciando(antiga.Cap.RequestId, Agora.AddMonths(-6))
+
+            Dim recente = Autorizada("dois")
+            j.Intencao(recente.Cap, 1, Agora)
+
+            j.Reconciliar(Agora.AddHours(1))
+
+            Dim tudo = j.Ler(10)
+            Assert.AreEqual(recente.Cap.RequestId, tudo(0).RequestId,
+                "a recente continua no topo — a antiga so foi RECONCILIADA hoje")
+            Assert.AreEqual(DisclosureStage.Ambigua, tudo(1).Estagio)
+            Assert.AreEqual(Agora.AddMonths(-6), tudo(1).Intencionada,
+                "e a intencao dela continua sendo de seis meses atras")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' A sequência de inserção desempata — o <c>Guid</c> não serve.
+    '''
+    ''' Ele é aleatório, então a ordem entre dois registros do mesmo instante
+    ''' mudava a cada execução, e uma lista que muda de ordem sozinha é uma
+    ''' lista em que ninguém confia.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_sequencia_desempata_o_mesmo_instante()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            Dim primeira = Autorizada("um")
+            Dim segunda = Autorizada("dois")
+            j.Intencao(primeira.Cap, 1, Agora)
+            j.Intencao(segunda.Cap, 1, Agora)
+
+            Dim tudo = j.Ler(10)
+            Assert.AreEqual(segunda.Cap.RequestId, tudo(0).RequestId)
+            Assert.IsTrue(tudo(0).Sequencia > tudo(1).Sequencia)
+        End Using
+    End Sub
 
 End Class

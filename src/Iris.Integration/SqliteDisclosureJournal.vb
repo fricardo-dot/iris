@@ -21,12 +21,23 @@ Namespace Global.Iris.Integration
     ''' deixe rastro.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>SEM CONTEÚDO, E SEM CORPO DE RESPOSTA</b>
+    ''' <b>CADA PASSO DIZ SE PEGOU</b>
+    '''
+    ''' As guardas moram no <c>WHERE</c>, e o número de linhas alteradas é o que
+    ''' volta. Ignorá-lo era o buraco: um <c>Iniciando</c> que não persistisse
+    ''' passava em silêncio e quem chamou seguia para o HTTP assim mesmo —
+    ''' egress sem registro de voo.
+    '''
+    ''' A guarda no <c>WHERE</c>, e não num <c>If</c> antes: duas execuções
+    ''' podem estar escrevendo, e o banco é quem arbitra.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>SEM CONTEÚDO, E SEM TEXTO DE TERCEIRO</b>
     '''
     ''' Nem trecho, nem assunto, nem nome de rótulo. E nem o corpo do erro do
-    ''' provedor: resposta de erro pode <b>ecoar o que foi enviado</b>, e o
-    ''' diário viraria a cópia que ele existe para não criar. O
-    ''' <c>reason</c> guarda código, não texto de terceiro.
+    ''' provedor: resposta de erro pode <b>ecoar o que foi enviado</b>. Os
+    ''' motivos são <b>enums fechados</b> — não há campo por onde texto
+    ''' arbitrário entre.
     ''' </summary>
     Public NotInheritable Class SqliteDisclosureJournal
         Implements IDisclosureJournal
@@ -40,15 +51,19 @@ Namespace Global.Iris.Integration
 
         ' ==============================================================
 
-        Public Sub Intencao(c As DisclosureCapability, mensagens As Integer,
-                            quando As DateTimeOffset) Implements IDisclosureJournal.Intencao
+        Public Function Intencao(c As DisclosureCapability, mensagens As Integer,
+                                 quando As DateTimeOffset) As Boolean _
+                                 Implements IDisclosureJournal.Intencao
             If c Is Nothing Then Throw New ArgumentNullException(NameOf(c))
 
-            Executar(
-                "INSERT INTO disclosure_log (request_id, capability_id, stage, " &
-                "  activation_id, activation_version, operation, provider, endpoint, " &
-                "  model, payload_hash, payload_bytes, message_count, at, reason) " &
-                "VALUES ($r, $c, $s, $ai, $av, $op, $p, $e, $m, $h, $b, $n, $t, NULL)",
+            Return Executar(
+                "INSERT OR IGNORE INTO disclosure_log (" &
+                "  seq, request_id, capability_id, stage, activation_id, " &
+                "  activation_version, operation, provider, endpoint, model, " &
+                "  payload_hash, payload_bytes, message_count, " &
+                "  intended_at, started_at, finished_at, note, gate_reason) " &
+                "SELECT COALESCE(MAX(seq), 0) + 1, $r, $c, $s, $ai, $av, $op, $p, $e, $m, " &
+                "       $h, $b, $n, $t, NULL, NULL, $nota, $gr FROM disclosure_log",
                 ("$r", CObj(c.RequestId.ToString("D"))),
                 ("$c", CObj(c.Id.ToString("D"))),
                 ("$s", CObj(DisclosureStage.Intencionada.ToString())),
@@ -61,53 +76,64 @@ Namespace Global.Iris.Integration
                 ("$h", CObj(c.Hash)),
                 ("$b", CObj(c.Comprimento)),
                 ("$n", CObj(mensagens)),
-                ("$t", CObj(Instante(quando))))
-        End Sub
+                ("$t", CObj(Instante(quando))),
+                ("$nota", CObj(DisclosureNote.Nenhuma.ToString())),
+                ("$gr", CObj(DisclosureReason.NaoDecidido.ToString()))) = 1
+        End Function
 
-        Public Sub Iniciando(requestId As Guid, quando As DateTimeOffset) _
-                             Implements IDisclosureJournal.Iniciando
+        Public Function Iniciando(requestId As Guid, quando As DateTimeOffset) As Boolean _
+                                  Implements IDisclosureJournal.Iniciando
             ' So sai de Intencionada. Reiniciar um envio ja em voo, ou ja
             ' concluido, seria reabrir uma janela que ja fechou.
-            Avancar(requestId, DisclosureStage.EmVoo, quando, Nothing,
-                    "stage = '" & DisclosureStage.Intencionada.ToString() & "'")
-        End Sub
+            Return Executar(
+                "UPDATE disclosure_log SET stage = $s, started_at = $t " &
+                "WHERE request_id = $r AND stage = $de",
+                ("$s", CObj(DisclosureStage.EmVoo.ToString())),
+                ("$t", CObj(Instante(quando))),
+                ("$r", CObj(requestId.ToString("D"))),
+                ("$de", CObj(DisclosureStage.Intencionada.ToString()))) = 1
+        End Function
 
-        Public Sub Concluir(requestId As Guid, quando As DateTimeOffset) _
-                            Implements IDisclosureJournal.Concluir
-            Avancar(requestId, DisclosureStage.Concluida, quando, Nothing,
-                    "stage = '" & DisclosureStage.EmVoo.ToString() & "'")
-        End Sub
+        Public Function Concluir(requestId As Guid, quando As DateTimeOffset) As Boolean _
+                                 Implements IDisclosureJournal.Concluir
+            Return Terminar(requestId, DisclosureStage.Concluida, quando,
+                            DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido,
+                            {DisclosureStage.EmVoo})
+        End Function
 
-        Public Sub Falhar(requestId As Guid, quando As DateTimeOffset, motivo As String,
-                          podeTerChegado As Boolean) Implements IDisclosureJournal.Falhar
+        Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
+                               nota As DisclosureNote, podeTerChegado As Boolean) As Boolean _
+                               Implements IDisclosureJournal.Falhar
             ' Uma vez EM VOO, falhar e SEMPRE ambiguo — mesmo que o chamador
             ' jure que nao chegou. Ele nao pode saber: entre "a conexao caiu" e
             ' "a conexao caiu depois de o servidor ler o corpo" nao ha
             ' diferenca observavel deste lado.
-            '
-            ' NaoEnviada so vale a partir de Intencionada, onde a transmissao
-            ' comprovadamente nao tinha comecado. E a guarda mora no WHERE, e
-            ' nao num If antes: duas execucoes podem estar escrevendo, e o
-            ' banco e quem arbitra.
             If podeTerChegado Then
-                Avancar(requestId, DisclosureStage.Ambigua, quando, motivo,
-                        "stage IN ('" & DisclosureStage.Intencionada.ToString() & "','" &
-                        DisclosureStage.EmVoo.ToString() & "')")
-            Else
-                Avancar(requestId, DisclosureStage.NaoEnviada, quando, motivo,
-                        "stage = '" & DisclosureStage.Intencionada.ToString() & "'")
-                ' Se estava EM VOO, o UPDATE acima nao pegou nada — e ai o
-                ' desfecho honesto e ambiguo, nao "nao enviou".
-                Avancar(requestId, DisclosureStage.Ambigua, quando, motivo,
-                        "stage = '" & DisclosureStage.EmVoo.ToString() & "'")
+                Return Terminar(requestId, DisclosureStage.Ambigua, quando, nota,
+                                DisclosureReason.NaoDecidido,
+                                {DisclosureStage.Intencionada, DisclosureStage.EmVoo})
             End If
-        End Sub
 
-        Public Sub NaoEnviou(requestId As Guid, quando As DateTimeOffset, motivo As String) _
-                             Implements IDisclosureJournal.NaoEnviou
-            Avancar(requestId, DisclosureStage.NaoEnviada, quando, motivo,
-                    "stage = '" & DisclosureStage.Intencionada.ToString() & "'")
-        End Sub
+            ' NaoEnviada so vale a partir de Intencionada, onde a transmissao
+            ' comprovadamente nao tinha comecado.
+            If Terminar(requestId, DisclosureStage.NaoEnviada, quando, nota,
+                        DisclosureReason.NaoDecidido, {DisclosureStage.Intencionada}) Then
+                Return True
+            End If
+
+            ' Estava EM VOO: o desfecho honesto e ambiguo, nao "nao enviou".
+            Return Terminar(requestId, DisclosureStage.Ambigua, quando, nota,
+                            DisclosureReason.NaoDecidido, {DisclosureStage.EmVoo})
+        End Function
+
+        Public Function NaoEnviou(requestId As Guid, quando As DateTimeOffset,
+                                  nota As DisclosureNote,
+                                  Optional motivoDoPortao As DisclosureReason =
+                                      DisclosureReason.NaoDecidido) As Boolean _
+                                  Implements IDisclosureJournal.NaoEnviou
+            Return Terminar(requestId, DisclosureStage.NaoEnviada, quando, nota,
+                            motivoDoPortao, {DisclosureStage.Intencionada})
+        End Function
 
         ' ==============================================================
 
@@ -118,56 +144,64 @@ Namespace Global.Iris.Integration
         ''' bytes podem ter chegado, e ninguém vai saber. O que ficou só como
         ''' intenção vira não-enviada, porque ali a transmissão não tinha
         ''' começado.
-        '''
-        ''' Devolve quantas viraram ambíguas, e esse número é para a UI mostrar.
-        ''' "Pode ter saído conteúdo desta caixa e não dá para saber" não é
-        ''' detalhe de log.
         ''' </summary>
         Public Function Reconciliar(quando As DateTimeOffset) As Integer _
                                     Implements IDisclosureJournal.Reconciliar
             Dim ambiguas = Executar(
-                "UPDATE disclosure_log SET stage = $novo, at = $t, " &
-                "  reason = COALESCE(reason, 'processo terminou em voo') " &
+                "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
                 "WHERE stage = $velho",
                 ("$novo", CObj(DisclosureStage.Ambigua.ToString())),
                 ("$velho", CObj(DisclosureStage.EmVoo.ToString())),
-                ("$t", CObj(Instante(quando))))
+                ("$t", CObj(Instante(quando))),
+                ("$nota", CObj(DisclosureNote.ProcessoMorreuEmVoo.ToString())))
 
             Executar(
-                "UPDATE disclosure_log SET stage = $novo, at = $t, " &
-                "  reason = COALESCE(reason, 'processo terminou antes de transmitir') " &
+                "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
                 "WHERE stage = $velho",
                 ("$novo", CObj(DisclosureStage.NaoEnviada.ToString())),
                 ("$velho", CObj(DisclosureStage.Intencionada.ToString())),
-                ("$t", CObj(Instante(quando))))
+                ("$t", CObj(Instante(quando))),
+                ("$nota", CObj(DisclosureNote.ProcessoMorreuAntesDeTransmitir.ToString())))
 
             Return ambiguas
         End Function
 
+        ''' <summary>
+        ''' Do mais recente para o mais antigo, por <c>intended_at</c> — que é
+        ''' <b>imutável</b> — com a sequência de inserção desempatando.
+        '''
+        ''' Ordenar por um carimbo que cada passo sobrescrevia fazia uma intenção
+        ''' abandonada há meses aparecer como atividade recente, logo depois de
+        ''' uma reconciliação. E o <c>Guid</c> não serve de desempate: ele é
+        ''' aleatório, então a ordem entre dois registros do mesmo instante
+        ''' mudava a cada execução.
+        ''' </summary>
         Public Function Ler(quantas As Integer) As IReadOnlyList(Of DisclosureEntry) _
                             Implements IDisclosureJournal.Ler
             Dim saida As New List(Of DisclosureEntry)()
             Using cmd = _db.Connection.CreateCommand()
                 cmd.CommandText =
-                    "SELECT request_id, capability_id, stage, activation_id, " &
+                    "SELECT seq, request_id, capability_id, stage, activation_id, " &
                     "       activation_version, operation, provider, endpoint, model, " &
-                    "       payload_hash, payload_bytes, message_count, at, reason " &
-                    "FROM disclosure_log ORDER BY at DESC, request_id DESC LIMIT $n"
+                    "       payload_hash, payload_bytes, message_count, " &
+                    "       intended_at, started_at, finished_at, note, gate_reason " &
+                    "FROM disclosure_log ORDER BY intended_at DESC, seq DESC LIMIT $n"
                 cmd.Parameters.AddWithValue("$n", quantas)
                 Using r = cmd.ExecuteReader()
                     While r.Read()
                         saida.Add(New DisclosureEntry(
-                            Guid.Parse(r.GetString(0)), Guid.Parse(r.GetString(1)),
-                            CType([Enum].Parse(GetType(DisclosureStage), r.GetString(2)),
-                                  DisclosureStage),
-                            r.GetString(3), r.GetInt32(4),
-                            CType([Enum].Parse(GetType(AssistOperation), r.GetString(5)),
-                                  AssistOperation),
-                            r.GetString(6), r.GetString(7), r.GetString(8),
-                            If(r.IsDBNull(9), Nothing, r.GetString(9)),
-                            r.GetInt32(10), r.GetInt32(11),
-                            DateTimeOffset.Parse(r.GetString(12), CultureInfo.InvariantCulture),
-                            If(r.IsDBNull(13), Nothing, r.GetString(13))))
+                            r.GetInt64(0), Guid.Parse(r.GetString(1)), Guid.Parse(r.GetString(2)),
+                            Ler(Of DisclosureStage)(r.GetString(3)),
+                            r.GetString(4), r.GetInt32(5),
+                            Ler(Of AssistOperation)(r.GetString(6)),
+                            r.GetString(7), r.GetString(8), r.GetString(9),
+                            If(r.IsDBNull(10), Nothing, r.GetString(10)),
+                            r.GetInt32(11), r.GetInt32(12),
+                            Momento(r.GetString(13)),
+                            If(r.IsDBNull(14), CType(Nothing, DateTimeOffset?), Momento(r.GetString(14))),
+                            If(r.IsDBNull(15), CType(Nothing, DateTimeOffset?), Momento(r.GetString(15))),
+                            Ler(Of DisclosureNote)(r.GetString(16)),
+                            Ler(Of DisclosureReason)(r.GetString(17))))
                     End While
                 End Using
             End Using
@@ -176,17 +210,25 @@ Namespace Global.Iris.Integration
 
         ' ==============================================================
 
-        Private Sub Avancar(requestId As Guid, destino As DisclosureStage,
-                            quando As DateTimeOffset, motivo As String, guarda As String)
-            Executar(
-                "UPDATE disclosure_log SET stage = $s, at = $t, " &
-                "  reason = COALESCE($m, reason) " &
-                "WHERE request_id = $r AND " & guarda,
+        ''' <summary>
+        ''' Termina o registro, se ele estiver num dos estágios permitidos.
+        ''' Devolve se a transição <b>aconteceu</b>.
+        ''' </summary>
+        Private Function Terminar(requestId As Guid, destino As DisclosureStage,
+                                  quando As DateTimeOffset, nota As DisclosureNote,
+                                  portao As DisclosureReason,
+                                  de As DisclosureStage()) As Boolean
+            Dim aceitos = String.Join(",", de.Select(Function(e) "'" & e.ToString() & "'"))
+            Return Executar(
+                "UPDATE disclosure_log SET stage = $s, finished_at = $t, " &
+                "  note = $nota, gate_reason = $gr " &
+                "WHERE request_id = $r AND stage IN (" & aceitos & ")",
                 ("$s", CObj(destino.ToString())),
                 ("$t", CObj(Instante(quando))),
-                ("$m", If(motivo Is Nothing, CObj(DBNull.Value), CObj(motivo))),
-                ("$r", CObj(requestId.ToString("D"))))
-        End Sub
+                ("$nota", CObj(nota.ToString())),
+                ("$gr", CObj(portao.ToString())),
+                ("$r", CObj(requestId.ToString("D")))) = 1
+        End Function
 
         Private Function Executar(sql As String,
                                   ParamArray p As (Nome As String, Valor As Object)()) As Integer
@@ -197,6 +239,15 @@ Namespace Global.Iris.Integration
                 Next
                 Return cmd.ExecuteNonQuery()
             End Using
+        End Function
+
+        Private Shared Function Ler(Of T)(texto As String) As T
+            Return CType([Enum].Parse(GetType(T), texto), T)
+        End Function
+
+        Private Shared Function Momento(texto As String) As DateTimeOffset
+            Return DateTimeOffset.Parse(texto, CultureInfo.InvariantCulture,
+                                        DateTimeStyles.RoundtripKind)
         End Function
 
         ''' <summary>ISO 8601 com offset, para ordenar como texto e não mentir.</summary>
