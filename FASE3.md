@@ -1057,7 +1057,37 @@ inteira verde. Hoje as sete correções foram confirmadas **desfazendo cada uma*
 vendo o teste correspondente falhar, com o controle da mesma família continuando
 a passar.
 
-### 38.9 E a faixa foi medida
+### 38.9 A quarta passada: a recusa estava no botão, não na execução
+
+Dois defeitos, e os dois eram a **metade que faltava** de correções da passada
+anterior.
+
+**O portão foi separado por operação só na tela.** `PodePedir` significa "pode
+resumir", e era ele que guardava a execução inteira. Com ativação só para
+redigir, o botão habilitava e clicar nele não fazia nada — a funcionalidade
+existia e era inalcançável, que é o defeito da §38.6 chegando por outro caminho.
+E a exigência de rascunho editável vivia só no `CanExecute`: uma chamada direta a
+`Redigir()` atravessava e **transmitia** conteúdo sem haver lugar válido para
+aplicar a resposta.
+
+Botão desabilitado é conveniência. A recusa mora na execução, e agora cada
+operação tem a sua — operação fora da lista recusa, como o resto da §29.
+
+**O desfazer não tinha identidade.** A guarda nova protegia a ida da redação e
+deixava a volta aberta: depois de redigir em A, fechar A e abrir B mantinha o
+botão habilitado, e clicar nele escrevia o texto antigo de A dentro de B —
+apagando o que houvesse lá, numa mensagem que a IA nunca tocou. O mesmo botão
+escrevia num rascunho travado durante a confirmação de envio, quando os campos
+estão bloqueados justamente para que a confirmação não vire mentira.
+
+`PodeDesfazer` são hoje quatro condições, e todas são a mesma pergunta: *o que eu
+desfaria ainda é o que eu fiz?* Há o que desfazer; o rascunho aceita escrita
+agora; é o mesmo rascunho; e o texto ainda é o que a IA escreveu. A última fecha o
+desfazer assim que o usuário digita por cima da redação — restaurar ali apagaria a
+edição dele para desfazer algo que ele já desfez à mão. E a recusa **explica**:
+um botão que o usuário clicou e que não faz nada não se distingue de um quebrado.
+
+### 38.10 E a faixa foi medida
 
 `FaixaDaIaRenderizaTests` faz `Measure`/`Arrange` fora do vídeo, como o
 equivalente da Fase 2. Binding correto não detecta faixa com altura zero nem
@@ -1070,7 +1100,7 @@ A montagem precisa de **duas passadas** de layout: a primeira mede antes de os
 bindings de `Visibility` terem sido aplicados, e o `Grid` sai com altura de quem
 não tem nada a mostrar.
 
-### 38.10 O que ficou de fora, por recorte
+### 38.11 O que ficou de fora, por recorte
 
 Configuração de credencial, escolha de provedor ou modelo, e qualquer UX moldada
 pelas capacidades de um fornecedor específico. Sem provedor escolhido, isso seria

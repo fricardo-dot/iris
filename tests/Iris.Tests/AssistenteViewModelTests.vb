@@ -786,6 +786,188 @@ Public Class AssistenteViewModelTests
     End Sub
 
     ' ==================================================================
+    ' A recusa está na EXECUÇÃO, e não só no botão
+
+    ''' <summary>
+    ''' <b>Ativação só para redigir: o botão habilita e a redação
+    ''' acontece.</b>
+    '''
+    ''' O contraponto obrigatório do teste de habilitação. A execução era
+    ''' guardada por <c>PodePedir</c>, que quer dizer "pode <b>resumir</b>":
+    ''' com ativação só para redigir, o botão ficava habilitado e clicar nele
+    ''' não fazia nada — a funcionalidade existia e era inalcançável, que é o
+    ''' mesmo defeito da §38.6 chegando por outro caminho.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Ativacao_so_para_REDIGIR_executa_a_redacao() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu ja tinha escrito"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao({AssistOperation.Redigir}), p, Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+
+        Assert.AreEqual(1, p.Chamadas, "o botao habilitado tem de fazer alguma coisa")
+        Assert.AreEqual("resposta redigida pela IA", r.Texto)
+    End Function
+
+    ''' <summary>
+    ''' <b>Ativação só para resumir: chamar a redação direto não transmite.</b>
+    '''
+    ''' O botão desabilitado é conveniência, e a recusa tem de estar na
+    ''' execução. Este teste passa por cima do <c>CanExecute</c> e chama o
+    ''' método — se a recusa vivesse só na habilitação, o conteúdo sairia.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function So_resumir_autorizado_redigir_direto_NAO_transmite() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu ja tinha escrito"}
+        Dim p As New ProvedorControlado() With {.Texto = "nao devia sair daqui"}
+        Dim vm = Montar(Ativacao({AssistOperation.Resumir}), p, Pronta(), Nothing, r)
+
+        Await vm.Redigir()
+
+        Assert.AreEqual(0, p.Chamadas, "nada podia ter saido desta maquina")
+        Assert.AreEqual("o que eu ja tinha escrito", r.Texto)
+    End Function
+
+    ''' <summary>
+    ''' <b>Rascunho travado: chamar a redação direto não transmite.</b>
+    '''
+    ''' Transmitir sem ter onde aplicar a resposta é pior que não transmitir:
+    ''' o conteúdo sai da máquina e nada aproveita. A exigência de rascunho
+    ''' editável vivia só no <c>CanExecute</c>.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Rascunho_travado_redigir_direto_NAO_transmite() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "texto travado", .PodeEditar = False}
+        Dim p As New ProvedorControlado() With {.Texto = "nao devia sair daqui"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.Redigir()
+
+        Assert.AreEqual(0, p.Chamadas, "nada podia ter saido desta maquina")
+        Assert.AreEqual("texto travado", r.Texto)
+    End Function
+
+    ''' <summary>
+    ''' Controle negativo dos dois de cima: com tudo autorizado e o rascunho
+    ''' editável, a mesma chamada direta <b>transmite</b>.
+    '''
+    ''' Sem ele, um <c>Redigir()</c> que nunca chamasse o provedor passaria nos
+    ''' dois — e a prova de que "não sai" seria a prova de que nada funciona.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Controle_autorizado_e_editavel_a_chamada_direta_TRANSMITE() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu ja tinha escrito"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.Redigir()
+
+        Assert.AreEqual(1, p.Chamadas)
+        Assert.AreEqual("resposta redigida pela IA", r.Texto)
+    End Function
+
+    ' ==================================================================
+    ' O desfazer também tem identidade
+
+    ''' <summary>
+    ''' <b>Desfazer não atravessa para outro rascunho.</b>
+    '''
+    ''' A guarda da passada anterior protegia a <b>ida</b> e deixava a volta
+    ''' aberta: depois de redigir em A, fechar A e abrir B mantinha o botão
+    ''' habilitado, e clicar nele escrevia o texto antigo de A dentro de B —
+    ''' apagando o que houvesse lá, numa mensagem que a IA nunca tocou.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Desfazer_NAO_atravessa_para_outro_rascunho() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu escrevi em A"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing), "em A da para desfazer")
+
+        ' Fecha A, abre B, e o usuario escreve nele.
+        r.Trocar()
+        r.Texto = "o que eu escrevi em B"
+
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing),
+                       "desfazer o rascunho A dentro do B nao e desfazer nada")
+
+        vm.Desfazer()
+
+        Assert.AreEqual("o que eu escrevi em B", r.Texto,
+                        "o texto de outro rascunho foi escrito por cima")
+        StringAssert.Contains(vm.Aviso, "desfazer",
+                              "recusar em silencio nao se distingue de estar quebrado")
+    End Function
+
+    ''' <summary>
+    ''' Controle negativo: no <b>mesmo</b> rascunho, o desfazer restaura.
+    '''
+    ''' Sem ele, um <c>PodeDesfazer</c> que respondesse <c>False</c> sempre
+    ''' passaria em tudo que este arquivo prova sobre desfazer.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Controle_no_mesmo_rascunho_desfazer_RESTAURA() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu escrevi em A"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.Desfazer()
+
+        Assert.AreEqual("o que eu escrevi em A", r.Texto)
+    End Function
+
+    ''' <summary>
+    ''' <b>Desfazer não apaga o que o usuário escreveu depois da redação.</b>
+    '''
+    ''' Ele digitou por cima da resposta: desfazer ali restauraria um texto
+    ''' anterior por cima de uma edição posterior, para desfazer algo que o
+    ''' usuário já desfez à mão.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Desfazer_NAO_apaga_edicao_posterior() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu escrevi antes"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        r.Texto = "resposta redigida pela IA, com o meu final"
+
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
+
+        vm.Desfazer()
+
+        Assert.AreEqual("resposta redigida pela IA, com o meu final", r.Texto)
+    End Function
+
+    ''' <summary>
+    ''' <b>Desfazer não mexe no rascunho travado.</b>
+    '''
+    ''' Durante a confirmação de envio os campos ficam travados de propósito:
+    ''' mudar o texto depois de o usuário ter aprovado o que vai sair tornaria a
+    ''' confirmação uma mentira. O desfazer é uma escrita como qualquer outra.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Desfazer_NAO_mexe_no_rascunho_travado() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu escrevi antes"}
+        Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        r.PodeEditar = False
+
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
+
+        vm.Desfazer()
+
+        Assert.AreEqual("resposta redigida pela IA", r.Texto,
+                        "escreveu num rascunho que estava travado")
+    End Function
+
+    ' ==================================================================
     ' A faixa
 
     ''' <summary>

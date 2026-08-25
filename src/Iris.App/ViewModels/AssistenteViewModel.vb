@@ -270,6 +270,10 @@ Namespace Global.Iris.App.ViewModels
             ResumirCommand.NotifyCanExecuteChanged()
             RedigirCommand.NotifyCanExecuteChanged()
             CancelarCommand.NotifyCanExecuteChanged()
+            ' O DESFAZER TAMBEM: ele depende da sessao e do estado do rascunho,
+            ' e fechar o compositor tem de apaga-lo da tela.
+            DesfazerCommand.NotifyCanExecuteChanged()
+            OnPropertyChanged(NameOf(PodeDesfazer))
         End Sub
 
         ''' <summary>
@@ -321,17 +325,49 @@ Namespace Global.Iris.App.ViewModels
             Await Executar(AssistOperation.Redigir, "Redija uma resposta.")
         End Function
 
-        ''' <summary>Devolve o rascunho como estava antes da redação.</summary>
+        ''' <summary>
+        ''' Devolve o rascunho como estava antes da redação — <b>se ainda for o
+        ''' mesmo rascunho, e se ele ainda estiver como a IA o deixou</b>.
+        '''
+        ''' O desfazer guardava só o texto anterior, e isso o tornava um
+        ''' escrevedor cego com um alvo móvel: depois de redigir em A, fechar A e
+        ''' abrir B deixava o botão habilitado, e clicar nele escrevia o texto
+        ''' antigo de A dentro de B. A guarda da aplicação protegia a ida e
+        ''' deixava a volta aberta.
+        '''
+        ''' Recusar em silêncio seria a outra forma de errar: o botão está ali,
+        ''' o usuário clicou, e nada acontecer não se distingue de estar
+        ''' quebrado. Por isso a recusa explica.
+        ''' </summary>
         Public Sub Desfazer()
             If _rascunho Is Nothing OrElse _anterior Is Nothing Then Return
+
+            If Not PodeDesfazer Then
+                Aviso = "Não dá mais para desfazer esta redação: o rascunho não é " &
+                        "mais o mesmo, ou você já mexeu no texto depois dela."
+                Esquecer()
+                Return
+            End If
+
             _rascunho.Texto = _anterior
+            Esquecer()
+        End Sub
+
+        ''' <summary>Não há mais o que desfazer.</summary>
+        Private Sub Esquecer()
             _anterior = Nothing
+            _aplicado = Nothing
+            _sessaoDaRedacao = 0
             OnPropertyChanged(NameOf(PodeDesfazer))
             DesfazerCommand.NotifyCanExecuteChanged()
         End Sub
 
         ''' <summary>O que estava no rascunho antes da última redação.</summary>
         Private _anterior As String
+        ''' <summary>O texto que a IA escreveu — o estado que o desfazer espera.</summary>
+        Private _aplicado As String
+        ''' <summary>A sessão do rascunho em que a redação foi aplicada.</summary>
+        Private _sessaoDaRedacao As Long
 
         ''' <summary>
         ''' <b>Dá para redigir?</b> — e o rascunho precisa aceitar escrita.
@@ -349,9 +385,24 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' <b>Dá para desfazer?</b> — quatro condições, e todas são a mesma
+        ''' pergunta: <i>o que eu desfaria ainda é o que eu fiz?</i>
+        '''
+        ''' Há o que desfazer; o rascunho aceita escrita agora; é o <b>mesmo</b>
+        ''' rascunho em que a redação foi aplicada; e o texto ainda é o que a IA
+        ''' escreveu.
+        '''
+        ''' A última fecha o desfazer assim que o usuário digita por cima da
+        ''' redação — de propósito. Restaurar ali apagaria a edição dele para
+        ''' desfazer algo que ele já desfez à mão.
+        ''' </summary>
         Public ReadOnly Property PodeDesfazer As Boolean
             Get
-                Return _anterior IsNot Nothing
+                Return _anterior IsNot Nothing AndAlso
+                       _rascunho IsNot Nothing AndAlso _rascunho.PodeEditar AndAlso
+                       _rascunho.Sessao = _sessaoDaRedacao AndAlso
+                       String.Equals(_rascunho.Texto, _aplicado, StringComparison.Ordinal)
             End Get
         End Property
 
@@ -403,7 +454,9 @@ Namespace Global.Iris.App.ViewModels
             End If
 
             _anterior = antesDoPedido
+            _sessaoDaRedacao = _rascunho.Sessao
             _rascunho.Texto = Resultado
+            _aplicado = Resultado
             OnPropertyChanged(NameOf(PodeDesfazer))
             DesfazerCommand.NotifyCanExecuteChanged()
         End Function
@@ -416,7 +469,18 @@ Namespace Global.Iris.App.ViewModels
                                     classificar As Func(Of IReadOnlyList(Of MessageClassification)),
                                     montar As Func(Of EnvelopeResult)) As Task
 
-            If Not PodePedir Then Return
+            ' A EXECUCAO E POR OPERACAO, COMO A HABILITACAO.
+            '
+            ' Aqui estava `If Not PodePedir Then Return`, e `PodePedir` quer
+            ' dizer "pode RESUMIR". Duas consequencias, as duas erradas em
+            ' direcoes opostas: com ativacao so para redigir, o botao ficava
+            ' habilitado e clicar nele nao fazia nada; e a exigencia de rascunho
+            ' editavel vivia so no CanExecute, de modo que uma chamada direta a
+            ' Redigir() atravessava e podia TRANSMITIR conteudo sem haver lugar
+            ' valido para aplicar a resposta.
+            '
+            ' Botao desabilitado e conveniencia. A recusa tem de estar aqui.
+            If Not PodeExecutar(pedido.Operacao) Then Return
 
             Dim minha = _geracao
             Ocupado = True
@@ -454,6 +518,23 @@ Namespace Global.Iris.App.ViewModels
                     Ocupado = False
                 End If
             End Try
+        End Function
+
+        ''' <summary>
+        ''' A condição de execução de <b>cada</b> operação.
+        '''
+        ''' Operação que não está na lista — <c>Nenhuma</c>, ou uma que venha a
+        ''' existir — recusa. Fechado por padrão, como o resto da §29.
+        ''' </summary>
+        Private Function PodeExecutar(operacao As AssistOperation) As Boolean
+            Select Case operacao
+                Case AssistOperation.Resumir
+                    Return PodePedir
+                Case AssistOperation.Redigir
+                    Return PodeRedigir
+                Case Else
+                    Return False
+            End Select
         End Function
 
         Private Sub Publicar(r As AssistOutcome)
