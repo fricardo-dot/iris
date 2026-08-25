@@ -2891,7 +2891,7 @@ exceção não tratada.
 | 6 | Corpus adversarial da Q2 com oráculo prévio | ok |
 | 7 | Critério operacional de invalidação, com dado | ok — S6 |
 | 8 | Latência máxima por lote | **ok** — §24.4: máx **58 ms** em condição isolada (a normativa), orçamento 100 ms |
-| 9 | Crash entre commit, checkpoint e publicação | **parcial** — §22.1 + §24.3: persistência, dreno e entrega ao-menos-uma-vez provados. Falta o consumidor real da UI, e o critério fala em *publicação para a UI* |
+| 9 | Crash entre commit, checkpoint e publicação | **parcial, e a exceção foi ACEITA** — §26. Infraestrutura recuperável provada; a entrega por consumidor real fecha no **2.4**, sob condição vinculante |
 | 10 | Reconciliação antiga não sobrescreve nova | **ok** — §22.2 |
 
 ### 22.9 O que ficou de fora do 2.1, e por quê
@@ -3456,3 +3456,87 @@ O detector responde `Estavel`, e está certo: nada encolheu. Mas **`Estavel` nã
 é `Completa`**, e confundir os dois seria exatamente transformar a derrota da
 Q8 em recurso. Há teste cobrando que o manifesto continue `Parcial` nesse
 cenário.
+
+
+---
+
+## 26. O fechamento da Fase 2, e a exceção aceita
+
+Aceita pelo usuário em **25 de agosto de 2026**, com recomendação convergente
+minha e do Codex.
+
+### 26.1 A decisão
+
+> A Fase 2 fecha com o **critério 9 declarado PARCIAL**, e o consumidor real da
+> UI vai para o **2.4**.
+
+**Por que isto não é arredondamento.** Eu tentei marcar o critério 9 como `ok`
+duas vezes nesta fase, e o Codex pegou nas duas. A diferença agora é que o
+critério **continua `PARCIAL` na tabela**: a incompletude fica visível em vez de
+absorvida.
+
+E uma correção ao meu próprio argumento, que o Codex fez e vale registrar. Eu
+escrevi que *"a substância do critério está provada"*. **Não está.** A parte
+"publicar para a UI" é substantiva e falta. A formulação exata:
+
+> A **infraestrutura recuperável** do critério está provada — linhas,
+> checkpoint, dívida persistente, dreno e semântica de entrega ao menos uma
+> vez. Falta provar a **entrega por um consumidor real**.
+
+**O argumento decisivo** é outro: não existe fronteira de apresentação na qual
+integrar o consumidor. Exigir isso agora faria uma fase de **persistência** só
+fechar quando a primeira UI baseada no cache ficasse pronta.
+
+E o argumento que eu usei e o Codex desconfiou, com razão: eu disse que a
+dívida é "auto-forçada", porque sem o dreno a UI não tem o que mostrar. Uma UI
+pode acabar lendo o manifesto direto e esquecendo o dreno, ou implementando só
+o caminho feliz. **A arquitetura torna a dívida importante, não
+inevitavelmente cumprida.** Por isso a exceção vem com condição, e não com
+gatilho.
+
+### 26.2 Condição vinculante de entrada do 2.4
+
+Gatilho é reativo — espera alguém notar. Isto é obrigatório e verificável:
+
+> **Nenhuma UI pode exibir dados vindos do cache** antes de existir um
+> `IPublicationConsumer` real, idempotente, ligado ao `PublicationDrain` na
+> inicialização **e** durante a execução.
+>
+> Para a integração ser considerada pronta, um teste tem de **matar o processo
+> entre `Receber` e `MarcarDrenada`** e demonstrar que, na reabertura, a UI
+> converge sem perda.
+>
+> Falhas persistentes do consumidor têm de aparecer ao usuário ou à
+> telemetria, por `TravadoEm` / `UltimoErro`.
+>
+> E a proibição curta: **a UI não pode contornar o `PublicationDrain`** usando
+> polling ou leitura direta como substituto silencioso da dívida registrada.
+
+### 26.3 O recorte do 2.4, escrito para ele não crescer
+
+Uma complicação que só apareceu ao olhar o `Iris.App`: ele referencia apenas
+`Iris.Model`, `Iris.Core` e `Iris.Outlook`, e **todos os ViewModels leem ao vivo
+do `IOutlookBroker`**. Nada no app conhece o cache.
+
+Então um consumidor "real" ligado a nada seria a mesma piada do *"só o teste
+implementa"*, com roupa nova. Para ter significado, algo no app precisa ler do
+**manifesto**.
+
+| Dentro do 2.4 | Fora do 2.4 |
+|---|---|
+| `Iris.App` referencia `Iris.Integration` | Trocar o app inteiro para ler do cache |
+| **Uma** view lendo do manifesto, com a ressalva visível | Busca, IA ou composição sobre o cache |
+| `IPublicationConsumer` real, ligado ao dreno na inicialização e durante a execução | Sincronização em segundo plano, agendamento |
+| O teste de crash entre `Receber` e `MarcarDrenada` | Reescrever a lista de mensagens |
+
+**Se o 2.4 crescer para "o app passa a ler do cache", a Fase 2 não termina.**
+Isso é a fase seguinte: substituir o broker exige que o cache ganhe busca,
+ordenação e reconciliação com o que está ao vivo — e a §23 já disse que ele é
+um **acervo histórico conservador**, não o estado corrente da caixa.
+
+### 26.4 O que fecha quando o 2.4 fechar
+
+O critério 9 sai de `PARCIAL` para `ok`, e a Fase 2 fica com os **dez**
+critérios cumpridos — com as exceções que já estão declaradas nas linhas 1 e 5
+da tabela da §22.8, e com a Q8 respondida por escopo (§23) em vez de por
+matriz.
