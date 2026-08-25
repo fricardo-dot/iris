@@ -529,6 +529,78 @@ Public Class AssistenteViewModelTests
         Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
     End Function
 
+    ''' <summary>
+    ''' <b>Editar o rascunho durante a redação impede a escrita por cima.</b>
+    '''
+    ''' A corrida que o §29 chama de "digitar durante a espera": o usuário pede
+    ''' a redação, continua escrevendo enquanto a IA pensa, e a resposta volta.
+    ''' Escrever por cima apagaria o que ele acabou de digitar — e o
+    ''' <c>Desfazer</c> devolveria o texto de <b>antes do pedido</b>, e não a
+    ''' edição dele, de modo que o que ele escreveu se perderia por duas vias.
+    '''
+    ''' O que o teste exige nas três frentes:
+    ''' <list type="bullet">
+    ''' <item>o rascunho continua com o que o usuário digitou;</item>
+    ''' <item>não há nada a desfazer — porque nada foi sobrescrito;</item>
+    ''' <item>a resposta continua na tela, e a faixa diz que ela não foi
+    ''' aplicada. Descartá-la seria perder trabalho já feito: o conteúdo já foi
+    ''' ao provedor, e apagar o texto aqui não desfaz divulgação nenhuma.</item>
+    ''' </list>
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Editar_o_rascunho_durante_a_redacao_NAO_e_sobrescrito() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu ja tinha escrito"}
+        Dim p As New ProvedorControlado() With {
+            .Trava = New ManualResetEventSlim(False), .Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Dim t = vm.RedigirCommand.ExecuteAsync(Nothing)
+        Try
+            Assert.IsTrue(Esperar(Function() vm.Ocupado), "tinha de estar em voo")
+            ' O usuario continua digitando enquanto a IA pensa.
+            r.Texto = "o que eu ja tinha escrito, e mais um paragrafo"
+        Finally
+            p.Trava.Set()
+        End Try
+        Await t
+
+        Assert.AreEqual("o que eu ja tinha escrito, e mais um paragrafo", r.Texto,
+                        "a IA escreveu por cima do que o usuario digitou na espera")
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing),
+                       "nada foi sobrescrito, entao nao ha o que desfazer — e um " &
+                       "Desfazer habilitado aqui devolveria o texto de ANTES do pedido")
+        Assert.AreEqual("resposta redigida pela IA", vm.Resultado,
+                        "a resposta ja foi paga: ela fica na tela para o usuario copiar")
+        StringAssert.Contains(vm.Aviso, "não foi aplicada",
+                              "silencio faria a redacao parecer que simplesmente falhou")
+    End Function
+
+    ''' <summary>
+    ''' Controle negativo do teste de cima.
+    '''
+    ''' Sem ele, uma redação que <b>nunca</b> escrevesse no rascunho passaria
+    ''' tanto neste caso quanto no outro — e a proteção pareceria funcionar
+    ''' justamente por estar quebrada. Mesma espera, mesma trava, e a única
+    ''' diferença é o usuário não digitar nada.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Controle_sem_editar_a_redacao_ENTRA_no_rascunho() As Task
+        Dim r As New RascunhoFalso() With {.Texto = "o que eu ja tinha escrito"}
+        Dim p As New ProvedorControlado() With {
+            .Trava = New ManualResetEventSlim(False), .Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Dim t = vm.RedigirCommand.ExecuteAsync(Nothing)
+        Assert.IsTrue(Esperar(Function() vm.Ocupado), "tinha de estar em voo")
+        p.Trava.Set()
+        Await t
+
+        Assert.AreEqual("resposta redigida pela IA", r.Texto,
+                        "sem edicao concorrente a redacao TEM de entrar")
+        Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
+        Assert.AreEqual("", vm.Aviso, "e nao ha o que avisar")
+    End Function
+
     ' ==================================================================
     ' A faixa
 

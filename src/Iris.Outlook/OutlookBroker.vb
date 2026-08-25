@@ -704,6 +704,18 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        Public Async Function GetMessageSnapshotAsync(item As ItemKey,
+                                                      cancel As CancellationToken) _
+            As Task(Of OperationResult(Of MessageSnapshot)) _
+            Implements IOutlookBroker.GetMessageSnapshotAsync
+
+            ' Leitura pura: ReadAsync, com retry. Nada aqui escreve.
+            Return Await ReadAsync(Of MessageSnapshot)(
+                "outlook.getMessageSnapshot",
+                Function(app, ns) MessageSnapshots.Read(ns, item),
+                cancel)
+        End Function
+
         Public Async Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
                                                         cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading))) _

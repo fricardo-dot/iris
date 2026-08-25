@@ -137,6 +137,22 @@ Namespace Global.Iris.Core
         ''' leitura; a decisão de divulgação é da política da Fase 3, e nela
         ''' "não consegui ler" nunca vira "pode".
         ''' </summary>
+        ''' <summary>
+        ''' Captura a mensagem inteira <b>numa leitura só</b> — assunto,
+        ''' remetente, destinatários, corpo e <c>PR_CHANGE_KEY</c>.
+        '''
+        ''' Cinco chamadas separadas podem observar cinco estados diferentes de
+        ''' uma mensagem que mudou no meio, e a <c>ChangeKey</c> serve justamente
+        ''' para prender o corpo à versão que o portão classificou. Vinda de
+        ''' outra passada, não prende nada.
+        '''
+        ''' Não torna a leitura atômica — o OOM não oferece isso, e a §29.2 do
+        ''' FASE3.md é a resposta a essa falta. O que se ganha é a janela mais
+        ''' estreita possível.
+        ''' </summary>
+        Function GetMessageSnapshotAsync(item As ItemKey, cancel As CancellationToken) _
+            As Task(Of OperationResult(Of MessageSnapshot))
+
         Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
                                            cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading)))

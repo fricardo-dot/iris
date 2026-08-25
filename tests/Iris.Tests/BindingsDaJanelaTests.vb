@@ -36,8 +36,6 @@ Public Class BindingsDaJanelaTests
     Private Shared Function Raizes() As Dictionary(Of String, Type)
         Return New Dictionary(Of String, Type) From {
             {"Acervo.", GetType(AcervoViewModel)},
-            {"Assistente.Reconciliacao.", GetType(ReconciliationResult)},
-            {"Assistente.", GetType(AssistenteViewModel)},
             {"Connection.", GetType(ConnectionViewModel)},
             {"Composer.", GetType(ComposerViewModel)},
             {"Detail.", GetType(MessageDetailViewModel)},
@@ -95,45 +93,92 @@ Public Class BindingsDaJanelaTests
     End Sub
 
     ''' <summary>
-    ''' <b>A janela mostra a situação da IA — e o que ficou sem desfecho.</b>
+    ''' <b>A janela hospeda a faixa da IA, com o contexto certo.</b>
     '''
-    ''' Binding ausente não é binding quebrado, e passaria pelo teste de cima
-    ''' sem reclamar. O que a §28.2 obriga a mostrar é o motivo de a IA não
-    ''' estar habilitada; o que a §29.6 obriga é o número de envios que
-    ''' ficaram ambíguos numa execução anterior.
-    '''
-    ''' "Pode ter saído conteúdo desta caixa e ninguém sabe" não pode viver só
-    ''' no banco.
+    ''' A faixa é um <c>UserControl</c> próprio — foi extraída para que o teste
+    ''' de renderização pudesse instanciar a <b>faixa de verdade</b> em vez de
+    ''' uma imitação. O que a janela precisa fazer é hospedá-la e dar a ela o
+    ''' <c>DataContext</c> certo; sem isso, todos os bindings de dentro
+    ''' resolveriam contra o <c>MainViewModel</c> e ficariam vazios em silêncio.
     ''' </summary>
     <TestMethod>
-    Public Sub A_janela_mostra_a_situacao_da_IA()
+    Public Sub A_janela_hospeda_a_faixa_da_IA()
         Dim xaml = LerXaml()
-        StringAssert.Contains(xaml, "Assistente.Aviso",
+        StringAssert.Contains(xaml, "<local:FaixaDaIa",
+            "a faixa da IA tem de estar na janela")
+        StringAssert.Contains(xaml, "DataContext=" & Q & "{Binding Assistente}" & Q,
+            "sem o contexto certo, os bindings de dentro resolvem contra o " &
+            "MainViewModel e ficam vazios em silencio")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Todo binding da faixa resolve no <c>AssistenteViewModel</c>.</b>
+    '''
+    ''' O <c>DataContext</c> da faixa é o assistente, então os caminhos são
+    ''' diretos — <c>Aviso</c>, e não <c>Assistente.Aviso</c>. Um refactor que
+    ''' renomeasse uma propriedade deixaria o binding perfeito e o texto
+    ''' invisível: binding com caminho errado no WPF <b>falha em silêncio</b>.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Todo_binding_da_faixa_resolve_no_AssistenteViewModel()
+        Dim quebrados As New List(Of String)()
+
+        For Each caminho In CaminhosDeBinding(LerFaixa())
+            Dim partes = caminho.Split("."c)
+            Dim alvo As Type = GetType(AssistenteViewModel)
+
+            For Each membro In partes
+                If alvo Is Nothing Then Exit For
+                Dim p = alvo.GetProperty(membro)
+                If p Is Nothing Then
+                    quebrados.Add(caminho)
+                    Exit For
+                End If
+                alvo = p.PropertyType
+            Next
+        Next
+
+        Assert.AreEqual(0, quebrados.Count,
+            "caminho que nao resolve fica vazio em silencio: " &
+            String.Join(", ", quebrados))
+    End Sub
+
+    ''' <summary>
+    ''' <b>A faixa mostra a situação da IA — e o que ficou sem desfecho.</b>
+    '''
+    ''' Binding ausente não é binding quebrado, e passaria pelo teste de cima sem
+    ''' reclamar. O que a §28.2 obriga a mostrar é o motivo de a IA não estar
+    ''' habilitada; o que a §29.6 obriga é o número de envios que ficaram
+    ''' ambíguos numa execução anterior.
+    '''
+    ''' "Pode ter saído conteúdo desta caixa e ninguém sabe" não pode viver só no
+    ''' banco.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_faixa_mostra_a_situacao_da_IA()
+        Dim xaml = LerFaixa()
+        StringAssert.Contains(xaml, "{Binding Aviso}",
             "o motivo de a IA nao estar habilitada tem de aparecer")
-        StringAssert.Contains(xaml, "Assistente.Reconciliacao.Aviso",
+        StringAssert.Contains(xaml, "{Binding Reconciliacao.Aviso}",
             "envios sem desfecho conhecido nao podem viver so no banco")
-        StringAssert.Contains(xaml, "Assistente.Resultado",
+        StringAssert.Contains(xaml, "{Binding Resultado}",
             "e a resposta do modelo tem de ter onde aparecer")
     End Sub
 
     ''' <summary>
-    ''' <b>A ação existe na janela.</b>
+    ''' <b>A ação existe na faixa.</b>
     '''
     ''' Sem os botões, o 3.5 seria uma tela de status: os comandos existiriam no
     ''' ViewModel e ninguém os alcançaria, e nem uma ativação futura tornaria a
     ''' funcionalidade utilizável.
-    '''
-    ''' Eles ficam <b>visíveis e desabilitados</b> quando a IA está desligada —
-    ''' esconder o botão esconderia junto o motivo, que é o que o usuário
-    ''' precisa ler no lugar onde procuraria a ação.
     ''' </summary>
     <TestMethod>
-    Public Sub A_acao_da_IA_existe_na_janela()
-        Dim xaml = LerXaml()
-        For Each comando In {"Assistente.ResumirCommand", "Assistente.RedigirCommand",
-                             "Assistente.DesfazerCommand", "Assistente.CancelarCommand"}
-            StringAssert.Contains(xaml, comando,
-                comando & " nao esta na janela — o comando existiria sem ninguem alcancar")
+    Public Sub A_acao_da_IA_existe_na_faixa()
+        Dim xaml = LerFaixa()
+        For Each comando In {"ResumirCommand", "RedigirCommand",
+                             "DesfazerCommand", "CancelarCommand"}
+            StringAssert.Contains(xaml, "{Binding " & comando & "}",
+                comando & " nao esta na faixa — o comando existiria sem ninguem alcancar")
         Next
     End Sub
 
@@ -141,19 +186,17 @@ Public Class BindingsDaJanelaTests
     ''' <b>A resposta do modelo aparece num <c>TextBlock</c>.</b>
     '''
     ''' Não num controle que interprete Markdown, HTML ou link: ela vem de um
-    ''' lugar que leu o e-mail, que por sua vez veio de fora. A barreira da
-    ''' §29.5 é estrutural, e este teste é onde ela fica presa ao XAML.
+    ''' lugar que leu o e-mail, que por sua vez veio de fora. A barreira da §29.5
+    ''' é estrutural, e este teste é onde ela fica presa ao XAML.
     ''' </summary>
     <TestMethod>
     Public Sub A_resposta_do_modelo_aparece_em_TEXTBLOCK()
-        Dim xaml = LerXaml()
-        Dim i = xaml.IndexOf("Assistente.Resultado", StringComparison.Ordinal)
+        Dim xaml = LerFaixa()
+        Dim i = xaml.IndexOf("{Binding Resultado}", StringComparison.Ordinal)
         Assert.IsTrue(i > 0, "o binding tem de existir")
 
-        ' O elemento que abre antes do binding tem de ser um TextBlock.
         Dim antes = xaml.Substring(0, i)
-        Dim abertura = antes.LastIndexOf("<"c)
-        Dim elemento = antes.Substring(abertura)
+        Dim elemento = antes.Substring(antes.LastIndexOf("<"c))
 
         StringAssert.StartsWith(elemento, "<TextBlock",
             "a resposta do modelo nao pode ir para um controle que INTERPRETE: " &
@@ -188,6 +231,21 @@ Public Class BindingsDaJanelaTests
     End Function
 
     Private Shared _xaml As String
+
+    ''' <summary>Aspas duplas, sem duplicar aspas dentro do literal.</summary>
+    Private Const Q As String = """"
+
+    ''' <summary>O XAML da faixa da IA, que é um <c>UserControl</c> próprio.</summary>
+    Private Shared Function LerFaixa() As String
+        Dim d = New DirectoryInfo(AppContext.BaseDirectory)
+        While d IsNot Nothing AndAlso Not File.Exists(Path.Combine(d.FullName, "Iris.slnx"))
+            d = d.Parent
+        End While
+        Assert.IsNotNull(d, "nao achei a raiz do repositorio")
+        Dim caminho = Path.Combine(d.FullName, "src", "Iris.App", "Views", "FaixaDaIa.xaml")
+        Assert.IsTrue(File.Exists(caminho), "FaixaDaIa.xaml nao encontrado em " & caminho)
+        Return File.ReadAllText(caminho)
+    End Function
 
     Private Shared Function LerXaml() As String
         If _xaml IsNot Nothing Then Return _xaml

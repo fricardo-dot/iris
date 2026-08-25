@@ -247,6 +247,12 @@ Namespace Global.Iris.App.ViewModels
             _geracao += 1
             Resultado = ""
             Cancelar()
+
+            ' E REAVALIA. Invalidar sem reavaliar deixava os comandos refletindo
+            ' o contexto anterior: pasta nova pode ter outra autorizacao, e o
+            ' botao continuaria habilitado — ou desabilitado — pelo motivo
+            ' errado.
+            Avaliar()
         End Sub
 
         Public Sub Cancelar()
@@ -317,6 +323,23 @@ Namespace Global.Iris.App.ViewModels
 
             If operacao <> AssistOperation.Redigir Then Return
             If _rascunho Is Nothing OrElse Not TemResultado Then Return
+
+            ' O RASCUNHO MUDOU ENQUANTO A IA ESCREVIA?
+            '
+            ' O texto era escrito incondicionalmente, e o que o usuario digitou
+            ' durante a espera sumia. Pior: "Desfazer" devolveria o texto de
+            ' ANTES do pedido, e nao a edicao dele — ou seja, ele perderia o que
+            ' escreveu por duas vias.
+            If Not String.Equals(_rascunho.Texto, antesDoPedido, StringComparison.Ordinal) Then
+                ' O resultado FICA na tela. Descartá-lo resolveria o mesmo
+                ' problema jogando fora um trabalho que já foi feito — e que já
+                ' saiu daqui: o conteúdo já foi ao provedor, então apagar a
+                ' resposta não desfaz divulgação nenhuma, só perde o texto. Ele
+                ' continua visível para o usuário copiar o que quiser.
+                Aviso = "A resposta ficou pronta, mas você mexeu no rascunho enquanto " &
+                        "isso. Ela não foi aplicada, para não apagar o que você escreveu."
+                Return
+            End If
 
             _anterior = antesDoPedido
             _rascunho.Texto = Resultado

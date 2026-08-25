@@ -1,0 +1,138 @@
+Imports System.Collections.Generic
+Imports System.Runtime.InteropServices
+Imports Iris.Model
+Imports Iris.Outlook.Interop
+Imports OL = Microsoft.Office.Interop.Outlook
+
+Namespace Global.Iris.Outlook
+
+    ''' <summary>
+    ''' Captura a mensagem inteira <b>numa leitura só</b>.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE NUMA LEITURA SÓ</b>
+    '''
+    ''' Assunto, remetente, destinatários, corpo e <c>PR_CHANGE_KEY</c> obtidos
+    ''' em cinco chamadas separadas podem observar cinco estados diferentes de
+    ''' uma mensagem que mudou no meio — e a <c>ChangeKey</c> serve justamente
+    ''' para prender o corpo à versão que o portão classificou. Se ela vier de
+    ''' outra passada, não prende nada.
+    '''
+    ''' Isto não torna a leitura <b>atômica</b>: o OOM não oferece isso, e a
+    ''' §29.2 é a resposta a essa falta. O que se ganha é a janela mais estreita
+    ''' possível, e um lugar só onde ela existe.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O CORPO É TEXTO</b>
+    '''
+    ''' <c>Body</c>, não <c>HTMLBody</c>. O <see cref="ContentPipeline"/> sabe
+    ''' converter HTML, e vai saber; aqui o texto simples é o que o Outlook já
+    ''' entrega pronto, e pedir HTML seria trazer marcação para depois tirar.
+    '''
+    ''' <b>Anexo não é lido</b>, e nem contado como conteúdo: a fase não os
+    ''' trata, e o portão nega mensagem que tem.
+    ''' </summary>
+    Friend Module MessageSnapshots
+
+        Private Const DaslChangeKey As String =
+            "http://schemas.microsoft.com/mapi/proptag/0x65E20102"
+
+        Public Function Read(ns As OL.NameSpace, item As ItemKey) _
+                             As OperationResult(Of MessageSnapshot)
+            Dim mail As OL.MailItem = Nothing
+            Try
+                Try
+                    mail = TryCast(ns.GetItemFromID(item.EntryId, item.StoreId), OL.MailItem)
+                Catch ex As COMException
+                    Return OperationResult(Of MessageSnapshot).Fail(ErrorKind.NotFound, "item")
+                End Try
+                If mail Is Nothing Then
+                    Return OperationResult(Of MessageSnapshot).Fail(ErrorKind.NotFound, "item")
+                End If
+
+                Dim chave = ChangeKey(mail)
+                If String.IsNullOrEmpty(chave) Then
+                    ' Sem versao nao da para prender o corpo a leitura que o
+                    ' classificou. Falhar aqui e melhor que entregar um
+                    ' snapshot que o pipeline vai recusar de qualquer jeito.
+                    Return OperationResult(Of MessageSnapshot).Fail(
+                        ErrorKind.Unexpected, "sem PR_CHANGE_KEY")
+                End If
+
+                Dim corpo = Texto(Function() mail.Body)
+                Dim completo = Not String.IsNullOrEmpty(corpo)
+
+                Return OperationResult(Of MessageSnapshot).Ok(
+                    New MessageSnapshot(item, chave,
+                                        Texto(Function() mail.Subject),
+                                        Texto(Function() mail.SenderName),
+                                        Destinatarios(mail),
+                                        corpo, ehHtml:=False, corpoCompleto:=completo))
+            Finally
+                ComHelpers.Release(mail)
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' Os destinatários, <b>por nome</b>.
+        '''
+        ''' Nome e não endereço: a guarda do Object Model pode pedir confirmação
+        ''' para ler endereço, e um diálogo modal no meio de um resumo é o pior
+        ''' momento possível. O nome basta para o modelo entender quem está na
+        ''' conversa.
+        '''
+        ''' Falhar aqui não derruba a captura: lista vazia é menos informação, e
+        ''' menos informação é melhor que nenhuma mensagem.
+        ''' </summary>
+        Private Function Destinatarios(mail As OL.MailItem) As IReadOnlyList(Of String)
+            Dim saida As New List(Of String)()
+            Dim lista As OL.Recipients = Nothing
+            Try
+                lista = mail.Recipients
+                For i = 1 To lista.Count
+                    Dim r As OL.Recipient = Nothing
+                    Try
+                        r = lista.Item(i)
+                        saida.Add(r.Name)
+                    Catch
+                    Finally
+                        ComHelpers.Release(r)
+                    End Try
+                Next
+            Catch
+            Finally
+                ComHelpers.Release(lista)
+            End Try
+            Return saida
+        End Function
+
+        ''' <summary>
+        ''' <c>PR_CHANGE_KEY</c> em hex. R7: o <c>PropertyAccessor</c> é
+        ''' adquirido, usado e liberado — não encadeado.
+        ''' </summary>
+        Private Function ChangeKey(mail As OL.MailItem) As String
+            Dim acessor As OL.PropertyAccessor = Nothing
+            Try
+                acessor = mail.PropertyAccessor
+                If acessor Is Nothing Then Return Nothing
+                Dim bytes = TryCast(acessor.GetProperty(DaslChangeKey), Byte())
+                If bytes Is Nothing OrElse bytes.Length = 0 Then Return Nothing
+                Return Convert.ToHexString(bytes)
+            Catch
+                Return Nothing
+            Finally
+                ComHelpers.Release(acessor)
+            End Try
+        End Function
+
+        Private Function Texto(f As Func(Of String)) As String
+            Try
+                Return If(f(), "")
+            Catch
+                Return ""
+            End Try
+        End Function
+
+    End Module
+
+End Namespace

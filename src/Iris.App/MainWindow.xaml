@@ -1,4 +1,4 @@
-<Window x:Class="MainWindow"
+<Window xmlns:local="clr-namespace:Iris.App.Views" x:Class="MainWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
@@ -1107,80 +1107,17 @@
 
             <!-- A FAIXA DA IA.
 
-                 Ela existe hoje para dizer que a IA externa NAO esta
-                 habilitada, e por que. Nao e "recurso em construcao": o
-                 mecanismo esta inteiro e testado, e o que falta e decisao do
-                 usuario - a politica da empresa e um provedor a escolha dele.
-                 E a §28.2 do FASE3.md.
+                 Extraida para um UserControl porque o teste de renderizacao
+                 precisa instanciar a FAIXA DE VERDADE. Enquanto ele
+                 reconstruia uma imitacao, ele nao pegou o defeito obvio: os
+                 botoes estavam DENTRO da borda de aviso, e com a IA
+                 funcionando - sem aviso e sem ambiguidades - a borda colapsa e
+                 leva os botoes junto.
 
-                 O texto do modelo aparece como TEXTO, e so. Nao vira Markdown
-                 ativo, nao vira link clicavel, nao vira comando: ele vem de um
-                 lugar que leu o e-mail, que por sua vez veio de fora. A
-                 barreira da §29.5 mora aqui e no ViewModel, e nao numa
-                 instrucao ao modelo. -->
-            <Border Grid.Row="2"
-                    Visibility="{Binding Assistente.TemAlgoADizer, Converter={StaticResource BoolToVis},
-                                         FallbackValue=Collapsed}"
-                    Background="{DynamicResource Brush.Surface.1}"
-                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                    BorderThickness="0,1,0,0"
-                    Padding="16,8">
-                <StackPanel>
-                    <!-- OS BOTOES: visiveis sempre, habilitados so quando da.
+                 O UserControl nao precisa de broker nem de Outlook: ele so
+                 tem bindings. -->
+            <local:FaixaDaIa Grid.Row="2" DataContext="{Binding Assistente}" />
 
-                         Um botao que some quando a IA esta desligada esconderia
-                         a funcionalidade E o motivo dela estar desligada - e o
-                         motivo e exatamente o que o usuario precisa ler, no
-                         lugar onde ele procuraria a acao. Um botao que executa
-                         e sempre recusa seria o outro extremo. -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <Button Content="Resumir"
-                                Command="{Binding Assistente.ResumirCommand}"
-                                Padding="10,3" Margin="0,0,8,0"
-                                AutomationProperties.Name="Resumir com IA" />
-                        <Button Content="Redigir resposta"
-                                Command="{Binding Assistente.RedigirCommand}"
-                                Padding="10,3" Margin="0,0,8,0"
-                                AutomationProperties.Name="Redigir resposta com IA" />
-                        <Button Content="Desfazer"
-                                Command="{Binding Assistente.DesfazerCommand}"
-                                Padding="10,3" Margin="0,0,8,0"
-                                AutomationProperties.Name="Desfazer a redacao da IA" />
-                        <Button Content="Cancelar"
-                                Command="{Binding Assistente.CancelarCommand}"
-                                Padding="10,3"
-                                AutomationProperties.Name="Cancelar o pedido a IA" />
-                    </StackPanel>
-
-                    <TextBlock Text="{Binding Assistente.Aviso}"
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                               AutomationProperties.Name="Situacao da IA" />
-                    <TextBlock Text="{Binding Assistente.Reconciliacao.Aviso}"
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Margin="0,4,0,0"
-                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                               AutomationProperties.Name="Envios sem desfecho conhecido" />
-                </StackPanel>
-            </Border>
-
-            <!-- O RESULTADO. TextBlock e nao qualquer coisa que interprete:
-                 texto passivo e a barreira, e ela e estrutural. -->
-            <Border Grid.Row="2"
-                    Visibility="{Binding Assistente.TemResultado, Converter={StaticResource BoolToVis},
-                                         FallbackValue=Collapsed}"
-                    Background="{DynamicResource Brush.Surface.1}"
-                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                    BorderThickness="0,1,0,0"
-                    Padding="16,8">
-                <TextBlock Text="{Binding Assistente.Resultado}"
-                           TextWrapping="Wrap"
-                           FontSize="12"
-                           Foreground="{DynamicResource Brush.Text.Primary}"
-                           AutomationProperties.Name="Resposta da IA" />
-            </Border>
         </Grid>
     </Border>
 </Window>

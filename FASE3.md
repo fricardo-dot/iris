@@ -921,9 +921,7 @@ precisa ler no lugar onde procuraria a ação.
 
 De onde a operação tira o que precisa é uma **porta** (`IAssistContext`), porque
 classificar exige ir ao COM e montar exige o corpo — nada disso pode viver no
-ViewModel sem arrastar o Outlook para dentro da tela. A produção usa
-`ContextoIndisponivel`, e ligar o contexto de verdade é **pendência declarada**:
-só faz sentido depois de haver para onde mandar.
+ViewModel sem arrastar o Outlook para dentro da tela.
 
 **`Trocou()` não estava ligado à seleção.** Os testes chamavam o método direto e
 na aplicação ninguém chamava — a proteção contra resposta obsoleta existia
@@ -940,7 +938,54 @@ local, e mutação local sem volta é a que ele descobre tarde demais. O texto
 anterior fica guardado. Com contraponto: redação que **não veio** não mexe no
 rascunho — senão a IA falhando apagaria o texto dele.
 
-### 38.7 E a faixa foi medida
+### 38.7 A segunda passada do Codex: quatro correções
+
+**O contexto de verdade estava desligado.** A produção usava
+`ContextoIndisponivel`, e ligar o contexto real era "pendência declarada, só faz
+sentido depois de haver provedor". Não fazia sentido: ler a mensagem, classificar
+cada membro e montar o envelope são requisitos **do Iris**, e independem de qual
+API vai receber os bytes. Deixá-los para depois faria a frase "implementação e
+provas locais concluídas" ser falsa — mesmo depois da cerimônia de ativação ainda
+faltaria o caminho central até o Outlook.
+
+Agora `ContextoDoOutlook` é o contexto de produção. A leitura é
+`GetMessageSnapshotAsync`, **uma ida ao COM só**: cinco chamadas separadas podem
+observar cinco estados de uma mensagem que mudou no meio, e a `ChangeKey` serve
+justamente para prender o corpo à versão que o portão classificou — vinda de
+outra passada, não prende nada. O que continua fechado é a transmissão: o destino
+vem do provedor, e o provedor da produção é o `AssistenteIndisponivel`, que não
+tem destino nenhum. O portão recusa **antes** de qualquer leitura.
+
+**`Trocou()` invalidava sem reavaliar.** A geração era incrementada e os comandos
+continuavam refletindo o contexto anterior — pasta nova pode ter outra
+autorização, e o botão seguiria habilitado (ou desabilitado) pelo motivo errado.
+Agora `Trocou()` chama `Avaliar()`.
+
+**Redigir sobrescrevia edição concorrente.** A corrida gêmea da §38.3, do outro
+lado: o usuário pede a redação, continua digitando enquanto a IA pensa, e o que
+ele escreveu some. Pior que só sumir — o `Desfazer` devolveria o texto de
+**antes do pedido**, e não a edição dele, então ele perderia o que escreveu por
+duas vias. Agora o texto de partida é comparado no retorno e a redação **não é
+aplicada** se ele mudou.
+
+O resultado **fica na tela**. Descartá-lo resolveria o mesmo problema jogando
+fora trabalho já feito, e que já saiu daqui: o conteúdo já foi ao provedor, e
+apagar a resposta não desfaz divulgação nenhuma. Com controle negativo: sem
+edição concorrente a redação **tem** de entrar, senão um comando que nunca
+escrevesse passaria nos dois testes.
+
+**Os botões viviam dentro do `Border` do aviso.** Eles apareciam exatamente
+quando havia algo errado a dizer, e sumiam quando a IA estava funcionando —
+o oposto do necessário, e o inverso do que a §38.6 acabara de justificar. A faixa
+tem hoje três linhas próprias: botões (sempre), aviso, resultado.
+
+Isso só foi pego porque o Codex leu o XAML. O teste de renderização não podia
+pegar: ele montava uma **imitação** da faixa em código, então media uma árvore
+que ninguém usava. Por isso a faixa virou um `UserControl` próprio
+(`Views/FaixaDaIa.xaml`), que o teste agora instancia de verdade — e os testes de
+binding leem o arquivo dela, não a janela.
+
+### 38.8 E a faixa foi medida
 
 `FaixaDaIaRenderizaTests` faz `Measure`/`Arrange` fora do vídeo, como o
 equivalente da Fase 2. Binding correto não detecta faixa com altura zero nem
@@ -953,7 +998,7 @@ A montagem precisa de **duas passadas** de layout: a primeira mede antes de os
 bindings de `Visibility` terem sido aplicados, e o `Grid` sai com altura de quem
 não tem nada a mostrar.
 
-### 38.8 O que ficou de fora, por recorte
+### 38.9 O que ficou de fora, por recorte
 
 Configuração de credencial, escolha de provedor ou modelo, e qualquer UX moldada
 pelas capacidades de um fornecedor específico. Sem provedor escolhido, isso seria

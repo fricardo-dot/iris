@@ -1,0 +1,82 @@
+<UserControl x:Class="Views.FaixaDaIa"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+    <UserControl.Resources>
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
+    </UserControl.Resources>
+
+    <!-- Tres linhas, e NAO uma.
+
+         Os botoes moravam dentro da borda de aviso, cuja visibilidade e
+         TemAlgoADizer. Com a IA funcionando - sem aviso e sem ambiguidades -
+         essa borda colapsa E LEVA OS BOTOES JUNTO: eles sumiam exatamente
+         quando estavam habilitados.
+
+         A barra de acoes tem visibilidade propria (sempre), o aviso tem a
+         dele, e o resultado tem a dele. Cada um na sua linha, para nenhum
+         cobrir o outro. -->
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <!-- OS BOTOES: visiveis SEMPRE, habilitados so quando da.
+
+             Um botao que some quando a IA esta desligada esconderia a
+             funcionalidade E o motivo dela estar desligada - e o motivo e
+             exatamente o que o usuario precisa ler, no lugar onde ele
+             procuraria a acao. -->
+        <Border Grid.Row="0"
+                BorderThickness="0,1,0,0"
+                Padding="16,8">
+            <StackPanel Orientation="Horizontal">
+                <Button Content="Resumir"
+                        Command="{Binding ResumirCommand}"
+                        Padding="10,3" Margin="0,0,8,0"
+                        AutomationProperties.Name="Resumir com IA" />
+                <Button Content="Redigir resposta"
+                        Command="{Binding RedigirCommand}"
+                        Padding="10,3" Margin="0,0,8,0"
+                        AutomationProperties.Name="Redigir resposta com IA" />
+                <Button Content="Desfazer"
+                        Command="{Binding DesfazerCommand}"
+                        Padding="10,3" Margin="0,0,8,0"
+                        AutomationProperties.Name="Desfazer a redacao da IA" />
+                <Button Content="Cancelar"
+                        Command="{Binding CancelarCommand}"
+                        Padding="10,3"
+                        AutomationProperties.Name="Cancelar o pedido a IA" />
+            </StackPanel>
+        </Border>
+
+        <!-- O AVISO: o motivo de a IA estar desligada, e o que ficou sem
+             desfecho conhecido numa execucao anterior. -->
+        <Border Grid.Row="1"
+                Visibility="{Binding TemAlgoADizer, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}"
+                Padding="16,4">
+            <StackPanel>
+                <TextBlock Text="{Binding Aviso}"
+                           TextWrapping="Wrap" FontSize="12"
+                           AutomationProperties.Name="Situacao da IA" />
+                <TextBlock Text="{Binding Reconciliacao.Aviso}"
+                           TextWrapping="Wrap" FontSize="12" Margin="0,4,0,0"
+                           AutomationProperties.Name="Envios sem desfecho conhecido" />
+            </StackPanel>
+        </Border>
+
+        <!-- O RESULTADO. TextBlock e nao qualquer coisa que interprete: a
+             resposta veio de um lugar que leu o e-mail, que por sua vez veio
+             de fora. Texto passivo e a barreira, e ela e estrutural. -->
+        <Border Grid.Row="2"
+                Visibility="{Binding TemResultado, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}"
+                Padding="16,4">
+            <TextBlock Text="{Binding Resultado}"
+                       TextWrapping="Wrap" FontSize="12"
+                       AutomationProperties.Name="Resposta da IA" />
+        </Border>
+    </Grid>
+</UserControl>

@@ -409,6 +409,24 @@ Namespace Global.Iris.App.ViewModels
         ''' Sem cache aberto não há diário, e sem diário a IA fica desligada:
         ''' transmitir sem poder registrar seria pior que não transmitir.
         ''' </summary>
+        ''' <summary>
+        ''' O que a IA olharia: a pasta aberta e a mensagem selecionada.
+        '''
+        ''' Uma mensagem, e não a thread inteira. Reconstruir conversa exige
+        ''' correlacionar por <c>ConversationID</c> e por assunto, e o ESCOPO diz
+        ''' que reconstrução perfeita de conversa está fora do escopo — juntar
+        ''' mensagens que <i>parecem</i> da mesma conversa para mandá-las juntas
+        ''' seria decidir divulgação por semelhança.
+        ''' </summary>
+        Private Function SelecaoParaIa() As (Pasta As FolderKey,
+                                             Itens As IReadOnlyList(Of ItemKey))
+            Dim vazio = CType(Array.Empty(Of ItemKey)(), IReadOnlyList(Of ItemKey))
+            Dim pasta = Folders.Selected?.Key
+            Dim selecionada = Messages.Selected
+            If selecionada Is Nothing Then Return (pasta, vazio)
+            Return (pasta, {selecionada.Key})
+        End Function
+
         Private Function MontarAssistente(ui As Global.System.Windows.Threading.Dispatcher) _
                                           As AssistenteViewModel
             Dim relogio As Func(Of DateTimeOffset) = Function() DateTimeOffset.Now
@@ -424,12 +442,20 @@ Namespace Global.Iris.App.ViewModels
                 If(diario, CType(New DiarioAusente(), IDisclosureJournal)),
                 New AssistenteIndisponivel(), relogio)
 
-            ' O contexto de verdade — broker le corpo e PR_CHANGE_KEY numa
-            ' operacao, pipeline prepara, envelope monta — so faz sentido depois
-            ' de haver para onde mandar. Ate la, ContextoIndisponivel recusa de
-            ' um jeito que nao engana. Pendencia declarada, §38.
+
+            ' O CONTEXTO DE VERDADE. Ler a mensagem, classificar e montar o
+            ' envelope sao requisitos do Iris, e independem de qual API vai
+            ' receber os bytes — deixa-los para depois faria faltar o caminho
+            ' central ate o Outlook mesmo depois da cerimonia de ativacao.
+            '
+            ' O destino vem do PROVEDOR, e o provedor da producao nao tem
+            ' nenhum: o portao recusa antes de qualquer leitura.
+            Dim provedor As IAssistantProvider = New AssistenteIndisponivel()
+            Dim contexto As New ContextoDoOutlook(
+                _broker, provedor.Destino, AddressOf SelecaoParaIa)
+
             Dim vm As New AssistenteViewModel(ui, transmissor, politica, relogio,
-                                              reconciliacao, New ContextoIndisponivel(),
+                                              reconciliacao, contexto,
                                               New RascunhoDoCompositor(Composer))
 
             ' O aviso da abertura entra na tela mesmo sem ninguem pedir nada:
