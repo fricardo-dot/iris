@@ -39,13 +39,23 @@ Namespace Global.Iris.Outlook
 
         Public Function Read(ns As OL.NameSpace, item As ItemKey) _
                              As OperationResult(Of MessageSnapshot)
+            ' R7: o objeto e adquirido em UMA variavel, e e ela que o Finally
+            ' libera. Escrever TryCast(ns.GetItemFromID(...), MailItem) direto
+            ' perdia a referencia quando o item existia e NAO era MailItem — o
+            ' RCW ficava sem dono e ninguem o liberava.
+            Dim obj As Object = Nothing
             Dim mail As OL.MailItem = Nothing
             Try
                 Try
-                    mail = TryCast(ns.GetItemFromID(item.EntryId, item.StoreId), OL.MailItem)
+                    obj = ns.GetItemFromID(item.EntryId, item.StoreId)
                 Catch ex As COMException
                     Return OperationResult(Of MessageSnapshot).Fail(ErrorKind.NotFound, "item")
                 End Try
+                If obj Is Nothing Then
+                    Return OperationResult(Of MessageSnapshot).Fail(ErrorKind.NotFound, "item")
+                End If
+
+                mail = TryCast(obj, OL.MailItem)
                 If mail Is Nothing Then
                     Return OperationResult(Of MessageSnapshot).Fail(ErrorKind.NotFound, "item")
                 End If
@@ -67,9 +77,37 @@ Namespace Global.Iris.Outlook
                                         Texto(Function() mail.Subject),
                                         Texto(Function() mail.SenderName),
                                         Destinatarios(mail),
-                                        corpo, ehHtml:=False, corpoCompleto:=completo))
+                                        corpo, ehHtml:=False, corpoCompleto:=completo,
+                                        temAnexo:=Anexado(mail)))
             Finally
-                ComHelpers.Release(mail)
+                ' `mail` e o MESMO objeto que `obj`: liberar os dois seria
+                ' liberar a mesma referencia duas vezes. So `obj` e liberado.
+                mail = Nothing
+                ComHelpers.Release(obj)
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' Tem anexo — <c>Nothing</c> se não deu para saber.
+        '''
+        ''' R7: a coleção <c>Attachments</c> é um objeto COM próprio, e
+        ''' <c>mail.Attachments.Count</c> deixaria o RCW dela sem dono. Ela é
+        ''' adquirida, lida e liberada.
+        '''
+        ''' Falhar aqui <b>não</b> vira zero: <c>Nothing</c> sobe até o pipeline,
+        ''' que recusa. Devolver zero seria transformar "não consegui contar" em
+        ''' "não tem" — falha aberta, exatamente a que o 3.0 já custou uma vez.
+        ''' </summary>
+        Private Function Anexado(mail As OL.MailItem) As Boolean?
+            Dim anexos As OL.Attachments = Nothing
+            Try
+                anexos = mail.Attachments
+                If anexos Is Nothing Then Return Nothing
+                Return anexos.Count > 0
+            Catch
+                Return Nothing
+            Finally
+                ComHelpers.Release(anexos)
             End Try
         End Function
 

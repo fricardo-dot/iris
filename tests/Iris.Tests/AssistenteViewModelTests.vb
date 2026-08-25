@@ -42,10 +42,15 @@ Public Class AssistenteViewModelTests
     End Function
 
     Private Shared Function Ativacao() As ActivationRecord
+        Return Ativacao({AssistOperation.Resumir, AssistOperation.Redigir})
+    End Function
+
+    ''' <summary>Uma ativação que autoriza só as operações pedidas.</summary>
+    Private Shared Function Ativacao(operacoes As AssistOperation()) As ActivationRecord
         Return New ActivationRecord("ativacao-1", 1, "teste", Agora.AddDays(-1),
                                     "provedor-de-teste", Endereco, "modelo-de-teste",
                                     "local", "sem retenção",
-                                    {AssistOperation.Resumir, AssistOperation.Redigir}, {Pasta},
+                                    operacoes, {Pasta},
                                     Array.Empty(Of String)(),
                                     {LabelReadingKind.Absent}, {0})
     End Function
@@ -53,13 +58,13 @@ Public Class AssistenteViewModelTests
     Private Shared Function Classificada(n As Integer) As MessageClassification
         Dim l As New LabelReading(Chave(n), LabelReadingKind.Absent, LabelReadStage.Parse,
                                   version:=New LabelVersionEvidence($"E-{n}", Agora, $"CK-{n}"))
-        Return New MessageClassification(Chave(n), Pasta, l)
+        Return New MessageClassification(Chave(n), Pasta, l, temAnexo:=False)
     End Function
 
     Private Shared Function Preparada(n As Integer) As MessagePart
         Return ContentPipeline.Preparar(
             New MessageSnapshot(Chave(n), $"CK-{n}", $"assunto {n}", "de@x.invalido",
-                                {"para@x.invalido"}, "olá", False, True)).Parte
+                                {"para@x.invalido"}, "olá", False, True, temAnexo:=False)).Parte
     End Function
 
     ''' <summary>Um provedor falso que dá para segurar no meio da chamada.</summary>
@@ -138,9 +143,16 @@ Public Class AssistenteViewModelTests
 
         Friend Property Classificou As Integer
 
+        ''' <summary>
+        ''' A pasta aberta. Trocável, porque trocar de pasta é o que faz o
+        ''' portão mudar de resposta — e provar que <c>Trocou()</c> reavalia
+        ''' exige que haja o que reavaliar.
+        ''' </summary>
+        Friend Property PastaAberta As FolderKey = Pasta
+
         Public Function Pedido(operacao As AssistOperation) As PreflightRequest _
                                Implements IAssistContext.Pedido
-            Return New PreflightRequest(operacao, Pasta, Destino())
+            Return New PreflightRequest(operacao, PastaAberta, Destino())
         End Function
 
         Public Function Classificar() As IReadOnlyList(Of MessageClassification) _
@@ -155,9 +167,23 @@ Public Class AssistenteViewModelTests
         End Function
     End Class
 
+    ''' <summary>
+    ''' Um rascunho com <b>ciclo de vida</b>: dá para trocar a sessão e para
+    ''' travá-lo, que é o que o compositor de verdade faz ao fechar e ao entrar
+    ''' na confirmação de envio.
+    ''' </summary>
     Friend NotInheritable Class RascunhoFalso
         Implements IRascunho
         Public Property Texto As String = "" Implements IRascunho.Texto
+
+        Friend Property Sessao As Long = 1 Implements IRascunho.Sessao
+        Friend Property PodeEditar As Boolean = True Implements IRascunho.PodeEditar
+
+        ''' <summary>Fecha este rascunho e abre outro, vazio.</summary>
+        Friend Sub Trocar()
+            Sessao += 1
+            Texto = ""
+        End Sub
     End Class
 
     Private Shared Function Montar(ativacao As ActivationRecord,
@@ -173,7 +199,7 @@ Public Class AssistenteViewModelTests
         Dim vm As New AssistenteViewModel(Nothing, t, politica, relogio, reconciliacao,
                                           If(contexto, New ContextoDeTeste()),
                                           If(rascunho, New RascunhoFalso()))
-        vm.Avaliar(Voo())
+        vm.Avaliar()
         Return vm
     End Function
 
@@ -600,6 +626,164 @@ Public Class AssistenteViewModelTests
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
         Assert.AreEqual("", vm.Aviso, "e nao ha o que avisar")
     End Function
+
+    ' ==================================================================
+    ' Trocar de contexto: o estado tem de sobreviver
+
+    ''' <summary>
+    ''' <b>Trocar de mensagem durante um pedido não trava o assistente.</b>
+    '''
+    ''' O <c>Finally</c> só devolvia <c>Ocupado = False</c> se a geração ainda
+    ''' fosse a mesma — e trocar de mensagem é exatamente o que muda a geração.
+    ''' A operação antiga terminava sem devolver o estado, e o assistente ficava
+    ''' <b>ocupado para sempre</b>: todos os botões desabilitados, nada na tela
+    ''' dizendo por quê, e nenhuma forma de sair a não ser fechar o Iris.
+    '''
+    ''' O irmão da §38.3, e o mais fácil de não notar: o teste de obsolescência
+    ''' olhava só o <c>Resultado</c>, e o resultado estava certo.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Trocar_em_voo_NAO_deixa_o_assistente_travado() As Task
+        Dim p As New ProvedorControlado() With {.Trava = New ManualResetEventSlim(False)}
+        Dim vm = Montar(Ativacao(), p, Pronta())
+
+        Dim t = Pedir(vm)
+        Assert.IsTrue(Esperar(Function() vm.Ocupado))
+        vm.Trocou()
+        p.Trava.Set()
+        Await t
+
+        Assert.IsFalse(vm.Ocupado, "ficou ocupado para sempre")
+        Assert.IsTrue(vm.PodePedir, "e sem poder pedir de novo, nunca")
+        Assert.IsTrue(vm.ResumirCommand.CanExecute(Nothing))
+    End Function
+
+    ''' <summary>
+    ''' <b><c>Trocou()</c> reavalia o portão, e não só invalida.</b>
+    '''
+    ''' Pasta nova pode ter outra autorização. Incrementar a geração sem
+    ''' reavaliar deixava o botão habilitado — ou desabilitado — pelo motivo do
+    ''' contexto anterior, e o usuário só descobriria ao clicar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Trocar_de_pasta_REAVALIA_o_portao()
+        Dim c As New ContextoDeTeste()
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta(), c)
+        Assert.IsTrue(vm.PodePedir, "a pasta inicial e a autorizada")
+
+        c.PastaAberta = New FolderKey("store-1", "pasta-NAO-autorizada")
+        vm.Trocou()
+
+        Assert.IsFalse(vm.PodePedir, "pasta nao autorizada tinha de fechar o botao")
+        StringAssert.Contains(vm.Aviso, "pasta", "e a tela tem de dizer por que")
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo do teste de cima: trocar <b>sem</b> mudar de pasta não
+    ''' fecha nada.
+    '''
+    ''' Sem ele, um <c>Trocou()</c> que simplesmente desabilitasse tudo passaria
+    ''' — e a IA ficaria inutilizável depois da primeira troca de mensagem.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_trocar_na_MESMA_pasta_nao_fecha_o_botao()
+        Dim c As New ContextoDeTeste()
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta(), c)
+
+        vm.Trocou()
+
+        Assert.IsTrue(vm.PodePedir)
+        Assert.AreEqual("", vm.Aviso)
+    End Sub
+
+    ' ==================================================================
+    ' O portão é por OPERAÇÃO
+
+    ''' <summary>
+    ''' <b>Ativação só para resumir não habilita a redação.</b>
+    '''
+    ''' A autorização lista as operações uma a uma. Havia um único
+    ''' <c>_portaoAceita</c>, calculado com <c>Resumir</c> e usado para habilitar
+    ''' os dois botões: a redação parecia disponível e seria negada depois, com o
+    ''' motivo aparecendo tarde e num lugar diferente de onde o usuário clicou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ativacao_so_para_RESUMIR_nao_habilita_redigir()
+        Dim vm = Montar(Ativacao({AssistOperation.Resumir}),
+                        New ProvedorControlado(), Pronta(), Nothing, New RascunhoFalso())
+
+        Assert.IsTrue(vm.PodePedir, "resumir esta autorizado")
+        Assert.IsFalse(vm.PodeRedigir, "redigir NAO esta")
+        Assert.IsFalse(vm.RedigirCommand.CanExecute(Nothing))
+        StringAssert.Contains(vm.Aviso, "Redigir",
+            "botao desabilitado sem motivo ao lado esconde a recusa")
+    End Sub
+
+    ''' <summary>
+    ''' <b>E o inverso: ativação só para redigir não habilita o resumo.</b>
+    '''
+    ''' O outro lado do mesmo defeito. Sem este, um portão que devolvesse a
+    ''' resposta de <c>Redigir</c> para as duas operações passaria no teste de
+    ''' cima.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ativacao_so_para_REDIGIR_nao_habilita_resumir()
+        Dim vm = Montar(Ativacao({AssistOperation.Redigir}),
+                        New ProvedorControlado(), Pronta(), Nothing, New RascunhoFalso())
+
+        Assert.IsTrue(vm.PodeRedigir, "redigir esta autorizado")
+        Assert.IsFalse(vm.PodePedir, "resumir NAO esta")
+        StringAssert.Contains(vm.Aviso, "Resumir")
+    End Sub
+
+    ' ==================================================================
+    ' O rascunho tem identidade
+
+    ''' <summary>
+    ''' <b>Rascunho trocado durante a redação não recebe a resposta.</b>
+    '''
+    ''' A guarda comparava só o <b>texto</b>. Fechar o compositor e abrir outro
+    ''' durante a espera dá um rascunho diferente que pode ter o mesmo texto — e
+    ''' o caso comum é o pior: os dois vazios. A redação de uma mensagem entraria
+    ''' na outra, e o <c>Desfazer</c> apagaria o que houvesse lá.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Rascunho_TROCADO_durante_a_redacao_nao_recebe_a_resposta() As Task
+        Dim r As New RascunhoFalso()
+        Dim p As New ProvedorControlado() With {
+            .Trava = New ManualResetEventSlim(False), .Texto = "resposta redigida pela IA"}
+        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
+
+        Dim t = vm.RedigirCommand.ExecuteAsync(Nothing)
+        Assert.IsTrue(Esperar(Function() vm.Ocupado))
+        ' Fecha este rascunho e abre outro — vazio, como o anterior.
+        r.Trocar()
+        p.Trava.Set()
+        Await t
+
+        Assert.AreEqual("", r.Texto,
+            "a redacao de um rascunho entrou em outro so porque os dois estavam vazios")
+        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
+        StringAssert.Contains(vm.Aviso, "não está mais aberto")
+    End Function
+
+    ''' <summary>
+    ''' <b>Compositor que não aceita edição desabilita a redação.</b>
+    '''
+    ''' <c>PodeRedigir</c> exigia só que o adaptador existisse, e em produção ele
+    ''' existe sempre: o botão ficava habilitado com o compositor fechado, e
+    ''' durante a confirmação de envio — quando os campos estão travados
+    ''' justamente para que ninguém mexa no que o usuário já aprovou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Rascunho_que_nao_aceita_edicao_desabilita_redigir()
+        Dim r As New RascunhoFalso() With {.PodeEditar = False}
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta(), Nothing, r)
+
+        Assert.IsTrue(vm.PodePedir, "resumir continua valendo")
+        Assert.IsFalse(vm.PodeRedigir)
+        Assert.IsFalse(vm.RedigirCommand.CanExecute(Nothing))
+    End Sub
 
     ' ==================================================================
     ' A faixa

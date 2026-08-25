@@ -63,11 +63,17 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         ''' <summary>
-        ''' Lê o rótulo de cada item selecionado, numa ida ao COM só.
+        ''' Lê o rótulo e a presença de anexo de cada item selecionado.
         '''
         ''' Item cuja leitura falhou entra com o desfecho que ela deu — e não
         ''' fica de fora: um item sumindo da lista faria a thread parecer menor
         ''' do que é, e o portão aprovaria uma thread que não é a do usuário.
+        '''
+        ''' <b>O anexo é lido, e não suposto.</b> Aqui havia <c>temAnexo:=False</c>
+        ''' fixo — o portão nega mensagem com anexo, e o caminho de produção lhe
+        ''' afirmava que não havia. Se a contagem falhar, para o item ou para a
+        ''' chamada inteira, o valor é <b>tem</b>: o portão nega, e nega dizendo
+        ''' por quê.
         ''' </summary>
         Public Function Classificar() As IReadOnlyList(Of MessageClassification) _
                                         Implements IAssistContext.Classificar
@@ -78,9 +84,43 @@ Namespace Global.Iris.App.ViewModels
                     GetAwaiter().GetResult()
             If Not r.Succeeded Then Return Array.Empty(Of MessageClassification)()
 
+            Dim anexo = Anexos(sel.Itens)
+
             Return r.Value.Select(
-                Function(l) New MessageClassification(l.Item, sel.Pasta, l,
-                                                      temAnexo:=False)).ToList()
+                Function(l) New MessageClassification(
+                    l.Item, sel.Pasta, l,
+                    temAnexo:=TemAnexo(anexo, l.Item.EntryId))).ToList()
+        End Function
+
+        ''' <summary>
+        ''' Item sem resposta, ou com resposta <c>Nothing</c>, conta como
+        ''' <b>tem anexo</b>. Fechado por falta de prova.
+        ''' </summary>
+        Private Shared Function TemAnexo(mapa As Dictionary(Of String, Boolean?),
+                                         chave As String) As Boolean
+            Dim tem As Boolean? = Nothing
+            If Not mapa.TryGetValue(chave, tem) Then Return True
+            If Not tem.HasValue Then Return True
+            Return tem.Value
+        End Function
+
+        ''' <summary>
+        ''' A presença de anexo por item, indexada pelo <c>EntryId</c>.
+        '''
+        ''' Chamada que falhou devolve dicionário vazio, e item ausente do
+        ''' dicionário vira <b>tem anexo</b> lá em cima. Fechado por falta de
+        ''' prova, como o resto da §29.
+        ''' </summary>
+        Private Function Anexos(itens As IReadOnlyList(Of ItemKey)) _
+                                As Dictionary(Of String, Boolean?)
+            Dim saida As New Dictionary(Of String, Boolean?)(StringComparer.Ordinal)
+            Dim r = _broker.GetAttachmentPresenceAsync(itens, CancellationToken.None).
+                    GetAwaiter().GetResult()
+            If Not r.Succeeded Then Return saida
+            For Each p In r.Value
+                saida(p.Item.EntryId) = p.Tem
+            Next
+            Return saida
         End Function
 
         ''' <summary>

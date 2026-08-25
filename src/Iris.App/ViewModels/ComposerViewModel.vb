@@ -275,6 +275,22 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' <b>A geração do rascunho aberto.</b> Sobe a cada <c>Encerrar</c>, e
+        ''' como não se abre um compositor sobre outro, ela identifica a sessão
+        ''' de edição.
+        '''
+        ''' Ela já existia para as continuações em voo largarem o resultado
+        ''' quando o rascunho delas acaba. É exposta porque o assistente precisa
+        ''' da mesma noção — e duas noções de "rascunho novo" acabariam
+        ''' discordando um dia.
+        ''' </summary>
+        Public ReadOnly Property Geracao As Long
+            Get
+                Return Interlocked.Read(_geracao)
+            End Get
+        End Property
+
         Public ReadOnly Property SessaoSubstituida As Boolean
             Get
                 Return _sessaoSubstituida

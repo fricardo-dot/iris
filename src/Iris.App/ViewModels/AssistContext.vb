@@ -79,6 +79,21 @@ Namespace Global.Iris.App.ViewModels
     ''' </summary>
     Public Interface IRascunho
         Property Texto As String
+
+        ''' <summary>
+        ''' <b>Identidade da sessão de edição.</b> Muda a cada rascunho novo.
+        '''
+        ''' Sem ela, "o rascunho não mudou" era provado só pelo texto — e dois
+        ''' rascunhos diferentes com o mesmo texto (o caso comum: os dois
+        ''' vazios) passavam pela prova.
+        ''' </summary>
+        ReadOnly Property Sessao As Long
+
+        ''' <summary>
+        ''' Dá para escrever nele <b>agora</b>. Compositor fechado, ou travado
+        ''' durante a confirmação de envio, responde <c>False</c>.
+        ''' </summary>
+        ReadOnly Property PodeEditar As Boolean
     End Interface
 
     ''' <summary>
@@ -104,6 +119,24 @@ Namespace Global.Iris.App.ViewModels
             Set(value As String)
                 _compositor.UserText = value
             End Set
+        End Property
+
+        ''' <summary>
+        ''' A geração do compositor — o contador que ele já mantinha para
+        ''' largar continuações em voo quando o rascunho acaba. É exatamente a
+        ''' identidade de sessão que o assistente precisa, e reaproveitá-la
+        ''' evita duas noções de "rascunho novo" que um dia discordariam.
+        ''' </summary>
+        Public ReadOnly Property Sessao As Long Implements IRascunho.Sessao
+            Get
+                Return _compositor.Geracao
+            End Get
+        End Property
+
+        Public ReadOnly Property PodeEditar As Boolean Implements IRascunho.PodeEditar
+            Get
+                Return _compositor.PodeEditar
+            End Get
         End Property
     End Class
 

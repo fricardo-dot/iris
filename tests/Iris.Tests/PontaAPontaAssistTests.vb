@@ -104,13 +104,13 @@ Public Class PontaAPontaAssistTests
     Private Shared Function Classificada(n As Integer) As MessageClassification
         Dim l As New LabelReading(Chave(n), LabelReadingKind.Absent, LabelReadStage.Parse,
                                   version:=New LabelVersionEvidence($"E-{n}", Agora, $"CK-{n}"))
-        Return New MessageClassification(Chave(n), Pasta, l)
+        Return New MessageClassification(Chave(n), Pasta, l, temAnexo:=False)
     End Function
 
     Private Shared Function Preparada(n As Integer, Optional corpo As String = "olá") As MessagePart
         Dim r = ContentPipeline.Preparar(
             New MessageSnapshot(Chave(n), $"CK-{n}", $"assunto {n}", "de@x.invalido",
-                                {"para@x.invalido"}, corpo, False, True))
+                                {"para@x.invalido"}, corpo, False, True, temAnexo:=False))
         Assert.IsTrue(r.Ok, $"{r.Recusa}")
         Return r.Parte
     End Function

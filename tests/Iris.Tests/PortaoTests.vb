@@ -461,7 +461,7 @@ Public Class PortaoTests
     <TestMethod>
     Public Sub Classificacao_de_OUTRO_item_NEGA()
         Dim leituraDeOutro = Leitura(LabelReadingKind.Absent, entryId:="E-2")
-        Dim m As New MessageClassification(Chave("E-1"), Pasta(), leituraDeOutro)
+        Dim m As New MessageClassification(Chave("E-1"), Pasta(), leituraDeOutro, temAnexo:=False)
 
         Assert.AreEqual(DisclosureReason.IdentidadeNaoBate,
                         Decidir(Autorizacao(), Pedido(m)).Motivo)

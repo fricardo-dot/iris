@@ -704,6 +704,18 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        Public Async Function GetAttachmentPresenceAsync(items As IReadOnlyList(Of ItemKey),
+                                                         cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence))) _
+            Implements IOutlookBroker.GetAttachmentPresenceAsync
+
+            ' Leitura pura: ReadAsync, com retry. Nada aqui escreve.
+            Return Await ReadAsync(Of IReadOnlyList(Of AttachmentPresence))(
+                "outlook.getAttachmentPresence",
+                Function(app, ns) AnexosPresentes.Ler(ns, items),
+                cancel)
+        End Function
+
         Public Async Function GetMessageSnapshotAsync(item As ItemKey,
                                                       cancel As CancellationToken) _
             As Task(Of OperationResult(Of MessageSnapshot)) _

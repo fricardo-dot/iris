@@ -101,7 +101,7 @@ Public Class EnvelopeECapabilityTests
         Dim leitura As New LabelReading(
             Chave(n), LabelReadingKind.Absent, LabelReadStage.Parse,
             version:=New LabelVersionEvidence($"E-{n}", Agora, $"CK-{n}"))
-        Return New MessageClassification(Chave(n), New FolderKey("store-1", "pasta-1"), leitura)
+        Return New MessageClassification(Chave(n), New FolderKey("store-1", "pasta-1"), leitura, temAnexo:=False)
     End Function
 
     Private Shared Function PreflightSo() As DisclosureDecision

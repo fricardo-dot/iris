@@ -40,9 +40,26 @@ Namespace Global.Iris.Model
         ''' <summary>O provider entregou o corpo inteiro.</summary>
         Public ReadOnly Property CorpoCompleto As Boolean
 
+        ''' <summary>
+        ''' <b>Tem anexo</b> — lido na <b>mesma visita</b> que o corpo.
+        '''
+        ''' <c>Nothing</c> quer dizer <b>não deu para saber</b>, e não "não
+        ''' tem": a contagem pode falhar por guarda do Object Model, por item de
+        ''' classe inesperada, ou por erro de COM. Quem lê isto trata os dois
+        ''' casos igual — anexo está fora desta fase por inteiro, e "não sei"
+        ''' nunca vira prova de ausência.
+        '''
+        ''' Ler aqui, e não só na classificação, é o que <b>fecha a corrida</b>:
+        ''' o portão classifica numa visita e o corpo é lido em outra, então um
+        ''' anexo acrescentado no meio passaria pelo portão. Esta leitura vem
+        ''' presa ao corpo que vira bytes.
+        ''' </summary>
+        Public ReadOnly Property TemAnexo As Boolean?
+
         Friend Sub New(item As ItemKey, changeKey As String, assunto As String,
                        remetente As String, destinatarios As IEnumerable(Of String),
-                       corpo As String, ehHtml As Boolean, corpoCompleto As Boolean)
+                       corpo As String, ehHtml As Boolean, corpoCompleto As Boolean,
+                       temAnexo As Boolean?)
             Me.Item = item
             Me.ChangeKey = If(changeKey, "")
             Me.Assunto = If(assunto, "")
@@ -52,6 +69,7 @@ Namespace Global.Iris.Model
             Me.Corpo = If(corpo, "")
             Me.EhHtml = ehHtml
             Me.CorpoCompleto = corpoCompleto
+            Me.TemAnexo = temAnexo
         End Sub
 
     End Class

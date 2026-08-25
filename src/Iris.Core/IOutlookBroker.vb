@@ -153,6 +153,20 @@ Namespace Global.Iris.Core
         Function GetMessageSnapshotAsync(item As ItemKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of MessageSnapshot))
 
+        ''' <summary>
+        ''' Cada item tem anexo? — <c>Nothing</c> por item que não deu para
+        ''' contar.
+        '''
+        ''' O portão nega mensagem com anexo, e precisa disto para negar pelo
+        ''' motivo certo. Ler numa visita separada da do rótulo é deliberado, e
+        ''' a corrida que isso abre é fechada em
+        ''' <see cref="GetMessageSnapshotAsync"/>, que lê o anexo junto com o
+        ''' corpo que vira bytes.
+        ''' </summary>
+        Function GetAttachmentPresenceAsync(items As IReadOnlyList(Of ItemKey),
+                                            cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence)))
+
         Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
                                            cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading)))

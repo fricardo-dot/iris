@@ -460,6 +460,21 @@ Namespace Global.Iris.App.ViewModels
 
             ' O aviso da abertura entra na tela mesmo sem ninguem pedir nada:
             ' "pode ter saido conteudo e ninguem sabe" nao espera interacao.
+            ' O ESTADO DO COMPOSITOR MUDA O QUE A IA PODE FAZER.
+            '
+            ' `PodeRedigir` exige rascunho editavel, e sem isto o botao ficaria
+            ' com o estado do momento em que a janela abriu: habilitado com o
+            ' compositor fechado, ou habilitado durante a confirmacao de envio,
+            ' quando os campos estao travados de proposito.
+            AddHandler Composer.PropertyChanged,
+                Sub(remetente As Object, arg As ComponentModel.PropertyChangedEventArgs)
+                    If arg.PropertyName = NameOf(ComposerViewModel.PodeEditar) OrElse
+                       arg.PropertyName = NameOf(ComposerViewModel.IsOpen) OrElse
+                       arg.PropertyName = NameOf(ComposerViewModel.State) Then
+                        vm.Avaliar()
+                    End If
+                End Sub
+
             vm.Avaliar()
             Return vm
         End Function

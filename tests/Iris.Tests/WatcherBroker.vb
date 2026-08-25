@@ -125,6 +125,13 @@ Friend NotInheritable Class WatcherBroker
         Return Fora(Of OperationResult(Of MessageDetail))()
     End Function
 
+    Public Function GetAttachmentPresenceAsync(items As IReadOnlyList(Of ItemKey),
+                                               cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence))) _
+        Implements IOutlookBroker.GetAttachmentPresenceAsync
+        Return Fora(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence)))()
+    End Function
+
     Public Function GetMessageSnapshotAsync(item As ItemKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessageSnapshot)) _
         Implements IOutlookBroker.GetMessageSnapshotAsync

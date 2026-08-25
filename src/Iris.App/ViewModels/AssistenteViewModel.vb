@@ -179,23 +179,36 @@ Namespace Global.Iris.App.ViewModels
         End Property
 
         ''' <summary>
-        ''' <b>A IA está disponível?</b>
+        ''' <b>A IA está disponível?</b> — para <b>alguma</b> das operações.
         '''
         ''' Duas condições, e as duas são fechadas por padrão: a reconciliação
-        ''' terminou, e o portão aceita o voo. Em produção a segunda é
-        ''' <c>False</c> — <c>ActivationRecord.DaProducao</c> é <c>Nothing</c>.
+        ''' terminou, e o portão aceita pelo menos um dos dois voos. Em produção
+        ''' a segunda é <c>False</c> — <c>ActivationRecord.DaProducao</c> é
+        ''' <c>Nothing</c>.
         ''' </summary>
         Public ReadOnly Property Disponivel As Boolean
             Get
-                Return Reconciliacao.Terminou AndAlso _portaoAceita
+                Return Reconciliacao.Terminou AndAlso (_portaoResumir OrElse _portaoRedigir)
             End Get
         End Property
 
-        Private _portaoAceita As Boolean
+        ''' <summary>
+        ''' O portão aceita <b>resumir</b>, e o portão aceita <b>redigir</b> —
+        ''' separados.
+        '''
+        ''' Havia um só, calculado com <c>AssistOperation.Resumir</c> e usado
+        ''' para habilitar os dois botões. Como a ativação lista as operações
+        ''' autorizadas uma a uma (<c>Operacoes.Contains</c>), uma ativação só
+        ''' para resumo habilitava visualmente a redação — que seria negada
+        ''' depois, com o motivo aparecendo tarde —, e uma ativação só para
+        ''' redação a deixava inalcançável.
+        ''' </summary>
+        Private _portaoResumir As Boolean
+        Private _portaoRedigir As Boolean
 
         Public ReadOnly Property PodePedir As Boolean
             Get
-                Return Disponivel AndAlso Not Ocupado
+                Return Reconciliacao.Terminou AndAlso _portaoResumir AndAlso Not Ocupado
             End Get
         End Property
 
@@ -214,20 +227,43 @@ Namespace Global.Iris.App.ViewModels
         ''' É o preflight: sem autorização não se gasta uma ida ao COM lendo
         ''' rótulo de coisa nenhuma.
         ''' </summary>
-        ''' <summary>Reavalia com o contexto corrente.</summary>
+        ''' <summary>
+        ''' Reavalia com o contexto corrente — <b>as duas operações</b>.
+        ''' </summary>
         Public Sub Avaliar()
-            Avaliar(_contexto.Pedido(AssistOperation.Resumir))
-        End Sub
+            Dim resumir = _politica.Preflight(
+                _contexto.Pedido(AssistOperation.Resumir), _relogio())
+            Dim redigir = _politica.Preflight(
+                _contexto.Pedido(AssistOperation.Redigir), _relogio())
 
-        Public Sub Avaliar(pedido As PreflightRequest)
-            Dim d = _politica.Preflight(pedido, _relogio())
-            _portaoAceita = d.Permitido
-            Aviso = If(d.Permitido, "", d.Explicacao)
+            _portaoResumir = resumir.Permitido
+            _portaoRedigir = redigir.Permitido
+            Aviso = Explicar(resumir, redigir)
+
             OnPropertyChanged(NameOf(Disponivel))
             OnPropertyChanged(NameOf(PodePedir))
             OnPropertyChanged(NameOf(PodeRedigir))
             Avisar()
         End Sub
+
+        ''' <summary>
+        ''' O que a faixa diz quando as duas operações não concordam.
+        '''
+        ''' Se nenhuma passa, o motivo é um só e é ele que aparece. Se só uma
+        ''' passa, o botão da outra fica desabilitado — e um botão desabilitado
+        ''' sem motivo ao lado é a forma mais silenciosa de esconder uma recusa.
+        ''' </summary>
+        Private Shared Function Explicar(resumir As DisclosureDecision,
+                                         redigir As DisclosureDecision) As String
+            If resumir.Permitido AndAlso redigir.Permitido Then Return ""
+            If Not resumir.Permitido AndAlso Not redigir.Permitido Then
+                Return resumir.Explicacao
+            End If
+            If resumir.Permitido Then
+                Return "Redigir resposta não está disponível: " & redigir.Explicacao
+            End If
+            Return "Resumir não está disponível: " & resumir.Explicacao
+        End Function
 
         ''' <summary>Os comandos reavaliam o que podem fazer.</summary>
         Private Sub Avisar()
@@ -297,9 +333,19 @@ Namespace Global.Iris.App.ViewModels
         ''' <summary>O que estava no rascunho antes da última redação.</summary>
         Private _anterior As String
 
+        ''' <summary>
+        ''' <b>Dá para redigir?</b> — e o rascunho precisa aceitar escrita.
+        '''
+        ''' Havia só <c>_rascunho IsNot Nothing</c>, e em produção o adaptador
+        ''' existe sempre: o botão ficava habilitado com o compositor fechado, ou
+        ''' durante a confirmação de envio, quando os campos estão travados
+        ''' justamente para que ninguém mexa no que o usuário já aprovou.
+        ''' </summary>
         Public ReadOnly Property PodeRedigir As Boolean
             Get
-                Return PodePedir AndAlso _rascunho IsNot Nothing
+                Return Reconciliacao.Terminou AndAlso _portaoRedigir AndAlso
+                       Not Ocupado AndAlso
+                       _rascunho IsNot Nothing AndAlso _rascunho.PodeEditar
             End Get
         End Property
 
@@ -316,6 +362,7 @@ Namespace Global.Iris.App.ViewModels
         Private Async Function Executar(operacao As AssistOperation,
                                         instrucao As String) As Task
             Dim antesDoPedido = If(_rascunho Is Nothing, Nothing, _rascunho.Texto)
+            Dim sessaoDoPedido = If(_rascunho Is Nothing, 0L, _rascunho.Sessao)
 
             Await Pedir(_contexto.Pedido(operacao),
                         AddressOf _contexto.Classificar,
@@ -323,6 +370,20 @@ Namespace Global.Iris.App.ViewModels
 
             If operacao <> AssistOperation.Redigir Then Return
             If _rascunho Is Nothing OrElse Not TemResultado Then Return
+
+            ' AINDA E O MESMO RASCUNHO, E ELE AINDA ACEITA ESCRITA?
+            '
+            ' Comparar so o texto nao bastava: fechar o compositor e abrir
+            ' outro durante a espera da IA da um rascunho DIFERENTE que pode
+            ' ter o mesmo texto — em especial o caso comum, os dois vazios — e
+            ' a redacao entraria na mensagem errada. A sessao do compositor
+            ' sobe a cada rascunho novo, e e ela que prende a resposta ao
+            ' rascunho de onde o pedido saiu.
+            If _rascunho.Sessao <> sessaoDoPedido OrElse Not _rascunho.PodeEditar Then
+                Aviso = "A resposta ficou pronta, mas o rascunho de onde ela foi " &
+                        "pedida não está mais aberto para edição. Ela não foi aplicada."
+                Return
+            End If
 
             ' O RASCUNHO MUDOU ENQUANTO A IA ESCREVIA?
             '
@@ -375,9 +436,23 @@ Namespace Global.Iris.App.ViewModels
 
                 Publicar(r)
             Finally
+                ' QUEM LIMPA O `Ocupado` E O DONO DO VOO, NAO A GERACAO.
+                '
+                ' Aqui estava `If minha = _geracao Then Ocupado = False`: trocar
+                ' de mensagem durante uma operacao incrementava a geracao, a
+                ' condicao ficava falsa, e `Ocupado` NUNCA voltava para False —
+                ' o assistente ficava travado para sempre, com todos os botoes
+                ' desabilitados e sem nada na tela explicando por que.
+                '
+                ' A geracao decide se o RESULTADO vale. Quem decide se o estado
+                ' de "ocupado" e meu para limpar e ser eu o voo corrente, e isso
+                ' e a identidade do CancellationTokenSource.
+                Dim meu = ReferenceEquals(_cancelamento, cts)
                 cts.Dispose()
-                If ReferenceEquals(_cancelamento, cts) Then _cancelamento = Nothing
-                If minha = _geracao Then Ocupado = False
+                If meu Then
+                    _cancelamento = Nothing
+                    Ocupado = False
+                End If
             End Try
         End Function
 

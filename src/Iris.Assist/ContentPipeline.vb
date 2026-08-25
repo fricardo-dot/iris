@@ -21,6 +21,12 @@ Namespace Global.Iris.Assist
         SemVersao
         ''' <summary>HTML que o pipeline não consegue interpretar com confiança.</summary>
         HtmlIlegivel
+        ''' <summary>
+        ''' A mensagem tem anexo — <b>ou não deu para saber se tem</b>. Os dois
+        ''' casos param aqui: anexo está fora desta fase por inteiro, e "não
+        ''' consegui contar" nunca vira prova de ausência.
+        ''' </summary>
+        Anexo
     End Enum
 
     Public NotInheritable Class ContentResult
@@ -105,6 +111,18 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Public Shared Function Preparar(m As Model.MessageSnapshot) As ContentResult
             If m Is Nothing Then Return Recusar(ContentRefusal.SemTexto)
+
+            ' ANEXO PARA AQUI, e antes de tudo. O portao ja nega mensagem com
+            ' anexo, mas ele classifica numa visita ao COM e o corpo e lido em
+            ' outra — um anexo acrescentado entre as duas passaria. Esta
+            ' verificacao esta presa ao MESMO snapshot que virou bytes, e por
+            ' isso fecha a corrida em vez de so repeti-la.
+            '
+            ' Nothing tambem para: "nao deu para contar" nao e "nao tem".
+            If m.TemAnexo Is Nothing OrElse m.TemAnexo.Value Then
+                Return Recusar(ContentRefusal.Anexo)
+            End If
+
             Return Preparar(m.Item, m.ChangeKey, m.Assunto, m.Remetente,
                             m.Destinatarios, m.Corpo, m.EhHtml, m.CorpoCompleto)
         End Function

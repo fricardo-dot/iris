@@ -35,7 +35,7 @@ Public Class ContentPipelineTests
         Return ContentPipeline.Preparar(
             New MessageSnapshot(Chave(), "CK-1", assunto, de,
                                 If(para, {"beltrano@exemplo.invalido"}),
-                                corpo, html, completo))
+                                corpo, html, completo, temAnexo:=False))
     End Function
 
     ' ==================================================================
@@ -276,7 +276,7 @@ Public Class ContentPipelineTests
     Public Sub Sem_ChangeKey_o_pipeline_RECUSA()
         Dim r = ContentPipeline.Preparar(
             New MessageSnapshot(Chave(), "", "assunto", "de@x.invalido",
-                                {"para@x.invalido"}, "corpo", False, True))
+                                {"para@x.invalido"}, "corpo", False, True, temAnexo:=False))
 
         Assert.IsFalse(r.Ok)
         Assert.AreEqual(ContentRefusal.SemVersao, r.Recusa)
@@ -287,7 +287,7 @@ Public Class ContentPipelineTests
     Public Sub A_ChangeKey_sai_na_parte()
         Dim r = ContentPipeline.Preparar(
             New MessageSnapshot(Chave(), "CK-7", "assunto", "de@x.invalido",
-                                {"para@x.invalido"}, "corpo", False, True))
+                                {"para@x.invalido"}, "corpo", False, True, temAnexo:=False))
 
         Assert.IsTrue(r.Ok)
         Assert.AreEqual("CK-7", r.Parte.ChangeKey)
@@ -383,5 +383,63 @@ Public Class ContentPipelineTests
         Assert.AreEqual(1, publicas.Count, "so um caminho publico")
         Assert.AreEqual(GetType(MessageSnapshot), publicas(0).GetParameters()(0).ParameterType)
     End Sub
+
+
+    ' ==================================================================
+    ' Anexo: a barreira que fecha a corrida do portão
+
+    ''' <summary>
+    ''' <b>Snapshot com anexo não vira bytes.</b>
+    '''
+    ''' O portão já nega mensagem com anexo, e isso não basta: ele classifica
+    ''' numa visita ao COM, e o corpo é lido em outra. Um anexo acrescentado
+    ''' entre as duas passaria pela classificação e entraria no envelope.
+    '''
+    ''' Aqui a verificação está presa ao <b>mesmo snapshot</b> que vira bytes.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Snapshot_com_anexo_e_recusado()
+        Dim r = ContentPipeline.Preparar(Snapshot(temAnexo:=True))
+
+        Assert.IsFalse(r.Ok)
+        Assert.AreEqual(ContentRefusal.Anexo, r.Recusa)
+    End Sub
+
+    ''' <summary>
+    ''' <b>"Não deu para contar" também não vira bytes.</b>
+    '''
+    ''' <c>Nothing</c> é o que a leitura devolve quando a contagem falhou —
+    ''' guarda do Object Model, classe inesperada, erro de COM. Deixar passar
+    ''' seria transformar ignorância em prova de ausência, que é a forma exata
+    ''' da falha aberta que o 3.0 já custou uma vez.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Snapshot_com_anexo_DESCONHECIDO_e_recusado()
+        Dim r = ContentPipeline.Preparar(Snapshot(temAnexo:=Nothing))
+
+        Assert.IsFalse(r.Ok)
+        Assert.AreEqual(ContentRefusal.Anexo, r.Recusa)
+    End Sub
+
+    ''' <summary>
+    ''' Controle negativo: sem anexo, o mesmo snapshot <b>passa</b>.
+    '''
+    ''' Sem ele, um pipeline que recusasse tudo passaria nos dois testes de
+    ''' cima — e nenhuma mensagem chegaria à IA, pelo motivo errado.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_sem_anexo_o_mesmo_snapshot_PASSA()
+        Dim r = ContentPipeline.Preparar(Snapshot(temAnexo:=False))
+
+        Assert.IsTrue(r.Ok, "so o anexo podia ser a diferenca")
+        Assert.AreEqual(ContentRefusal.Nenhuma, r.Recusa)
+    End Sub
+
+    ''' <summary>O mesmo snapshot, mudando só o anexo.</summary>
+    Private Shared Function Snapshot(temAnexo As Boolean?) As MessageSnapshot
+        Return New MessageSnapshot(New ItemKey("E-1", "store-1"), "CK-1",
+                                   "assunto", "de@x.invalido", {"para@x.invalido"},
+                                   "um corpo qualquer", False, True, temAnexo)
+    End Function
 
 End Class

@@ -80,13 +80,13 @@ Public Class DiarioTests
     Private Shared Function Mensagem(n As Integer) As MessageClassification
         Dim l As New LabelReading(Chave(n), LabelReadingKind.Absent, LabelReadStage.Parse,
                                   version:=New LabelVersionEvidence($"E-{n}", Agora, $"CK-{n}"))
-        Return New MessageClassification(Chave(n), New FolderKey("store-1", "pasta-1"), l)
+        Return New MessageClassification(Chave(n), New FolderKey("store-1", "pasta-1"), l, temAnexo:=False)
     End Function
 
     Private Shared Function Parte(n As Integer, Optional corpo As String = "olá") As MessagePart
         Dim r = ContentPipeline.Preparar(
             New MessageSnapshot(Chave(n), $"CK-{n}", $"assunto {n}", "de@x.invalido",
-                                {"para@x.invalido"}, corpo, False, True))
+                                {"para@x.invalido"}, corpo, False, True, temAnexo:=False))
         Assert.IsTrue(r.Ok, $"{r.Recusa}")
         Return r.Parte
     End Function

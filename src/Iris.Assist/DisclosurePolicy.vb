@@ -272,8 +272,14 @@ Namespace Global.Iris.Assist
         ''' <summary>Tem anexo. Anexo está fora desta fase, e nega.</summary>
         Public ReadOnly Property TemAnexo As Boolean
 
+        ''' <param name="temAnexo">
+        ''' Obrigatório, e não opcional com padrão <c>False</c>. O padrão fazia o
+        ''' chamador que <b>não sabia</b> afirmar "não tem" sem escrever nada — e
+        ''' foi exatamente assim que o caminho de produção passou meses
+        ''' declarando ausência de anexo que ninguém tinha verificado.
+        ''' </param>
         Public Sub New(item As ItemKey, pasta As FolderKey, leitura As LabelReading,
-                       Optional temAnexo As Boolean = False)
+                       temAnexo As Boolean)
             Me.Item = item
             Me.Pasta = pasta
             Me.Leitura = leitura

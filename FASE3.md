@@ -985,7 +985,79 @@ que ninguém usava. Por isso a faixa virou um `UserControl` próprio
 (`Views/FaixaDaIa.xaml`), que o teste agora instancia de verdade — e os testes de
 binding leem o arquivo dela, não a janela.
 
-### 38.8 E a faixa foi medida
+### 38.8 A terceira passada: seis defeitos, e o que eles tinham em comum
+
+Cinco dos seis eram a mesma forma de erro — **uma afirmação que ninguém tinha
+verificado**, escrita num lugar onde outra coisa decidia por ela.
+
+**O caminho de produção afirmava que não havia anexo.** A classificação montava
+toda `MessageClassification` com `temAnexo:=False` fixo. O portão nega mensagem
+com anexo, e para negar ele depende de alguém lhe dizer se tem — e quem lhe dizia
+não tinha olhado. Pior: o parâmetro era `Optional temAnexo As Boolean = False`,
+ou seja, o chamador que **não sabia** afirmava "não tem" sem escrever nada. O
+padrão foi removido: agora é obrigatório, e quem constrói uma classificação tem
+de declarar o que sabe.
+
+A leitura é real, e falha **fechada**: se a contagem não for possível — guarda do
+Object Model, item de classe inesperada, erro de COM — o valor é `Nothing`, e
+`Nothing` conta como **tem**. É a mesma disciplina do 3.0, onde ler
+`E_INVALIDARG` como "não tem rótulo" transformou ignorância em prova de ausência.
+
+E há uma segunda barreira, porque a primeira não fecha a corrida: o portão
+classifica numa visita ao COM e o corpo é lido em outra, então um anexo
+acrescentado entre as duas passaria. `MessageSnapshot` traz o anexo lido **na
+mesma visita que o corpo**, e o `ContentPipeline` recusa. A verificação que
+importa está presa aos bytes que sairiam.
+
+**Trocar de mensagem durante um pedido travava o assistente para sempre.** O
+`Finally` devolvia `Ocupado = False` só se a geração ainda fosse a mesma — e
+trocar de mensagem é exatamente o que muda a geração. A operação antiga terminava
+sem devolver o estado: todos os botões desabilitados, nada na tela dizendo por
+quê, e nenhuma saída a não ser fechar o Iris.
+
+Era o irmão da §38.3 e o mais fácil de não notar, porque o teste de obsolescência
+olhava o `Resultado` — e o resultado estava certo. Agora quem devolve o estado é
+o **dono do voo**, identificado pelo `CancellationTokenSource`: a geração decide
+se o resultado vale, e não se o estado é meu para limpar.
+
+**Um portão só, para duas operações.** A disponibilidade era calculada com
+`AssistOperation.Resumir` e usada para habilitar os dois botões. Como a ativação
+lista as operações uma a uma, uma autorização só para resumo habilitava
+visualmente a redação — negada depois, com o motivo aparecendo tarde e longe de
+onde o usuário clicou — e uma autorização só para redação a deixava inalcançável.
+Agora são dois preflights. Quando só uma passa, a faixa **diz qual não passa e
+por quê**: botão desabilitado sem motivo ao lado é a forma mais silenciosa de
+esconder uma recusa.
+
+**A guarda do rascunho comparava só o texto.** A correção da passada anterior
+prendia a resposta ao texto de partida, e não ao rascunho. Fechar o compositor e
+abrir outro durante a espera dá um rascunho **diferente** que pode ter o mesmo
+texto — e o caso comum é o pior: os dois vazios. A redação de uma mensagem
+entraria na outra. Agora a comparação inclui a **sessão** do compositor, que é o
+contador que ele já mantinha para largar continuações em voo quando o rascunho
+acaba; reaproveitá-lo evita duas noções de "rascunho novo" que um dia
+discordariam.
+
+Junto com isso, `PodeRedigir` exigia só que o adaptador existisse — e em produção
+ele existe sempre. O botão ficava habilitado com o compositor fechado e durante a
+confirmação de envio, quando os campos estão travados justamente para que ninguém
+mexa no que o usuário já aprovou. Agora exige `PodeEditar`, e abrir ou fechar o
+compositor reavalia.
+
+**E um RCW sem dono.** `TryCast(ns.GetItemFromID(...), MailItem)` perde a
+referência quando o item existe e **não** é `MailItem`: o `TryCast` devolve
+`Nothing`, a variável fica nula, e o `Finally` não tem o que liberar. É a R7 pela
+sexta vez nesta base, sempre no mesmo formato — a expressão encadeada que parece
+uma linha só. O objeto agora é adquirido numa variável `Object` própria.
+
+**O que faltava era o controle negativo, não a correção.** Duas das correções da
+passada anterior não tinham prova de estarem ligadas: voltar a produção para
+`ContextoIndisponivel`, ou tirar o `Avaliar()` de `Trocou()`, deixaria a suíte
+inteira verde. Hoje as sete correções foram confirmadas **desfazendo cada uma** e
+vendo o teste correspondente falhar, com o controle da mesma família continuando
+a passar.
+
+### 38.9 E a faixa foi medida
 
 `FaixaDaIaRenderizaTests` faz `Measure`/`Arrange` fora do vídeo, como o
 equivalente da Fase 2. Binding correto não detecta faixa com altura zero nem
@@ -998,7 +1070,7 @@ A montagem precisa de **duas passadas** de layout: a primeira mede antes de os
 bindings de `Visibility` terem sido aplicados, e o `Grid` sai com altura de quem
 não tem nada a mostrar.
 
-### 38.9 O que ficou de fora, por recorte
+### 38.10 O que ficou de fora, por recorte
 
 Configuração de credencial, escolha de provedor ou modelo, e qualquer UX moldada
 pelas capacidades de um fornecedor específico. Sem provedor escolhido, isso seria

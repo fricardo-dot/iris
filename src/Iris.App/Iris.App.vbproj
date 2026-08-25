@@ -34,4 +34,14 @@
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
   </ItemGroup>
 
+
+  <ItemGroup>
+    <!-- ContextoDoOutlook e Friend: ele e a borda que liga a tela ao COM, e
+         nao ha razao para o resto do mundo montar um. Os testes precisam
+         monta-lo para provar o caminho de PRODUCAO — sem isto, a prova seria
+         feita sobre a imitacao, que e exatamente o defeito que a segunda
+         passada do Codex apontou. -->
+    <InternalsVisibleTo Include="Iris.Tests" />
+  </ItemGroup>
+
 </Project>

@@ -200,10 +200,10 @@ Namespace Global.Iris.CrashHarness
                                                 LabelReadStage.Parse,
                                                 version:=New LabelVersionEvidence(
                                                     $"E-{n}", agora, $"CK-{n}"))
-                mensagens.Add(New MessageClassification(chave, pasta, leitura))
+                mensagens.Add(New MessageClassification(chave, pasta, leitura, temAnexo:=False))
                 partes.Add(ContentPipeline.Preparar(
                     New MessageSnapshot(chave, $"CK-{n}", $"assunto {n}", "de@x.invalido",
-                                        {"para@x.invalido"}, "corpo", False, True)).Parte)
+                                        {"para@x.invalido"}, "corpo", False, True, temAnexo:=False)).Parte)
             Next
 
             Dim voo As New PreflightRequest(AssistOperation.Resumir, pasta, destino)

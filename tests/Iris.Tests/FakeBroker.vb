@@ -418,6 +418,31 @@ Friend NotInheritable Class FakeBroker
         Return ForaDaAlcada(Of OperationResult(Of MessageDetail))()
     End Function
 
+    ''' <summary>
+    ''' As duas leituras que o contexto de produção faz, e só elas.
+    '''
+    ''' Continuam <b>fora da alçada por padrão</b>: quem não as configurar
+    ''' recebe a exceção de sempre. Existem porque provar
+    ''' <c>ContextoDoOutlook</c> exige um broker que responda — e provar o
+    ''' caminho de produção sobre uma imitação do próprio caminho não prova
+    ''' nada.
+    ''' </summary>
+    Friend Rotulos As Func(Of IReadOnlyList(Of ItemKey),
+                              OperationResult(Of IReadOnlyList(Of LabelReading)))
+    Friend Anexos As Func(Of IReadOnlyList(Of ItemKey),
+                             OperationResult(Of IReadOnlyList(Of AttachmentPresence)))
+
+    Public Function GetAttachmentPresenceAsync(items As IReadOnlyList(Of ItemKey),
+                                               cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence))) _
+        Implements IOutlookBroker.GetAttachmentPresenceAsync
+        Chamadas.Add("outlook.getAttachmentPresence")
+        If Anexos Is Nothing Then
+            Return ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence)))()
+        End If
+        Return Task.FromResult(Anexos(items))
+    End Function
+
     Public Function GetMessageSnapshotAsync(item As ItemKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessageSnapshot)) _
         Implements IOutlookBroker.GetMessageSnapshotAsync
@@ -428,6 +453,8 @@ Friend NotInheritable Class FakeBroker
                                               cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading))) _
         Implements IOutlookBroker.GetSensitivityLabelsAsync
+        Chamadas.Add("outlook.getSensitivityLabels")
+        If Rotulos IsNot Nothing Then Return Task.FromResult(Rotulos(items))
         Return ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of LabelReading)))()
     End Function
 
