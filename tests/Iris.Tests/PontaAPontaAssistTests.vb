@@ -166,14 +166,23 @@ Public Class PontaAPontaAssistTests
         End Property
 
         Friend Property EstaPronto As Boolean = True
+        ''' <summary>Explode ao ser perguntado, ou ao ser chamado.</summary>
+        Friend Property ExplodirNoPronto As Boolean
+        Friend Property ExplodirNoEnviar As Boolean
 
         Public Function Pronto() As Boolean Implements IAssistantProvider.Pronto
+            If ExplodirNoPronto Then
+                Throw New InvalidOperationException("SEGREDO-DA-EXCECAO-DO-PRONTO")
+            End If
             Return EstaPronto
         End Function
 
         Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _
                                Implements IAssistantProvider.Enviar
             Recebidos.Add(bytes)
+            If ExplodirNoEnviar Then
+                Throw New InvalidOperationException("SEGREDO-DA-EXCECAO-DO-ENVIAR")
+            End If
             Return Desfecho
         End Function
 
@@ -310,6 +319,8 @@ Public Class PontaAPontaAssistTests
             Dim r = Executar(m.T, Endereco)
 
             Assert.AreEqual(AssistOutcomeKind.NaoComecou, r.Kind)
+            Assert.AreEqual(DisclosureNote.ProvedorIndisponivel, r.Nota,
+                "credencial ausente nao e recusa do COFRE — a capability foi consumida")
             Assert.AreEqual(DisclosureStage.NaoEnviada, m.J.Ler(1)(0).Estagio)
         End Using
     End Sub
@@ -520,7 +531,7 @@ Public Class PontaAPontaAssistTests
 
             Dim r = Executar(t, Endereco)
 
-            Assert.AreEqual(AssistOutcomeKind.SemDiario, r.Kind,
+            Assert.AreEqual(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario, r.Kind,
                 "sucesso com o diario aberto e a tela discordando do registro")
             Assert.AreEqual(DisclosureStage.EmVoo, teimoso.Ler(1)(0).Estagio,
                 "e o registro fica em voo, para a reconciliacao resolver")
@@ -541,8 +552,81 @@ Public Class PontaAPontaAssistTests
 
             Dim r = Executar(t, Endereco)
 
-            Assert.AreEqual(AssistOutcomeKind.SemDiario, r.Kind)
+            Assert.AreEqual(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario, r.Kind)
             Assert.AreEqual(DisclosureStage.EmVoo, teimoso.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+
+    ' ==================================================================
+    ' Provedor que explode
+
+    ''' <summary>
+    ''' <b>Explodir ao ser perguntado é "não enviado" — e nada do texto sai.</b>
+    '''
+    ''' A pergunta acontece antes do voo, então a resposta honesta é que nada
+    ''' saiu. O que não pode é a exceção <b>escapar</b>: quem pediu receberia uma
+    ''' exceção em vez de um desfecho, e o texto dela atravessaria a fronteira.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Provedor_que_explode_no_PRONTO_e_nao_enviado()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {.ExplodirNoPronto = True}
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            Dim r = Executar(m.T, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.NaoComecou, r.Kind)
+            Assert.AreEqual(DisclosureNote.ProvedorIndisponivel, r.Nota)
+            Assert.AreEqual(DisclosureStage.NaoEnviada, m.J.Ler(1)(0).Estagio)
+            Assert.AreEqual(0, p.Recebidos.Count)
+            Assert.IsFalse(r.Texto.Contains("SEGREDO"), "o texto da excecao nao atravessa")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Explodir ao enviar é AMBÍGUO.</b>
+    '''
+    ''' O voo já estava marcado, e de onde a exceção veio não dá para saber se os
+    ''' bytes saíram. Escapando, a linha ficaria <c>EmVoo</c> para sempre e quem
+    ''' pediu não teria desfecho nenhum.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Provedor_que_explode_no_ENVIAR_e_AMBIGUO()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {.ExplodirNoEnviar = True}
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            Dim r = Executar(m.T, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.Ambiguo, r.Kind)
+            Assert.AreEqual(DisclosureStage.Ambigua, m.J.Ler(1)(0).Estagio)
+            Assert.IsFalse(r.Texto.Contains("SEGREDO"))
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>"Pode ter saído" e "o diário não fechou" são a MESMA linha, e ela diz
+    ''' as duas coisas.</b>
+    '''
+    ''' <c>SemDiario</c> passou a mentir quando era devolvido depois do HTTP: ele
+    ''' diz "nada saiu", e ali conteúdo pode ter saído. A UI precisa ver as duas
+    ''' metades — "erro de diário" sozinho esconde a primeira.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Diario_que_nao_fecha_depois_do_HTTP_e_AMBIGUO_e_nao_SemDiario()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco))
+            Dim teimoso As New DiarioTeimoso(New SqliteDisclosureJournal(db)) With {
+                .RecusarConcluir = True}
+            Dim t As New AssistTransmitter(New DisclosurePolicy(Ativacao(Endereco)),
+                                           New CapabilityLedger(), teimoso, p,
+                                           Function() Agora)
+
+            Dim r = Executar(t, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario, r.Kind,
+                "conteudo saiu, e o registro nao fechou — as duas coisas")
         End Using
     End Sub
 

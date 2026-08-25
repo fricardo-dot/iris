@@ -13,8 +13,25 @@ Namespace Global.Iris.Assist
         Negado
         ''' <summary>O cofre recusou a capability. Nada saiu.</summary>
         Recusado
-        ''' <summary>O diário não pôde registrar. Nada saiu.</summary>
+        ''' <summary>
+        ''' O diário não pôde registrar a <b>intenção</b>, ou o voo. Nada saiu —
+        ''' e isso se sabe, porque a transmissão não chegou a ser tentada.
+        ''' </summary>
         SemDiario
+
+        ''' <summary>
+        ''' <b>Pode ter saído, e o diário não conseguiu fechar o registro.</b>
+        '''
+        ''' Existe porque <see cref="SemDiario"/> passou a mentir: ele dizia
+        ''' "nada saiu", e era devolvido também quando <c>Concluir</c> ou
+        ''' <c>Falhar</c> falhava <b>depois</b> do HTTP — quando conteúdo pode ter
+        ''' saído.
+        '''
+        ''' A UI precisa dizer as duas coisas: que pode ter saído, e que o
+        ''' registro do desfecho não foi gravado. "Erro de diário" sozinho
+        ''' esconderia a primeira metade.
+        ''' </summary>
+        AmbiguoSemFechamentoDoDiario
         ''' <summary>Falhou, e <b>não</b> chegou a começar.</summary>
         NaoComecou
         ''' <summary>
@@ -152,10 +169,24 @@ Namespace Global.Iris.Assist
             '     credencial ausente e provedor nenhum sao recusas que se SABEM,
             '     e marca-las como ambiguas encheria de ruido a contagem que a
             '     UI mostra.
-            If Not _provedor.Pronto() Then
-                _diario.NaoEnviou(cap.RequestId, _relogio(), DisclosureNote.CapabilityRecusada)
+            '
+            '     A chamada vai dentro de Try: um provedor que EXPLODE ao ser
+            '     perguntado nao pode escapar da maquina de estados. E a nota e
+            '     ProvedorIndisponivel, nao CapabilityRecusada - a capability
+            '     foi consumida com sucesso no passo anterior, e credencial
+            '     ausente nao e recusa do cofre.
+            Dim pronto As Boolean
+            Try
+                pronto = _provedor.Pronto()
+            Catch
+                pronto = False
+            End Try
+
+            If Not pronto Then
+                _diario.NaoEnviou(cap.RequestId, _relogio(),
+                                  DisclosureNote.ProvedorIndisponivel)
                 Return New AssistOutcome(AssistOutcomeKind.NaoComecou, "", cap.RequestId,
-                                         DisclosureNote.CapabilityRecusada,
+                                         DisclosureNote.ProvedorIndisponivel,
                                          DisclosureReason.NaoDecidido)
             End If
 
@@ -166,7 +197,17 @@ Namespace Global.Iris.Assist
             End If
 
             ' 6. a rede.
-            Dim r = _provedor.Enviar(env.Envelope.Bytes(), ct)
+            '
+            '    Excecao do provedor DEPOIS do voo nao pode escapar: escapando,
+            '    a linha fica EmVoo, quem pediu recebe uma excecao em vez de um
+            '    desfecho, e o texto dela — que pode carregar host, caminho, ou
+            '    pedaco do que foi enviado — atravessa a fronteira.
+            Dim r As ProviderOutcome
+            Try
+                r = _provedor.Enviar(env.Envelope.Bytes(), ct)
+            Catch
+                r = New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
+            End Try
 
             ' 7. o desfecho.
             '
@@ -184,7 +225,11 @@ Namespace Global.Iris.Assist
                     ' deixaria o registro em voo para sempre, e a reconciliacao
                     ' da proxima abertura marcaria ambiguo — a UI teria dito
                     ' sucesso sobre algo que o diario chama de incerto.
-                    Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", cap.RequestId,
+                    '
+                    ' E o desfecho NAO e "erro de diario": conteudo saiu. Quem
+                    ' le tem de ver as duas coisas.
+                    Return New AssistOutcome(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
+                                             "", cap.RequestId,
                                              DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
                 End If
                 Return New AssistOutcome(AssistOutcomeKind.Respondeu, r.Texto, cap.RequestId,
@@ -193,8 +238,8 @@ Namespace Global.Iris.Assist
 
             Dim nota = NotaDe(r.Status)
             If Not _diario.Falhar(cap.RequestId, _relogio(), nota, podeTerChegado:=True) Then
-                Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", cap.RequestId,
-                                         nota, DisclosureReason.NaoDecidido)
+                Return New AssistOutcome(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
+                                         "", cap.RequestId, nota, DisclosureReason.NaoDecidido)
             End If
 
             Return New AssistOutcome(AssistOutcomeKind.Ambiguo, "", cap.RequestId,

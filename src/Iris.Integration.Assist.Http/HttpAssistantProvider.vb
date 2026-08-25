@@ -132,12 +132,15 @@ Namespace Global.Iris.Integration.Assist.Http
                 Return New ProviderOutcome(ProviderStatus.NaoComecou, "")
             End If
 
-            Dim chave = If(_credencial Is Nothing, Nothing, _credencial())
-            If String.IsNullOrEmpty(chave) Then
-                Return New ProviderOutcome(ProviderStatus.NaoComecou, "")
-            End If
-
             Try
+                ' A leitura da credencial fica DENTRO do Try: uma funcao que
+                ' passe no Pronto() e exploda aqui propagaria a excecao para
+                ' fora da fronteira, e o texto dela pode carregar o segredo.
+                Dim chave = If(_credencial Is Nothing, Nothing, _credencial())
+                If String.IsNullOrEmpty(chave) Then
+                    Return New ProviderOutcome(ProviderStatus.NaoComecou, "")
+                End If
+
                 Using pedido As New HttpRequestMessage(HttpMethod.Post, alvo)
                     pedido.Content = New ByteArrayContent(bytes)
                     pedido.Content.Headers.ContentType =
@@ -180,6 +183,11 @@ Namespace Global.Iris.Integration.Assist.Http
             Catch ex As HttpRequestException
                 ' A mensagem NAO atravessa: ela pode carregar host, caminho e,
                 ' em alguns casos, pedaco do que foi enviado.
+                Return New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
+            Catch ex As Exception
+                ' Qualquer outra — inclusive a funcao de credencial explodindo.
+                ' Nada do texto atravessa, e o desfecho admite que pode ter
+                ' chegado: daqui de dentro nao da para saber em que ponto parou.
                 Return New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
             End Try
         End Function

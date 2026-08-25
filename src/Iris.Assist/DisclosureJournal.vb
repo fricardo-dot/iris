@@ -75,6 +75,16 @@ Namespace Global.Iris.Assist
         EnvelopeRecusado
         ''' <summary>O conteúdo não pôde ser preparado.</summary>
         ConteudoRecusado
+        ''' <summary>
+        ''' O provedor não está em condição de transmitir — sem credencial,
+        ''' endereço inseguro, nenhum provedor configurado.
+        '''
+        ''' Distinta de <see cref="CapabilityRecusada"/>: a capability foi
+        ''' consumida com sucesso, e o que faltou foi do outro lado. Registrar as
+        ''' duas com a mesma nota faria "o cofre recusou" e "não havia credencial"
+        ''' virarem a mesma linha no diário.
+        ''' </summary>
+        ProvedorIndisponivel
         ''' <summary>O tempo acabou. <b>Não</b> quer dizer que não chegou.</summary>
         Timeout
         ''' <summary>O usuário mandou parar.</summary>
@@ -148,6 +158,7 @@ Namespace Global.Iris.Assist
             Select Case n
                 Case DisclosureNote.PortaoNegou, DisclosureNote.CapabilityRecusada,
                      DisclosureNote.EnvelopeRecusado, DisclosureNote.ConteudoRecusado,
+                     DisclosureNote.ProvedorIndisponivel,
                      DisclosureNote.ProcessoMorreuAntesDeTransmitir
                     Return True
                 Case Else
