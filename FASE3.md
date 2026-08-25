@@ -1224,11 +1224,34 @@ recusa é o cofre.
 Os controles negativos, medidos:
 
 - desligando só a verificação de anexo do pipeline, cai um teste adversarial;
-- desligando só a cobertura no `Emitir`, **nenhum dos 21 adversariais** cai —
+- desligando só a cobertura no `Emitir`, **nenhum dos 25 adversariais** cai —
   porque o consumo da capability reconfere a proveniência por conta própria. (Os
   testes unitários de `Emitir` caem, como devem.)
-- desligando a cobertura **e** a reconferência do consumo, caem seis — inclusive
-  os três de conteúdo, que passariam a mandar envelope vazio.
+- desligando só a reconferência do consumo, **nenhum** cai — pela razão
+  simétrica;
+- desligando **as duas**, caem sete — inclusive os três de conteúdo, que
+  passariam a mandar envelope vazio.
+
+As duas são independentemente suficientes, e é por isso que nenhuma sozinha
+aparece nos controles. Redundância aqui é escolha, não descuido: uma delas roda
+na emissão e a outra no consumo, e entre os dois momentos o envelope passa por
+código que pode mudar.
+
+#### O controle negativo quase custou uma guarda
+
+O roteiro que desliga e restaura fotografava o arquivo **antes de cada edição**.
+Com duas edições no mesmo arquivo, a segunda foto já era da versão quebrada, e a
+restauração devolveu o `Capability.vb` **sem a chamada a `Cobre`** — que foi
+commitada assim. A suíte continuou verde porque os 642 tinham sido medidos antes.
+
+Quem pegou foi o Codex, lendo o código: *"o teste unitário
+`Sim_para_uns_itens_NAO_emite_para_outros` necessariamente deve falhar com esse
+HEAD"*. Estava certo.
+
+O roteiro passou a fotografar cada arquivo **uma vez**, e a conferir o SHA-256
+depois de restaurar. A lição é a da própria fase: ferramenta de verificação
+também precisa de verificação, e a que edita código de produção precisa mais que
+as outras.
 
 O encadeamento omissão → cobertura já estava escrito no `ContextoDoOutlook`; o
 que não existia era a prova de que ele é o que segura. Nenhum teste de camada

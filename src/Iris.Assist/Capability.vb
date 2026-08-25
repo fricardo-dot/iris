@@ -197,7 +197,7 @@ Namespace Global.Iris.Assist
             If g.Operacao <> envelope.Operacao Then Return Nothing
 
             ' E os itens tem de ser EXATAMENTE os aprovados, na ordem aprovada.
-            ' desligado
+            If Not g.Cobre(envelope.Itens, envelope.Versoes) Then Return Nothing
 
             ' O prazo e o MENOR entre a validade curta da capability e o fim da
             ' propria ativacao. Uma capability que sobrevivesse a autorizacao

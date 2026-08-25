@@ -57,6 +57,7 @@ Namespace Global.Iris.Tests
     ''' barreira de mentira é pior que nenhuma — porque alguém confia nela.
     ''' </summary>
     <TestClass>
+    <DoNotParallelize>
     Public Class AdversarioPontaAPontaTests
 
         Private Shared ReadOnly Agora As New DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero)
@@ -815,11 +816,18 @@ Namespace Global.Iris.Tests
         End Function
 
         ''' <summary>
-        ''' <b>Classificação de item que ninguém pediu: nada sai.</b>
+        ''' <b>Classificação de item que ninguém pediu: nada sai — e para na
+        ''' cobertura.</b>
         '''
-        ''' O broker devolve o rótulo de uma mensagem a mais. O portão aprova as
-        ''' duas — ele decide sobre o que recebeu —, e o envelope tem uma só: o
-        ''' grant cobre um conjunto e os bytes são de outro.
+        ''' O broker devolve o rótulo de uma mensagem a mais, e o portão aprova
+        ''' as duas: ele decide sobre o que recebeu. Só uma foi pedida, então o
+        ''' envelope tem uma — o grant cobre um conjunto e os bytes são de outro.
+        '''
+        ''' <b>O anexo de B também vem <c>False</c></b>, de propósito. A primeira
+        ''' versão deste teste deixava B fora do mapa de anexos, e o padrão
+        ''' fechado transformava a ausência em "tem anexo": o portão negava por
+        ''' anexo <b>antes</b> do snapshot, e o teste passava provando outra
+        ''' coisa. Por isso ele exige que a leitura do corpo tenha acontecido.
         '''
         ''' Não é hipótese acadêmica: uma leitura por <c>Table</c> que devolvesse
         ''' linha a mais, ou um filtro frouxo, produziria exatamente isto.
@@ -830,12 +838,17 @@ Namespace Global.Iris.Tests
                 Dim b = BrokerBom()
                 b.Rotulos = Function(chaves) OperationResult(Of IReadOnlyList(Of LabelReading)).
                     Ok({Listado(1), Listado(2)})
+                b.Anexos = Function(chaves) OperationResult(Of IReadOnlyList(Of AttachmentPresence)).
+                    Ok({New AttachmentPresence(Chave(1), False),
+                        New AttachmentPresence(Chave(2), False)})
                 Dim p As New ProvedorQueRegistra()
                 Dim vm = Montar(b, p, db)
 
                 Assert.IsTrue(vm.ResumirCommand.CanExecute(Nothing))
                 Await vm.ResumirCommand.ExecuteAsync(Nothing)
 
+                CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshot",
+                    "o portao negou antes da leitura do corpo: a recusa nao e a cobertura")
                 Assert.AreEqual(0, p.Chamadas,
                     "o grant cobria dois itens e os bytes eram de um")
             End Using
