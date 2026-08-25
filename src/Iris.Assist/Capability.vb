@@ -190,6 +190,12 @@ Namespace Global.Iris.Assist
             ' Meia thread e meio corpo nao sao autorizaveis.
             If envelope.Truncado OrElse envelope.CorpoIncompleto Then Return Nothing
 
+            ' A operacao DENTRO dos bytes tem de ser a aprovada. Sem isto, um
+            ' grant para Resumir emitia capability sobre um envelope montado
+            ' como Redigir: a capability recebia a operacao do grant, e o hash
+            ' era dos bytes de outra coisa.
+            If g.Operacao <> envelope.Operacao Then Return Nothing
+
             ' E os itens tem de ser EXATAMENTE os aprovados, na ordem aprovada.
             If Not g.Cobre(envelope.Itens, envelope.Versoes) Then Return Nothing
 
@@ -267,7 +273,11 @@ Namespace Global.Iris.Assist
                 Return Recusar(CapabilityRefusal.ProveniencaDiferente)
             End If
 
-            If operacao <> c.Operacao Then Return Recusar(CapabilityRefusal.OperacaoDiferente)
+            ' A operacao pedida, a da capability e a que esta DENTRO dos bytes:
+            ' as tres.
+            If operacao <> c.Operacao OrElse envelope.Operacao <> c.Operacao Then
+                Return Recusar(CapabilityRefusal.OperacaoDiferente)
+            End If
 
             If destino Is Nothing OrElse c.Destino Is Nothing OrElse
                Not String.Equals(destino.Endpoint.Trim(), c.Destino.Endpoint.Trim(),

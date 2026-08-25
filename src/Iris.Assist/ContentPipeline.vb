@@ -94,12 +94,27 @@ Namespace Global.Iris.Assist
         ''' Prepara uma mensagem. Recusa em vez de "dar um jeito": conteúdo que
         ''' não dá para preparar com segurança é conteúdo que não sai.
         ''' </summary>
+        ''' <summary>
+        ''' Prepara uma mensagem a partir do <see cref="Model.MessageSnapshot"/>
+        ''' — o único caminho público.
+        '''
+        ''' A versão anterior recebia item, versão, assunto, remetente e corpo
+        ''' como <b>parâmetros separados</b>. Isso preservava o par (item,
+        ''' versão) e não provava nada sobre ele: qualquer chamador passava o
+        ''' item aprovado, a versão aprovada, e um corpo qualquer.
+        ''' </summary>
+        Public Shared Function Preparar(m As Model.MessageSnapshot) As ContentResult
+            If m Is Nothing Then Return Recusar(ContentRefusal.SemTexto)
+            Return Preparar(m.Item, m.ChangeKey, m.Assunto, m.Remetente,
+                            m.Destinatarios, m.Corpo, m.EhHtml, m.CorpoCompleto)
+        End Function
+
         ''' <param name="changeKey">
         ''' A <c>PR_CHANGE_KEY</c> da leitura que produziu este corpo. É ela que
         ''' prende o corpo à versão que o portão classificou — sem isso, corpo
         ''' de uma versão sai autorizado pelo rótulo de outra.
         ''' </param>
-        Public Shared Function Preparar(item As Model.ItemKey, changeKey As String,
+        Friend Shared Function Preparar(item As Model.ItemKey, changeKey As String,
                                         assunto As String, remetente As String,
                                         destinatarios As IEnumerable(Of String),
                                         corpo As String, ehHtml As Boolean,
@@ -125,6 +140,10 @@ Namespace Global.Iris.Assist
             If Embutido.IsMatch(cru) OrElse
                Embutido.IsMatch(Net.WebUtility.HtmlDecode(cru)) Then
                 Return Recusar(ContentRefusal.ReferenciaEmbutida)
+            End If
+
+            If ehHtml AndAlso Not HtmlInterpretavel(cru) Then
+                Return Recusar(ContentRefusal.HtmlIlegivel)
             End If
 
             Dim texto = If(ehHtml, DeHtml(corpo), Limpar(corpo))
@@ -156,6 +175,43 @@ Namespace Global.Iris.Assist
 
             Return New ContentResult(True, ContentRefusal.Nenhuma,
                                      New MessagePart(item, changeKey, tema, de, quem, texto, True))
+        End Function
+
+        ''' <summary>
+        ''' <b>Dá para interpretar este HTML com confiança?</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE ISTO FECHA</b>
+        '''
+        ''' A remoção de bloco é por expressão regular, e expressão regular não
+        ''' é parser: <c>&lt;script&gt;segredo</c> — <b>sem fechar</b> — não casa
+        ''' com o padrão de bloco, então o <c>&lt;script&gt;</c> some junto com
+        ''' as outras tags e <c>segredo</c> vira texto legítimo.
+        '''
+        ''' O mesmo vale para <c>&lt;style&gt;</c> e para comentário sem
+        ''' <c>--&gt;</c>. Nos três casos, o texto que sai é justamente o que o
+        ''' usuário <b>não</b> viu na tela — e é ele que iria para o provedor
+        ''' como se fosse a mensagem.
+        '''
+        ''' Um parser de verdade resolveria melhor. Enquanto não há, o mínimo
+        ''' honesto é <b>recusar</b> o que não dá para interpretar, em vez de
+        ''' converter pela metade.
+        ''' </summary>
+        Private Shared Function HtmlInterpretavel(bruto As String) As Boolean
+            For Each nome In {"script", "style"}
+                If Contagem(bruto, "<" & nome) <> Contagem(bruto, "</" & nome) Then Return False
+            Next
+            Return Contagem(bruto, "<!--") = Contagem(bruto, "-->")
+        End Function
+
+        Private Shared Function Contagem(texto As String, agulha As String) As Integer
+            Dim n = 0
+            Dim i = texto.IndexOf(agulha, StringComparison.OrdinalIgnoreCase)
+            While i >= 0
+                n += 1
+                i = texto.IndexOf(agulha, i + 1, StringComparison.OrdinalIgnoreCase)
+            End While
+            Return n
         End Function
 
         ''' <summary>

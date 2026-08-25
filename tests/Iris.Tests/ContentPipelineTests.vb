@@ -288,4 +288,72 @@ Public Class ContentPipelineTests
         Assert.AreEqual("CK-7", r.Parte.ChangeKey)
     End Sub
 
+
+    ' ==================================================================
+    ' HTML mal formado
+
+    ''' <summary>
+    ''' <b>Bloco sem fechar RECUSA — porque a alternativa é ele virar texto.</b>
+    '''
+    ''' A remoção de bloco é por expressão regular, e expressão regular não é
+    ''' parser: <c>&lt;script&gt;segredo</c>, sem fechar, não casa com o padrão
+    ''' de bloco. O <c>&lt;script&gt;</c> então some junto com as outras tags e
+    ''' <c>segredo</c> vira texto legítimo — que é justamente o texto que o
+    ''' usuário <b>não</b> viu na tela, indo para o provedor como se fosse a
+    ''' mensagem.
+    '''
+    ''' Um parser de verdade resolveria melhor. Enquanto não há, o mínimo
+    ''' honesto é recusar o que não dá para interpretar.
+    ''' </summary>
+    <DataTestMethod>
+    <DataRow("<p>visivel</p><script>SEGREDO")>
+    <DataRow("<p>visivel</p><style>SEGREDO")>
+    <DataRow("<p>visivel</p><!-- SEGREDO")>
+    <DataRow("<script>a</script><script>SEGREDO")>
+    Public Sub Bloco_sem_fechar_RECUSA(corpo As String)
+        Dim r = Preparar(corpo, html:=True)
+
+        Assert.IsFalse(r.Ok, "passou, e o segredo teria virado texto: " & corpo)
+        Assert.AreEqual(ContentRefusal.HtmlIlegivel, r.Recusa)
+    End Sub
+
+    ''' <summary>
+    ''' E o controle: HTML bem formado com bloco <b>continua</b> passando.
+    '''
+    ''' Sem ele, um pipeline que recusasse todo HTML com <c>script</c> passaria
+    ''' nos testes acima — e nenhuma mensagem real de newsletter chegaria a ser
+    ''' resumida.
+    ''' </summary>
+    <TestMethod>
+    Public Sub HTML_bem_formado_com_bloco_PASSA()
+        Dim r = Preparar("<p>visivel</p><script>SEGREDO</script>" &
+                         "<style>.a{}</style><!-- nota -->", html:=True)
+
+        Assert.IsTrue(r.Ok, $"recusou por {r.Recusa}")
+        StringAssert.Contains(r.Parte.Corpo, "visivel")
+        Assert.IsFalse(r.Parte.Corpo.Contains("SEGREDO"))
+    End Sub
+
+    ' ==================================================================
+    ' O snapshot
+
+    ''' <summary>
+    ''' <b>O caminho público é o snapshot, e ele vem de uma leitura só.</b>
+    '''
+    ''' A sobrecarga com item, versão, assunto e corpo separados preservava o
+    ''' par (item, versão) e não provava nada sobre ele: qualquer chamador
+    ''' passava o item aprovado, a versão aprovada, e um corpo qualquer. Agora
+    ''' ela é <c>Friend</c>, e o público recebe o objeto que a borda do provider
+    ''' montou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_sobrecarga_publica_recebe_SNAPSHOT()
+        Dim publicas = GetType(ContentPipeline).GetMethods(
+            Reflection.BindingFlags.Public Or Reflection.BindingFlags.Static).
+            Where(Function(m) m.Name = "Preparar").ToList()
+
+        Assert.AreEqual(1, publicas.Count, "so um caminho publico")
+        Assert.AreEqual(GetType(MessageSnapshot), publicas(0).GetParameters()(0).ParameterType)
+    End Sub
+
 End Class

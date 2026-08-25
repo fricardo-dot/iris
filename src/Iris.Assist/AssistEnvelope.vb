@@ -142,6 +142,15 @@ Namespace Global.Iris.Assist
 
         Private ReadOnly _bytes As Byte()
 
+        ''' <summary>
+        ''' A operação que está <b>dentro</b> dos bytes.
+        '''
+        ''' Sem ela exposta, um grant para <c>Resumir</c> emitia capability sobre
+        ''' um envelope montado como <c>Redigir</c>, desde que itens e versões
+        ''' coincidissem: a capability recebia a operação do <i>grant</i>, e o
+        ''' hash era dos bytes de outra coisa.
+        ''' </summary>
+        Public ReadOnly Property Operacao As AssistOperation
         ''' <summary>SHA-256 dos bytes, em hex minúsculo.</summary>
         Public ReadOnly Property Hash As String
         Public ReadOnly Property Comprimento As Integer
@@ -162,10 +171,11 @@ Namespace Global.Iris.Assist
         ''' <summary>Alguma mensagem entrou com o corpo incompleto.</summary>
         Public ReadOnly Property CorpoIncompleto As Boolean
 
-        Friend Sub New(bytes As Byte(), itens As IEnumerable(Of ItemKey),
-                       versoes As IEnumerable(Of String),
+        Friend Sub New(bytes As Byte(), operacao As AssistOperation,
+                       itens As IEnumerable(Of ItemKey), versoes As IEnumerable(Of String),
                        truncado As Boolean, omitidas As Integer, corpoIncompleto As Boolean)
             _bytes = bytes
+            Me.Operacao = operacao
             Comprimento = bytes.Length
             Hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()
             Me.Itens = Array.AsReadOnly(itens.ToArray())
@@ -305,7 +315,7 @@ Namespace Global.Iris.Assist
             End If
 
             Return New EnvelopeResult(
-                New AssistEnvelope(bytes, entram.Select(Function(p) p.Item),
+                New AssistEnvelope(bytes, operacao, entram.Select(Function(p) p.Item),
                                    entram.Select(Function(p) p.ChangeKey),
                                    truncado, omitidas, incompleto),
                 EnvelopeRefusal.Nenhuma)

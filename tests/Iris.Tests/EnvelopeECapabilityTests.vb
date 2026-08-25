@@ -773,4 +773,37 @@ Public Class EnvelopeECapabilityTests
         Assert.AreEqual("CK-1", r.Parte.ChangeKey)
     End Sub
 
+
+    ' ==================================================================
+    ' A operação DENTRO dos bytes
+
+    ''' <summary>
+    ''' <b>Grant para <c>Resumir</c> não emite sobre envelope de <c>Redigir</c>.</b>
+    '''
+    ''' Passava: itens e versões coincidiam, a capability recebia a operação do
+    ''' <i>grant</i>, e o hash era dos bytes de outra coisa. O envelope agora
+    ''' expõe a operação que está dentro dele, e as três — a pedida, a da
+    ''' capability e a dos bytes — têm de bater.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Grant_de_uma_operacao_nao_emite_para_envelope_de_OUTRA()
+        Dim cofre As New CapabilityLedger()
+        Dim b As New EnvelopeBuilder()
+        Dim aprovado = Permitida(1)
+
+        Assert.IsNotNull(cofre.Emitir(aprovado,
+            Env(b, AssistOperation.Resumir, "x", {Parte(1)}), Agora), "controle")
+
+        Assert.IsNull(cofre.Emitir(aprovado,
+            Env(b, AssistOperation.Redigir, "x", {Parte(1)}), Agora),
+            "os bytes dizem Redigir e o grant aprovou Resumir")
+    End Sub
+
+    ''' <summary>O envelope diz qual operação está dentro dele.</summary>
+    <TestMethod>
+    Public Sub O_envelope_expoe_a_propria_operacao()
+        Dim e = Env(New EnvelopeBuilder(), AssistOperation.Redigir, "x", {Parte(1)})
+        Assert.AreEqual(AssistOperation.Redigir, e.Operacao)
+    End Sub
+
 End Class
