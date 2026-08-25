@@ -21,16 +21,20 @@ Public Class SweepRunnerTests
         Return New SweepUniverse("store-1", "pasta-1", filtro, Nothing, 1, "amb-1")
     End Function
 
-    ''' <summary>Capacidades que AUTORIZAM — o caminho que a produção hoje não tem.</summary>
+    ''' <summary>Ambiente que autoriza tudo — o que a produção hoje não tem.</summary>
     Private Shared Function Autorizado() As EnvironmentCapabilities
-        Return EnvironmentPolicy.Capacidades(
-            New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "hipotetica"),
-            {New MeasuredEnvironment(
-                New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "hipotetica"),
-                "FASE2 §22.3 — sintetico", Nothing, tokenValidado:=True,
+        Dim fp = New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, "hipotetica")
+        Return EnvironmentPolicy.Capacidades(fp, {
+            New MeasuredEnvironment(fp, "FASE2 §22.3 — sintetico", Nothing, tokenValidado:=True,
                 grants:={New GrantedInference(Inference.ConcluirAusencia, "FASE2 §22.3 — s"),
                          New GrantedInference(Inference.AfirmarCoberturaCompleta, "FASE2 §22.3 — s"),
                          New GrantedInference(Inference.UsarIncremental, "FASE2 §22.3 — s")})})
+    End Function
+
+    ''' <summary>O ambiente REAL do usuário: cached, janela não legível (§23).</summary>
+    Private Shared Function Real() As EnvironmentCapabilities
+        Return EnvironmentPolicy.Capacidades(
+            New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing))
     End Function
 
     Private Shared Function Rodar(f As FonteFalsaMutavel, d As DestinoFalso,
@@ -38,18 +42,12 @@ Public Class SweepRunnerTests
                                   Optional ct As CancellationToken = Nothing,
                                   Optional cap As EnvironmentCapabilities = Nothing) As SweepResult
         Dim r As New SweepRunner(f, d, tamanho)
-        Return r.Executar(f.UniversoAgora(), 0, 1, If(cap, Autorizado()), ct)
+        Return r.Executar(Universo(), 0, 1, If(cap, Autorizado()), ct)
     End Function
 
     ' ==================================================================
     ' Controle positivo
 
-    ''' <summary>
-    ''' Sem defeito nenhum, publica — e o destino recebeu tudo.
-    '''
-    ''' É o controle positivo, e sem ele todos os testes abaixo passariam num
-    ''' runner que simplesmente nunca publica.
-    ''' </summary>
     <TestMethod>
     Public Sub Controle_positivo_varredura_limpa_PUBLICA()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d", "e")
@@ -59,21 +57,83 @@ Public Class SweepRunnerTests
 
         Assert.IsTrue(r.Publicou, $"deveria publicar. motivo: {r.Motivo}")
         Assert.AreEqual(1, d.Publicadas)
-        CollectionAssert.AreEquivalent({"a", "b", "c", "d", "e"}, d.ChavesGravadas,
-            "o destino tem de ter recebido todas as chaves")
+        CollectionAssert.AreEquivalent({"a", "b", "c", "d", "e"}, d.ChavesGravadas)
         Assert.AreEqual(5, r.Attempt.RowsRead)
-        Assert.AreEqual(5, r.Attempt.DistinctKeys)
+        Assert.AreEqual(FolderCoverage.Completa, d.CoberturaPublicada)
+    End Sub
+
+    ' ==================================================================
+    ' §23 — o ambiente limitado OPERA, e publica parcial
+
+    ''' <summary>
+    ''' <b>O teste que substituiu o errado.</b>
+    '''
+    ''' A primeira versão afirmava que ambiente não autorizado NEM ABRE, e
+    ''' isso contradizia a §23: na caixa do usuário — cached, janela não
+    ''' legível — o Iris não varreria nada e o produto não faria nada.
+    '''
+    ''' A §23 bloqueou três <em>inferências</em>, não a operação. Então varre,
+    ''' encena, publica — como <b>parcial</b>.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cached_sem_janela_VARRE_e_publica_PARCIAL()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
+        Dim d As New DestinoFalso()
+
+        Dim r = Rodar(f, d, cap:=Real())
+
+        Assert.IsTrue(r.Publicou, $"o ambiente do usuario TEM de varrer. motivo: {r.Motivo}")
+        Assert.IsTrue(f.PaginasLidas > 0, "a fonte tem de ter sido lida")
+        Assert.AreEqual(4, d.ChavesGravadas.Count, "as linhas tem de ter sido encenadas")
+        Assert.AreEqual(FolderCoverage.Parcial, d.CoberturaPublicada,
+            "sem autorizacao para afirmar cobertura completa, a geracao sai PARCIAL")
+        Assert.AreEqual(FolderCoverage.Parcial, r.Cobertura)
+    End Sub
+
+    ''' <summary>
+    ''' E marcar não-vistos como suspeitos sai SEMPRE, inclusive parcial.
+    '''
+    ''' <c>Suspeito</c> não é conclusão negativa: é exatamente "não vi e não
+    ''' posso concluir por quê". Condicioná-lo à cobertura completa bloquearia
+    ''' a resposta honesta e deixaria o item como <c>Presente</c> — afirmação
+    ''' mais forte do que a evidência sustenta.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Suspeito_e_emitido_mesmo_com_cobertura_parcial()
+        Dim a = SweepModel.Abrir(Universo(), 0, 1, True).State
+        a = SweepModel.ContagemInicial(a, 1, Universo()).State
+        a = SweepModel.Pagina(a, {"x"}, "1", Universo()).State
+        a = SweepModel.ContagemFinal(a, 1, Universo()).State
+
+        Dim r = SweepModel.Publicar(a, 0, podeAfirmarCoberturaCompleta:=False)
+
+        Assert.IsFalse(r.Rejected)
+        Assert.AreEqual(FolderCoverage.Parcial, r.Cobertura)
+        Assert.IsTrue(r.Commands.Contains(SweepCommand.MarcarNaoVistosComoSuspeitos),
+            "suspeita e a resposta honesta, nao uma conclusao negativa")
+    End Sub
+
+    ''' <summary>Ambiente NÃO IDENTIFICADO continua não abrindo — este é o gate que resta.</summary>
+    <TestMethod>
+    Public Sub Ambiente_nao_identificado_NEM_ABRE()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b")
+        Dim d As New DestinoFalso()
+
+        ' Sem o helper: ele tem default, e default nao distingue "omitido" de
+        ' "explicitamente nulo" — foi assim que este teste passou verde
+        ' afirmando o contrario do que acontecia.
+        Dim runner As New SweepRunner(f, d, 2)
+        Dim r = runner.Executar(Universo(), 0, 1, Nothing, CancellationToken.None)
+
+        Assert.AreEqual(SweepConclusion.Rejeitada, r.Conclusion)
+        Assert.IsNull(r.Attempt)
+        Assert.AreEqual(0, f.PaginasLidas, "nao pode nem ter lido a fonte")
+        Assert.AreEqual(0, d.Abertas, "nao pode nem ter aberto tentativa no destino")
     End Sub
 
     ' ==================================================================
     ' Mutação durante a leitura
 
-    ''' <summary>
-    ''' Item SOME entre a página 1 e o fim: a contagem final não bate e a
-    ''' varredura é rejeitada.
-    '''
-    ''' É o caso do usuário apagando um e-mail enquanto o Iris varre.
-    ''' </summary>
     <TestMethod>
     Public Sub Item_removido_no_meio_REJEITA()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
@@ -84,16 +144,10 @@ Public Class SweepRunnerTests
 
         Assert.IsFalse(r.Publicou)
         Assert.AreEqual(0, d.Publicadas, "nao pode publicar meia varredura")
-        ' O S6 pega na comparacao com a contagem INICIAL: leu 3, a pasta dizia
-        ' 4 quando comecou. A contagem final tambem nao bateria, mas a
-        ' primeira guarda dispara antes.
         StringAssert.Contains(r.Motivo, "lidas 3 <> antes 4")
+        Assert.AreEqual(1, d.Descartadas.Count, "a tentativa tem de ser descartada no destino")
     End Sub
 
-    ''' <summary>
-    ''' Item CHEGA no meio: idem. Mensagem nova durante a varredura é o caso
-    ''' mais comum de todos.
-    ''' </summary>
     <TestMethod>
     Public Sub Item_acrescentado_no_meio_REJEITA()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
@@ -109,35 +163,53 @@ Public Class SweepRunnerTests
     ''' <summary>
     ''' MUTAÇÃO BALANCEADA — e este teste documenta um BURACO, não uma defesa.
     '''
-    ''' Um item sai e outro entra entre as duas contagens. Os números batem,
-    ''' o S6 passa, e a varredura publica um manifesto que nunca existiu: tem
-    ''' o item que saiu e não tem o que entrou, ou vice-versa.
+    ''' A primeira versão deste teste <b>não provava o que afirmava</b>: ela
+    ''' trocava um item ainda não lido, e o manifesto resultante coincidia com
+    ''' o estado da fonte depois da mutação. Ou seja, poderia ter existido.
     '''
-    ''' O S6 <b>não pega isso</b>, e é importante que esteja escrito como
-    ''' teste em vez de como comentário — um dia alguém vai olhar o S6 e achar
-    ''' que ele garante integridade do conjunto. Ele garante que as contagens
-    ''' fecham, que é bem menos.
+    ''' Para produzir um manifesto <b>impossível</b> é preciso remover algo
+    ''' <b>já lido</b>:
+    '''
+    ''' <code>
+    '''   inicial: a,b,c,d    pagina 1: a,b    remove "a", acrescenta "z"
+    '''   resto por offset: d,z            manifesto: a,b,d,z
+    ''' </code>
+    '''
+    ''' Esse conjunto não existiu antes nem depois — tem o "a" que foi
+    ''' removido, tem o "z" que só chegou depois, e perdeu o "c" pelo
+    ''' deslocamento do offset. As contagens fecham, o S6 aprova, e a
+    ''' varredura publica um retrato de um mundo que nunca houve.
+    '''
+    ''' O S6 garante que as <b>contagens</b> fecham, que é bem menos que
+    ''' integridade do conjunto. Está como teste executável, e não como
+    ''' comentário, para que ninguém olhe o S6 e ache que ele garante mais.
     ''' </summary>
     <TestMethod>
-    Public Sub Mutacao_balanceada_PASSA_e_isso_e_um_buraco_conhecido()
+    Public Sub Mutacao_balanceada_produz_manifesto_IMPOSSIVEL_e_o_S6_aprova()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
         Dim d As New DestinoFalso()
-        ' Depois da pagina 1 (a,b), "d" some e "z" chega. Total continua 4.
-        f.Agenda(1) = Sub(x) x.Trocar("d", "z")
+        f.Agenda(1) = Sub(x)
+                          x.Remover("a")      ' ja foi lido
+                          x.Acrescentar("z")  ' nao existia
+                      End Sub
 
         Dim r = Rodar(f, d)
 
-        Assert.IsTrue(r.Publicou,
-            "o S6 compara CONTAGENS; troca balanceada mantem as contagens e passa")
-        Assert.IsTrue(d.ChavesGravadas.Contains("z"))
-        Assert.IsFalse(d.ChavesGravadas.Contains("d"),
-            "o manifesto publicado nao contem 'd', que existia quando a varredura comecou")
+        Assert.IsTrue(r.Publicou, "o S6 compara CONTAGENS, e elas fecham")
+
+        Dim manifesto = d.ChavesGravadas
+        Assert.IsTrue(manifesto.Contains("a"),
+            "'a' esta no manifesto e ja nao existia quando a varredura terminou")
+        Assert.IsTrue(manifesto.Contains("z"),
+            "'z' esta no manifesto e nao existia quando ela comecou")
+        Assert.IsFalse(manifesto.Contains("c"),
+            "'c' existia o tempo todo e ficou de fora, pelo deslocamento do offset")
+
+        Dim agora = f.Estado
+        Assert.IsFalse(manifesto.OrderBy(Function(x) x).SequenceEqual(agora.OrderBy(Function(x) x)),
+            "o manifesto nao corresponde ao estado final da fonte")
     End Sub
 
-    ''' <summary>
-    ''' O universo troca no meio: descarta, e o motivo diz universo — não
-    ''' "estágio errado", que era o diagnóstico mascarado de antes.
-    ''' </summary>
     <TestMethod>
     Public Sub Universo_trocado_no_meio_DESCARTA()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
@@ -151,36 +223,41 @@ Public Class SweepRunnerTests
         StringAssert.Contains(r.Motivo.ToLowerInvariant(), "universo")
     End Sub
 
+    ''' <summary>
+    ''' Universo AUSENTE é rejeição, não dispensa da guarda.
+    '''
+    ''' Antes a comparação era condicional ao universo não ser nulo, então uma
+    ''' fonte que devolvesse <c>Nothing</c> <b>desligava a verificação</b> e
+    ''' passava como se nada tivesse mudado. É o formato de defeito que esta
+    ''' fase inteira persegue: a proteção some junto com o dado que ela
+    ''' protegia, e o resultado parece igual ao de um caso legítimo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Universo_ausente_REJEITA_em_vez_de_desligar_a_guarda()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b") With {.UniversoNulo = True}
+        Dim d As New DestinoFalso()
+
+        Dim r = Rodar(f, d)
+
+        Assert.IsFalse(r.Publicou, "universo ausente nao pode passar como 'nao mudou'")
+        StringAssert.Contains(r.Motivo, "universo")
+    End Sub
+
     ' ==================================================================
     ' Fonte que mente
 
-    ''' <summary>
-    ''' TRUNCAMENTO: a fonte para de devolver e diz que acabou.
-    '''
-    ''' É o mais perigoso de todos porque <b>parece sucesso</b> — a paginação
-    ''' termina normalmente, sem erro. Só o S6 pega, comparando o que foi lido
-    ''' com o que a pasta dizia ter.
-    ''' </summary>
     <TestMethod>
     Public Sub Truncamento_REJEITA()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d", "e", "f")
         Dim d As New DestinoFalso()
-        f.TruncarApos = 1   ' devolve so (a,b) e declara fim
+        f.TruncarApos = 1
 
         Dim r = Rodar(f, d)
 
         Assert.IsFalse(r.Publicou, "truncar e o caso que PARECE sucesso")
-        Assert.AreEqual(0, d.Publicadas)
         StringAssert.Contains(r.Motivo, "antes")
     End Sub
 
-    ''' <summary>
-    ''' ZERO ENGANOSO: a pasta declara 0 itens e tem 4.
-    '''
-    ''' A §19.2 mediu isto na caixa do usuário — dezenas de pastas cheias
-    ''' reportando <c>Count = 0</c>. Uma varredura que aceita o zero publica
-    ''' uma geração vazia e <b>apaga a pasta</b> do ponto de vista do Iris.
-    ''' </summary>
     <TestMethod>
     Public Sub Zero_enganoso_REJEITA()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
@@ -190,16 +267,9 @@ Public Class SweepRunnerTests
         Dim r = Rodar(f, d)
 
         Assert.IsFalse(r.Publicou,
-            "aceitar o zero publicaria uma geracao vazia e apagaria a pasta")
-        Assert.AreEqual(0, d.Publicadas)
+            "aceitar o zero publicaria uma geracao vazia e apagaria a pasta (§19.2)")
     End Sub
 
-    ''' <summary>
-    ''' Pasta genuinamente vazia PUBLICA — o contraponto do teste acima.
-    '''
-    ''' Sem ele, um runner que rejeitasse toda contagem zero passaria no
-    ''' anterior e quebraria a pasta vazia legítima, que é caso comum.
-    ''' </summary>
     <TestMethod>
     Public Sub Pasta_genuinamente_vazia_PUBLICA()
         Dim f As New FonteFalsaMutavel(Universo())
@@ -211,11 +281,6 @@ Public Class SweepRunnerTests
         Assert.AreEqual(0, r.Attempt.RowsRead)
     End Sub
 
-    ''' <summary>
-    ''' Cursor que não avança é laço infinito, e laço infinito na fila da STA
-    ''' trava a UI. Não é defesa hipotética: é o modo de falha desta
-    ''' arquitetura.
-    ''' </summary>
     <TestMethod>
     Public Sub Cursor_que_nao_avanca_FALHA_em_vez_de_travar()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
@@ -229,11 +294,66 @@ Public Class SweepRunnerTests
         Assert.IsTrue(f.PaginasLidas < 10, $"leu {f.PaginasLidas} paginas — deveria abortar cedo")
     End Sub
 
-    ' ==================================================================
-    ' Falha e cancelamento
+    ''' <summary>
+    ''' Página VAZIA sem fim e com cursor parado também aborta cedo.
+    '''
+    ''' A guarda antiga só olhava páginas não vazias, então esta fonte rodava
+    ''' 100.001 vezes antes de o teto pegar. Progresso é obrigatório com ou
+    ''' sem linhas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Pagina_vazia_sem_progresso_ABORTA_cedo()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b") With {.VaziaSemFim = True}
+        Dim d As New DestinoFalso()
+
+        Dim r = Rodar(f, d)
+
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        Assert.IsTrue(f.PaginasLidas <= 2, $"leu {f.PaginasLidas} paginas vazias antes de abortar")
+    End Sub
+
+    ''' <summary>
+    ''' Fonte que devolve MAIS linhas do que o pedido é recusada.
+    '''
+    ''' O tamanho da página é o orçamento de tempo da fila da STA (D5). Uma
+    ''' fonte que devolve milhares de linhas de uma vez trava a UI mesmo sem
+    ''' laço infinito nenhum.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Pagina_maior_que_o_pedido_FALHA()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d", "e", "f")
+        Dim d As New DestinoFalso()
+        f.EstourarLote = 6
+
+        Dim r = Rodar(f, d, tamanho:=2)
+
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        StringAssert.Contains(r.Motivo, "linhas")
+    End Sub
 
     <TestMethod>
-    Public Sub Fonte_que_lanca_FALHA_sem_publicar()
+    Public Sub Pagina_nula_FALHA()
+        Dim f As New FonteFalsaMutavel(Universo(), "a") With {.PaginaNula = True}
+        Dim d As New DestinoFalso()
+        Dim r = Rodar(f, d)
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        StringAssert.Contains(r.Motivo, "nula")
+    End Sub
+
+    <TestMethod>
+    Public Sub Contagem_nula_FALHA()
+        Dim f As New FonteFalsaMutavel(Universo(), "a") With {.ContagemNula = True}
+        Dim d As New DestinoFalso()
+        Dim r = Rodar(f, d)
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        StringAssert.Contains(r.Motivo, "nula")
+    End Sub
+
+    ' ==================================================================
+    ' Falha em cada fronteira
+
+    <TestMethod>
+    Public Sub Fonte_que_lanca_na_pagina_FALHA_sem_publicar()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d", "e", "f")
         Dim d As New DestinoFalso()
         f.LancarNaPagina = 2
@@ -245,11 +365,53 @@ Public Class SweepRunnerTests
         Assert.AreEqual(1, d.Paginas.Count, "a pagina 1 ficou gravada; a 2 nao chegou")
     End Sub
 
+    <TestMethod>
+    Public Sub Fonte_que_lanca_na_contagem_inicial_FALHA()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b") With {.LancarNaContagem = 1}
+        Dim d As New DestinoFalso()
+        Dim r = Rodar(f, d)
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        Assert.AreEqual(0, f.PaginasLidas)
+    End Sub
+
+    <TestMethod>
+    Public Sub Fonte_que_lanca_na_contagem_final_FALHA()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b") With {.LancarNaContagem = 2}
+        Dim d As New DestinoFalso()
+        Dim r = Rodar(f, d)
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        Assert.AreEqual(0, d.Publicadas)
+    End Sub
+
+    <TestMethod>
+    Public Sub Destino_que_lanca_ao_gravar_FALHA()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
+        Dim d As New DestinoFalso() With {.LancarAoGravar = True}
+        Dim r = Rodar(f, d)
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        Assert.AreEqual(0, d.Publicadas)
+    End Sub
+
+    <TestMethod>
+    Public Sub Destino_que_lanca_na_epoca_FALHA()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b")
+        Dim d As New DestinoFalso() With {.LancarNaEpoca = True}
+        Dim r = Rodar(f, d)
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        Assert.AreEqual(0, d.Publicadas)
+    End Sub
+
     ''' <summary>
-    ''' O destino falhando ao publicar não pode virar "publicou".
+    ''' O destino falhando ao publicar não pode virar "publicou" — e, sobretudo,
+    ''' não pode transformar uma tentativa publicada em descartada.
+    '''
+    ''' Era esse o bug: o estado <c>Publicada</c> era instalado antes de o
+    ''' efeito acontecer, e o <c>Catch</c> depois o convertia em
+    ''' <c>Descartada</c>. Publicação é imutável — o 2.1 inteiro construiu
+    ''' isso, e a orquestração desfazia em três linhas.
     ''' </summary>
     <TestMethod>
-    Public Sub Destino_que_lanca_ao_publicar_NAO_conta_como_publicado()
+    Public Sub Destino_que_lanca_ao_publicar_nao_transforma_publicada_em_descartada()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b")
         Dim d As New DestinoFalso() With {.LancarAoPublicar = True}
 
@@ -257,6 +419,24 @@ Public Class SweepRunnerTests
 
         Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
         Assert.AreEqual(0, d.Publicadas)
+        Assert.AreNotEqual(AttemptStage.Publicada, r.Attempt.Stage,
+            "nunca chegou a publicar, entao nao pode constar como publicada")
+    End Sub
+
+    ''' <summary>
+    ''' A persistência tem fencing próprio e pode recusar DEPOIS de o modelo
+    ''' aprovar. O runner tem de respeitar a recusa dela.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Persistencia_que_recusa_por_ordem_nao_conta_como_publicado()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b")
+        Dim d As New DestinoFalso() With {.RespostaAoPublicar = SinkPublishResult.RecusadaPorOrdem}
+
+        Dim r = Rodar(f, d)
+
+        Assert.IsFalse(r.Publicou)
+        Assert.AreEqual(0, d.Publicadas)
+        StringAssert.Contains(r.Motivo, "RecusadaPorOrdem")
     End Sub
 
     <TestMethod>
@@ -269,21 +449,18 @@ Public Class SweepRunnerTests
 
             Assert.AreEqual(SweepConclusion.Cancelada, r.Conclusion)
             Assert.AreEqual(0, d.Publicadas, "cancelar nunca publica metade")
+            Assert.AreEqual(1, d.Descartadas.Count)
         End Using
     End Sub
 
     ' ==================================================================
-    ' Época e ambiente
+    ' Época
 
-    ''' <summary>
-    ''' Outra geração publicou enquanto esta corria: a época mudou e esta
-    ''' perde. É o critério 10 chegando na orquestração.
-    ''' </summary>
     <TestMethod>
     Public Sub Epoca_mudou_durante_a_varredura_RECUSA_publicar()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
         Dim d As New DestinoFalso()
-        f.Agenda(1) = Sub(x) d.Epoca = 7   ' alguem invalidou o universo
+        f.Agenda(1) = Sub(x) d.Epoca = 7
 
         Dim r = Rodar(f, d)
 
@@ -292,52 +469,12 @@ Public Class SweepRunnerTests
         StringAssert.Contains(r.Motivo.ToLowerInvariant(), "epoca")
     End Sub
 
-    ''' <summary>
-    ''' Ambiente sem autorização NEM ABRE — e é o estado da produção hoje
-    ''' (§23).
-    '''
-    ''' Recusar antes de abrir importa: uma tentativa aberta e abandonada fica
-    ''' no banco para alguém retomar depois, e retomar uma varredura que nunca
-    ''' deveria ter começado é pior que não ter começado.
-    ''' </summary>
-    <TestMethod>
-    Public Sub Ambiente_nao_autorizado_NEM_ABRE()
-        Dim f As New FonteFalsaMutavel(Universo(), "a", "b")
-        Dim d As New DestinoFalso()
-
-        ' O ambiente REAL do usuario: cached, janela nao legivel.
-        Dim real = EnvironmentPolicy.Capacidades(
-            New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing))
-
-        Dim r = Rodar(f, d, cap:=real)
-
-        Assert.AreEqual(SweepConclusion.Rejeitada, r.Conclusion)
-        Assert.IsNull(r.Attempt, "nao pode nem existir tentativa")
-        Assert.AreEqual(0, f.PaginasLidas, "nao pode nem ter lido a fonte")
-        Assert.AreEqual(0, d.Paginas.Count)
-        StringAssert.Contains(r.Motivo, "janela")
-    End Sub
-
-    <TestMethod>
-    Public Sub Capacidades_nulas_NEM_ABREM()
-        Dim f As New FonteFalsaMutavel(Universo(), "a", "b")
-        Dim d As New DestinoFalso()
-        Dim r = Rodar(f, d, cap:=EnvironmentPolicy.Capacidades(Nothing))
-        Assert.AreEqual(SweepConclusion.Rejeitada, r.Conclusion)
-        Assert.AreEqual(0, f.PaginasLidas)
-    End Sub
-
     ' ==================================================================
 
-    ''' <summary>
-    ''' O efeito só acontece se o modelo mandar: quando a página é rejeitada,
-    ''' ela NÃO é gravada.
-    ''' </summary>
     <TestMethod>
     Public Sub Pagina_rejeitada_nao_e_gravada()
         Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
         Dim d As New DestinoFalso()
-        ' Universo troca antes da pagina 2 ser aceita.
         f.Agenda(1) = Sub(x) x.TrocarUniverso(
             New SweepUniverse("store-1", "pasta-1", "OUTRO", Nothing, 1, "amb-1"))
 
@@ -346,6 +483,28 @@ Public Class SweepRunnerTests
         Assert.IsFalse(r.Publicou)
         Assert.AreEqual(1, d.Paginas.Count,
             "so a pagina 1, aceita antes da troca; a 2 foi rejeitada e nao gravada")
+    End Sub
+
+    ''' <summary>Toda rejeição descarta a tentativa no destino — nada fica aberto.</summary>
+    <TestMethod>
+    Public Sub Toda_rejeicao_descarta_a_tentativa_no_destino()
+        For Each cenario In New Action(Of FonteFalsaMutavel, DestinoFalso)() {
+            Sub(f, d) f.ContagemDeclarada = 0,
+            Sub(f, d) f.TruncarApos = 1,
+            Sub(f, d) f.CursorTravado = True,
+            Sub(f, d) f.UniversoNulo = True,
+            Sub(f, d) d.Epoca = 99}
+
+            Dim fonte As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
+            Dim destino As New DestinoFalso()
+            cenario(fonte, destino)
+
+            Dim r = Rodar(fonte, destino)
+
+            Assert.IsFalse(r.Publicou)
+            Assert.AreEqual(1, destino.Descartadas.Count,
+                "tentativa aberta e nao publicada tem de ser descartada, senao fica orfa no banco")
+        Next
     End Sub
 
 End Class

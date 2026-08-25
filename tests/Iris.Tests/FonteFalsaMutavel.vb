@@ -28,7 +28,15 @@ Friend Class FonteFalsaMutavel
     Friend Property ContagemDeclarada As Integer? = Nothing
     Friend Property TruncarApos As Integer? = Nothing
     Friend Property LancarNaPagina As Integer? = Nothing
+    Friend Property LancarNaContagem As Integer? = Nothing
     Friend Property CursorTravado As Boolean = False
+    Friend Property UniversoNulo As Boolean = False
+    Friend Property PaginaNula As Boolean = False
+    Friend Property ContagemNula As Boolean = False
+    ''' <summary>Devolve mais linhas do que o pedido — fonte defeituosa.</summary>
+    Friend Property EstourarLote As Integer? = Nothing
+    ''' <summary>Página vazia, sem fim, cursor parado: laço sem progresso.</summary>
+    Friend Property VaziaSemFim As Boolean = False
 
     Friend Property PaginasLidas As Integer = 0
     Friend Property VezesQueContou As Integer = 0
@@ -64,16 +72,27 @@ Friend Class FonteFalsaMutavel
         End Get
     End Property
 
+    Friend ReadOnly Property Estado As List(Of String)
+        Get
+            Return _chaves.ToList()
+        End Get
+    End Property
+
     ' ---- ISweepSource ----
 
-    Public Function Contar(ct As CancellationToken) As Integer Implements ISweepSource.Contar
+    Public Function Contar(ct As CancellationToken) As SourceCount Implements ISweepSource.Contar
+        ct.ThrowIfCancellationRequested()
         VezesQueContou += 1
+        If LancarNaContagem.HasValue AndAlso VezesQueContou = LancarNaContagem.Value Then
+            Throw New InvalidOperationException($"fonte falhou na contagem {VezesQueContou}")
+        End If
         If VezesQueContou = 1 Then Disparar(0)
-        Return If(ContagemDeclarada, _chaves.Count)
+        If ContagemNula Then Return Nothing
+        Return New SourceCount(If(ContagemDeclarada, _chaves.Count), UniversoDaLeitura())
     End Function
 
-    Public Function UniversoAgora() As SweepUniverse Implements ISweepSource.UniversoAgora
-        Return _universo
+    Private Function UniversoDaLeitura() As SweepUniverse
+        Return If(UniversoNulo, Nothing, _universo)
     End Function
 
     Public Function LerPagina(cursor As String, tamanho As Integer,
@@ -85,9 +104,15 @@ Friend Class FonteFalsaMutavel
         If LancarNaPagina.HasValue AndAlso PaginasLidas = LancarNaPagina.Value Then
             Throw New InvalidOperationException($"fonte falhou na pagina {PaginasLidas}")
         End If
+        If PaginaNula Then Return Nothing
+
+        If VaziaSemFim Then
+            Return New SourcePage(Enumerable.Empty(Of SourceRow)(), cursor, False, UniversoDaLeitura())
+        End If
 
         Dim de = If(cursor Is Nothing, 0, Integer.Parse(cursor))
-        Dim lote = _chaves.Skip(de).Take(tamanho).ToList()
+        Dim quanto = If(EstourarLote, tamanho)
+        Dim lote = _chaves.Skip(de).Take(quanto).ToList()
         Dim ate = de + lote.Count
 
         ' Truncar: a fonte simplesmente para de devolver, e diz que acabou.
@@ -97,13 +122,23 @@ Friend Class FonteFalsaMutavel
         Dim proximo = If(CursorTravado, cursor, ate.ToString())
         Dim fim = truncou OrElse ate >= _chaves.Count
 
-        Dim p As New SourcePage(lote, proximo, fim, _universo)
+        Dim p As New SourcePage(lote.Select(AddressOf Linha), proximo, fim, UniversoDaLeitura())
 
         ' A mutacao acontece DEPOIS de a pagina ser montada e ANTES de a
         ' proxima ser pedida — que e exatamente a janela onde o mundo muda
         ' numa varredura de verdade.
         Disparar(PaginasLidas)
         Return p
+    End Function
+
+    Private Shared Function Linha(chave As String) As SourceRow
+        Return New SourceRow With {
+            .Key = chave,
+            .Subject = "assunto " & chave,
+            .SenderName = "Fulano",
+            .ReceivedAt = New DateTime(2026, 1, 1, 12, 0, 0, DateTimeKind.Utc).ToString("o"),
+            .MessageClass = "IPM.Note",
+            .IsUnread = False}
     End Function
 
     Private Sub Disparar(pagina As Integer)
@@ -121,10 +156,15 @@ Friend Class DestinoFalso
     Implements ISweepSink
 
     Friend ReadOnly Paginas As New List(Of (Numero As Integer, Chaves As List(Of String), Cursor As String))()
+    Friend ReadOnly Descartadas As New List(Of String)()
     Friend Property Publicadas As Integer = 0
+    Friend Property CoberturaPublicada As FolderCoverage = FolderCoverage.Desconhecida
     Friend Property Epoca As Long = 0
+    Friend Property Abertas As Integer = 0
     Friend Property LancarAoGravar As Boolean = False
     Friend Property LancarAoPublicar As Boolean = False
+    Friend Property LancarNaEpoca As Boolean = False
+    Friend Property RespostaAoPublicar As SinkPublishResult = SinkPublishResult.Publicada
 
     Friend ReadOnly Property ChavesGravadas As List(Of String)
         Get
@@ -132,18 +172,35 @@ Friend Class DestinoFalso
         End Get
     End Property
 
-    Public Sub GravarPagina(pagina As Integer, chaves As IReadOnlyList(Of String),
+    Public Function AbrirTentativa(universo As SweepUniverse, epoca As Long,
+                                   numero As Integer) As Long Implements ISweepSink.AbrirTentativa
+        Abertas += 1
+        Return Abertas
+    End Function
+
+    Public Sub GravarPagina(tentativa As Long, pagina As Integer,
+                            linhas As IReadOnlyList(Of SourceRow),
                             cursorDepois As String) Implements ISweepSink.GravarPagina
         If LancarAoGravar Then Throw New InvalidOperationException("destino falhou ao gravar")
-        Paginas.Add((pagina, chaves.ToList(), cursorDepois))
+        Paginas.Add((pagina, linhas.Select(Function(l) l.Key).ToList(), cursorDepois))
     End Sub
 
-    Public Sub Publicar(a As SweepAttempt) Implements ISweepSink.Publicar
+    Public Function Publicar(tentativa As Long, cobertura As FolderCoverage,
+                             antes As Integer, depois As Integer) As SinkPublishResult _
+                             Implements ISweepSink.Publicar
         If LancarAoPublicar Then Throw New InvalidOperationException("destino falhou ao publicar")
+        If RespostaAoPublicar <> SinkPublishResult.Publicada Then Return RespostaAoPublicar
         Publicadas += 1
+        CoberturaPublicada = cobertura
+        Return SinkPublishResult.Publicada
+    End Function
+
+    Public Sub Descartar(tentativa As Long, motivo As String) Implements ISweepSink.Descartar
+        Descartadas.Add(motivo)
     End Sub
 
     Public Function EpocaCorrente() As Long Implements ISweepSink.EpocaCorrente
+        If LancarNaEpoca Then Throw New InvalidOperationException("destino falhou ao ler a epoca")
         Return Epoca
     End Function
 

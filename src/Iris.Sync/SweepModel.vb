@@ -70,11 +70,20 @@ Namespace Global.Iris.Sync
         Public ReadOnly Property Commands As IReadOnlyList(Of SweepCommand)
         Public ReadOnly Property Rejection As String
 
+        ''' <summary>
+        ''' A cobertura que esta publicacao pode declarar. So faz sentido no
+        ''' resultado de <see cref="SweepModel.Publicar"/>; nas outras
+        ''' transicoes fica <c>Desconhecida</c>.
+        ''' </summary>
+        Public ReadOnly Property Cobertura As FolderCoverage
+
         Friend Sub New(state As SweepAttempt, commands As IEnumerable(Of SweepCommand),
-                       Optional rejection As String = Nothing)
+                       Optional rejection As String = Nothing,
+                       Optional cobertura As FolderCoverage = FolderCoverage.Desconhecida)
             Me.State = state
             Me.Commands = If(commands, Enumerable.Empty(Of SweepCommand)()).ToList()
             Me.Rejection = rejection
+            Me.Cobertura = cobertura
         End Sub
 
         Public ReadOnly Property Rejected As Boolean
@@ -145,20 +154,39 @@ Namespace Global.Iris.Sync
     Public NotInheritable Class SweepModel
 
         ''' <summary>
-        ''' Abre uma tentativa. Ambiente fora da allowlist nem começa (D2).
+        ''' Abre uma tentativa. Só recusa quando o ambiente é
+        ''' <b>desconhecido</b> — não quando ele é limitado.
+        '''
+        ''' <b>Isto mudou, e a mudança corrige um conflito de contrato.</b> A
+        ''' D2 original dizia "ambiente não medido RECUSA operar", e o
+        ''' <c>SweepRunner</c> chegou a implementar isso passando
+        ''' <c>PodeAfirmarCoberturaCompleta</c> como permissão para abrir. O
+        ''' efeito: na caixa do usuário — cached, janela não legível — o Iris
+        ''' não varreria <b>nada</b>. O produto não faria nada.
+        '''
+        ''' A §23 aceitou coisa diferente e mais precisa: cached não
+        ''' <i>conclui</i> ausência, não <i>afirma</i> cobertura completa e não
+        ''' <i>usa</i> incremental. Não aceitou "não opera". São duas perguntas
+        ''' separadas, e misturá-las custou o produto inteiro:
+        '''
+        '''   <i>posso observar e guardar positivos?</i>
+        '''   <i>posso declarar que observei tudo?</i>
+        '''
+        ''' Falta de cobertura não invalida observação positiva. Então varre,
+        ''' encena, publica — como <b>parcial</b>.
+        '''
+        ''' O que ainda recusa é o ambiente <b>não identificado</b>: sem saber
+        ''' onde se está, nem o positivo tem a quem ser atribuído.
         ''' </summary>
         Public Shared Function Abrir(universe As SweepUniverse, epoch As Long,
                                      attemptNumber As Integer,
-                                     ambienteSuportado As Boolean) As SweepOutcome
+                                     ambienteIdentificado As Boolean) As SweepOutcome
             If universe Is Nothing Then
                 Return New SweepOutcome(Nothing, Nothing, "universo nulo")
             End If
-            If Not ambienteSuportado Then
-                ' D2: ambiente nao medido RECUSA operar. Nao e degradacao
-                ' silenciosa — e recusa, porque sem conhecer a cobertura o S7
-                ' impede qualquer conclusao negativa de qualquer forma.
+            If Not ambienteIdentificado Then
                 Return New SweepOutcome(Nothing, Nothing,
-                    "ambiente fora da allowlist: " & universe.EnvironmentFingerprint)
+                    "ambiente nao identificado: " & universe.EnvironmentFingerprint)
             End If
             Return New SweepOutcome(
                 New SweepAttempt(AttemptStage.Aberta, universe, epoch, Nothing, Nothing,
@@ -237,7 +265,8 @@ Namespace Global.Iris.Sync
         ''' §8.
         ''' </summary>
         Public Shared Function Publicar(a As SweepAttempt,
-                                        epocaCorrenteDaPasta As Long) As SweepOutcome
+                                        epocaCorrenteDaPasta As Long,
+                                        podeAfirmarCoberturaCompleta As Boolean) As SweepOutcome
             If a Is Nothing Then Return New SweepOutcome(Nothing, Nothing, "tentativa nula")
             If a.Stage = AttemptStage.Publicada Then
                 ' Republicar a MESMA tentativa e idempotente: nao cria
@@ -269,13 +298,27 @@ Namespace Global.Iris.Sync
                     "outra geracao publicou enquanto esta corria")
             End If
 
+            ' A COBERTURA e decidida aqui, e a decisao e um degrau, nao uma
+            ' recusa. Sem autorizacao para afirmar cobertura completa, a
+            ' geracao sai como PARCIAL - e continua valendo. Observacao
+            ' positiva nao fica invalida por faltar cobertura (§23).
+            Dim cobertura = If(podeAfirmarCoberturaCompleta,
+                               FolderCoverage.Completa, FolderCoverage.Parcial)
+
+            ' MarcarNaoVistosComoSuspeitos sai SEMPRE, e nao depende da
+            ' cobertura. Suspeito nao e conclusao negativa: e exatamente "nao
+            ' vi e nao posso concluir por que". Condiciona-lo a cobertura
+            ' completa bloquearia justamente a resposta honesta, deixando o
+            ' item como Presente - que e uma afirmacao mais forte do que a
+            ' evidencia sustenta.
             Return New SweepOutcome(
                 New SweepAttempt(AttemptStage.Publicada, a.Universe, a.ReconcileEpoch,
                                  a.CountBefore, a.CountAfter, a.StagedKeys, a.RowsRead,
                                  a.Cursor, a.AttemptNumber),
                 {SweepCommand.PublicarGeracao,
                  SweepCommand.MarcarNaoVistosComoSuspeitos,
-                 SweepCommand.EmitirPublicationLog})
+                 SweepCommand.EmitirPublicationLog},
+                Nothing, cobertura)
         End Function
 
         ''' <summary>
@@ -331,8 +374,19 @@ Namespace Global.Iris.Sync
             If a Is Nothing Then Return "tentativa nula"
             If a.Stage = AttemptStage.Publicada Then Return "tentativa ja publicada e imutavel"
             If a.Stage = AttemptStage.Descartada Then Return "tentativa descartada nao volta"
+
             ' Universo ANTES do estagio: e a rejeicao mais informativa das duas.
-            If universoLido IsNot Nothing AndAlso Not a.Universe.MesmoQue(universoLido) Then
+            '
+            ' E universo AUSENTE e REJEICAO, nao dispensa da guarda. Antes isto
+            ' era "If universoLido IsNot Nothing AndAlso ..." — uma fonte que
+            ' devolvesse Nothing DESLIGAVA a verificacao e passava como se nada
+            ' tivesse mudado. E o formato de defeito que esta fase inteira
+            ' persegue: a protecao some junto com o dado que ela protegia, e o
+            ' resultado parece igual ao de um caso legitimo.
+            If universoLido Is Nothing Then
+                Return "fonte nao informou o universo: sem ele nao da para saber se mudou"
+            End If
+            If Not a.Universe.MesmoQue(universoLido) Then
                 Return "universo mudou no meio da tentativa"
             End If
             If Not aceitos.Contains(a.Stage) Then

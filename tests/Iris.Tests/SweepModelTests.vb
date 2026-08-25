@@ -47,7 +47,7 @@ Public Class SweepModelTests
     <TestMethod>
     Public Sub Caminho_feliz_publica_exatamente_uma_geracao()
         Dim a = Ate(AttemptStage.ContagemFinalLida)
-        Dim r = SweepModel.Publicar(a, 7)
+        Dim r = SweepModel.Publicar(a, 7, True)
 
         Assert.IsFalse(r.Rejected, r.Rejection)
         Assert.AreEqual(AttemptStage.Publicada, r.State.Stage)
@@ -66,7 +66,7 @@ Public Class SweepModelTests
     <TestMethod>
     Public Sub A_maquina_realmente_publica_alguma_coisa()
         Assert.AreEqual(AttemptStage.Publicada,
-                        SweepModel.Publicar(Ate(AttemptStage.ContagemFinalLida), 7).State.Stage)
+                        SweepModel.Publicar(Ate(AttemptStage.ContagemFinalLida), 7, True).State.Stage)
     End Sub
 
     ' ==================================================================
@@ -81,7 +81,7 @@ Public Class SweepModelTests
         a = SweepModel.Pagina(a, {"A", "B", "C"}, "c", Universo()).State
         a = SweepModel.ContagemFinal(a, 5, Universo()).State
 
-        Dim r = SweepModel.Publicar(a, 7)
+        Dim r = SweepModel.Publicar(a, 7, True)
         Assert.IsTrue(r.Rejected, "deveria rejeitar: leu 3 de 5")
         Assert.AreEqual(AttemptStage.Descartada, r.State.Stage)
     End Sub
@@ -92,7 +92,7 @@ Public Class SweepModelTests
         a = SweepModel.ContagemInicial(a, 3, Universo()).State
         a = SweepModel.Pagina(a, {"A", "B", "C"}, "c", Universo()).State
         a = SweepModel.ContagemFinal(a, 4, Universo()).State
-        Assert.IsTrue(SweepModel.Publicar(a, 7).Rejected, "chegou item durante a varredura")
+        Assert.IsTrue(SweepModel.Publicar(a, 7, True).Rejected, "chegou item durante a varredura")
     End Sub
 
     <TestMethod>
@@ -138,7 +138,7 @@ Public Class SweepModelTests
         a = SweepModel.Pagina(a, {"A", "C", "D"}, "c", Universo()).State
         a = SweepModel.ContagemFinal(a, 3, Universo()).State
 
-        Dim r = SweepModel.Publicar(a, 7)
+        Dim r = SweepModel.Publicar(a, 7, True)
         Assert.IsFalse(r.Rejected,
             "o S6 nao pega mutacao balanceada, e afirmar que pega seria mentira")
         ' O que salva "B" e nao chegar a ausencia por aqui: ele vira
@@ -156,7 +156,7 @@ Public Class SweepModelTests
         a = SweepModel.ContagemInicial(a, 0, Universo()).State
         a = SweepModel.ContagemFinal(a, 0, Universo()).State
 
-        Dim r = SweepModel.Publicar(a, 7)
+        Dim r = SweepModel.Publicar(a, 7, True)
         Assert.IsFalse(r.Rejected, "zero e zero e zero: o S6 aceita")
         Assert.IsFalse(r.Commands.Any(Function(c) c.ToString().Contains("Ausen")),
             "nenhum comando de ausencia sai daqui — quem decide isso e o S7")
@@ -191,13 +191,20 @@ Public Class SweepModelTests
     ' Ambiente e universo (adversários 16 a 19)
     ' ==================================================================
 
-    ''' <summary>D2: ambiente fora da allowlist nem abre tentativa.</summary>
+    ''' <summary>
+    ''' Ambiente NAO IDENTIFICADO nem abre tentativa.
+    '''
+    ''' Isto ja foi "ambiente fora da allowlist nem abre", da D2 original, e a
+    ''' §23 corrigiu: ambiente LIMITADO opera e publica parcial; so o
+    ''' DESCONHECIDO e recusado. Ver o comentario de SweepModel.Abrir para o
+    ''' que a leitura antiga custava — o produto inteiro, na caixa do usuario.
+    ''' </summary>
     <TestMethod>
-    Public Sub Ambiente_nao_suportado_nem_comeca()
-        Dim r = SweepModel.Abrir(Universo(amb:="pst-desconhecido"), 7, 1, ambienteSuportado:=False)
+    Public Sub Ambiente_nao_identificado_nem_comeca()
+        Dim r = SweepModel.Abrir(Universo(amb:="pst-desconhecido"), 7, 1, ambienteIdentificado:=False)
         Assert.IsTrue(r.Rejected)
         Assert.IsNull(r.State, "nem chega a existir tentativa")
-        StringAssert.Contains(r.Rejection, "allowlist")
+        StringAssert.Contains(r.Rejection, "nao identificado")
     End Sub
 
     <TestMethod>
@@ -221,7 +228,7 @@ Public Class SweepModelTests
     Public Sub Geracao_velha_nao_sobrescreve_a_nova()
         Dim velha = Ate(AttemptStage.ContagemFinalLida, epoca:=7)
         ' Enquanto ela corria, outra publicou e a epoca da pasta avancou.
-        Dim r = SweepModel.Publicar(velha, epocaCorrenteDaPasta:=8)
+        Dim r = SweepModel.Publicar(velha, epocaCorrenteDaPasta:=8, True)
 
         Assert.IsTrue(r.Rejected, "a tentativa da epoca 7 nao pode publicar sobre a 8")
         StringAssert.Contains(r.Rejection, "epoca")
@@ -230,8 +237,8 @@ Public Class SweepModelTests
 
     <TestMethod>
     Public Sub Republicar_a_mesma_tentativa_e_idempotente()
-        Dim r1 = SweepModel.Publicar(Ate(AttemptStage.ContagemFinalLida), 7)
-        Dim r2 = SweepModel.Publicar(r1.State, 7)
+        Dim r1 = SweepModel.Publicar(Ate(AttemptStage.ContagemFinalLida), 7, True)
+        Dim r2 = SweepModel.Publicar(r1.State, 7, True)
         Assert.IsFalse(r2.Rejected)
         Assert.AreEqual(0, r2.Commands.Count,
             "republicar nao emite segundo comando: nao cria segunda geracao nem segundo evento")
@@ -239,7 +246,7 @@ Public Class SweepModelTests
 
     <TestMethod>
     Public Sub Geracao_publicada_rejeita_mutacao_posterior()
-        Dim pub = SweepModel.Publicar(Ate(AttemptStage.ContagemFinalLida), 7).State
+        Dim pub = SweepModel.Publicar(Ate(AttemptStage.ContagemFinalLida), 7, True).State
         Assert.IsTrue(SweepModel.Pagina(pub, {"Z"}, "c", Universo()).Rejected)
         Assert.IsTrue(SweepModel.ContagemFinal(pub, 3, Universo()).Rejected)
     End Sub
@@ -248,7 +255,7 @@ Public Class SweepModelTests
     Public Sub Tentativa_descartada_nunca_volta_a_publicavel()
         Dim descartada = SweepModel.Cancelar(Ate(AttemptStage.Varrendo), "x").State
         Assert.IsTrue(SweepModel.Pagina(descartada, {"Z"}, "c", Universo()).Rejected)
-        Assert.IsTrue(SweepModel.Publicar(descartada, 7).Rejected)
+        Assert.IsTrue(SweepModel.Publicar(descartada, 7, True).Rejected)
     End Sub
 
     ''' <summary>
@@ -258,7 +265,7 @@ Public Class SweepModelTests
     ''' </summary>
     <TestMethod>
     Public Sub PublicationLog_so_sai_junto_da_publicacao()
-        Dim comLog = SweepModel.Publicar(Ate(AttemptStage.ContagemFinalLida), 7)
+        Dim comLog = SweepModel.Publicar(Ate(AttemptStage.ContagemFinalLida), 7, True)
         Assert.IsTrue(comLog.Commands.Contains(SweepCommand.EmitirPublicationLog))
         Assert.IsTrue(comLog.Commands.Contains(SweepCommand.PublicarGeracao))
 
