@@ -253,13 +253,14 @@ Public Class PagingIntegrationTests
     ''' a asserção sobre ela é incondicional.
     '''
     ''' A iteração pagina por <b>offset</b>, e offset sobre coleção viva repete
-    ''' por construção — item removido antes do offset desce tudo uma posição e
-    ''' a próxima página reentrega uma linha já lida. Exigir zero repetição dela
-    ''' é exigir que a pasta não mexa, que é o mesmo erro de antes.
+    ''' por construção. Aqui isso é <b>sempre</b> tolerado, e a demonstração de
+    ''' qual mutação causa o quê está em <c>OffsetPagingTests</c>, sobre uma
+    ''' coleção controlada — não aqui.
     '''
-    ''' Com as pontas concordando, porém, isso deixa de ser desculpa: deslocar o
-    ''' offset exige <b>remoção</b>, e remoção apareceria em T₂. Então aí
-    ''' repetir volta a reprovar.
+    ''' Eu tinha condicionado a tolerância a "a pasta mexeu". As duas metades do
+    ''' argumento estavam erradas: quem repete é a <b>inserção</b>, e
+    ''' <b>reordenar sem mudar o conjunto</b> também repete. Caixa viva não
+    ''' prova propriedade de algoritmo — só a exercita.
     ''' </summary>
     <TestMethod, TestCategory("Integracao")>
     Public Async Function Table_e_iteracao_leem_o_MESMO_conjunto() As Task
@@ -296,22 +297,23 @@ Public Class PagingIntegrationTests
                             "a Table devolveu chave REPETIDA na conferencia")
 
             ' A ITERACAO pagina por OFFSET, e offset sobre colecao viva repete
-            ' por construcao: um item removido antes do offset desce tudo uma
-            ' posicao e a proxima pagina reentrega uma linha ja lida. Exigir
-            ' zero repeticao dela e exigir que a pasta nao mexa.
+            ' por construcao. Isso e TOLERADO aqui, sempre — e nao so quando as
+            ' pontas divergem.
             '
-            ' Mas com as pontas concordando isso deixa de ser desculpa: para
-            ' deslocar o offset e preciso REMOVER, e remocao aparece em T2 —
-            ' some e volta com o mesmo EntryID nao acontece. Entao ai repetir
-            ' e defeito, e reprova.
+            ' Eu tinha condicionado a tolerancia a "a pasta mexeu", com o
+            ' argumento de que deslocar offset exige REMOCAO e remocao
+            ' apareceria em T2. As duas metades estavam erradas: quem repete e
+            ' a INSERCAO, e REORDENAR SEM MUDAR O CONJUNTO tambem repete — um
+            ' Subject mudando com a ordenacao em SubjectAsc atravessa a
+            ' fronteira do offset sem nenhuma chave entrar ou sair. Os dois
+            ' casos estao demonstrados em OffsetPagingTests.
+            '
+            ' A direcao NAO e provada aqui: caixa viva nao prova propriedade de
+            ' algoritmo. Aqui so se conta e se registra.
             Dim repetidas = lento.Chaves.Count - porIteracao.Count
             If repetidas > 0 Then
-                Assert.IsTrue(mexeu > 0,
-                    $"a ITERACAO repetiu {repetidas} chave(s) com a pasta parada nas duas " &
-                    "pontas por Table. Offset so desloca se algo for REMOVIDO, e remocao " &
-                    "apareceria em T2 — entao isto e defeito do caminho, nao caixa viva.")
-                Console.WriteLine($"a iteracao repetiu {repetidas} chave(s); a pasta mexeu " &
-                                  $"em {mexeu} — consistente com deslocamento de offset")
+                Console.WriteLine($"a iteracao repetiu {repetidas} chave(s) — limitacao " &
+                                  "conhecida do offset, demonstrada em OffsetPagingTests")
             End If
 
             ' A MESMA mensagem tem de ter a MESMA chave nos dois caminhos. O

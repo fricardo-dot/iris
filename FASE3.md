@@ -391,52 +391,109 @@ propriedade que comprovadamente não existe — mostrou outra coisa:
 **outra propriedade**, que existe vazia neste store. Eu estava lendo a
 propriedade errada, e ela respondia "vazio" com a mesma cara de "sem rótulo".
 
-E o nome inventado ter lançado prova uma segunda coisa, que valia a pena saber:
-**`GetProperty` não cria mapeamento de named property**. O `msip_labels`
-minúsculo já existia aqui; não fui eu que o criei.
+E o nome inventado ter lançado prova uma segunda coisa: **`GetProperty` não cria
+mapeamento de named property**. O `msip_labels` minúsculo já existia aqui.
 
 > Sem o controle, a medição teria produzido um número plausível, redondo e
 > falso — a partir de um artefato do meu próprio código.
 
 ### 34.2 As respostas
 
+Números do recorte medido: **400 mensagens mais recentes** da Entrada, 86 dos
+Enviados, 68 dos Rascunhos. Recorte por data, **não amostra aleatória** — a
+distinção está nos próprios números abaixo, e não é preciosismo: intervalo de
+confiança pressupõe representatividade que este recorte não tem.
+
 | | Pergunta | Resposta medida |
 |---|---|---|
 | **P1** | A propriedade existe? | **Sim**, sob `.../{00020386-…}/MSIP_Labels` — com a caixa alta exata |
-| **P2** | Lê sem prompt? | **Sim**. Nenhum diálogo em ~670 leituras |
-| **P3** | Prevalência | Entrada **1,5 % ± 1,2 %** (n=400) · Enviados **4,7 % ± 4,5 %** (n=86) · Rascunhos **0 %** (n=68) |
-| **P4** | O `Sensitivity` clássico concorda? | **Não medido por desenho** — ele não responde por rótulo moderno, então concordância não seria evidência de nada |
+| **P2** | Lê sem prompt? | **Sim**. Nenhum diálogo em ~1.100 leituras |
+| **P3** | Rotulados no recorte | Entrada **6/400** · Enviados **4/86** · Rascunhos **0/68** |
+| **P4** | O `Sensitivity` clássico concorda? | **Não medido por desenho** — ele não responde por rótulo moderno, então concordância não seria evidência |
 | **P5** | Corpo recusado por IRM? | **Não medido por restrição operacional** |
 | **P6** | Vem por `Table`? | **NÃO.** `Columns.Add` recusa o DASL com `E_INVALIDARG` |
-| **P7** | Como reage a ausente? | **Lança `MAPI_E_NOT_FOUND`** — e é isso que torna `Absent` distinguível de `Blank` |
-| **P8** | Múltiplos rótulos? | **Nenhum** em 554 itens. Limite superior ≈ 0,54 % a 95% — **não** impossibilidade |
-| **P9** | Proteção separada da classificação? | Não observável nos valores desta amostra |
-| **P10** | Evidência de versão | `PR_CHANGE_KEY` veio em **20 de 20**, junto de `EntryID` e `LastModificationTime` |
+| **P7** | Como reage a ausente? | **Lança `MAPI_E_NOT_FOUND`** — é isso que torna `Absent` distinguível de `Blank` |
+| **P8** | Múltiplos rótulos? | **Nenhum** em 554. Se fosse amostra aleatória o teto seria ≈ 0,54 %; por ser recorte, vale menos — e **nunca** impossibilidade |
+| **P9** | Proteção separada da classificação? | **SIM.** Campos observados: `Enabled`, `Name`, `SetDate`, `Method`, `SiteId` e **`ContentBits`** |
+| **P10** | Evidência de versão | `PR_CHANGE_KEY` em **20 de 20**, com `EntryID` e `LastModificationTime` |
 | **P11** | Outras pastas | Entrada, Enviados e Rascunhos expõem **igual**. Outros stores e caixas compartilhadas: **não disponíveis** nesta conta |
 | **P12** | Anexos têm classificação própria? | **Não medido** — anexo está fora da fase |
-| **P13** | Ler altera estado? | Nenhuma alteração observada. **Ausência de efeito não foi provada** |
+| **P13** | Ler altera estado? | Nada observado; **ausência de efeito não foi provada** |
 | **P16** | Autoridade | Continua sendo cabeçalho. **Ler bem não prova autoridade** |
 
-### 34.3 Três coisas que mudam o desenho
+Estabilidade: os mesmos 20 itens, relidos — **0 mudaram de desfecho**. Estável
+aqui não é garantia; é ausência de instabilidade observada.
 
-**Rótulos existem nesta conta, e são poucos.** 10 itens rotulados em 554, com
-**três GUIDs distintos**. Não é uma caixa sem classificação — é uma caixa em que
-a classificação é rara e, por isso, fácil de ignorar por acidente. Um portão que
-liberasse "o caso comum" liberaria 98,5 % e vazaria justamente os 1,5 %.
+### 34.3 Quatro coisas que mudam o desenho
 
-**O caminho barato não existe.** A `Table` recusa o DASL, então classificar custa
-**~17,6 ms por item** — a mesma ordem de grandeza que tornou o cache obrigatório
-na Fase 0. Classificar uma thread de 30 mensagens custa meio segundo de COM; uma
-pasta inteira, minutos. Isso decide o que a UI pode oferecer: classificação **sob
-demanda, no item aberto** — nunca varredura classificatória de fundo.
+**Rótulos existem nesta conta, e são poucos.** 10 rotulados em 554, com **três
+GUIDs distintos**. Não é uma caixa sem classificação — é uma caixa em que a
+classificação é rara e, por isso, fácil de ignorar por acidente. Um portão que
+liberasse "o caso comum" liberaria a esmagadora maioria e vazaria justamente o
+resto.
+
+E raro por mensagem não é raro por **thread**: se a raridade fosse independente
+entre mensagens — e não é —, uma thread de 30 já teria chance apreciável de
+conter uma rotulada. É mais um argumento para a regra da §29.1: **um membro não
+comprovadamente permitido nega a thread inteira**.
+
+**`ContentBits` responde a P9, e responde bem.** A proteção vem em campo
+**separado** da classificação. Isso significa que o portão não pode olhar só o
+GUID do rótulo: dois itens com o mesmo rótulo podem ter proteção diferente. O
+campo existe; usá-lo é decisão da política, e a política ainda não autoriza nada.
+
+**O caminho barato por `Table` não existe — nesta conta, com este DASL.** Custa
+**~16 a 18 ms por item**, a mesma ordem que tornou o cache obrigatório na Fase 0.
+Numa pasta de 1.000 itens isso é ~18 segundos; nos 17.728 do servidor, ~5
+minutos.
+
+A conclusão de escopo é: **a Fase 3 classifica sob demanda, no item aberto, e
+não implementa varredura classificatória de fundo.** Note o que essa frase *não*
+diz — que nenhum caminho barato exista no OOM. Não tentei `Items.Restrict` nem
+outras formas do DASL, e não vou tentar: mesmo que funcionassem, classificação
+de fundo **não poderia autorizar transmissão depois**, porque o rótulo
+envelhece. O item teria de ser relido sob demanda de qualquer jeito.
 
 **`Absent` e `Blank` são estados diferentes, e a maioria é `Blank`.** Dos 400 da
-Entrada: 150 `Absent`, 244 `Blank`, 6 `Present`. A propriedade existir vazia em
-61 % dos itens significa que "a propriedade está lá" não diz nada sozinho — e
-que colapsar os dois num booleano perderia a única distinção que o caminho
-oferece.
+Entrada: 150 `Absent`, 244 `Blank`, 6 `Present`. Só significa *"a propriedade
+existe com string vazia em 61 % deste recorte"* — **não** significa "sem
+rótulo", "rótulo removido" nem "seguro". Pode ser pipeline do Exchange, add-in
+inicializando a propriedade, cabeçalho normalizado, ou origem das mensagens.
 
-### 34.4 O que continua NÃO respondido
+### 34.4 Erros meus que o Codex pegou nesta rodada
+
+Nenhum deles apareceria nos testes verdes, e os quatro liberariam mais do que
+deviam:
+
+**`E_INVALIDARG` virava `Absent`.** A minha própria medição mostrava que esse
+HRESULT é o que a `Table` devolve para *"não aceito este DASL"* — ou seja, eu
+tinha a prova de que ele significa "operação recusada" e o estava lendo como "o
+item não tem rótulo". Agora é `Unsupported`. Ausência é `MAPI_E_NOT_FOUND`, e
+só ela.
+
+**O parser aceitava valor meio corrompido.** Pares não reconhecidos eram
+ignorados em silêncio, então um GUID bom junto de um inválido saía `Present`.
+E o **mesmo** GUID com `Enabled=True` e `Enabled=False` também saía `Present`,
+porque o conjunto ordenado terminava com um ativo só — o comentário prometia
+detectar conflito e o código detectava apenas *mais de um GUID*. Os dois estão
+cobertos em `RotuloParserTests`, que existe separado porque **esta caixa não tem
+nenhum caso difícil**: um parser cuja única prova é a caixa real é um parser
+cujos ramos perigosos nunca rodam.
+
+**Havia uma propriedade `Conclusiva`.** Ela juntava `Present`, `Absent` e
+`Blank` — exatamente os três cuja política **difere** — sob um booleano que
+nenhum `If leitura.Conclusiva Then` iria interpretar com o cuidado do
+comentário. Removida. Quem decide trata cada membro do enum explicitamente.
+
+**Eu inverti a direção do offset.** Escrevi que remoção repete e inserção pula;
+é o contrário, e disso eu tinha derivado uma regra de teste que também estava
+errada. A aritmética saiu do adaptador para o `OffsetPaging`, com
+`OffsetPagingTests` demonstrando cada mutação sobre uma coleção controlada —
+inclusive que **reordenar sem mudar o conjunto também repete**, que era a
+segunda metade da minha afirmação falsa. Está na §27.8 da Fase 2, junto do
+motivo.
+
+### 34.5 O que continua NÃO respondido
 
 - **P5 e P13**, por restrição operacional: abrir corpo protegido pode disparar
   diálogo de direitos, e o usuário não está na máquina. O estado fica tratado
@@ -445,6 +502,7 @@ oferece.
   **desconhecida** e não autoriza transmissão.
 - **P16**, por não ser respondível por leitura: só a política corporativa diz se
   o rótulo tem autoridade.
+- **P12**, porque anexo está fora desta fase.
 - **Efeito colateral de leitura**: não observado ≠ inexistente.
 
 ---

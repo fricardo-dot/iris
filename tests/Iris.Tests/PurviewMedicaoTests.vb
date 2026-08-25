@@ -173,6 +173,17 @@ Public Class PurviewMedicaoTests
             Anotar("**Ausência de download ou de efeito colateral NÃO foi provada** — " &
                    "só não foi observada nesta amostra.")
 
+            ' ---- estabilidade de Absent versus Blank ---------------------
+            Anotar("")
+            Anotar("## Estabilidade — os mesmos itens, lidos de novo")
+            Dim relidos = Await broker.GetSensitivityLabelsAsync(
+                antes.Select(Function(x) x.Key).ToList(), CancellationToken.None)
+            If relidos.Succeeded Then
+                RelatarEstabilidade(porItem, relidos.Value)
+            Else
+                Anotar($"a releitura falhou: {relidos.Kind} {relidos.Detail}")
+            End If
+
             ' ---- P10 / P16 ------------------------------------------------
             Anotar("")
             Anotar("## P10 — evidência de versão")
@@ -197,6 +208,44 @@ Public Class PurviewMedicaoTests
     End Function
 
     ' ==================================================================
+
+    ''' <summary>
+    ''' O mesmo item, lido duas vezes: o desfecho mudou? E se mudou, a versão
+    ''' do item mudou junto?
+    '''
+    ''' Importa porque <c>Absent</c> e <c>Blank</c> são a base do portão, e a
+    ''' diferença entre os dois pode ser <b>estado transitório do store</b> em
+    ''' vez de propriedade do item. Desfecho que oscila sem o
+    ''' <c>PR_CHANGE_KEY</c> mexer significa que a leitura não é função do item
+    ''' — e aí classificar uma vez e decidir depois é decidir sobre um valor
+    ''' que já pode ter sido outro.
+    ''' </summary>
+    Private Shared Sub RelatarEstabilidade(antes As IReadOnlyList(Of LabelReading),
+                                           depois As IReadOnlyList(Of LabelReading))
+        Dim porChave = depois.ToDictionary(Function(l) l.Item.EntryId, Function(l) l)
+        Dim conferidos = 0
+        Dim mudouDesfecho = 0
+        Dim mudouSemVersao = 0
+
+        For Each a In antes
+            Dim d As LabelReading = Nothing
+            If Not porChave.TryGetValue(a.Item.EntryId, d) Then Continue For
+            conferidos += 1
+            If a.Kind = d.Kind Then Continue For
+            mudouDesfecho += 1
+            If a.Version IsNot Nothing AndAlso a.Version.Mesma(d.Version) Then
+                mudouSemVersao += 1
+                Anotar($"  ATENÇÃO: {a.Kind} → {d.Kind} com a MESMA versão do item")
+            End If
+        Next
+
+        Anotar($"  {conferidos} itens reconferidos; {mudouDesfecho} mudaram de desfecho, " &
+               $"{mudouSemVersao} deles **sem** o item mudar de versão.")
+        If mudouSemVersao = 0 Then
+            Anotar("  Absent/Blank ficou **estável** nesta amostra. Estável aqui não é " &
+                   "garantia — é ausência de instabilidade observada.")
+        End If
+    End Sub
 
     ''' <summary>
     ''' Lê o controle e diz o que ele significa — <b>sem</b> deixar a
@@ -239,6 +288,17 @@ Public Class PurviewMedicaoTests
                    If(hrs.Length > 0, $"   hresult: {hrs}", ""))
         Next
 
+        Dim campos = leituras.SelectMany(Function(l) l.Campos).Distinct().OrderBy(
+                         Function(c) c).ToList()
+        If campos.Count > 0 Then
+            Anotar("  campos observados no valor: " & String.Join(", ", campos))
+            Dim comprimentos = leituras.Where(Function(l) l.RawLength > 0).
+                                        Select(Function(l) l.RawLength).ToList()
+            If comprimentos.Count > 0 Then
+                Anotar($"  comprimento do valor cru: {comprimentos.Min()}–{comprimentos.Max()} car.")
+            End If
+        End If
+
         Dim ausentes = leituras.Where(Function(l) l.Kind = LabelReadingKind.Absent).Count()
         Dim vazios = leituras.Where(Function(l) l.Kind = LabelReadingKind.Blank).Count()
         If ausentes > 0 AndAlso vazios > 0 Then
@@ -265,12 +325,19 @@ Public Class PurviewMedicaoTests
                                                    l.Kind = LabelReadingKind.Conflicting).Count()
         Dim p = comRotulo / CDbl(n)
         Dim margem = 1.96 * Math.Sqrt(Math.Max(p * (1 - p), 0.0001) / n)
-        Anotar($"P3: prevalência de rótulo = {p:P1} ± {margem:P1} (n={n}, 95%)")
+        ' A amostra e "as N mais recentes por ReceivedDesc", nao aleatoria.
+        ' Chamar isso de "prevalencia da pasta" com intervalo de confianca seria
+        ' emprestar a um recorte enviesado a autoridade de uma amostra
+        ' representativa. O numero vale para o recorte, e a frase diz qual.
+        Anotar($"P3: {comRotulo} de {n} nas {n} mensagens MAIS RECENTES = {p:P1}. " &
+               $"(±{margem:P1} valeria para amostra aleatória; esta é por data, " &
+               "então o intervalo é ilustrativo e não cobre viés de recorte.)")
 
         Dim multiplos = leituras.Where(Function(l) l.Kind = LabelReadingKind.Conflicting).Count()
         If multiplos = 0 Then
-            Anotar($"P8: **nenhum** múltiplo observado. Limite superior aproximado " &
-                   $"≈ {3.0 / n:P2} a 95% — **não** impossibilidade.")
+            Anotar($"P8: **nenhum** múltiplo observado neste recorte. Se fosse amostra " &
+                   $"aleatória, o limite superior seria ≈ {3.0 / n:P2} a 95%. Por ser " &
+                   "recorte por data, vale menos que isso — e **nunca** impossibilidade.")
         Else
             Anotar($"P8: {multiplos} item(ns) com mais de um rótulo ativo.")
         End If

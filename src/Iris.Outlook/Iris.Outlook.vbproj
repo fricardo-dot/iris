@@ -35,4 +35,8 @@
     </ItemGroup>
   </Target>
 
+  <ItemGroup>
+    <InternalsVisibleTo Include="Iris.Tests" />
+  </ItemGroup>
+
 </Project>

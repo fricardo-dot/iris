@@ -279,30 +279,37 @@ Namespace Global.Iris.Outlook
         ''' quando a <c>Table</c> não serve para a pasta.
         '''
         ''' ------------------------------------------------------------------
-        ''' <b>OFFSET SOBRE COLEÇÃO VIVA DUPLICA E PULA — POR CONSTRUÇÃO</b>
+        ''' <b>OFFSET SOBRE COLEÇÃO VIVA REPETE E PULA — POR CONSTRUÇÃO</b>
         '''
-        ''' Isto não é defeito do laço; é o que offset significa. Entre a página
-        ''' N e a N+1, a coleção pode mudar:
+        ''' Não é defeito do laço; é o que offset significa. Entre a página N e
+        ''' a N+1 a coleção pode mudar, e o <see cref="OffsetPaging"/> tem a
+        ''' demonstração em <c>OffsetPagingTests</c>:
         '''
-        '''   • item <b>removido</b> antes do offset → tudo desce uma posição, e
-        '''     a posição <c>offset+1</c> passa a conter um item <b>já
-        '''     devolvido</b>. Sai <b>chave repetida</b>.
-        '''   • item <b>inserido</b> antes do offset → tudo sobe uma posição, e
-        '''     um item nunca é visitado. Sai <b>mensagem perdida em silêncio</b>.
+        '''   • item <b>inserido</b> antes do offset → tudo desce uma posição, e
+        '''     a próxima página reentrega o último item da anterior.
+        '''     <b>Chave repetida.</b>
+        '''   • item <b>removido</b> antes do offset → tudo sobe uma posição, e
+        '''     um item nunca é visitado. <b>Mensagem perdida em silêncio</b> —
+        '''     o pior dos dois, e o sintoma que a Q1 existe para pegar.
+        '''   • <b>reordenar sem mudar o conjunto</b> também repete. Numa pasta
+        '''     real isso é um <c>Subject</c> mudando com a ordenação em
+        '''     <c>SubjectAsc</c>.
         '''
-        ''' A única defesa real seria cursor por chave — que é justamente o que o
-        ''' caminho por <c>Table</c> faz, e o motivo de ele existir. Aqui não dá:
+        ''' <b>Eu tinha escrito isto ao contrário</b> — "removido repete,
+        ''' inserido pula" — e derivado disso uma regra de teste que também
+        ''' estava errada. A aritmética saiu daqui para o
+        ''' <see cref="OffsetPaging"/> justamente por isso: onde só a caixa real
+        ''' exercita, ninguém demonstra qual direção é a verdadeira.
+        '''
+        ''' A defesa real seria cursor por chave — o que o caminho por
+        ''' <c>Table</c> faz, e o motivo de ele existir. Aqui não dá:
         ''' <c>Items.Sort</c> ordena por campo não único (<c>Subject</c>,
         ''' <c>SenderName</c>) e o OOM não expõe "continue depois desta chave".
         '''
-        ''' <b>Isto foi observado, não deduzido.</b> Em 25/08/2026 o cruzamento
-        ''' da Q1 falhou com 993 linhas e 992 chaves distintas na travessia por
-        ''' <c>SubjectAsc</c> — uma repetida, numa Caixa de Entrada que recebe
-        ''' correio durante a travessia. É o candidato mais forte para a falha
-        ''' isolada da §27.8 da Fase 2, que nunca reproduziu e cuja evidência se
-        ''' perdeu.
+        ''' Observado em 25/08/2026: 993 linhas e 992 chaves distintas numa
+        ''' travessia por <c>SubjectAsc</c> da Caixa de Entrada.
         '''
-        ''' Quem consome este caminho <b>precisa</b> tolerar repetição — a
+        ''' Quem consome este caminho <b>precisa</b> tolerar repetição. A
         ''' varredura da Fase 2 tolera, porque publica por
         ''' <c>provider_entry_id</c> e recarrega em vez de acumular.
         ''' </summary>
@@ -323,9 +330,12 @@ Namespace Global.Iris.Outlook
                 Dim total = colecao.Count
                 Dim pagina As New MessagePage With {.Generation = query.Generation}
 
-                ' Items e 1-based no OOM.
-                Dim primeiro = offset + 1
-                Dim ultimo = Math.Min(offset + targetCount, total)
+                ' Items e 1-based no OOM. A aritmetica mora no OffsetPaging,
+                ' onde existe teste deterministico dizendo o que cada mutacao
+                ' faz - foi por falta disso que eu escrevi a direcao errada.
+                Dim janela = OffsetPaging.Janela(offset, targetCount, total)
+                Dim primeiro As Integer = janela.Primeiro
+                Dim ultimo As Integer = janela.Ultimo
                 Dim descartadas = 0
 
                 For i = primeiro To ultimo
@@ -352,8 +362,8 @@ Namespace Global.Iris.Outlook
                 pagina.SkippedCount = descartadas
                 ' Avanca por POSICOES EXAMINADAS, nao por DTOs devolvidos:
                 ' contar DTOs relia as posicoes puladas e duplicava linha.
-                pagina.NextCursor = If(ultimo < total,
-                                       MessageCursor.ForOffset(query, ultimo).Encode(),
+                pagina.NextCursor = If(janela.Proximo.HasValue,
+                                       MessageCursor.ForOffset(query, janela.Proximo.Value).Encode(),
                                        Nothing)
                 Return pagina
             Finally

@@ -55,8 +55,37 @@ Namespace Global.Iris.Model
         ''' </summary>
         Malformed
 
-        ''' <summary>Mais de um rótulo ativo, ou rótulos em conflito.</summary>
+        ''' <summary>
+        ''' Mais de um rótulo ativo, <b>ou</b> o mesmo rótulo dizendo duas
+        ''' coisas — <c>Enabled=True</c> e <c>Enabled=False</c> para o mesmo
+        ''' GUID. A segunda forma é a que a primeira versão do parser deixava
+        ''' passar como <see cref="Present"/>, porque o conjunto ordenado
+        ''' terminava com um ativo só.
+        ''' </summary>
         Conflicting
+
+        ''' <summary>
+        ''' O valor tem forma boa, tem histórico de rótulo, e <b>nenhum ativo</b>
+        ''' — todos <c>Enabled=False</c>.
+        '''
+        ''' Isto não é <see cref="Malformed"/>: o valor está perfeito e diz uma
+        ''' coisa específica, que é "houve rótulo aqui e ele foi removido".
+        ''' Também não é <see cref="Absent"/>, que é a propriedade não existir.
+        ''' Chamar de qualquer um dos dois apagaria uma informação que a
+        ''' política corporativa pode querer usar.
+        ''' </summary>
+        HistoricalOnly
+
+        ''' <summary>
+        ''' Este caminho não suporta a propriedade — o provider recusou a
+        ''' operação, não disse que o item não a tem.
+        '''
+        ''' Existe porque eu tratava <c>E_INVALIDARG</c> como
+        ''' <see cref="Absent"/>, e a própria medição do 3.0 mostrou que esse
+        ''' HRESULT é o que a <c>Table</c> devolve para "não aceito este DASL".
+        ''' Ausência comprovada nesta conta é <c>MAPI_E_NOT_FOUND</c>, e só ela.
+        ''' </summary>
+        Unsupported
 
         ''' <summary>Leitura negada — guarda do Object Model, política, IRM.</summary>
         Denied
@@ -141,6 +170,17 @@ Namespace Global.Iris.Model
         Public ReadOnly Property LabelIds As IReadOnlyList(Of String)
         ''' <summary>Comprimento do valor cru, em caracteres. Não o valor.</summary>
         Public ReadOnly Property RawLength As Integer
+
+        ''' <summary>
+        ''' Os <b>nomes de campo</b> vistos no valor — <c>Enabled</c>,
+        ''' <c>SetDate</c>, <c>Method</c>, <c>ContentBits</c>, o que houver.
+        ''' Ordenados e sem repetição.
+        '''
+        ''' Nomes, não valores. Serve para responder estruturalmente o que o
+        ''' formato traz nesta conta (a P9 pergunta se proteção vem separada da
+        ''' classificação) sem que nenhum conteúdo de rótulo saia daqui.
+        ''' </summary>
+        Public ReadOnly Property Campos As IReadOnlyList(Of String)
         Public ReadOnly Property Version As LabelVersionEvidence
 
         Public Sub New(item As ItemKey, kind As LabelReadingKind,
@@ -148,7 +188,8 @@ Namespace Global.Iris.Model
                        Optional hresult As Integer? = Nothing,
                        Optional labelIds As IReadOnlyList(Of String) = Nothing,
                        Optional rawLength As Integer = 0,
-                       Optional version As LabelVersionEvidence = Nothing)
+                       Optional version As LabelVersionEvidence = Nothing,
+                       Optional campos As IReadOnlyList(Of String) = Nothing)
             Me.Item = item
             Me.Kind = kind
             Me.Stage = stage
@@ -156,22 +197,28 @@ Namespace Global.Iris.Model
             Me.LabelIds = If(labelIds, CType(Array.Empty(Of String)(), IReadOnlyList(Of String)))
             Me.RawLength = rawLength
             Me.Version = version
+            Me.Campos = If(campos, CType(Array.Empty(Of String)(), IReadOnlyList(Of String)))
         End Sub
 
-        ''' <summary>
-        ''' A leitura produziu um estado sobre o qual dá para <b>raciocinar</b>
-        ''' — o que é bem menos do que "pode transmitir".
+        ''' <remarks>
+        ''' <b>Aqui havia uma propriedade <c>Conclusiva</c>, e ela foi removida.</b>
         '''
-        ''' Existe para o portão poder dizer "nem sei o que isto é" com uma
-        ''' pergunta só, e não para autorizar coisa nenhuma.
-        ''' </summary>
-        Public ReadOnly Property Conclusiva As Boolean
-            Get
-                Return Kind = LabelReadingKind.Present OrElse
-                       Kind = LabelReadingKind.Absent OrElse
-                       Kind = LabelReadingKind.Blank
-            End Get
-        End Property
+        ''' Ela devolvia <c>True</c> para <see cref="LabelReadingKind.Present"/>,
+        ''' <see cref="LabelReadingKind.Absent"/> e
+        ''' <see cref="LabelReadingKind.Blank"/>, com um comentário explicando
+        ''' que "conclusiva" queria dizer "dá para raciocinar" e não "pode
+        ''' transmitir".
+        '''
+        ''' O comentário não sobreviveria ao primeiro
+        ''' <c>If leitura.Conclusiva Then</c>. E os três estados que ela reunia
+        ''' são exatamente aqueles cuja política <b>difere</b>: <c>Present</c>
+        ''' não tem autoridade positiva confirmada (P16), <c>Absent</c> tem
+        ''' semântica corporativa desconhecida (P14), e <c>Blank</c> não diz por
+        ''' que a propriedade está vazia.
+        '''
+        ''' Um booleano que junta justamente os três é um convite a decidir sem
+        ''' olhar. Quem decide trata cada membro do enum <b>explicitamente</b>.
+        ''' </remarks>
     End Class
 
 End Namespace

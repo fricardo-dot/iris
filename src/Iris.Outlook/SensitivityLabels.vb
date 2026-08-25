@@ -221,22 +221,30 @@ Namespace Global.Iris.Outlook
         ' ==============================================================
 
         ''' <summary>
-        ''' Traduz HRESULT em desfecho, e é <b>aqui</b> que a distinção que a
+        ''' Traduz HRESULT em desfecho, e é <b>aqui</b> que a distinção de que a
         ''' fase inteira depende acontece.
         '''
-        ''' <c>MAPI_E_NOT_FOUND</c> e <c>E_INVALIDARG</c> significam "esta
-        ''' propriedade não existe neste item". Tudo o mais é outra coisa, e
-        ''' outra coisa nunca vira ausência.
+        ''' <b>Só <c>MAPI_E_NOT_FOUND</c> vira ausência</b>, e só quando a etapa
+        ''' foi ler o valor. A primeira versão aceitava <c>E_INVALIDARG</c>
+        ''' junto — e a medição do 3.0, no mesmo dia, mostrou que esse HRESULT é
+        ''' o que a <c>Table</c> devolve para "não aceito este DASL". Ou seja: a
+        ''' minha própria medição provava que ele significa "operação recusada",
+        ''' e eu o estava lendo como "o item não tem rótulo". Falha aberta.
+        '''
+        ''' Agora ele é <see cref="LabelReadingKind.Unsupported"/>.
         ''' </summary>
         Private Function Falha(item As ItemKey, etapa As LabelReadStage, hr As Integer,
                                Optional versao As LabelVersionEvidence = Nothing) As LabelReading
             Dim tipo As LabelReadingKind
             Select Case hr
-                Case MapiNotFound, InvalidArg
+                Case MapiNotFound
                     ' Ausencia so vale se a etapa foi LER O VALOR. Nao achar o
                     ' ITEM com o mesmo HRESULT nao diz nada sobre rotulo.
                     tipo = If(etapa = LabelReadStage.Value,
                               LabelReadingKind.Absent, LabelReadingKind.Unreadable)
+                Case InvalidArg
+                    ' "Nao aceito esta operacao", e NAO "o item nao tem".
+                    tipo = LabelReadingKind.Unsupported
                 Case Else
                     tipo = ClassificarPorPolitica(hr)
             End Select
@@ -261,10 +269,30 @@ Namespace Global.Iris.Outlook
             End Select
         End Function
 
+
         ''' <summary>
-        ''' Interpreta o valor cru. Só string interessa; qualquer outro tipo é
-        ''' formato que eu não conheço, e formato desconhecido é
-        ''' <see cref="LabelReadingKind.Malformed"/> — nunca ausência.
+        ''' Lê o valor em registros, e devolve o que se sabe deles.
+        '''
+        ''' O valor é uma lista de <c>chave=valor</c> separados por <c>;</c>, e a
+        ''' chave tem a forma <c>MSIP_Label_&lt;guid&gt;_&lt;campo&gt;</c>. Um item
+        ''' pode carregar <b>vários</b> registros, inclusive de rótulo já
+        ''' removido (<c>Enabled=False</c>).
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE A PRIMEIRA VERSÃO DEIXAVA PASSAR</b>
+        '''
+        ''' Ela ignorava em silêncio todo par que não reconhecia. Com isso:
+        '''
+        '''   • um valor <b>meio corrompido</b> — um GUID bom e um inválido —
+        '''     saía <c>Present</c>, como se estivesse inteiro;
+        '''   • o <b>mesmo</b> GUID com <c>Enabled=True</c> e <c>Enabled=False</c>
+        '''     saía <c>Present</c>, porque o conjunto ordenado terminava com um
+        '''     ativo só. O comentário prometia detectar conflito e o código só
+        '''     detectava <i>mais de um GUID</i>.
+        '''
+        ''' Agora fragmento com prefixo <c>MSIP_Label_</c> que não dá para
+        ''' interpretar <b>contamina</b>, e campo contraditório para o mesmo
+        ''' GUID é conflito.
         ''' </summary>
         Private Function Interpretar(item As ItemKey, cru As Object,
                                      versao As LabelVersionEvidence) As LabelReading
@@ -286,70 +314,105 @@ Namespace Global.Iris.Outlook
                                         rawLength:=texto.Length, version:=versao)
             End If
 
-            Dim ativos = GuidsAtivos(texto)
-            If ativos Is Nothing Then
-                Return New LabelReading(item, LabelReadingKind.Malformed, LabelReadStage.Parse,
-                                        rawLength:=texto.Length, version:=versao)
-            End If
-
-            Dim tipo = If(ativos.Count > 1, LabelReadingKind.Conflicting, LabelReadingKind.Present)
-            If ativos.Count = 0 Then
-                ' Ha valor, e nenhum rotulo ATIVO nele. Historico de rotulo
-                ' removido cai aqui. Nao e ausencia da propriedade, e nao e
-                ' um rotulo: e um valor que eu nao sei traduzir em decisao.
-                tipo = LabelReadingKind.Malformed
-            End If
-
-            Return New LabelReading(item, tipo, LabelReadStage.Parse,
-                                    labelIds:=ativos, rawLength:=texto.Length, version:=versao)
+            Dim lido = Analisar(texto)
+            Return New LabelReading(item, lido.Tipo, LabelReadStage.Parse,
+                                    labelIds:=lido.Ativos, rawLength:=texto.Length,
+                                    version:=versao, campos:=lido.Campos)
         End Function
 
         ''' <summary>
-        ''' Os GUIDs dos rótulos <b>ativos</b>.
-        '''
-        ''' O valor é uma lista de registros <c>chave=valor</c> separados por
-        ''' <c>;</c>, e um item pode carregar <b>mais de um</b> registro —
-        ''' inclusive de rótulo já removido, marcado <c>Enabled=False</c>.
-        ''' Modelar como par único perderia exatamente o caso interessante.
-        '''
-        ''' Devolve <c>Nothing</c> quando o texto não tem forma reconhecível —
-        ''' que é diferente de ter forma e nenhum ativo.
+        ''' O parser. Separado de <c>Interpretar</c> para ser testável sem COM —
+        ''' os casos que interessam (corrompido pela metade, conflito no mesmo
+        ''' GUID, só histórico) não aparecem nesta caixa, e um parser que só a
+        ''' caixa real exercita nunca vê o caso difícil.
         ''' </summary>
-        Private Function GuidsAtivos(texto As String) As IReadOnlyList(Of String)
-            Dim pares = texto.Split(";"c).
-                        Select(Function(p) p.Split("="c)).
-                        Where(Function(p) p.Length = 2).
-                        Select(Function(p) (Chave:=p(0).Trim(), Valor:=p(1).Trim())).
-                        ToList()
-            If pares.Count = 0 Then Return Nothing
+        Friend Function Analisar(texto As String) _
+                                 As (Tipo As LabelReadingKind, Ativos As IReadOnlyList(Of String),
+                                     Campos As IReadOnlyList(Of String))
+            Const prefixo = "MSIP_Label_"
+            Dim vazio = CType(Array.Empty(Of String)(), IReadOnlyList(Of String))
 
-            ' Chave e da forma "MSIP_Label_<guid>_<campo>". O <campo> Enabled
-            ' diz se aquele rotulo vale; ausencia de Enabled explicito NAO
-            ' vira ativo por conta propria.
             Dim ativos As New SortedSet(Of String)(StringComparer.Ordinal)
+            Dim inativos As New SortedSet(Of String)(StringComparer.Ordinal)
+            Dim campos As New SortedSet(Of String)(StringComparer.OrdinalIgnoreCase)
             Dim algumReconhecido = False
+            Dim contaminado = False
 
-            For Each par In pares
-                Dim k = par.Chave
-                If Not k.StartsWith("MSIP_Label_", StringComparison.OrdinalIgnoreCase) Then Continue For
-                Dim resto = k.Substring("MSIP_Label_".Length)
+            For Each bruto In texto.Split(";"c)
+                If bruto.Trim().Length = 0 Then Continue For
+
+                Dim partes = bruto.Split("="c)
+                If partes.Length <> 2 Then
+                    ' So contamina se PARECE um registro de rotulo. Lixo que
+                    ' nem menciona MSIP_Label pode ser outro cabecalho colado.
+                    If bruto.IndexOf(prefixo, StringComparison.OrdinalIgnoreCase) >= 0 Then
+                        contaminado = True
+                    End If
+                    Continue For
+                End If
+
+                Dim chave = partes(0).Trim()
+                Dim valor = partes(1).Trim()
+                If Not chave.StartsWith(prefixo, StringComparison.OrdinalIgnoreCase) Then Continue For
+
+                Dim resto = chave.Substring(prefixo.Length)
                 Dim corte = resto.LastIndexOf("_"c)
-                If corte <= 0 Then Continue For
+                If corte <= 0 Then
+                    contaminado = True
+                    Continue For
+                End If
 
-                Dim bruto = resto.Substring(0, corte)
-                Dim campo = resto.Substring(corte + 1)
                 Dim id As Guid
-                If Not Guid.TryParse(bruto, id) Then Continue For
+                If Not Guid.TryParse(resto.Substring(0, corte), id) Then
+                    ' GUID invalido num registro que se diz de rotulo. Isto e
+                    ' exatamente o caso que a versao anterior engolia.
+                    contaminado = True
+                    Continue For
+                End If
 
                 algumReconhecido = True
-                If String.Equals(campo, "Enabled", StringComparison.OrdinalIgnoreCase) AndAlso
-                   String.Equals(par.Valor, "True", StringComparison.OrdinalIgnoreCase) Then
-                    ativos.Add(id.ToString("D", CultureInfo.InvariantCulture))
+                Dim campo = resto.Substring(corte + 1)
+                campos.Add(campo)
+                If Not String.Equals(campo, "Enabled",
+                                     StringComparison.OrdinalIgnoreCase) Then Continue For
+
+                Dim g = id.ToString("D", CultureInfo.InvariantCulture)
+                If String.Equals(valor, "True", StringComparison.OrdinalIgnoreCase) Then
+                    ativos.Add(g)
+                ElseIf String.Equals(valor, "False", StringComparison.OrdinalIgnoreCase) Then
+                    inativos.Add(g)
+                Else
+                    ' Enabled com valor que nao e nem True nem False.
+                    contaminado = True
                 End If
             Next
 
-            If Not algumReconhecido Then Return Nothing
-            Return ativos.ToList()
+            ' Contaminacao vence tudo: valor que eu nao entendo inteiro e o caso
+            ' em que eu NAO posso decidir.
+            If contaminado OrElse Not algumReconhecido Then
+                Return (LabelReadingKind.Malformed, vazio, campos.ToList())
+            End If
+
+            ' O MESMO GUID dizendo as duas coisas. A versao anterior devolvia
+            ' Present aqui, porque o conjunto de ativos terminava com um so.
+            If ativos.Overlaps(inativos) Then
+                Return (LabelReadingKind.Conflicting, ativos.ToList(), campos.ToList())
+            End If
+
+            If ativos.Count > 1 Then
+                Return (LabelReadingKind.Conflicting, ativos.ToList(), campos.ToList())
+            End If
+            If ativos.Count = 1 Then
+                Return (LabelReadingKind.Present, ativos.ToList(), campos.ToList())
+            End If
+
+            ' Forma boa, historico presente, nenhum ativo: rotulo removido.
+            If inativos.Count > 0 Then
+                Return (LabelReadingKind.HistoricalOnly, vazio, campos.ToList())
+            End If
+
+            ' Reconheceu registro de rotulo mas nenhum campo Enabled.
+            Return (LabelReadingKind.Malformed, vazio, campos.ToList())
         End Function
 
         ''' <summary>
