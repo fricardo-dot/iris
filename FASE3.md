@@ -1105,6 +1105,15 @@ quebrada.
 `UserText`, `PodeEditar`, `IsOpen` e `State`; o assistente escuta e reconsulta os
 comandos.
 
+A notificação atravessa **três saltos** — `Composer.UserText` →
+`RascunhoDoCompositor.Mudou` → `AssistenteViewModel` → botão — e a primeira
+tentativa de prova cobria só os dois últimos: todos os testes injetavam um
+rascunho de mentira, e apagar a assinatura de `PropertyChanged` dentro do
+adaptador de produção deixaria a suíte verde com a ligação quebrada. O
+`RascunhoDoCompositorTests` monta o compositor de verdade e o adaptador de
+produção, e fecha o primeiro salto — com controle que prova que o compositor
+notificou, para distinguir qual dos dois lados quebrou.
+
 **E a prova precisou de dois níveis.** Um teste que pergunta `CanExecute` depois
 de editar passa mesmo sem existir notificação nenhuma — é o falso positivo de
 binding silencioso na sua forma mais pura. Então há um teste que observa o
