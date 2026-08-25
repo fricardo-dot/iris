@@ -3665,21 +3665,56 @@ Com o critério 9 fechado, os **dez** critérios da §8 estão cumpridos — com
 exceções declaradas nas linhas 1 e 5 da tabela da §22.8, e com a Q8 respondida
 por escopo (§23) em vez de por matriz.
 
-### 27.8 Uma falha que não reproduziu
+### 27.8 A falha que não reproduziu, e o que ela era
 
-Numa das dez execuções da suíte apareceu **1 falha**, e ela não reproduziu nas
-nove seguintes. O nome não ficou registrado, e a caçada com `trx` em seis
-execuções não a trouxe de volta.
+Numa das dez primeiras execuções da suíte apareceu **1 falha**. Ela não voltou
+em **mais 24 execuções**, nem com `trx` capturando o nome — e a execução em que
+aconteceu foi justamente a única sem captura. **Eu perdi a evidência, não é que
+ela não existisse.**
 
-O suspeito é contenção: os testes que tocam o Outlook rodam em paralelo com o
-resto, e a §24.4 mediu que sob a suíte inteira a latência por lote vai de 58 ms
-para 184 ms. Um `RPC_E_CALL_REJECTED` sob carga produziria
-`SweepConclusion.Falhou`, que os testes de importação real recusam.
+Sem poder reproduzir, sobrou olhar o código atrás de asserções que uma caixa
+viva pode derrubar sozinha. Havia quatro, e todas do mesmo tipo: **proibiam um
+desfecho que o ambiente produz legitimamente**.
 
-Mas **suspeito não é medido**, e fica registrado como está: uma falha
-observada, não reproduzida, causa não identificada. Uma suíte que passa nove
-vezes e falha uma não é "0 falhas" — é 0 falhas *nas execuções que eu consegui
-observar*, e a diferença entre as duas coisas é o assunto desta fase inteira.
+#### O cruzamento da Q1 exigia que a caixa não mudasse
+
+`Table_e_iteracao_leem_o_MESMO_conjunto` faz duas travessias completas da Caixa
+de Entrada e exige conjuntos idênticos. Uma mensagem chegando entre elas produz
+**exatamente o mesmo sintoma** que a Table perdendo uma. A caixa do usuário
+recebe correio, duas travessias levam perto de um segundo, e em vinte execuções
+uma chegada é plausível — é o suspeito mais forte da falha isolada.
+
+O conserto é o que esta fase inventou para o mesmo problema: **o S6, aplicado
+ao próprio teste**. A primeira travessia é repetida no fim, e a comparação do
+meio só vale se as duas pontas concordarem. Ponta divergente significa universo
+trocado, e comparação sobre universo trocado não conclui nada — nem a favor nem
+contra, então o teste sai **inconclusivo**.
+
+Isso **não afrouxa**: a propriedade cobrada continua exata — sobre uma pasta que
+ficou parada, os dois caminhos veem o mesmo conjunto. O que deixou de ser
+cobrado é uma propriedade da **caixa**, que o teste nunca teve como garantir.
+
+#### E os três que proibiam `Falhou`
+
+Os testes de importação real recusavam `SweepConclusion.Falhou` por inteiro. Mas
+o Outlook pode recusar uma chamada a qualquer momento, e quando isso acontece o
+runner descarta e não publica — que é o comportamento **certo**. Proibir
+`Falhou` era exigir que o ambiente não tivesse soluço.
+
+Aceitar `Falhou` em silêncio seria o outro erro: uma regressão que falha
+**sempre** passaria. Então a distinção é **pela causa**. Falha do provider é
+ambiente; *"cursor nao avancou"*, *"fonte devolveu N linhas"* e *"passou de
+MaxPaginas"* são defeitos meus e continuam reprovando. E a invariante de
+segurança é cobrada em todos os desfechos, inclusive no aceito: nada fica pela
+metade.
+
+#### O que fica declarado
+
+A falha original **não foi reproduzida**, então a causa é inferida, não medida.
+O que está medido é que existiam quatro asserções capazes de produzir
+exatamente aquele sintoma, e que elas foram corrigidas — não silenciadas.
+Trinta execuções limpas depois disso não provam que era essa; provam que, se
+era, não é mais.
 
 ---
 

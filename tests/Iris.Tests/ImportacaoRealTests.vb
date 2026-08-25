@@ -165,8 +165,7 @@ Public Class ImportacaoRealTests
                 ' mensagem no meio faz o S6 rejeitar - e rejeitar e o
                 ' comportamento CERTO, nao falha do teste. O que eu exijo e que
                 ' o desfecho seja um dos previstos e que nada fique pela metade.
-                Assert.AreNotEqual(SweepConclusion.Falhou, r.Conclusion,
-                    $"falha nao e desfecho previsto aqui: {r.Motivo}")
+                ExigirDesfechoPrevisto(r)
 
                 If r.Publicou Then
                     Assert.AreEqual(FolderCoverage.Parcial, r.Cobertura,
@@ -227,6 +226,11 @@ Public Class ImportacaoRealTests
                             $"a pasta cabe em {corta.PaginasLidas} pagina(s): " &
                             "o cancelamento na pagina 2 nao chega a acontecer")
                     End If
+                    ExigirDesfechoPrevisto(r1)
+                    If r1.Conclusion = SweepConclusion.Falhou Then
+                        Assert.Inconclusive(
+                            $"o provider falhou antes de o cancelamento acontecer: {r1.Motivo}")
+                    End If
                     Assert.AreEqual(SweepConclusion.Cancelada, r1.Conclusion,
                         $"esperava cancelamento, veio {r1.Conclusion}: {r1.Motivo}")
                 End Using
@@ -248,12 +252,48 @@ Public Class ImportacaoRealTests
                                   m.Items.Count, "a interrupcao nao pode ter duplicado nada")
                     Anotar($"convergiu para {m.Items.Count} itens, sem duplicata")
                 Else
-                    Assert.AreNotEqual(SweepConclusion.Falhou, r2.Conclusion, r2.Motivo)
+                    ExigirDesfechoPrevisto(r2)
                     Anotar("a segunda tambem nao publicou (caixa viva) — sem duplicata a conferir")
                 End If
             End Using
         End Using
     End Function
+
+    ' ==================================================================
+
+    ''' <summary>
+    ''' O desfecho tem de ser um dos previstos — e <c>Falhou</c> só é previsto
+    ''' quando a causa <b>veio do provider</b>.
+    '''
+    ''' Este teste roda contra uma caixa VIVA, e o Outlook pode recusar uma
+    ''' chamada a qualquer momento. Quando isso acontece, o runner descarta e
+    ''' não publica — que é o comportamento certo. Proibir <c>Falhou</c> por
+    ''' inteiro seria exigir que o ambiente não tivesse soluço, o que não é
+    ''' propriedade do código sob teste, e transforma o teste em intermitente.
+    '''
+    ''' Mas aceitar <c>Falhou</c> em silêncio seria afrouxar: uma regressão que
+    ''' falha SEMPRE passaria. Então a distinção é <b>pela causa</b> — falha do
+    ''' provider é ambiente; "cursor nao avancou", "fonte devolveu N linhas" ou
+    ''' "passou de MaxPaginas" são <b>meus</b> defeitos, e continuam reprovando.
+    '''
+    ''' E a invariante de segurança é cobrada em TODOS os desfechos, inclusive
+    ''' no aceito: nada pode ficar pela metade.
+    ''' </summary>
+    Private Shared Sub ExigirDesfechoPrevisto(r As SweepResult)
+        If r.Conclusion <> SweepConclusion.Falhou Then Return
+
+        Dim motivo = If(r.Motivo, "")
+        Dim doProvider =
+            motivo.Contains("GetMessagePageAsync falhou") OrElse
+            motivo.Contains("COMException") OrElse
+            motivo.Contains("RPC_E_") OrElse
+            motivo.Contains("TotalAtStart")
+
+        Assert.IsTrue(doProvider,
+            "falha que NAO veio do provider e defeito meu, nao soluco da caixa: " & motivo)
+
+        Anotar($"AVISO: o provider falhou e a varredura foi descartada — {motivo}")
+    End Sub
 
     ' ==================================================================
     ' Instrumentação

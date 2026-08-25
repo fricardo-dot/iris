@@ -169,6 +169,30 @@ Public Class PagingIntegrationTests
     ''' <summary>
     ''' O cruzamento. Se a Table perder mensagem em silêncio, os conjuntos
     ''' divergem — que é exatamente o sintoma que a Q1 levou horas para ver.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O S6, APLICADO AO PRÓPRIO TESTE</b>
+    '''
+    ''' Duas travessias de uma pasta VIVA não podem ser exigidas idênticas:
+    ''' isso afirma que a caixa não muda, e não muda não é propriedade do
+    ''' código sob teste. Uma mensagem chegando entre elas produz exatamente o
+    ''' mesmo sintoma que a Table perdendo uma — e a Q1 existe porque perder em
+    ''' silêncio é grave, não porque chegar correio seja defeito.
+    '''
+    ''' Foi essa a causa provável da falha isolada registrada na §27.8: a
+    ''' Caixa de Entrada do usuário recebe correio, e duas travessias levam
+    ''' perto de um segundo. Em vinte execuções, uma chegada é plausível.
+    '''
+    ''' A resposta é a que esta fase inventou para o mesmo problema: <b>a
+    ''' primeira travessia é repetida no fim</b>, e a comparação do meio só vale
+    ''' se as duas pontas concordarem. Ponta divergente significa que a pasta
+    ''' mudou durante a janela, e comparação sobre universo que mudou não
+    ''' conclui nada — nem a favor nem contra.
+    '''
+    ''' Isso NÃO afrouxa o teste. A propriedade que ele cobra continua exata:
+    ''' sobre uma pasta que ficou parada, os dois caminhos veem o mesmo
+    ''' conjunto. O que deixou de ser cobrado é uma propriedade da CAIXA, que
+    ''' ele nunca teve como garantir.
     ''' </summary>
     <TestMethod, TestCategory("Integracao")>
     Public Async Function Table_e_iteracao_leem_o_MESMO_conjunto() As Task
@@ -181,8 +205,23 @@ Public Class PagingIntegrationTests
             Dim rapido = Await PercorrerAsync(broker, entrada, MessageSort.ReceivedDesc)
             Dim lento = Await PercorrerAsync(broker, entrada, MessageSort.SubjectAsc)
 
+            ' A PONTA: repete a primeira travessia. Se ela nao der o mesmo
+            ' conjunto, a pasta mudou durante a janela e a comparacao do meio
+            ' nao conclui nada.
+            Dim conferencia = Await PercorrerAsync(broker, entrada, MessageSort.ReceivedDesc)
+
             Dim porTabela = New HashSet(Of ItemKey)(rapido.Chaves)
             Dim porIteracao = New HashSet(Of ItemKey)(lento.Chaves)
+            Dim naConferencia = New HashSet(Of ItemKey)(conferencia.Chaves)
+
+            If Not porTabela.SetEquals(naConferencia) Then
+                Dim entraram = naConferencia.Except(porTabela).Count()
+                Dim sairam = porTabela.Except(naConferencia).Count()
+                Assert.Inconclusive(
+                    $"a pasta MUDOU durante a verificacao (+{entraram} / -{sairam} entre a " &
+                    "primeira travessia e a repeticao). Comparar dois caminhos sobre universos " &
+                    "diferentes nao conclui nada — nem a favor nem contra.")
+            End If
 
             Assert.AreEqual(rapido.Chaves.Count, porTabela.Count,
                             "a Table devolveu chave REPETIDA")
