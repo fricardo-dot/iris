@@ -128,8 +128,12 @@ Public Class CausaDaFalhaTests
     ''' conversão, "o usuário mandou parar" sairia como <c>Falhou</c> — dois
     ''' desfechos com significados diferentes para quem lê o log depois.
     '''
-    ''' Aqui a fonte falsa lança direto, porque o que se cobra é o desfecho do
-    ''' runner, não o caminho do COM.
+    ''' Aqui a fonte falsa lança direto: isto cobra o <b>desfecho do runner</b>,
+    ''' e só isso. A conversão no adaptador — que é a linha nova, e a que
+    ''' regride se alguém a apagar — está coberta em
+    ''' <see cref="AdaptadorTraduzFalhaTests"/>, com broker falso e caminho
+    ''' inteiro. Foi exatamente esse buraco que o Codex pegou nesta primeira
+    ''' versão: o teste afirmava impedir uma regressão que não tocava.
     ''' </summary>
     <TestMethod>
     Public Sub Cancelamento_da_fonte_e_Cancelada_e_nao_Falhou()

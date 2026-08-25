@@ -3773,6 +3773,12 @@ E `ErrorKind.Cancelled` deixou de virar `Falhou`: o adaptador o converte em
 `OperationCanceledException`. "O usuário mandou parar" e "a varredura quebrou"
 são desfechos diferentes para quem lê o log depois.
 
+O primeiro teste dessa conversão **não a exercitava**: a fonte falsa já lançava
+`OperationCanceledException`, então ele cobrava o `Catch` do runner, que já
+existia. Apagando a conversão no adaptador, ele continuava verde. Agora há
+`AdaptadorTraduzFalhaTests` — broker falso, adaptador real, runner real — e o
+controle negativo foi feito: apagada a linha, o teste falha.
+
 Isso vive em `CausaDaFalhaTests.vb` porque a regra não pode morar só num teste
 que **só falha quando o Outlook tem soluço** — ali ela nunca seria exercitada
 de propósito.

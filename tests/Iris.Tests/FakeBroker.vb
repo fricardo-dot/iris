@@ -61,6 +61,12 @@ Friend NotInheritable Class FakeBroker
     Friend TravaDoPrepare As TaskCompletionSource(Of Boolean)
     Friend TravaDoSend As TaskCompletionSource(Of Boolean)
 
+    ''' <summary>
+    ''' Resposta canônica de <c>GetMessagePageAsync</c>. <c>Nothing</c> mantém o
+    ''' padrão "fora da alçada" — só os testes que paginam mexem nisto.
+    ''' </summary>
+    Friend RespostaDaPagina As OperationResult(Of MessagePage) = Nothing
+
     Friend FalhaAoCriar As ErrorKind = ErrorKind.None
     Friend FalhaAoGravar As ErrorKind = ErrorKind.None
     Friend FalhaAoPreparar As ErrorKind = ErrorKind.None
@@ -402,6 +408,8 @@ Friend NotInheritable Class FakeBroker
                                         targetCount As Integer,
                                         cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessagePage)) Implements IOutlookBroker.GetMessagePageAsync
+        Chamadas.Add("GetMessagePage")
+        If RespostaDaPagina IsNot Nothing Then Return Task.FromResult(RespostaDaPagina)
         Return ForaDaAlcada(Of OperationResult(Of MessagePage))()
     End Function
 
