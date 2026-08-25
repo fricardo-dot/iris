@@ -30,6 +30,12 @@ Conferir o CONJUNTO, e nao "caiu alguem", importa porque a suite tem uma
 intermitencia conhecida de SQLite: sem isso, uma flake satisfaria um cenario
 que espera vermelho.
 
+E o conjunto sozinho tambem nao basta: nos cenarios que esperam verde, o
+conjunto vazio e igualzinho ao que sai quando o `dotnet test` morre antes de
+rodar teste nenhum. Por isso o resumo e o codigo de saida entram na conta —
+verde exige codigo 0, "Passed!" e pelo menos um teste executado; vermelho
+exige codigo diferente de 0 e "Failed!".
+
 --------------------------------------------------------------------------
 POR QUE ELE FOTOGRAFA ANTES E CONFERE O HASH DEPOIS
 
@@ -142,6 +148,12 @@ def caidos(saida):
     return set(re.findall(r"^\s*Failed\s+([A-Za-z_][A-Za-z0-9_]*)", saida, re.M))
 
 
+def executados_em(saida):
+    """Quantos testes o runner disse ter executado. -1 se nem disse."""
+    m = re.search(r"Total:\s*(\d+)", saida)
+    return int(m.group(1)) if m else -1
+
+
 def rodar(c, problemas):
     arquivos = sorted({a for a, _, _ in c["edicoes"]})
     antes = {a: ler(a) for a in arquivos}
@@ -167,6 +179,7 @@ def rodar(c, problemas):
                            cwd=RAIZ, capture_output=True, text=True, timeout=1800)
         saida = (r.stdout or "") + (r.stderr or "")
         obtido = caidos(saida)
+        codigo = r.returncode
 
     finally:
         for a in arquivos:
@@ -181,7 +194,29 @@ def rodar(c, problemas):
         problemas.append(c["nome"] + ": a mutacao nao compila")
         return
 
+    # O RESUMO, E NAO SO OS NOMES.
+    #
+    # Nos cenarios que esperam VERDE, o conjunto de falhas vazio tambem e o
+    # que sai quando o `dotnet test` morre antes de rodar teste nenhum — erro
+    # de MSBuild, de SDK, de testhost, ou filtro que nao casa com nada. Sem
+    # conferir que alguma coisa RODOU, "nao executou" viraria "passou".
+    executados = executados_em(saida)
     esperados = c["esperados"]
+
+    if not esperados:
+        ok = (codigo == 0 and "Passed!" in saida and executados >= 1)
+        if not ok:
+            print("!! NAO RODOU -", c["nome"],
+                  "  (codigo=%s, executados=%s)" % (codigo, executados))
+            problemas.append(c["nome"] + ": esperava verde, e a execucao nao aconteceu")
+            return
+    else:
+        if codigo == 0 or "Failed!" not in saida:
+            print("!! SEM FALHA -", c["nome"],
+                  "  (codigo=%s, executados=%s)" % (codigo, executados))
+            problemas.append(c["nome"] + ": esperava vermelho, e nao houve falha")
+            return
+
     if obtido == esperados:
         cor = "VERDE" if not esperados else "VERMELHO"
         print("OK", cor.ljust(9), "-", c["nome"])

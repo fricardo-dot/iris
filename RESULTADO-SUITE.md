@@ -14,7 +14,7 @@ dotnet test Iris.slnx
 
 | | |
 |---|---|
-| **Commit** | `33ecc84` — o commit de encerramento da fase |
+| **Commit** | `33ecc84` — a árvore da solução .NET que foi medida |
 | **Data** | 25 de agosto de 2026 |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
@@ -34,9 +34,11 @@ que é executável, e não documentação.
 
 Esta medição é do `33ecc84`, e **não** do `433c244`: um resultado de suíte vale
 para a árvore em que foi medido, e não para a que se gostaria que ele valesse. Ela
-continua valendo enquanto a **solução .NET** não mudar — a ferramenta de
-verificação não faz parte dela, e nenhum commit posterior tocou em `src/` ou
-`tests/`. Se tocar, este arquivo tem de ser remedido.
+continua valendo enquanto o **código executável da solução .NET** não mudar. A
+ferramenta de verificação não faz parte dele; e o que houve em `tests/` depois de
+`433c244` foi alteração de **comentário** em dois arquivos, no `33ecc84`, que é
+justamente a árvore medida. Se mudar código executável, este arquivo tem de ser
+remedido.
 
 ## O que este número não diz
 
