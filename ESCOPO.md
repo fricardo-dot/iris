@@ -1,8 +1,9 @@
 # Iris — Escopo do Projeto
 
-**Status:** Fase 0 executada — liberado para iniciar a Fase 1
-**Data:** 2026-08-22
-**Versão:** 4
+**Status:** Fases 0, 1, 2 e 3 executadas — a Fase 3 está encerrada com a
+**ativação da IA pendente de decisão do usuário**; a Fase 4 não foi planejada
+**Data:** 2026-08-25
+**Versão:** 5
 
 ---
 
@@ -191,7 +192,7 @@ reconciliação próprias. Começar somente no cache.
 
 ## 7. Faseamento
 
-### Fase 0 — Spike técnico (antes de qualquer interface)
+### Fase 0 — Spike técnico (antes de qualquer interface) — *EXECUTADA*
 
 Objetivo: responder as perguntas que podem matar o projeto **ou mudar a
 arquitetura**, na máquina corporativa real. Console feio, descartável.
@@ -262,13 +263,13 @@ maior parte das mensagens reais por IRM ou download parcial.
 Se o envio estiver bloqueado por política, o fallback (rascunho + envio
 manual) passa a ser o comportamento oficial do produto.
 
-### Fase 1 — MVP de e-mail
+### Fase 1 — MVP de e-mail — *EXECUTADA*
 
 Pastas, lista, leitura, rascunho, resposta, encaminhamento, anexos básicos,
 via DTOs paginados do broker. **Sem busca global** — sem cache, a busca pelo
 OOM é lenta e inconsistente; ela pertence à Fase 2.
 
-### Fase 2 — Cache e sincronização
+### Fase 2 — Cache e sincronização — *EXECUTADA*
 
 O subsistema. Precisa definir, não apenas mencionar:
 
@@ -282,9 +283,20 @@ O subsistema. Precisa definir, não apenas mencionar:
 Mais importação inicial paginada, tombstones, retomada após falha e busca
 textual. Só aqui listagem e busca passam a ler exclusivamente do cache.
 
-### Fase 3 — IA sob demanda (Grupo A)
+### Fase 3 — IA sob demanda (Grupo A) — *EXECUTADA, com a ativação pendente*
 
 Resumo e redação sobre a mensagem ou thread aberta.
+
+**Executada em 25/08/2026**: sete marcos, 642 testes, `FASE3.md` §§28–39 e
+`RELATORIO-FASE3.html`. Implementação e provas **locais** concluídas; a ativação
+operacional e a aceitação contra provedor real continuam bloqueadas — por
+desenho, não por atraso.
+
+**Recorte que difere desta frase:** a produção manda **a mensagem selecionada**,
+e não a thread. Reconstrução de conversa está fora do escopo (seção 6), e juntar
+mensagens que *parecem* da mesma conversa seria decidir divulgação por
+semelhança. O mecanismo aceita várias mensagens; o que não existe é quem as
+escolha.
 
 ### Fase 4 — Triagem e busca semântica (Grupo B)
 
@@ -621,17 +633,35 @@ Option Infer On
 - [x] Confirmar a abordagem COM com Outlook clássico
 - [x] Escolher a stack
 - [x] Confirmar se a política permite `Send()` — **permite** (R2)
-- [ ] Escolher o provedor de IA e o modelo — atenção: busca semântica exige
-      **embeddings**, e nem todo provedor oferece esse endpoint
+- [ ] Escolher o provedor de IA e o modelo — **continua aberta, e agora é o que
+      bloqueia**. Atenção: busca semântica (Fase 4) exige **embeddings**, e nem
+      todo provedor oferece esse endpoint — escolher olhando só a Fase 3 pode
+      custar caro na 4
 - [ ] Definir o visual: parecido com o Outlook ou identidade própria
 - [ ] Criptografia do cache: DPAPI, SQLCipher ou BitLocker + ACL (R14)
 - [ ] Triagem grava no Outlook ou só no cache? (seção 6)
-- [ ] Verificar a política corporativa aplicável antes da Fase 3 (R11)
-- [ ] Testar rótulos do Purview antes da Fase 3 (seção 10)
+- [ ] Verificar a política corporativa aplicável antes da Fase 3 (R11) —
+      **continua aberta**. A Fase 3 foi executada assim mesmo porque o desenho
+      não depende dela: sem resposta, ausência de rótulo **não autoriza**. Mas
+      ela é pré-condição da cerimônia de ativação (`FASE3.md` §28.3)
+- [x] Testar rótulos do Purview antes da Fase 3 (seção 10) — **medido no marco
+      3.0**, pelo broker real, somente leitura. Ver `FASE3.md` §34
 
 ---
 
 ## Apêndice — histórico de revisão
+
+**v5 (2026-08-25)** — Fases 2 e 3 executadas e encerradas, ambas aprovadas pelo
+Codex (352 e 642 testes). O bloqueio herdado da Fase 0 — rótulos do Purview
+nunca medidos — foi **resolvido** no marco 3.0. Continuam abertas duas caixas do
+checklist, e as duas são decisão do usuário: a política corporativa aplicável
+(R11) e a escolha do provedor de IA. Enquanto a segunda não existir, não há
+adaptador a escrever, e a IA continua desligada por
+`ActivationRecord.DaProducao` devolvendo `Nothing`.
+
+Esta versão existe porque o cabeçalho ainda dizia *"Fase 0 executada — liberado
+para iniciar a Fase 1"* depois de três fases terem sido executadas, e alguém
+lendo o documento não teria como saber onde o projeto está.
 
 **v4 (2026-08-22)** — Fase 0 executada; 23 critérios passam, 0 falham.
 R2 **resolvido**: o envio programático é permitido, com entrega confirmada
