@@ -412,9 +412,9 @@ footer {
     medições que derrubaram coisas que eu tinha escrito como certas.
   </p>
   <div class="meta">
-    <span><b>24 de agosto de 2026</b></span>
-    <span>329 testes · <b>0 falhas</b> · 0 pulados</span>
-    <span>9 passadas de revisão com o Codex</span>
+    <span><b>25 de agosto de 2026</b></span>
+    <span>352 testes · <b>0 falhas</b> · 0 pulados</span>
+    <span>13 passadas de revisão com o Codex</span>
     <span><code>f83f4e3</code> → <code>HEAD</code></span>
   </div>
 </header>
@@ -423,7 +423,12 @@ footer {
   <h2>O essencial, sem suavizar</h2>
   <ul>
     <li><strong>A Fase 2 está encerrada.</strong> Os dez critérios cumpridos, com
-      as exceções declaradas — e o Codex aprovou o fechamento na nona passada.</li>
+      as exceções declaradas — e o Codex aprovou o fechamento na décima terceira
+      passada, depois de derrubar as quatro anteriores.</li>
+    <li><strong>Uma falha da suíte nunca foi explicada</strong>, e isso está
+      registrado como risco, não como resolvido. Perdi a evidência dela. A caça
+      encontrou quatro fragilidades reais nos testes — <em>sem</em> relação
+      estabelecida com a ocorrência.</li>
     <li><strong>O Iris varre e publica a sua Caixa de Entrada</strong> —
       1.013 itens, cobertura <em>parcial</em>. Retomada após cancelamento
       converge sem duplicata.</li>
@@ -731,6 +736,20 @@ footer {
   <caption>Limitações conhecidas</caption>
   <thead><tr><th>O quê</th><th>Por que importa</th></tr></thead>
   <tbody>
+    <tr><td><strong>Uma falha da suíte sem explicação</strong></td>
+      <td>1 em 10 execuções, e a única execução sem <code>trx</code> foi
+        justamente aquela — perdi o nome do teste, a mensagem e o stack. Causa
+        <strong>desconhecida</strong>; as quatro fragilidades que a caça achou
+        são achados independentes, sem relação estabelecida com a ocorrência.
+        29 execuções limpas desde então não provam que sumiu — provam que é rara.
+        Toda execução agora grava <code>trx</code>, então ela volta a ser
+        observável.</td></tr>
+    <tr><td><strong>O cruzamento da Q1 relaxou</strong></td>
+      <td>Ele exigia que a caixa não mudasse durante duas travessias, o que não é
+        propriedade do código. Virou <code>T₁ ∩ T₂ ⊆ I ⊆ T₁ ∪ T₂</code>, e tudo
+        o que cai entre o núcleo e o universo é tolerado <em>por não ser
+        decidível</em>, não por ser inofensivo. Perda sistemática da Table
+        continua reprovando.</td></tr>
     <tr><td><strong>A faixa não foi vista</strong></td>
       <td>Compila, os bindings resolvem, há teste cobrando que estejam lá — mas
         ninguém olhou a tela. Verificação visual continua desejável antes de
@@ -772,7 +791,7 @@ footer {
   Detalhe completo em <code>FASE2.md</code> §§22–27 · medições reproduzíveis em
   <code>tools/medir-d5.ps1</code>, <code>tools/conferir-crash.py</code> e
   <code>tools/q8-*.ps1</code><br>
-  329 testes, 0 falhas, 0 pulados · <code>dotnet test Iris.slnx</code> com o
+  352 testes, 0 falhas, 0 pulados · <code>dotnet test Iris.slnx</code> com o
   Outlook aberto
 </footer>
 
