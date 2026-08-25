@@ -464,6 +464,17 @@ Public Class PontaAPontaAssistTests
         Private ReadOnly _dentro As IDisclosureJournal
         Friend Property RecusarConcluir As Boolean
         Friend Property RecusarFalhar As Boolean
+        ''' <summary>
+        ''' <b>Lançar</b>, e não devolver <c>False</c>.
+        '''
+        ''' É a outra metade da falha do diário: disco cheio, banco travado, I/O
+        ''' falhando — o SQLite lança, e conferir só o <c>Boolean</c> deixava a
+        ''' exceção subir de um ponto onde a máquina de estados sabe exatamente
+        ''' o que dizer.
+        ''' </summary>
+        Friend Property ExplodirNaIntencao As Boolean
+        Friend Property ExplodirNoIniciando As Boolean
+        Friend Property ExplodirNoConcluir As Boolean
 
         Friend Sub New(dentro As IDisclosureJournal)
             _dentro = dentro
@@ -471,16 +482,19 @@ Public Class PontaAPontaAssistTests
 
         Public Function Intencao(c As DisclosureCapability, quando As DateTimeOffset) _
                                  As Boolean Implements IDisclosureJournal.Intencao
+            If ExplodirNaIntencao Then Throw New IO.IOException("disco cheio")
             Return _dentro.Intencao(c, quando)
         End Function
 
         Public Function Iniciando(requestId As Guid, quando As DateTimeOffset) As Boolean _
                                   Implements IDisclosureJournal.Iniciando
+            If ExplodirNoIniciando Then Throw New IO.IOException("banco travado")
             Return _dentro.Iniciando(requestId, quando)
         End Function
 
         Public Function Concluir(requestId As Guid, quando As DateTimeOffset) As Boolean _
                                  Implements IDisclosureJournal.Concluir
+            If ExplodirNoConcluir Then Throw New IO.IOException("disco cheio")
             If RecusarConcluir Then Return False
             Return _dentro.Concluir(requestId, quando)
         End Function
@@ -627,6 +641,76 @@ Public Class PontaAPontaAssistTests
 
             Assert.AreEqual(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario, r.Kind,
                 "conteudo saiu, e o registro nao fechou — as duas coisas")
+        End Using
+    End Sub
+
+
+    ' ==================================================================
+    ' O diário que EXPLODE
+
+    ''' <summary>
+    ''' <b>Diário explodindo ANTES do voo: nada saiu, e o provedor nem foi
+    ''' chamado.</b>
+    '''
+    ''' Conferir o <c>Boolean</c> não cobria isto: o SQLite lança quando o disco
+    ''' enche ou o banco trava, e a exceção subiria de um ponto onde a máquina
+    ''' de estados sabe exatamente o que dizer.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Diario_que_EXPLODE_na_intencao_nao_toca_na_rede()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco))
+            Dim teimoso As New DiarioTeimoso(New SqliteDisclosureJournal(db)) With {
+                .ExplodirNaIntencao = True}
+            Dim t As New AssistTransmitter(New DisclosurePolicy(Ativacao(Endereco)),
+                                           New CapabilityLedger(), teimoso, p,
+                                           Function() Agora)
+
+            Dim r = Executar(t, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.SemDiario, r.Kind)
+            Assert.AreEqual(0, p.Recebidos.Count, "o provedor nem pode ter sido chamado")
+        End Using
+    End Sub
+
+    ''' <summary>E o mesmo no início do voo — que é o último ponto seguro.</summary>
+    <TestMethod>
+    Public Sub Diario_que_EXPLODE_no_inicio_do_voo_nao_toca_na_rede()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco))
+            Dim teimoso As New DiarioTeimoso(New SqliteDisclosureJournal(db)) With {
+                .ExplodirNoIniciando = True}
+            Dim t As New AssistTransmitter(New DisclosurePolicy(Ativacao(Endereco)),
+                                           New CapabilityLedger(), teimoso, p,
+                                           Function() Agora)
+
+            Dim r = Executar(t, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.SemDiario, r.Kind)
+            Assert.AreEqual(0, p.Recebidos.Count, "o provedor nem pode ter sido chamado")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Diário explodindo DEPOIS do HTTP é ambíguo.</b>
+    '''
+    ''' Conteúdo saiu; o que falhou foi o registro do desfecho. As duas coisas
+    ''' têm de aparecer.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Diario_que_EXPLODE_depois_do_HTTP_e_AMBIGUO()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco))
+            Dim teimoso As New DiarioTeimoso(New SqliteDisclosureJournal(db)) With {
+                .ExplodirNoConcluir = True}
+            Dim t As New AssistTransmitter(New DisclosurePolicy(Ativacao(Endereco)),
+                                           New CapabilityLedger(), teimoso, p,
+                                           Function() Agora)
+
+            Dim r = Executar(t, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario, r.Kind)
+            Assert.AreEqual(1, p.Recebidos.Count, "e o conteudo saiu mesmo")
         End Using
     End Sub
 

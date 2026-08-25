@@ -146,11 +146,14 @@ Namespace Global.Iris.Assist
             End If
 
             ' 3. a INTENCAO, duravel, antes de qualquer tentativa.
-            If Not _diario.Intencao(cap, agora) Then
-                ' Sem registro nao se transmite. Um envio sem rastro e pior que
-                ' um envio que nao acontece.
-                Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", cap.RequestId,
-                                         DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
+            '
+            '    Sem registro nao se transmite. Um envio sem rastro e pior que
+            '    um envio que nao acontece — e o diario pode falhar de duas
+            '    formas: devolvendo False, ou LANCANDO (disco cheio, banco
+            '    travado, I/O). Conferir so o Boolean deixaria a segunda
+            '    escapar, e ai a excecao subiria de um ponto em que nada saiu.
+            If Not Duravel(Function() _diario.Intencao(cap, agora)) Then
+                Return SemDiario(cap.RequestId, DisclosureNote.Nenhuma)
             End If
 
             ' 4. o consumo — e ele confere bytes, itens, versoes, destino e
@@ -158,7 +161,13 @@ Namespace Global.Iris.Assist
             Dim uso = _cofre.Consumir(cap, env.Envelope, _provedor.Destino,
                                       pedido.Operacao, _relogio())
             If Not uso.Autorizado Then
-                _diario.NaoEnviou(cap.RequestId, _relogio(), DisclosureNote.CapabilityRecusada)
+                ' Nada saiu — mas se o diario nao registrar isso, o registro
+                ' fica "Intencionada" e a tela diria "recusado" sobre uma linha
+                ' que nao conta a mesma historia.
+                If Not Duravel(Function() _diario.NaoEnviou(
+                        cap.RequestId, _relogio(), DisclosureNote.CapabilityRecusada)) Then
+                    Return SemDiario(cap.RequestId, DisclosureNote.CapabilityRecusada)
+                End If
                 Return New AssistOutcome(AssistOutcomeKind.Recusado, "", cap.RequestId,
                                          DisclosureNote.CapabilityRecusada,
                                          DisclosureReason.NaoDecidido)
@@ -183,17 +192,18 @@ Namespace Global.Iris.Assist
             End Try
 
             If Not pronto Then
-                _diario.NaoEnviou(cap.RequestId, _relogio(),
-                                  DisclosureNote.ProvedorIndisponivel)
+                If Not Duravel(Function() _diario.NaoEnviou(
+                        cap.RequestId, _relogio(), DisclosureNote.ProvedorIndisponivel)) Then
+                    Return SemDiario(cap.RequestId, DisclosureNote.ProvedorIndisponivel)
+                End If
                 Return New AssistOutcome(AssistOutcomeKind.NaoComecou, "", cap.RequestId,
                                          DisclosureNote.ProvedorIndisponivel,
                                          DisclosureReason.NaoDecidido)
             End If
 
             ' 5b. o VOO, e so depois de ele confirmar e que se toca na rede.
-            If Not _diario.Iniciando(cap.RequestId, _relogio()) Then
-                Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", cap.RequestId,
-                                         DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
+            If Not Duravel(Function() _diario.Iniciando(cap.RequestId, _relogio())) Then
+                Return SemDiario(cap.RequestId, DisclosureNote.Nenhuma)
             End If
 
             ' 6. a rede.
@@ -220,7 +230,7 @@ Namespace Global.Iris.Assist
             ' registrar outra — e a UI e o diario nao podem discordar sobre se
             ' conteudo pode ter saido.
             If r.Status = ProviderStatus.Respondeu Then
-                If Not _diario.Concluir(cap.RequestId, _relogio()) Then
+                If Not Duravel(Function() _diario.Concluir(cap.RequestId, _relogio())) Then
                     ' O HTTP respondeu e o diario nao fechou. Dizer "respondeu"
                     ' deixaria o registro em voo para sempre, e a reconciliacao
                     ' da proxima abertura marcaria ambiguo — a UI teria dito
@@ -237,7 +247,8 @@ Namespace Global.Iris.Assist
             End If
 
             Dim nota = NotaDe(r.Status)
-            If Not _diario.Falhar(cap.RequestId, _relogio(), nota, podeTerChegado:=True) Then
+            If Not Duravel(Function() _diario.Falhar(cap.RequestId, _relogio(), nota,
+                                                     podeTerChegado:=True)) Then
                 Return New AssistOutcome(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
                                          "", cap.RequestId, nota, DisclosureReason.NaoDecidido)
             End If
@@ -260,6 +271,39 @@ Namespace Global.Iris.Assist
                                       Optional motivo As DisclosureReason =
                                           DisclosureReason.NaoDecidido) As AssistOutcome
             Return New AssistOutcome(kind, "", Guid.Empty, nota, motivo)
+        End Function
+
+        ''' <summary>
+        ''' Um passo do diário: <c>True</c> só se ele <b>disse</b> que gravou.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>LANÇAR TAMBÉM É NÃO GRAVAR</b>
+        '''
+        ''' Os passos devolvem <c>Boolean</c>, e conferir só isso deixava escapar
+        ''' a outra metade: disco cheio, banco travado, I/O falhando — o SQLite
+        ''' <b>lança</b>, e a exceção subiria de um ponto onde a máquina de
+        ''' estados sabe exatamente o que dizer.
+        '''
+        ''' Aqui as duas viram a mesma resposta: não gravou.
+        ''' </summary>
+        Private Shared Function Duravel(passo As Func(Of Boolean)) As Boolean
+            Try
+                Return passo()
+            Catch
+                Return False
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' O diário não gravou, e a transmissão <b>não foi tentada</b>.
+        '''
+        ''' Distinto de <see cref="AssistOutcomeKind.AmbiguoSemFechamentoDoDiario"/>,
+        ''' que é o mesmo problema depois de o conteúdo poder ter saído.
+        ''' </summary>
+        Private Shared Function SemDiario(requestId As Guid,
+                                          nota As DisclosureNote) As AssistOutcome
+            Return New AssistOutcome(AssistOutcomeKind.SemDiario, "", requestId,
+                                     nota, DisclosureReason.NaoDecidido)
         End Function
 
         Private Shared Function NotaDe(s As ProviderStatus) As DisclosureNote
