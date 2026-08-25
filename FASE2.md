@@ -3703,9 +3703,14 @@ A correção que ficou troca a igualdade por **duas inclusões**. Três travessi
 
 > `T₁ ∩ T₂ ⊆ I ⊆ T₁ ∪ T₂`
 
-Nunca sai inconclusiva. E com `T₁ = T₂` — a pasta parada durante a janela — o
-núcleo e o universo colapsam no mesmo conjunto e a dupla inclusão vira `I = T₁`:
-**exatamente** a asserção original.
+Nunca sai inconclusiva. E com `T₁ = T₂`, **por qualquer razão**, o núcleo e o
+universo colapsam no mesmo conjunto e a dupla inclusão vira `I = T₁` — o que o
+teste antigo cobrava naquela execução.
+
+O "por qualquer razão" não é enfeite: `T₁ = T₂` **não** significa pasta parada —
+entradas e saídas podem se compensar, e some-e-volta cabe inteiro entre as duas.
+A equivalência é **algébrica**. A **física** é condicional, e a condição é mais
+forte: *se* a pasta ficou parada *e* as duas travessias por Table acertaram.
 
 **O que ela não prova.** A frase que eu tinha escrito — "tolera exatamente o que
 mudou, e nada além" — está errada, e o Codex derrubou. Três travessias são três
@@ -3726,11 +3731,13 @@ a outra. Daí:
   não só perda da Table numa ponta. A faixa é tolerada por não ser decidível,
   não por ser inofensiva.
 
-Comparado ao antigo, **há relaxamento quando a pasta mexe**: T₁ contém X, I
-omite X, T₂ não contém X falhava antes e passa agora. Com a pasta parada não se
-paga nada, e é esse o caso comum. O que continua sendo pego é **perda
-sistemática** da Table — some das duas pontas, cai fora do universo, reprova. É
-por ela que a Q1 existe.
+Comparado ao antigo, **há relaxamento**: T₁ contém X, I omite X, T₂ não contém X
+falhava antes e passa agora. E nem dá para restringir isso a "quando a pasta
+mexe" — pasta parada não impede a **Table** de ser intermitente, e uma Table que
+erra numa ponta só produz `T₁ ≠ T₂` com a pasta imóvel.
+
+O que continua sendo pego é **perda sistemática** da Table — some das duas
+pontas, cai fora do universo, reprova. É por ela que a Q1 existe.
 
 **Três testes proibiam `Falhou` por inteiro.** O Outlook pode recusar uma
 chamada a qualquer momento, e quando recusa o runner descarta e não publica —

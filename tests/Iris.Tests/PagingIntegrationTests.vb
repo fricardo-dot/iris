@@ -191,9 +191,17 @@ Public Class PagingIntegrationTests
     '''
     '''   <c>T₁ ∩ T₂ ⊆ I ⊆ T₁ ∪ T₂</c>
     '''
-    ''' Nunca sai inconclusivo. E com <c>T₁ = T₂</c> — a pasta parada durante a
-    ''' janela — o núcleo e o universo colapsam no mesmo conjunto e a dupla
-    ''' inclusão vira <c>I = T₁</c>: <b>exatamente</b> a asserção original.
+    ''' Nunca sai inconclusivo. E com <c>T₁ = T₂</c>, <b>por qualquer razão</b>,
+    ''' o núcleo e o universo colapsam no mesmo conjunto e a dupla inclusão vira
+    ''' <c>I = T₁</c> — exatamente o que o teste antigo cobrava naquela
+    ''' execução.
+    '''
+    ''' Note o "por qualquer razão". <c>T₁ = T₂</c> <b>não</b> quer dizer que a
+    ''' pasta ficou parada: entradas e saídas podem se compensar, e some-e-volta
+    ''' cabe inteiro entre as duas. A equivalência é <b>algébrica</b>. A
+    ''' equivalência <b>física</b> é condicional, e a condição é mais forte:
+    ''' <i>se</i> a pasta ficou parada <i>e</i> as duas travessias por Table
+    ''' acertaram, então a asserção nova é a antiga.
     '''
     ''' ------------------------------------------------------------------
     ''' <b>O QUE ISTO NÃO PROVA — E É PRECISO DIZER</b>
@@ -229,8 +237,10 @@ Public Class PagingIntegrationTests
     ''' Comparado ao teste antigo, <b>há relaxamento</b> quando a pasta mexe:
     ''' T₁ contém X, I omite X, T₂ não contém X falhava antes e passa agora.
     ''' O que se compra com isso é não chamar de defeito uma pasta viva; o que
-    ''' se paga está escrito acima. Com a pasta parada não se paga nada, e é
-    ''' esse o caso comum.
+    ''' se paga está escrito acima. E não dá para dizer "com a pasta parada não
+    ''' se paga nada": pasta parada não impede a <b>Table</b> de ser
+    ''' intermitente, e uma Table que erra numa ponta só faz <c>T₁ ≠ T₂</c> com
+    ''' a pasta imóvel — diferença que o teste antigo pegava e este tolera.
     '''
     ''' O que continua sendo pego, e é o motivo de a Q1 existir: <b>perda
     ''' sistemática</b> da Table. Ela some das duas pontas, cai fora do

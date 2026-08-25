@@ -120,6 +120,29 @@ Public Class CausaDaFalhaTests
             "Motivo: " & r.Motivo)
     End Sub
 
+    ''' <summary>
+    ''' <c>Cancelled</c> vindo da fonte é <b>cancelamento</b>, não falha.
+    '''
+    ''' O broker devolve <c>ErrorKind.Cancelled</c> quando o token já caiu, e o
+    ''' adaptador o converte em <c>OperationCanceledException</c>. Sem essa
+    ''' conversão, "o usuário mandou parar" sairia como <c>Falhou</c> — dois
+    ''' desfechos com significados diferentes para quem lê o log depois.
+    '''
+    ''' Aqui a fonte falsa lança direto, porque o que se cobra é o desfecho do
+    ''' runner, não o caminho do COM.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cancelamento_da_fonte_e_Cancelada_e_nao_Falhou()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c") With {
+            .LancarCancelamentoNaPagina = 1}
+
+        Dim r = Rodar(f)
+
+        Assert.AreEqual(SweepConclusion.Cancelada, r.Conclusion, r.Motivo)
+        Assert.IsFalse(r.CausaDaFonte.HasValue,
+                       "cancelamento nao e recusa classificada da fonte")
+    End Sub
+
     ''' <summary>Publicação limpa não inventa causa nenhuma.</summary>
     <TestMethod>
     Public Sub Varredura_que_publica_nao_tem_causa()

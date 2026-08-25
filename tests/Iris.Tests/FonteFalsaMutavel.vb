@@ -37,6 +37,11 @@ Friend Class FonteFalsaMutavel
     Friend Property RecusarNaPagina As ErrorKind? = Nothing
     ''' <summary>A fonte RECUSA a contagem com este <c>ErrorKind</c>.</summary>
     Friend Property RecusarNaContagem As ErrorKind? = Nothing
+    ''' <summary>
+    ''' A fonte CANCELA nesta página — que é o que o adaptador real faz quando o
+    ''' broker devolve <c>ErrorKind.Cancelled</c>.
+    ''' </summary>
+    Friend Property LancarCancelamentoNaPagina As Integer? = Nothing
     Friend Property CursorTravado As Boolean = False
     Friend Property UniversoNulo As Boolean = False
     Friend Property PaginaNula As Boolean = False
@@ -119,6 +124,10 @@ Friend Class FonteFalsaMutavel
         End If
         If RecusarNaPagina.HasValue Then
             Throw New SourceUnavailableException(RecusarNaPagina.Value, $"pagina {PaginasLidas}")
+        End If
+        If LancarCancelamentoNaPagina.HasValue AndAlso
+           PaginasLidas = LancarCancelamentoNaPagina.Value Then
+            Throw New OperationCanceledException()
         End If
         If PaginaNula Then Return Nothing
 
