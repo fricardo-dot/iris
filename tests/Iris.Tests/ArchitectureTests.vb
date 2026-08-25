@@ -335,4 +335,101 @@ Public Class ArchitectureTests
         Next
     End Function
 
+
+    ' ==================================================================
+    ' §26.2 — a UI nao pode contornar o dreno
+
+    ''' <summary>
+    ''' <b>A proibição da §26.2, executável.</b>
+    '''
+    ''' <blockquote>A UI não pode contornar o <c>PublicationDrain</c> usando
+    ''' polling ou leitura direta como substituto silencioso da dívida
+    ''' registrada.</blockquote>
+    '''
+    ''' Sem este teste a proibição seria um comentário, e este projeto já viu a
+    ''' regra do <c>Permission</c> ficar escrita por três marcos enquanto o gate
+    ''' falhava aberto.
+    '''
+    ''' O jeito de contornar é concreto e tentador: chamar
+    ''' <c>ManifestReader</c> direto num timer. Funciona, parece igual, e a
+    ''' dívida deixa de ser drenada — a fila enche, o <c>TravadoEm</c> nunca é
+    ''' consultado, e ninguém descobre que a entrega parou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_UI_nao_instancia_ManifestReader_direto()
+        Dim app = GetType(Iris.App.ViewModels.MainViewModel).Assembly
+        Dim leitor = GetType(Iris.Integration.ManifestReader)
+
+        Dim culpados =
+            app.GetTypes().
+                SelectMany(Function(t) t.GetMethods(Reflection.BindingFlags.Public Or
+                                                    Reflection.BindingFlags.NonPublic Or
+                                                    Reflection.BindingFlags.Instance Or
+                                                    Reflection.BindingFlags.Static Or
+                                                    Reflection.BindingFlags.DeclaredOnly)).
+                Where(Function(m) UsaOTipo(m, leitor)).
+                Select(Function(m) $"{m.DeclaringType.Name}.{m.Name}").
+                ToList()
+
+        Assert.AreEqual(0, culpados.Count,
+            "a UI tem de receber o manifesto pelo AcervoService, que o dreno atualiza. " &
+            "Ler direto e o contorno que a §26.2 proibe: " & String.Join(", ", culpados))
+    End Sub
+
+    ''' <summary>
+    ''' Controle: a busca REALMENTE encontra uso do tipo.
+    '''
+    ''' Sem isto, um <c>UsaOTipo</c> que devolvesse sempre falso faria o teste
+    ''' acima passar para sempre — e a proibição valeria zero.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_a_busca_por_uso_de_tipo_encontra_de_verdade()
+        Dim eu = GetType(ArchitectureTests)
+        Dim leitor = GetType(Iris.Integration.ManifestReader)
+        Dim m = eu.GetMethod(NameOf(IscaQueUsaOManifestReader),
+                             Reflection.BindingFlags.NonPublic Or Reflection.BindingFlags.Static)
+        Assert.IsTrue(UsaOTipo(m, leitor),
+            "a busca nao encontra nem um uso plantado de proposito — ela nao busca nada")
+    End Sub
+
+    Private Shared Function IscaQueUsaOManifestReader(db As Iris.Cache.CacheDatabase) As Object
+        Return New Iris.Integration.ManifestReader(db)
+    End Function
+
+    ''' <summary>
+    ''' Procura, no corpo compilado do método, referência ao tipo — construtor
+    ''' ou chamada de membro.
+    ''' </summary>
+    Private Shared Function UsaOTipo(m As Reflection.MethodBase, alvo As Type) As Boolean
+        Dim corpo = m.GetMethodBody()
+        If corpo Is Nothing Then Return False
+
+        Dim il = corpo.GetILAsByteArray()
+        If il Is Nothing Then Return False
+
+        Dim mod_ = m.Module
+        Dim i = 0
+        While i < il.Length - 4
+            ' newobj (0x73) e call (0x28) / callvirt (0x6F) carregam um token
+            ' de metodo nos quatro bytes seguintes.
+            Dim op = il(i)
+            If op = &H73 OrElse op = &H28 OrElse op = &H6F Then
+                Dim token = BitConverter.ToInt32(il, i + 1)
+                Try
+                    Dim alvoMetodo = mod_.ResolveMethod(token,
+                        If(m.DeclaringType?.GetGenericArguments(), Type.EmptyTypes),
+                        If(TryCast(m, Reflection.MethodInfo)?.GetGenericArguments(), Type.EmptyTypes))
+                    If alvoMetodo IsNot Nothing AndAlso alvoMetodo.DeclaringType Is alvo Then
+                        Return True
+                    End If
+                Catch
+                End Try
+                i += 5
+            Else
+                i += 1
+            End If
+        End While
+        Return False
+    End Function
+
 End Class

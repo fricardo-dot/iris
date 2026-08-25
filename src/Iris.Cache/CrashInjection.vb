@@ -21,6 +21,17 @@ Namespace Global.Iris.Cache
         Public Const DentroDaPublicacaoAntesDoCommit As String = "dentro-da-publicacao-antes-do-commit"
         Public Const DepoisDoCommitDaPublicacao As String = "depois-do-commit-da-publicacao"
 
+        ''' <summary>
+        ''' Entre o consumidor RECEBER e a dívida ser marcada como drenada.
+        '''
+        ''' É a janela que torna a entrega <i>ao menos uma vez</i>: morrer aqui
+        ''' deixa a UI já tendo agido e o disco ainda dizendo que ela não
+        ''' recebeu. Na reabertura, a mesma geração é entregue de novo — e é por
+        ''' isso que o consumidor tem de ser idempotente.
+        ''' </summary>
+        Public Const DepoisDeReceberAntesDeMarcarDrenada As String =
+            "depois-de-receber-antes-de-marcar-drenada"
+
         Private Shared _ponto As String
         Private Shared _acao As Action
 
@@ -39,7 +50,7 @@ Namespace Global.Iris.Cache
             _acao = Nothing
         End Sub
 
-        Friend Shared Sub Talvez(ponto As String)
+        Public Shared Sub Talvez(ponto As String)
             If Not String.Equals(Volatile.Read(_ponto), ponto, StringComparison.Ordinal) Then Return
             Dim a = _acao
             Desarmar()

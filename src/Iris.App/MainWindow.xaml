@@ -37,6 +37,7 @@
     <Window.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <app:InverseBoolToVisibility x:Key="NotBoolToVis" />
+        <app:NullToVisibility x:Key="NullToVis" />
 
         <!-- A cor do ponto NUNCA é o único sinal: o texto ao lado diz o
              mesmo. Vale para quem não distingue as cores e para quando o
@@ -175,6 +176,8 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="48" />
                 <RowDefinition Height="*" />
+                <!-- A faixa do acervo. Auto: some quando nao ha o que dizer. -->
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- ============ Barra de título ============ -->
@@ -1048,6 +1051,59 @@
                     </Border>
                 </Grid>
             </Grid>
+
+            <!-- ============ Acervo ============
+                 O que a varredura ja guardou no cache, e a RESSALVA que ele
+                 obriga a mostrar junto.
+
+                 Nao e a lista: ela continua lendo ao vivo do Outlook. Este e o
+                 acervo, e a §23 explica por que sao coisas diferentes - em modo
+                 cached ele e um arquivo historico conservador, nao o estado
+                 corrente da caixa. Uma UI que exibisse um como o outro
+                 enganaria, e enganaria em silencio.
+
+                 A faixa some quando nao ha ressalva nem falha - o que hoje
+                 nunca acontece em modo cached, e e proposital que nao
+                 aconteca. -->
+            <Border Grid.Row="2"
+                    Visibility="{Binding Acervo.TemAlgoADizer, Converter={StaticResource BoolToVis},
+                                         FallbackValue=Collapsed}"
+                    Background="{DynamicResource Brush.Surface.1}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16,8">
+                <StackPanel>
+                    <TextBlock Text="{Binding Acervo.Ressalva}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               AutomationProperties.Name="Ressalva do acervo" />
+                    <TextBlock Text="{Binding Acervo.Travado}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               Visibility="{Binding Acervo.Travado, Converter={StaticResource NullToVis},
+                                                    FallbackValue=Collapsed}"
+                               AutomationProperties.Name="Falha na atualizacao do acervo" />
+                </StackPanel>
+            </Border>
+
+            <!-- O cache que nao abre nao pode virar tela vazia silenciosa:
+                 vazio e indistinguivel de "nao ha nada guardado". -->
+            <Border Grid.Row="2"
+                    Visibility="{Binding AcervoIndisponivel, Converter={StaticResource NullToVis},
+                                         FallbackValue=Collapsed}"
+                    Background="{DynamicResource Brush.Surface.1}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16,8">
+                <TextBlock Text="{Binding AcervoIndisponivel}"
+                           TextWrapping="Wrap"
+                           FontSize="12"
+                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                           AutomationProperties.Name="Acervo indisponivel" />
+            </Border>
         </Grid>
     </Border>
 </Window>

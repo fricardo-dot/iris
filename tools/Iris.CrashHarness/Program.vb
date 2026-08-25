@@ -1,7 +1,9 @@
 Imports System.Collections.Generic
 Imports System.Diagnostics
+Imports System.IO
 Imports Iris.Cache
 Imports Iris.Core
+Imports Iris.Integration
 
 Namespace Global.Iris.CrashHarness
 
@@ -46,6 +48,9 @@ Namespace Global.Iris.CrashHarness
                 CacheWriterDefects.CheckpointAntesDasLinhas = True
             End If
 
+            ' arg 6: "drenar" faz o harness seguir ate o consumidor.
+            Dim drenar = args.Length > 6 AndAlso args(6) = "drenar" 
+
             Dim falha As OpenFailure = Nothing
             Using db = CacheDatabase.Open(caminho, CacheSchema.Intended(), falha)
                 If db Is Nothing Then
@@ -85,6 +90,22 @@ Namespace Global.Iris.CrashHarness
                                    TotalDePaginas * LinhasPorPagina,
                                    TotalDePaginas * LinhasPorPagina, g)
                 Console.Out.WriteLine($"resultado={r} geracao={g}")
+
+                ' --- o DRENO, quando pedido ---
+                '
+                ' A condicao do 2.4 (§26.2) exige matar o processo entre
+                ' Receber e MarcarDrenada e provar que a reabertura converge.
+                ' O consumidor usado aqui e o AcervoService de verdade, o
+                ' mesmo que o ViewModel usa - senao a prova seria sobre uma
+                ' imitacao, que e o erro que a Q1 cobrou.
+                If drenar Then
+                    Dim acervo As New AcervoService(db, folderKey)
+                    Dim dreno As New PublicationDrain(db)
+                    Dim n = dreno.Drenar(acervo)
+                    Console.Out.WriteLine(
+                        $"drenadas={n} recebidas={acervo.Recebidas} " &
+                        $"itens={acervo.Atual.Items.Count} cobertura={acervo.Atual.Cobertura}")
+                End If
                 Return 0
             End Using
         End Function

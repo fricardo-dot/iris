@@ -2891,7 +2891,7 @@ exceção não tratada.
 | 6 | Corpus adversarial da Q2 com oráculo prévio | ok |
 | 7 | Critério operacional de invalidação, com dado | ok — S6 |
 | 8 | Latência máxima por lote | **ok** — §24.4: máx **58 ms** em condição isolada (a normativa), orçamento 100 ms |
-| 9 | Crash entre commit, checkpoint e publicação | **parcial, e a exceção foi ACEITA** — §26. Infraestrutura recuperável provada; a entrega por consumidor real fecha no **2.4**, sob condição vinculante |
+| 9 | Crash entre commit, checkpoint e publicação | **ok** — §22.1 + §24.3 + §27: consumidor real ligado ao dreno, e o processo morto entre `Receber` e `MarcarDrenada` com convergência provada |
 | 10 | Reconciliação antiga não sobrescreve nova | **ok** — §22.2 |
 
 ### 22.9 O que ficou de fora do 2.1, e por quê
@@ -3540,3 +3540,107 @@ O critério 9 sai de `PARCIAL` para `ok`, e a Fase 2 fica com os **dez**
 critérios cumpridos — com as exceções que já estão declaradas nas linhas 1 e 5
 da tabela da §22.8, e com a Q8 respondida por escopo (§23) em vez de por
 matriz.
+
+
+---
+
+## 27. Marco 2.4 — o consumidor real, e o critério 9 fechado
+
+Feito no recorte da §26.3, sem crescer.
+
+### 27.1 A condição vinculante, executada
+
+A §26.2 exigia matar o processo **entre `Receber` e `MarcarDrenada`** e provar
+que a reabertura converge sem perda. Foi feito, com o processo morrendo de
+verdade — `TerminateProcess`, o mesmo harness do 2.1:
+
+| | |
+|---|---|
+| morre depois de receber, antes de marcar | a dívida continua **pendente** no disco |
+| na reabertura | a **mesma geração é entregue outra vez** |
+| o acervo | converge para o mesmo conteúdo, **nada duplicou** |
+
+E o contraponto, que dá sentido ao anterior: **sem crash, a entrega acontece
+uma vez só**. Sem ele, um dreno que reentregasse sempre passaria no teste de
+cima e ninguém notaria que "ao menos uma vez" tinha virado "muitas vezes".
+
+**Por que converge.** O `AcervoService` é idempotente pela forma mais simples
+que existe: **não acumula nada**. Receber uma geração significa reler o
+manifesto inteiro e substituir o que estava. Recontar, somar ou anexar exigiria
+deduplicação — e deduplicação exige lembrar o que já veio, que é estado novo,
+com o seu próprio problema de durabilidade. Reler é mais caro e não tem esse
+problema.
+
+### 27.2 O consumidor do teste é o consumidor do produto
+
+Se a lógica de convergência vivesse dentro do ViewModel, a prova teria de rodar
+contra WPF — ou contra uma imitação dele, e aí provaria a imitação. É o erro
+que a Q1 cobrou quando o teste sintético verificava um algoritmo diferente do
+que rodava contra o Outlook.
+
+Por isso o `AcervoService` mora em `Iris.Integration`, fora da UI. O
+`AcervoViewModel` o observa; o harness de crash usa **o mesmo serviço**.
+
+### 27.3 A proibição virou teste
+
+A §26.2 proíbe a UI de contornar o dreno lendo o manifesto direto. Isso agora
+é um teste de arquitetura que inspeciona o **IL compilado** do `Iris.App`
+procurando referência a `ManifestReader`.
+
+O contorno é concreto e tentador: chamar `ManifestReader` num timer. Funciona,
+parece igual, e a dívida deixa de ser drenada — a fila enche, o `TravadoEm`
+nunca é consultado, e ninguém descobre que a entrega parou.
+
+Com controle: há um método-isca que **usa** o `ManifestReader` de propósito, e
+um teste que exige que a busca o encontre. Sem isso, uma busca que devolvesse
+sempre falso faria a proibição valer zero.
+
+### 27.4 O modo de falha do WPF que nenhum teste pegava
+
+Binding com caminho errado **falha em silêncio**: a propriedade não existe, o
+controle fica vazio, nada é lançado, nada aparece no log — e a suíte continua
+verde porque nenhum teste toca em XAML.
+
+É "verde mas quebrado" na forma mais pura, e o caso concreto é grave: se
+`Acervo.Ressalva` virasse `Acervo.Ressalvas` num refactor, **a ressalva que a
+§23 obriga a mostrar sumiria da tela**, e o produto voltaria a exibir o acervo
+como se fosse o estado corrente da caixa — sem nenhum sinal de que algo
+quebrou.
+
+Agora há teste que lê o `MainWindow.xaml`, extrai os caminhos de binding e
+resolve cada um contra o ViewModel correspondente. Mais dois: um que exige que
+a ressalva **esteja** na janela (binding ausente não é binding quebrado, e
+passaria pelo primeiro), e o controle de que o extrator encontra um caminho
+plantado.
+
+### 27.5 O que a tela mostra, e o que ela não mostra
+
+A lista de mensagens **continua lendo ao vivo do Outlook**. O acervo é outra
+coisa, e aparece numa faixa própria com a ressalva junto.
+
+A faixa some quando não há o que dizer — o que **hoje nunca acontece** em modo
+cached, e é proposital que não aconteça. Se o cache não abrir, o motivo fica
+visível: cache que falha em silêncio vira tela vazia, e tela vazia é
+indistinguível de *"não há nada guardado"*.
+
+### 27.6 Limitações declaradas do 2.4
+
+- **A pasta do acervo está fixa em 1.** Mapear pasta do Outlook para chave do
+  cache é trabalho da fase seguinte.
+- **O app não varre.** O cache só tem o que uma importação manual colocou nele,
+  então numa máquina limpa a faixa dirá *"esta pasta ainda não foi varrida"* —
+  que é a verdade.
+- **A faixa não foi verificada visualmente.** Ela compila, os bindings resolvem
+  e há teste cobrando que estejam lá; abrir o app conectaria ao Outlook do
+  usuário, e isso não é coisa de fazer sem ele pedir.
+- **O dreno periódico roda a cada 30 s** e hoje quase nunca acha trabalho,
+  porque nada no app publica. O intervalo é folgado de propósito: bater no
+  banco a cada segundo para não achar nada seria custo sem informação.
+
+### 27.7 Estado final da Fase 2
+
+Com o critério 9 fechado, os **dez** critérios da §8 estão cumpridos — com as
+exceções declaradas nas linhas 1 e 5 da tabela da §22.8, e com a Q8 respondida
+por escopo (§23) em vez de por matriz.
+
+**A Fase 2 está encerrada.**

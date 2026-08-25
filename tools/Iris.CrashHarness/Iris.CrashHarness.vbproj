@@ -13,6 +13,8 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Iris.Core\Iris.Core.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Cache\Iris.Cache.vbproj" />
+    <ProjectReference Include="..\..\src\Iris.Sync\Iris.Sync.vbproj" />
+    <ProjectReference Include="..\..\src\Iris.Integration\Iris.Integration.vbproj" />
   </ItemGroup>
 
 </Project>

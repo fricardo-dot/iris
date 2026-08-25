@@ -32,6 +32,19 @@ Namespace Global.Iris.App.ViewModels
         Private _disposed As Boolean
         Private _wasConnected As Boolean
 
+        ''' <summary>
+        ''' A pasta cujo acervo a tela mostra.
+        '''
+        ''' Fixa em 1 por enquanto, e isso e limitacao declarada: mapear pasta
+        ''' do Outlook para chave do cache e trabalho da fase seguinte, junto
+        ''' com a varredura disparada pelo app. Hoje o cache so tem o que uma
+        ''' importacao manual colocou nele.
+        ''' </summary>
+        Private Const folderKeyDoAcervo As Long = 1
+
+        Public ReadOnly Property Acervo As AcervoViewModel
+        Public ReadOnly Property AcervoIndisponivel As String
+
         Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher,
                        saveFile As ISaveFileService, pickFile As IPickFileService)
             _broker = broker
@@ -45,6 +58,20 @@ Namespace Global.Iris.App.ViewModels
             Composer = New ComposerViewModel(broker, ui, AddressOf Connection.Observe, pickFile)
             _watcher = New FolderWatcher(broker, ui, AddressOf Connection.Observe,
                                          AddressOf Messages.OnFolderInvalidated)
+
+            ' O ACERVO — o que a varredura ja guardou no cache.
+            '
+            ' Nao substitui a lista: ela continua lendo AO VIVO do Outlook, e e
+            ' isso que o usuario opera. O acervo e outra coisa, e a §23 explica
+            ' por que — em modo cached ele e um arquivo historico conservador,
+            ' nao o estado corrente da caixa.
+            '
+            ' Se o cache nao abrir, o motivo fica VISIVEL. Cache que falha em
+            ' silencio vira tela vazia, e tela vazia e indistinguivel de "nao
+            ' ha nada guardado".
+            Dim motivo As String = Nothing
+            Acervo = AcervoViewModel.Abrir(ui, folderKeyDoAcervo, motivo)
+            AcervoIndisponivel = motivo
 
             NewMessageCommand = New AsyncRelayCommand(Function() Composer.NewMessageAsync(),
                                                       Function() PodeCompor)
@@ -343,6 +370,7 @@ Namespace Global.Iris.App.ViewModels
             Composer.Dispose()
             Detail.Dispose()
             Connection.Dispose()
+            Acervo?.Dispose()
         End Sub
 
     End Class

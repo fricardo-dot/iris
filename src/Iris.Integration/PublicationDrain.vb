@@ -74,6 +74,11 @@ Namespace Global.Iris.Integration
                     _writer.RegistrarFalhaNaEntrega(g, $"{ex.GetType().Name}: {ex.Message}")
                     Throw
                 End Try
+                ' A janela que torna a entrega AO MENOS UMA VEZ. Morrer aqui
+                ' deixa a UI ja tendo agido e o disco ainda dizendo que ela nao
+                ' recebeu — e o teste do 2.4 mata o processo exatamente aqui.
+                CrashInjection.Talvez(CrashInjection.DepoisDeReceberAntesDeMarcarDrenada)
+
                 _writer.MarcarDrenada(g)
                 n += 1
             Next

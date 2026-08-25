@@ -25,6 +25,8 @@
          pode tocar neste assembly, e o teste arquitetural
          ViewModels_NaoReferenciam_Outlook falha se alguém tentar. -->
     <ProjectReference Include="..\Iris.Outlook\Iris.Outlook.vbproj" />
+    <ProjectReference Include="..\Iris.Cache\Iris.Cache.vbproj" />
+    <ProjectReference Include="..\Iris.Integration\Iris.Integration.vbproj" />
   </ItemGroup>
 
   <ItemGroup>
