@@ -21,7 +21,7 @@ citados, e é por aí que dá para conferir.
 | 3.4 | rejeitado e corrigido | ver commits | `b60b896`, `e6a8b62`, `24054af`, `8e3120e` |
 | **3.5** | **8** | **19** | `61a8123`, `9455e7f`, `6f8bc7b`, `8167425`, `a25a6c0`, `84119b4`, `3c95c9f` |
 | **3.6** | **3** (mais 1 de plano, contada à parte) | **8** | `95416d7`, `b377b78`, `7c39cb5` |
-| Relatório | 3 | 9 + 7 + 3 | `33ecc84`, `a3eda83`, `a5f29a0` |
+| Relatório | 4 | 9 + 7 + 3 + 3 | `33ecc84`, `a3eda83`, `a5f29a0`, `8599544` |
 
 **O critério da contagem**, porque ele não é óbvio: "passada" é uma troca de
 revisão de **código**, incluindo a que aprova. A revisão do **plano** do 3.6
@@ -58,7 +58,7 @@ passadas do 3.5 e do 3.6** (19 + 8), mais 4 do 3.0.
 | 2 | 4 — guarda `g.Cobre` desligada no commit pelo próprio roteiro de controle; décima classe ainda paralela; item não pedido parava no portão e não na cobertura; contagem 21 vs 25 | REJEITADO |
 | 3 | — | **APROVADO** |
 
-## Relatório — três passadas
+## Relatório — quatro passadas
 
 **Primeira**, nove correções, todas aceitas e aplicadas: evidência da suíte não versionada;
 contagem de achados incompatível com o histórico; "mecanismo inteiro" forte
@@ -85,13 +85,22 @@ caminho absoluto desta máquina); e a proveniência da suíte tinha voltado a fi
 errada, porque `a3eda83` mexeu num arquivo **executável**, e não só em
 documentação.
 
-**E uma quarta**, com um caso que eu tinha argumentado ser desnecessário: nos
-cenários que esperam verde, `dotnet test` pode morrer antes de rodar teste
-nenhum — erro de MSBuild, de SDK, de testhost, ou filtro que não casa — e o
-conjunto vazio seria aceito como sucesso. Agora verde exige código de saída 0,
-`Passed!` e pelo menos um teste executado; vermelho exige código diferente de 0 e
-`Failed!`. Conferido com um filtro que não casa com nada: o roteiro acusa
-`!! NAO RODOU` e sai com 1.
+**Quarta**, três correções, todas aceitas:
+
+1. **O roteiro de controle podia aceitar "não rodou" como verde.** Nos cenários
+   que esperam verde, o conjunto de falhas vazio é igual ao que sai quando o
+   `dotnet test` morre antes de executar teste nenhum — erro de MSBuild, de SDK,
+   de testhost, ou filtro que não casa. Eu tinha argumentado que o `returncode`
+   não acrescentava nada, e estava errado; ele apontou o caso concreto. Verde
+   agora exige código 0, `Passed!` **e** pelo menos um teste executado; vermelho
+   exige código diferente de 0 e `Failed!`. Conferido com um filtro que não casa:
+   o roteiro acusa `!! NAO RODOU` e sai com 1 — e, notando, o `dotnet test` tinha
+   saído com **código 0**, então foi a contagem de executados que pegou.
+2. **Este arquivo estava desatualizado**, sem a terceira passada.
+3. **A proveniência da suíte estava imprecisa de novo**: `33ecc84` era chamado de
+   "commit de encerramento" quando o que ele é — e o que importa — é a árvore da
+   solução .NET que foi medida; e o texto dizia "nada em `tests/`" quando houve
+   alteração de comentário em dois arquivos de teste.
 
 ## Divergências sem consenso
 
