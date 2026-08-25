@@ -80,6 +80,14 @@ Namespace Global.Iris.Model
                 If r.Ativo Then ativos += 1
             Next
 
+            ' TODO registro tem de declarar Enabled. Um registro com Enabled
+            ' ausente nao esta ligado nem desligado: e um registro sobre o qual
+            ' nao se sabe. Aceita-lo ao lado de um bem formado deixaria passar
+            ' "um ativo permitido MAIS um indeterminado" como se fosse so o
+            ' primeiro — que e a mesma familia de furo do valor meio corrompido
+            ' que o parser deixava passar.
+            If total > 0 AndAlso declarados <> total Then Return False
+
             Select Case leitura.Kind
                 Case LabelReadingKind.Present
                     ' Exatamente um ativo. Zero seria "sem rotulo" disfarcado;
@@ -90,8 +98,8 @@ Namespace Global.Iris.Model
                     ' nao ha registro para existir.
                     Return total = 0
                 Case LabelReadingKind.HistoricalOnly
-                    ' Ha registro, e todos se declaram desligados.
-                    Return total > 0 AndAlso ativos = 0 AndAlso declarados > 0
+                    ' Ha registro, e TODOS se declaram desligados.
+                    Return total > 0 AndAlso ativos = 0
                 Case Else
                     ' Desfecho nao elegivel nao chega aqui, e se chegar nao
                     ' passa.

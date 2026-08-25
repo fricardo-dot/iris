@@ -174,9 +174,9 @@ Public Class PortaoTests
     <TestMethod>
     Public Sub Sem_autorizacao_a_classificacao_nem_e_INVOCADA()
         Dim chamou = False
-        Dim portao As New DisclosureGate(DisclosurePolicy.DaProducao())
+        Dim portao As New DisclosureGate(DisclosurePolicy.DaProducao(), Function() Agora)
 
-        Dim d = portao.Avaliar(Voo(), Agora,
+        Dim d = portao.Avaliar(Voo(),
             Function()
                 chamou = True
                 Throw New InvalidOperationException(
@@ -191,9 +191,9 @@ Public Class PortaoTests
     <TestMethod>
     Public Sub Com_autorizacao_a_classificacao_E_invocada()
         Dim chamou = False
-        Dim portao As New DisclosureGate(New DisclosurePolicy(Autorizacao()))
+        Dim portao As New DisclosureGate(New DisclosurePolicy(Autorizacao()), Function() Agora)
 
-        Dim d = portao.Avaliar(Voo(), Agora,
+        Dim d = portao.Avaliar(Voo(),
             Function()
                 chamou = True
                 Return New List(Of MessageClassification) From {
@@ -202,6 +202,94 @@ Public Class PortaoTests
 
         Assert.IsTrue(chamou, "o preflight passou; classificar e o passo seguinte")
         Assert.IsTrue(d.Permitido, $"negou por {d.Motivo}")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A autorização que vence DURANTE a classificação nega.</b>
+    '''
+    ''' Classificar custa ~17 ms por item, e uma thread grande com o Outlook
+    ''' ocupado leva bem mais — dá tempo de uma autorização expirar no meio.
+    '''
+    ''' A primeira versão passava o <b>mesmo instante</b> para as duas etapas.
+    ''' A segunda conferência existia e conferia contra um relógio congelado,
+    ''' então esta situação passava. Conferir de novo contra o mesmo tempo não
+    ''' é conferir de novo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Autorizacao_que_vence_DURANTE_a_classificacao_NEGA()
+        Dim vence = Agora.AddMinutes(1)
+        Dim a As New ActivationRecord("id", 1, "quem", Agora.AddDays(-1), "provedor-de-teste",
+                                      Endereco, "modelo-de-teste", "local", "sem retenção",
+                                      {AssistOperation.Resumir}, {Pasta()}, {RotuloOk},
+                                      {LabelReadingKind.Absent}, {0}, ate:=vence)
+
+        Dim leituras = 0
+        Dim portao As New DisclosureGate(New DisclosurePolicy(a),
+                                         Function()
+                                             ' Primeira leitura: vigente.
+                                             ' Segunda: ja passou do prazo.
+                                             leituras += 1
+                                             Return If(leituras = 1, Agora, vence.AddMinutes(1))
+                                         End Function)
+
+        Dim d = portao.Avaliar(Voo(),
+            Function() CType({Mensagem(Leitura(LabelReadingKind.Absent))},
+                             IReadOnlyList(Of MessageClassification)))
+
+        Assert.AreEqual(2, leituras, "o relogio TEM de ser lido duas vezes")
+        Assert.AreEqual(DisclosureReason.AtivacaoForaDeVigencia, d.Motivo,
+            "a autorizacao venceu enquanto o COM classificava")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Registro sem <c>Enabled</c> declarado ao lado de um ativo NEGA.</b>
+    '''
+    ''' Um registro com <c>Enabled</c> ausente não está ligado nem desligado:
+    ''' é um registro sobre o qual não se sabe. Aceitá-lo ao lado de um bem
+    ''' formado deixaria passar "um ativo permitido MAIS um indeterminado"
+    ''' como se fosse só o primeiro.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Registro_sem_Enabled_declarado_NEGA()
+        Dim indeterminado As New LabelRecord(RotuloEstranho, Nothing, 0, False, {"SetDate"})
+        Dim l = Leitura(LabelReadingKind.Present,
+                        {Registro(RotuloOk, True, 0), indeterminado})
+
+        Assert.AreEqual(DisclosureReason.ClassificacaoIncoerente,
+                        Decidir(Autorizacao(), Pedido(Mensagem(l))).Motivo)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Histórico nega mesmo quando o GUID dele está na allowlist.</b>
+    '''
+    ''' A versão anterior só negava quando o GUID também estava de fora, o que
+    ''' fazia a allowlist de rótulo <b>ativo</b> virar allowlist de histórico
+    ''' sem ninguém ter decidido isso. "Este rótulo pode ser usado hoje" e
+    ''' "ter tido este rótulo um dia não importa" são duas políticas
+    ''' diferentes.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Historico_de_rotulo_PERMITIDO_tambem_nega_sem_a_declaracao()
+        Dim l = Leitura(LabelReadingKind.HistoricalOnly, {Registro(RotuloOk, False, 0)})
+
+        Assert.AreEqual(DisclosureReason.HistoricoNaoDeclarado,
+                        Decidir(Autorizacao(leituras:={LabelReadingKind.HistoricalOnly}),
+                                Pedido(Mensagem(l))).Motivo)
+    End Sub
+
+    ''' <summary>
+    ''' Provedor e modelo comparam <b>com</b> distinção de caixa.
+    '''
+    ''' São identificadores de máquina, e nada prova que todo provedor os
+    ''' trate como iguais. Canonizar é trabalho do adaptador, que sabe as
+    ''' regras dele — não do portão.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Modelo_com_caixa_diferente_NEGA()
+        Dim p As New DisclosureRequest(Voo(aonde:=Destino(modelo:="Modelo-De-Teste")),
+                                       {Mensagem(Leitura(LabelReadingKind.Absent))})
+
+        Assert.AreEqual(DisclosureReason.ProvedorNaoAutorizado, Decidir(Autorizacao(), p).Motivo)
     End Sub
 
     ' ==================================================================
@@ -269,7 +357,11 @@ Public Class PortaoTests
             If Not LabelPolicy.Elegivel(k) Then Continue For
             quantos += 1
 
-            Dim d = Decidir(Autorizacao(leituras:={k}), Pedido(Mensagem(Leitura(k))))
+            ' HistoricalOnly so passa com a politica declarando o que fazer
+            ' com classificacao antiga — e essa declaracao e o assunto do
+            ' Historico_de_rotulo_PERMITIDO_tambem_nega_sem_a_declaracao.
+            Dim d = Decidir(Autorizacao(leituras:={k}, ignorarHistorico:=True),
+                            Pedido(Mensagem(Leitura(k))))
             Assert.IsTrue(d.Permitido, $"{k} e elegivel, estava listado, e negou por {d.Motivo}")
         Next
         Assert.AreEqual(4, quantos, "Present, Absent, Blank e HistoricalOnly")

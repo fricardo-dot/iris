@@ -468,12 +468,18 @@ Namespace Global.Iris.Assist
                     ' registro se diz inativo, e nao prova que o conteudo
                     ' deixou de ser sensivel nem que a empresa aceita
                     ' desconsiderar rebaixamento.
-                    If Not _ativacao.IgnorarHistorico AndAlso
-                       Not _ativacao.Rotulos.Contains(r.Id) Then
+                    '
+                    ' E nega INDEPENDENTE do GUID. A versao anterior so negava
+                    ' quando o GUID tambem estava fora da lista, o que fazia a
+                    ' allowlist de rotulo ATIVO virar allowlist de historico
+                    ' sem ninguem ter decidido isso. "Este rotulo pode ser
+                    ' usado hoje" e "ter tido este rotulo um dia nao importa"
+                    ' sao duas politicas diferentes.
+                    If Not _ativacao.IgnorarHistorico Then
                         v.Add(New DisclosureViolation(DisclosureReason.HistoricoNaoDeclarado,
-                            m.Item, "Uma das mensagens teve uma classificação que não está " &
-                                    "entre as autorizadas, e a autorização não declarou " &
-                                    "ignorar classificações antigas."))
+                            m.Item, "Uma das mensagens carrega uma classificação antiga, e a " &
+                                    "autorização não declarou o que fazer com classificações " &
+                                    "antigas."))
                     End If
                     Continue For
                 End If
@@ -498,9 +504,20 @@ Namespace Global.Iris.Assist
             Return v
         End Function
 
+        ''' <summary>
+        ''' Comparação <b>ordinal exata</b>, e de propósito.
+        '''
+        ''' Nome de provedor e id de modelo são identificadores de máquina, e
+        ''' nada prova que todo provedor os trate sem distinguir caixa. Uma
+        ''' equivalência inventada aqui faria uma autorização para
+        ''' <c>Modelo-A</c> aceitar um pedido para <c>modelo-a</c> — que o
+        ''' transmissor pode tratar como outro destino.
+        '''
+        ''' Canonizar, se um dia for preciso, é trabalho do adaptador do
+        ''' provedor, que sabe as regras dele. Não do portão.
+        ''' </summary>
         Private Shared Function Igual(a As String, b As String) As Boolean
-            Return String.Equals(If(a, "").Trim(), If(b, "").Trim(),
-                                 StringComparison.OrdinalIgnoreCase)
+            Return String.Equals(If(a, "").Trim(), If(b, "").Trim(), StringComparison.Ordinal)
         End Function
 
         Private Shared Function MesmaPasta(a As FolderKey, b As FolderKey) As Boolean
@@ -528,19 +545,45 @@ Namespace Global.Iris.Assist
     Public NotInheritable Class DisclosureGate
 
         Private ReadOnly _politica As DisclosurePolicy
+        Private ReadOnly _relogio As Func(Of DateTimeOffset)
 
-        Public Sub New(politica As DisclosurePolicy)
+        ''' <param name="relogio">
+        ''' Lido <b>duas vezes</b>: antes de classificar e depois. Não é um
+        ''' parâmetro de conveniência para teste — é o que faz a segunda
+        ''' conferência valer alguma coisa.
+        ''' </param>
+        Public Sub New(politica As DisclosurePolicy, relogio As Func(Of DateTimeOffset))
             _politica = politica
+            _relogio = relogio
         End Sub
 
-        Public Function Avaliar(pedido As PreflightRequest, agora As DateTimeOffset,
+        ''' <summary>
+        ''' Preflight, classifica, e <b>decide contra o relógio de agora</b>.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE O RELÓGIO É LIDO DUAS VEZES</b>
+        '''
+        ''' Classificar custa ~17 ms por item, e uma thread grande com o Outlook
+        ''' ocupado leva bem mais. A autorização pode vencer nesse meio.
+        '''
+        ''' A primeira versão passava o <b>mesmo instante</b> para as duas
+        ''' etapas: a segunda conferência existia e conferia contra um relógio
+        ''' congelado, então uma autorização que expirasse durante a leitura
+        ''' ainda permitia. Conferir de novo contra o mesmo tempo não é conferir
+        ''' de novo.
+        ''' </summary>
+        Public Function Avaliar(pedido As PreflightRequest,
                                 classificar As Func(Of IReadOnlyList(Of MessageClassification))) _
                                 As DisclosureDecision
 
-            Dim antes = _politica.Preflight(pedido, agora)
+            Dim antes = _politica.Preflight(pedido, _relogio())
             If Not antes.Permitido Then Return antes
 
-            Return _politica.Decidir(New DisclosureRequest(pedido, classificar()), agora)
+            Dim classificadas = classificar()
+
+            ' O relogio DE NOVO. Entre a linha de cima e esta pode ter passado
+            ' meio segundo de COM - ou muito mais, com o Outlook ocupado.
+            Return _politica.Decidir(New DisclosureRequest(pedido, classificadas), _relogio())
         End Function
 
     End Class
