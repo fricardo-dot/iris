@@ -30,9 +30,12 @@ Public Class ContentPipelineTests
                                      Optional assunto As String = "assunto",
                                      Optional de As String = "fulano@exemplo.invalido",
                                      Optional para As String() = Nothing) As ContentResult
-        Return ContentPipeline.Preparar(Chave(), "CK-1", assunto, de,
-                                        If(para, {"beltrano@exemplo.invalido"}),
-                                        corpo, html, completo)
+        ' Pelo caminho PUBLICO — o snapshot. Sem isto, nenhum teste
+        ' atravessaria a fronteira nova, e ela existiria sem prova.
+        Return ContentPipeline.Preparar(
+            New MessageSnapshot(Chave(), "CK-1", assunto, de,
+                                If(para, {"beltrano@exemplo.invalido"}),
+                                corpo, html, completo))
     End Function
 
     ' ==================================================================
@@ -271,8 +274,9 @@ Public Class ContentPipelineTests
     ''' </summary>
     <TestMethod>
     Public Sub Sem_ChangeKey_o_pipeline_RECUSA()
-        Dim r = ContentPipeline.Preparar(Chave(), "", "assunto", "de@x.invalido",
-                                         {"para@x.invalido"}, "corpo", False, True)
+        Dim r = ContentPipeline.Preparar(
+            New MessageSnapshot(Chave(), "", "assunto", "de@x.invalido",
+                                {"para@x.invalido"}, "corpo", False, True))
 
         Assert.IsFalse(r.Ok)
         Assert.AreEqual(ContentRefusal.SemVersao, r.Recusa)
@@ -281,8 +285,9 @@ Public Class ContentPipelineTests
     ''' <summary>E ela sai na parte, para o envelope prender.</summary>
     <TestMethod>
     Public Sub A_ChangeKey_sai_na_parte()
-        Dim r = ContentPipeline.Preparar(Chave(), "CK-7", "assunto", "de@x.invalido",
-                                         {"para@x.invalido"}, "corpo", False, True)
+        Dim r = ContentPipeline.Preparar(
+            New MessageSnapshot(Chave(), "CK-7", "assunto", "de@x.invalido",
+                                {"para@x.invalido"}, "corpo", False, True))
 
         Assert.IsTrue(r.Ok)
         Assert.AreEqual("CK-7", r.Parte.ChangeKey)
@@ -336,6 +341,25 @@ Public Class ContentPipelineTests
 
     ' ==================================================================
     ' O snapshot
+
+    ''' <summary>
+    ''' <b>Os amigos do <c>Iris.Model</c> são exatamente dois.</b>
+    '''
+    ''' <c>Iris.Outlook</c>, que é a borda que lê do provider, e
+    ''' <c>Iris.Tests</c>. Um terceiro assembly na lista significaria mais uma
+    ''' camada capaz de montar <c>MessageSnapshot</c> — e o tipo existe
+    ''' justamente para que só uma o faça.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Os_amigos_do_Model_sao_exatamente_dois()
+        Dim amigos = GetType(MessageSnapshot).Assembly.
+            GetCustomAttributes(GetType(Runtime.CompilerServices.InternalsVisibleToAttribute), False).
+            Cast(Of Runtime.CompilerServices.InternalsVisibleToAttribute)().
+            Select(Function(a) a.AssemblyName).OrderBy(Function(n) n).ToArray()
+
+        CollectionAssert.AreEqual({"Iris.Outlook", "Iris.Tests"}, amigos,
+            "mais um amigo e mais uma camada capaz de montar o snapshot")
+    End Sub
 
     ''' <summary>
     ''' <b>O caminho público é o snapshot, e ele vem de uma leitura só.</b>

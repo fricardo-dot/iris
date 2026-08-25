@@ -11,4 +11,12 @@
     <OptionInfer>On</OptionInfer>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- A borda que fala com o Outlook e a UNICA que monta MessageSnapshot:
+         os campos dele tem de vir de UMA leitura, e essa e a camada que
+         sabe disso. Ver o XML doc do tipo, inclusive o que ele NAO prova. -->
+    <InternalsVisibleTo Include="Iris.Outlook" />
+    <InternalsVisibleTo Include="Iris.Tests" />
+  </ItemGroup>
+
 </Project>
