@@ -33,15 +33,79 @@ Public Class PagingIntegrationTests
     Private Const Tamanho As Integer = 30
     Private Const MaxPaginas As Integer = 500
 
+    ''' <summary>
+    ''' Distingue "esta máquina não tem Outlook" de "o Outlook está fechado", e
+    ''' a distinção é o conserto da §22.12.
+    '''
+    ''' Antes, os dois casos davam <c>Inconclusive</c>, e a suíte imprimia
+    ''' <c>Passed!</c> nos dois. Foi o que aconteceu enquanto o usuário
+    ''' reiniciava o Outlook para o teste da janela: <c>258 passed, 3
+    ''' skipped</c>, cabeçalho verde idêntico ao de sempre. Um resultado que
+    ''' PARECE IGUAL quando a cobertura mudou é o formato de erro que esta fase
+    ''' inteira persegue.
+    '''
+    ''' Numa máquina com Outlook instalado, "fechado" é problema de preparo do
+    ''' teste, não ambiente sem suporte — e problema de preparo tem de FALHAR,
+    ''' com instrução de como resolver. Só a ausência da instalação é motivo
+    ''' legítimo para pular.
+    ''' </summary>
+    Friend Enum SemOutlook
+        ''' <summary>Conectou. Segue o teste.</summary>
+        Prosseguir
+        ''' <summary>Instalado e não respondeu: falta de PREPARO, tem de falhar.</summary>
+        Falhar
+        ''' <summary>Não instalado: ambiente sem suporte, pular é legítimo.</summary>
+        Pular
+    End Enum
+
+    ''' <summary>
+    ''' A decisão, isolada do COM para poder ser testada nos DOIS ramos.
+    '''
+    ''' Deixá-la embutida no <c>AbrirBrokerAsync</c> significaria que o ramo
+    ''' <c>Falhar</c> só seria exercitado numa máquina com Outlook instalado E
+    ''' fechado — ou seja, nunca, na prática. Um conserto para "a suíte mente
+    ''' quando pula" cujo próprio caminho nunca roda seria a mesma piada um
+    ''' nível acima.
+    ''' </summary>
+    Friend Shared Function Decidir(conectado As Boolean, instalado As Boolean) As SemOutlook
+        If conectado Then Return SemOutlook.Prosseguir
+        Return If(instalado, SemOutlook.Falhar, SemOutlook.Pular)
+    End Function
+
+    Friend Shared Function OutlookInstalado() As Boolean
+        Using k = Microsoft.Win32.Registry.ClassesRoot.OpenSubKey("Outlook.Application\CLSID")
+            Return k IsNot Nothing
+        End Using
+    End Function
+
     Private Shared Async Function AbrirBrokerAsync() As Task(Of OutlookBroker)
         Dim broker As New OutlookBroker(New NullLog())
         broker.Start()
         Dim estado = Await broker.ConnectAsync(CancellationToken.None)
-        If estado <> SessionState.Connected Then
-            broker.Dispose()
-            Assert.Inconclusive($"Outlook nao disponivel (estado: {estado}).")
-        End If
-        Return broker
+
+        Select Case Decidir(estado = SessionState.Connected, OutlookInstalado())
+            Case SemOutlook.Prosseguir
+                Return broker
+
+            Case SemOutlook.Falhar
+                broker.Dispose()
+                Assert.Fail(
+                    $"O Outlook esta INSTALADO nesta maquina mas nao respondeu (estado: {estado})." &
+                    Environment.NewLine &
+                    "Este teste e a unica prova contra o Outlook real — pular sem avisar " &
+                    "deixaria a suite verde com a cobertura menor (§22.12)." &
+                    Environment.NewLine &
+                    "Abra o Outlook classico e rode de novo. Se ele acabou de reiniciar, " &
+                    "o GetActiveObject pode levar minutos para registrar na ROT.")
+                Return Nothing
+
+            Case Else
+                broker.Dispose()
+                Assert.Inconclusive(
+                    $"Outlook nao instalado nesta maquina (estado: {estado}). " &
+                    "Pulando: e ambiente sem suporte, nao falta de preparo.")
+                Return Nothing
+        End Select
     End Function
 
     ''' <summary>Caixa de Entrada do store padrão.</summary>
