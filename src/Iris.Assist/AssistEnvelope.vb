@@ -38,9 +38,11 @@ Namespace Global.Iris.Assist
             Me.Item = item
             Me.Assunto = If(assunto, "")
             Me.Remetente = If(remetente, "")
-            Me.Destinatarios = If(destinatarios Is Nothing,
-                                  CType(Array.Empty(Of String)(), IReadOnlyList(Of String)),
-                                  destinatarios.ToList())
+            ' AsReadOnly sobre um ARRAY proprio: um IReadOnlyList(Of T) que
+            ' embrulha uma List que o chamador guardou continua mutavel por
+            ' quem tem a List. Congelar aqui e barato e fecha isso.
+            Me.Destinatarios = Array.AsReadOnly(
+                If(destinatarios, Enumerable.Empty(Of String)()).ToArray())
             Me.Corpo = If(corpo, "")
             Me.CorpoCompleto = corpoCompleto
         End Sub
@@ -48,6 +50,32 @@ Namespace Global.Iris.Assist
     End Class
 
     ' ==================================================================
+
+    ''' <summary>Por que o envelope não pôde ser montado.</summary>
+    Public Enum EnvelopeRefusal
+        Nenhuma = 0
+        ''' <summary>
+        ''' Nem o envelope <b>sem mensagem nenhuma</b> cabe no teto — esqueleto
+        ''' mais instrução do usuário já passam.
+        ''' </summary>
+        NemVazioCabe
+    End Enum
+
+    Public NotInheritable Class EnvelopeResult
+        Public ReadOnly Property Envelope As AssistEnvelope
+        Public ReadOnly Property Recusa As EnvelopeRefusal
+
+        Friend Sub New(envelope As AssistEnvelope, recusa As EnvelopeRefusal)
+            Me.Envelope = envelope
+            Me.Recusa = recusa
+        End Sub
+
+        Public ReadOnly Property Ok As Boolean
+            Get
+                Return Envelope IsNot Nothing
+            End Get
+        End Property
+    End Class
 
     ''' <summary>
     ''' <b>Os bytes exatos que vão sair — materializados UMA vez.</b>
@@ -96,12 +124,12 @@ Namespace Global.Iris.Assist
         ''' <summary>Alguma mensagem entrou com o corpo incompleto.</summary>
         Public ReadOnly Property CorpoIncompleto As Boolean
 
-        Friend Sub New(bytes As Byte(), itens As IReadOnlyList(Of ItemKey),
+        Friend Sub New(bytes As Byte(), itens As IEnumerable(Of ItemKey),
                        truncado As Boolean, omitidas As Integer, corpoIncompleto As Boolean)
             _bytes = bytes
             Comprimento = bytes.Length
             Hash = Convert.ToHexString(SHA256.HashData(bytes)).ToLowerInvariant()
-            Me.Itens = itens
+            Me.Itens = Array.AsReadOnly(itens.ToArray())
             Me.Truncado = truncado
             Me.Omitidas = omitidas
             Me.CorpoIncompleto = corpoIncompleto
@@ -181,8 +209,27 @@ Namespace Global.Iris.Assist
             _teto = Math.Max(teto, 1)
         End Sub
 
+        ''' <summary>
+        ''' Monta, ou <b>recusa</b>.
+        '''
+        ''' Recusa quando nem o envelope <b>vazio</b> cabe no teto — o que
+        ''' acontece com teto pequeno demais ou instrução do usuário enorme. A
+        ''' versão anterior devolvia, nesse caso, um envelope maior que o teto:
+        ''' o laço só media ao acrescentar mensagem, então o esqueleto e a
+        ''' instrução passavam por fora da conta.
+        '''
+        ''' Depois de serializar, <c>Comprimento &lt;= teto</c> vale sempre. Um
+        ''' envelope que não cabe não é um envelope pequeno: é um envelope que
+        ''' o provedor vai recusar depois de o conteúdo já ter saído da máquina.
+        ''' </summary>
         Public Function Montar(operacao As AssistOperation, instrucao As String,
-                               partes As IReadOnlyList(Of MessagePart)) As AssistEnvelope
+                               partes As IReadOnlyList(Of MessagePart)) As EnvelopeResult
+
+            ' O ESQUELETO primeiro. Se nem ele cabe, nao ha o que truncar.
+            If Serializar(operacao, instrucao, Array.Empty(Of MessagePart)(),
+                          partes.Count, False).Length > _teto Then
+                Return New EnvelopeResult(Nothing, EnvelopeRefusal.NemVazioCabe)
+            End If
 
             Dim entram As New List(Of MessagePart)()
             Dim omitidas = 0
@@ -191,6 +238,11 @@ Namespace Global.Iris.Assist
             ' a cada uma. Estimar o custo de uma mensagem e somar daria um
             ' numero proximo e errado - o JSON tem escaping, e escaping depende
             ' do conteudo.
+            '
+            ' A medicao de cada tentativa supoe as omitidas que AINDA VAO
+            ' acontecer, entao ela e conservadora: pode deixar de fora uma
+            ' mensagem que caberia no resultado final. Isso e desperdicio, nao
+            ' vazamento, e fica declarado em vez de escondido.
             For Each p In partes
                 Dim tentativa = New List(Of MessagePart)(entram) From {p}
                 If Serializar(operacao, instrucao, tentativa, partes.Count - tentativa.Count,
@@ -205,8 +257,17 @@ Namespace Global.Iris.Assist
             Dim incompleto = entram.Any(Function(p) Not p.CorpoCompleto)
             Dim bytes = Serializar(operacao, instrucao, entram, omitidas, incompleto)
 
-            Return New AssistEnvelope(bytes, entram.Select(Function(p) p.Item).ToList(),
-                                      truncado, omitidas, incompleto)
+            ' A invariante, conferida DEPOIS da serializacao final. O laco
+            ' acima mede cada tentativa com uma contagem de omitidas que ainda
+            ' vai mudar, entao a conta final e a unica que vale.
+            If bytes.Length > _teto Then
+                Return New EnvelopeResult(Nothing, EnvelopeRefusal.NemVazioCabe)
+            End If
+
+            Return New EnvelopeResult(
+                New AssistEnvelope(bytes, entram.Select(Function(p) p.Item),
+                                   truncado, omitidas, incompleto),
+                EnvelopeRefusal.Nenhuma)
         End Function
 
         ' ==============================================================

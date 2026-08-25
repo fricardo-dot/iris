@@ -80,6 +80,75 @@ Namespace Global.Iris.Assist
     End Class
 
     ''' <summary>
+    ''' <b>O "sim", em forma de objeto — e preso a tudo que o tornou um sim.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE UM BOOLEANO NÃO BASTA</b>
+    '''
+    ''' O cofre de capabilities pedia só <c>decisao.Permitido</c> e depois
+    ''' aceitava, separadamente, qualquer ativação, qualquer destino e qualquer
+    ''' envelope. Ou seja: um "sim" dado para a ativação A, destino A e
+    ''' mensagens A emitia autorização para a ativação B, destino B e conteúdo B.
+    '''
+    ''' O veredito era verdadeiro e a emissão era sobre outra coisa.
+    '''
+    ''' Aqui o "sim" carrega <b>o que foi aprovado</b>: qual ativação e em que
+    ''' versão, qual operação, qual destino, qual pasta, quais itens e em que
+    ''' versão deles. O emissor não precisa perguntar nada a mais — e não pode.
+    '''
+    ''' Construtor <c>Friend</c>: só a política emite.
+    ''' </summary>
+    Public NotInheritable Class DisclosureGrant
+
+        Public ReadOnly Property AtivacaoId As String
+        Public ReadOnly Property AtivacaoVersao As Integer
+        Public ReadOnly Property Operacao As AssistOperation
+        Public ReadOnly Property Destino As AssistDestination
+        Public ReadOnly Property Pasta As FolderKey
+        ''' <summary>Os itens aprovados, na ordem em que foram aprovados.</summary>
+        Public ReadOnly Property Itens As IReadOnlyList(Of ItemKey)
+        ''' <summary>
+        ''' A <c>PR_CHANGE_KEY</c> de cada item, na MESMA ordem.
+        '''
+        ''' Aprovar "o item X" não é aprovar "o item X como ele estiver": o
+        ''' rótulo foi lido de uma versão, e é essa versão que passou pelo
+        ''' portão.
+        ''' </summary>
+        Public ReadOnly Property Versoes As IReadOnlyList(Of String)
+        ''' <summary>Quando a ativação vence, se vencer.</summary>
+        Public ReadOnly Property AtivacaoAte As DateTimeOffset?
+
+        Friend Sub New(ativacaoId As String, ativacaoVersao As Integer,
+                       operacao As AssistOperation, destino As AssistDestination,
+                       pasta As FolderKey, itens As IEnumerable(Of ItemKey),
+                       versoes As IEnumerable(Of String), ativacaoAte As DateTimeOffset?)
+            Me.AtivacaoId = ativacaoId
+            Me.AtivacaoVersao = ativacaoVersao
+            Me.Operacao = operacao
+            Me.Destino = destino
+            Me.Pasta = pasta
+            Me.Itens = Array.AsReadOnly(itens.ToArray())
+            Me.Versoes = Array.AsReadOnly(versoes.ToArray())
+            Me.AtivacaoAte = ativacaoAte
+        End Sub
+
+        ''' <summary>
+        ''' Estes são <b>exatamente</b> os itens aprovados, na ordem aprovada?
+        '''
+        ''' Ordinal e por posição: item a mais, item a menos e item trocado de
+        ''' lugar são três coisas diferentes, e nenhuma delas foi aprovada.
+        ''' </summary>
+        Public Function Cobre(itens As IReadOnlyList(Of ItemKey)) As Boolean
+            If itens Is Nothing OrElse itens.Count <> Me.Itens.Count Then Return False
+            For i = 0 To itens.Count - 1
+                If Not Me.Itens(i).Equals(itens(i)) Then Return False
+            Next
+            Return True
+        End Function
+
+    End Class
+
+    ''' <summary>
     ''' O veredito. <b>Nasce negado</b>, e é preciso prova para virar.
     '''
     ''' Carrega <b>todas</b> as violações das mensagens, não só a primeira.
@@ -97,12 +166,18 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Violacoes As IReadOnlyList(Of DisclosureViolation)
         ''' <summary>Quantas violações houve ao todo, inclusive as não listadas.</summary>
         Public ReadOnly Property Total As Integer
+        ''' <summary>
+        ''' O que foi aprovado. <c>Nothing</c> quando negou, e <c>Nothing</c>
+        ''' também no preflight — que aprova o voo, não o conteúdo.
+        ''' </summary>
+        Public ReadOnly Property Grant As DisclosureGrant
 
         Private Sub New(permitido As Boolean, violacoes As IReadOnlyList(Of DisclosureViolation),
-                        total As Integer)
+                        total As Integer, grant As DisclosureGrant)
             Me.Permitido = permitido
             Me.Violacoes = violacoes
             Me.Total = total
+            Me.Grant = grant
         End Sub
 
         ''' <summary>O motivo principal: o primeiro, e por isso determinístico.</summary>
@@ -133,11 +208,13 @@ Namespace Global.Iris.Assist
         End Function
 
         Friend Shared Function Negar(v As IReadOnlyList(Of DisclosureViolation)) As DisclosureDecision
-            Return New DisclosureDecision(False, v.Take(Teto).ToList(), v.Count)
+            Return New DisclosureDecision(False, Array.AsReadOnly(v.Take(Teto).ToArray()),
+                                          v.Count, Nothing)
         End Function
 
-        Friend Shared Function Permitir() As DisclosureDecision
-            Return New DisclosureDecision(True, Array.Empty(Of DisclosureViolation)(), 0)
+        Friend Shared Function Permitir(Optional grant As DisclosureGrant = Nothing) _
+                                        As DisclosureDecision
+            Return New DisclosureDecision(True, Array.Empty(Of DisclosureViolation)(), 0, grant)
         End Function
 
     End Class
@@ -372,7 +449,19 @@ Namespace Global.Iris.Assist
             Next
 
             If violacoes.Count > 0 Then Return DisclosureDecision.Negar(violacoes)
-            Return DisclosureDecision.Permitir()
+
+            ' O "sim" sai carregando o que o tornou um sim: ativacao, versao,
+            ' operacao, destino, pasta, itens e as VERSOES dos itens. Sem isso
+            ' o cofre emitiria autorizacao para outro envelope com o mesmo
+            ' booleano.
+            Dim g As New DisclosureGrant(
+                _ativacao.Id, _ativacao.Versao,
+                pedido.Preflight.Operacao, pedido.Preflight.Destino, pedido.Preflight.Pasta,
+                pedido.Mensagens.Select(Function(m) m.Item),
+                pedido.Mensagens.Select(Function(m) m.Leitura.Version.ChangeKey),
+                _ativacao.Ate)
+
+            Return DisclosureDecision.Permitir(g)
         End Function
 
         ' ==============================================================

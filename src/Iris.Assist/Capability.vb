@@ -39,6 +39,17 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Hash As String
         Public ReadOnly Property Comprimento As Integer
         Public ReadOnly Property Itens As IReadOnlyList(Of ItemKey)
+        ''' <summary>
+        ''' A versão de cada item, na mesma ordem — a versão que passou pelo
+        ''' portão, não "o item como estiver".
+        ''' </summary>
+        Public ReadOnly Property Versoes As IReadOnlyList(Of String)
+        Public ReadOnly Property Pasta As FolderKey
+        ''' <summary>
+        ''' Liga capability, diário e resposta. Sem ele, três registros da mesma
+        ''' operação são três coisas que <i>parecem</i> a mesma.
+        ''' </summary>
+        Public ReadOnly Property RequestId As Guid
         Public ReadOnly Property Emitida As DateTimeOffset
         Public ReadOnly Property Expira As DateTimeOffset
 
@@ -47,19 +58,20 @@ Namespace Global.Iris.Assist
         ''' emite. Uma capability que qualquer um pudesse construir seria uma
         ''' afirmação de que houve autorização, sem que tivesse havido.
         ''' </summary>
-        Friend Sub New(id As Guid, ativacaoId As String, ativacaoVersao As Integer,
-                       operacao As AssistOperation, destino As AssistDestination,
+        Friend Sub New(id As Guid, requestId As Guid, grant As DisclosureGrant,
                        hash As String, comprimento As Integer,
-                       itens As IReadOnlyList(Of ItemKey),
                        emitida As DateTimeOffset, expira As DateTimeOffset)
             Me.Id = id
-            Me.AtivacaoId = ativacaoId
-            Me.AtivacaoVersao = ativacaoVersao
-            Me.Operacao = operacao
-            Me.Destino = destino
+            Me.RequestId = requestId
+            AtivacaoId = grant.AtivacaoId
+            AtivacaoVersao = grant.AtivacaoVersao
+            Operacao = grant.Operacao
+            Destino = grant.Destino
+            Pasta = grant.Pasta
+            Itens = grant.Itens
+            Versoes = grant.Versoes
             Me.Hash = hash
             Me.Comprimento = comprimento
-            Me.Itens = itens
             Me.Emitida = emitida
             Me.Expira = expira
         End Sub
@@ -83,6 +95,13 @@ Namespace Global.Iris.Assist
         OperacaoDiferente
         ''' <summary>O envelope não confere consigo mesmo.</summary>
         EnvelopeCorrompido
+        ''' <summary>
+        ''' Os itens do envelope não são os aprovados. Existe porque o
+        ''' <c>EntryID</c> deliberadamente não entra nos bytes: dois envelopes
+        ''' com o mesmo texto e itens diferentes têm o <b>mesmo hash</b>, então
+        ''' o hash sozinho não prova proveniência.
+        ''' </summary>
+        ProveniencaDiferente
     End Enum
 
     Public NotInheritable Class CapabilityUse
@@ -133,24 +152,58 @@ Namespace Global.Iris.Assist
         Private ReadOnly _consumidas As New ConcurrentDictionary(Of Guid, Byte)()
 
         ''' <summary>
-        ''' Emite. <b>Só depois de o portão permitir</b> — quem chama tem de ter
-        ''' a decisão em mãos, e uma decisão negada não emite nada.
+        ''' Emite, a partir do <see cref="DisclosureGrant"/> — e <b>só</b> dele.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE NÃO BASTA "A DECISÃO FOI PERMITIDA"</b>
+        '''
+        ''' A versão anterior pedia <c>decisao.Permitido</c> e depois aceitava,
+        ''' em parâmetros separados, qualquer ativação, qualquer destino e
+        ''' qualquer envelope. Um "sim" dado para a ativação A, destino A e
+        ''' mensagens A emitia autorização para a ativação B, destino B e
+        ''' conteúdo B. O veredito era verdadeiro; a emissão era sobre outra
+        ''' coisa.
+        '''
+        ''' Agora tudo vem do grant, e o que o chamador traz de fora — o
+        ''' envelope — é <b>conferido contra ele</b>.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>TRUNCADO E INCOMPLETO NÃO SÃO EMITÍVEIS</b>
+        '''
+        ''' A §29.1 diz que um membro não permitido nega a thread inteira. Pela
+        ''' mesma razão, uma thread que não coube <b>não</b> vira uma thread
+        ''' menor: o resumo sairia parecendo completo. Idem corpo pela metade.
+        '''
+        ''' O envelope continua sabendo dizer que truncou — é o que a UI usa
+        ''' para explicar. Ele só não vira autorização.
         ''' </summary>
-        Public Function Emitir(decisao As DisclosureDecision, ativacao As ActivationRecord,
-                               pedido As PreflightRequest, envelope As AssistEnvelope,
+        Public Function Emitir(decisao As DisclosureDecision, envelope As AssistEnvelope,
                                agora As DateTimeOffset) As DisclosureCapability
 
             If decisao Is Nothing OrElse Not decisao.Permitido Then Return Nothing
-            If ativacao Is Nothing OrElse envelope Is Nothing OrElse pedido Is Nothing Then
-                Return Nothing
+            Dim g = decisao.Grant
+            If g Is Nothing OrElse envelope Is Nothing Then Return Nothing
+
+            ' Envelope que nao confere consigo mesmo nao vira autorizacao.
+            If Not envelope.Integro() Then Return Nothing
+
+            ' Meia thread e meio corpo nao sao autorizaveis.
+            If envelope.Truncado OrElse envelope.CorpoIncompleto Then Return Nothing
+
+            ' E os itens tem de ser EXATAMENTE os aprovados, na ordem aprovada.
+            If Not g.Cobre(envelope.Itens) Then Return Nothing
+
+            ' O prazo e o MENOR entre a validade curta da capability e o fim da
+            ' propria ativacao. Uma capability que sobrevivesse a autorizacao
+            ' que a gerou seria uma autorizacao a mais, emitida por ninguem.
+            Dim expira = agora + Validade
+            If g.AtivacaoAte.HasValue AndAlso g.AtivacaoAte.Value < expira Then
+                expira = g.AtivacaoAte.Value
             End If
 
-            Dim c As New DisclosureCapability(
-                Guid.NewGuid(), ativacao.Id, ativacao.Versao,
-                pedido.Operacao, pedido.Destino,
-                envelope.Hash, envelope.Comprimento, envelope.Itens,
-                agora, agora + Validade)
-
+            Dim c As New DisclosureCapability(Guid.NewGuid(), Guid.NewGuid(), g,
+                                              envelope.Hash, envelope.Comprimento,
+                                              agora, expira)
             _emitidas(c.Id) = c
             Return c
         End Function
@@ -158,10 +211,22 @@ Namespace Global.Iris.Assist
         ''' <summary>
         ''' Confere e <b>gasta</b>. Chamada imediatamente antes de transmitir.
         '''
-        ''' A ordem das conferências importa: identidade primeiro, depois
-        ''' consumo, depois prazo, e só então os bytes. Conferir os bytes de uma
-        ''' capability que não é deste cofre seria trabalho sobre um objeto que
-        ''' já não vale.
+        ''' ------------------------------------------------------------------
+        ''' <b>VALIDA PRIMEIRO, GASTA DEPOIS</b>
+        '''
+        ''' A versão anterior marcava o consumo antes de conferir, com o
+        ''' argumento de que devolver a capability faria dela um oráculo — daria
+        ''' para tentar envelope atrás de envelope até um bater.
+        '''
+        ''' O argumento não se sustenta: a capability <b>já expõe</b> o hash
+        ''' esperado, e as recusas já são distintas. Não há segredo a adivinhar.
+        ''' O que existia era o contrário — qualquer código com uma referência à
+        ''' capability podia queimá-la passando destino errado.
+        '''
+        ''' A ordem certa é validar tudo e, por último, fazer o
+        ''' <c>TryAdd</c> atômico: duas transmissões simultâneas continuam
+        ''' impossíveis, e uma conferência local errada não destrói a
+        ''' autorização.
         ''' </summary>
         Public Function Consumir(c As DisclosureCapability, envelope As AssistEnvelope,
                                  destino As AssistDestination, operacao As AssistOperation,
@@ -170,14 +235,7 @@ Namespace Global.Iris.Assist
             If c Is Nothing OrElse Not _emitidas.ContainsKey(c.Id) Then
                 Return Recusar(CapabilityRefusal.Desconhecida)
             End If
-
-            ' Marca o consumo ANTES de qualquer outra coisa poder falhar por
-            ' motivo transitorio. Uma capability que fosse "devolvida" quando a
-            ' conferencia falha viraria um oraculo: da para testar hash ate
-            ' acertar.
-            If Not _consumidas.TryAdd(c.Id, 0) Then
-                Return Recusar(CapabilityRefusal.JaConsumida)
-            End If
+            If _consumidas.ContainsKey(c.Id) Then Return Recusar(CapabilityRefusal.JaConsumida)
 
             If agora > c.Expira Then Return Recusar(CapabilityRefusal.Expirada)
 
@@ -187,6 +245,14 @@ Namespace Global.Iris.Assist
             If Not String.Equals(envelope.Hash, c.Hash, StringComparison.Ordinal) OrElse
                envelope.Comprimento <> c.Comprimento Then
                 Return Recusar(CapabilityRefusal.BytesDiferentes)
+            End If
+
+            ' O hash NAO cobre a proveniencia: o EntryID nao entra nos bytes,
+            ' entao dois envelopes com o mesmo texto e itens diferentes tem o
+            ' mesmo hash. Sem esta conferencia, conteudo aprovado para uma
+            ' mensagem sairia registrado como vindo de outra.
+            If Not MesmosItens(envelope.Itens, c.Itens) Then
+                Return Recusar(CapabilityRefusal.ProveniencaDiferente)
             End If
 
             If operacao <> c.Operacao Then Return Recusar(CapabilityRefusal.OperacaoDiferente)
@@ -201,7 +267,21 @@ Namespace Global.Iris.Assist
                 Return Recusar(CapabilityRefusal.DestinoDiferente)
             End If
 
+            ' Por ULTIMO, e atomico: quem vencer o TryAdd transmite.
+            If Not _consumidas.TryAdd(c.Id, 0) Then
+                Return Recusar(CapabilityRefusal.JaConsumida)
+            End If
+
             Return New CapabilityUse(True, CapabilityRefusal.Nenhuma)
+        End Function
+
+        Private Shared Function MesmosItens(a As IReadOnlyList(Of ItemKey),
+                                            b As IReadOnlyList(Of ItemKey)) As Boolean
+            If a Is Nothing OrElse b Is Nothing OrElse a.Count <> b.Count Then Return False
+            For i = 0 To a.Count - 1
+                If Not a(i).Equals(b(i)) Then Return False
+            Next
+            Return True
         End Function
 
         Private Shared Function Recusar(r As CapabilityRefusal) As CapabilityUse
