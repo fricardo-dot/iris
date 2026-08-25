@@ -1,0 +1,866 @@
+<title>Iris — Fase 3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+
+<style>
+:root {
+  --ground:      #F5F7F9;
+  --surface:     #FFFFFF;
+  --surface-alt: #EDF1F4;
+  --ink:         #14202A;
+  --ink-soft:    #3D4C59;
+  --ink-mute:    #6B7885;
+  --rule:        #D8E0E7;
+  --rule-soft:   #E7ECF1;
+  --accent:      #14606E;
+  --accent-soft: #E0EFF1;
+
+  --medido:      #2C6647;
+  --medido-bg:   #E2EFE7;
+  --parcial:     #8A5A0E;
+  --parcial-bg:  #F5EBD9;
+  --falta:       #A03428;
+  --falta-bg:    #F6E3E0;
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --measure: 34rem;
+  --wide: 60rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0F161C;
+    --surface:     #151E26;
+    --surface-alt: #1B242D;
+    --ink:         #E3E9EE;
+    --ink-soft:    #B4C0CB;
+    --ink-mute:    #8593A0;
+    --rule:        #2A3742;
+    --rule-soft:   #212C35;
+    --accent:      #5EB6C4;
+    --accent-soft: #16323A;
+
+    --medido:      #6FBE8E;
+    --medido-bg:   #162C21;
+    --parcial:     #D8A548;
+    --parcial-bg:  #2E2415;
+    --falta:       #E0796A;
+    --falta-bg:    #331D19;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0F161C;
+  --surface:     #151E26;
+  --surface-alt: #1B242D;
+  --ink:         #E3E9EE;
+  --ink-soft:    #B4C0CB;
+  --ink-mute:    #8593A0;
+  --rule:        #2A3742;
+  --rule-soft:   #212C35;
+  --accent:      #5EB6C4;
+  --accent-soft: #16323A;
+
+  --medido:      #6FBE8E;
+  --medido-bg:   #162C21;
+  --parcial:     #D8A548;
+  --parcial-bg:  #2E2415;
+  --falta:       #E0796A;
+  --falta-bg:    #331D19;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  margin: 0;
+  padding: 0 1.25rem 6rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: var(--wide);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+/* Texto corre estreito; evidência quebra largo. */
+.page > * { max-width: var(--measure); }
+.page > .wide { max-width: 100%; width: 100%; }
+
+/* ---------- cabeçalho ---------- */
+
+header.head {
+  max-width: 100%;
+  border-bottom: 2px solid var(--ink);
+  padding: 4rem 0 1.5rem;
+  margin-bottom: .5rem;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: .75rem;
+  font-weight: 500;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1.25rem;
+}
+
+h1 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: clamp(2rem, 5.5vw, 3.1rem);
+  line-height: 1.06;
+  letter-spacing: -.025em;
+  text-wrap: balance;
+  margin: 0 0 1rem;
+}
+
+.dek {
+  font-size: 1.15rem;
+  color: var(--ink-soft);
+  max-width: 38rem;
+  margin: 0 0 2rem;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 2rem;
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+}
+.meta b { color: var(--ink-soft); font-weight: 500; }
+
+/* ---------- títulos ---------- */
+
+h2 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.5rem;
+  letter-spacing: -.015em;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 2rem 0 0;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--rule);
+  max-width: var(--measure);
+}
+h2 .num {
+  font-family: var(--mono);
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--accent);
+  display: block;
+  margin-bottom: .5rem;
+  letter-spacing: .08em;
+}
+
+h3 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  letter-spacing: -.005em;
+  margin: 1.5rem 0 0;
+}
+
+p { margin: 0; }
+.page > p + p, .page > h3 + p { margin-top: 0 }
+
+strong { font-weight: 600; color: var(--ink); }
+em { font-style: italic; }
+
+code, .mono {
+  font-family: var(--mono);
+  font-size: .875em;
+  background: var(--surface-alt);
+  padding: .1em .35em;
+  border-radius: 3px;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+/* ---------- chips de estado ---------- */
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  font-family: var(--sans);
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: .25em .6em;
+  border-radius: 3px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.chip::before {
+  content: "";
+  width: .45em; height: .45em;
+  border-radius: 50%;
+  background: currentColor;
+}
+.chip.medido  { color: var(--medido);  background: var(--medido-bg); }
+.chip.parcial { color: var(--parcial); background: var(--parcial-bg); }
+.chip.falta   { color: var(--falta);   background: var(--falta-bg); }
+
+/* ---------- painel de resumo ---------- */
+
+.resumo {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.resumo h2 {
+  border: 0; padding: 0; margin: 0;
+  font-size: 1.1rem;
+}
+.resumo ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .55rem; }
+.resumo li::marker { color: var(--accent); }
+
+/* ---------- caixa de números ---------- */
+
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.numeros div {
+  background: var(--surface);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.numeros .v {
+  font-family: var(--sans);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.numeros .k {
+  font-family: var(--mono);
+  font-size: .7rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+/* ---------- tabelas ---------- */
+
+.tabela-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--sans);
+  font-size: .875rem;
+  font-variant-numeric: tabular-nums;
+}
+caption {
+  caption-side: top;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: .9rem 1rem .6rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+th, td {
+  text-align: left;
+  padding: .6rem 1rem;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+thead th {
+  font-weight: 600;
+  font-size: .72rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  white-space: nowrap;
+  background: var(--surface-alt);
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-family: var(--mono); }
+td.mono-c { font-family: var(--mono); font-size: .8rem; }
+td.dim { color: var(--ink-mute); }
+
+/* faixa de severidade na tabela de critérios */
+td.st { border-left: 3px solid transparent; }
+tr.s-ok  td.st { border-left-color: var(--medido); }
+tr.s-par td.st { border-left-color: var(--parcial); }
+tr.s-nao td.st { border-left-color: var(--falta); }
+
+/* ---------- bloco de código / saída ---------- */
+
+pre {
+  margin: 0;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1rem 1.1rem;
+  font-family: var(--mono);
+  font-size: .8rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ---------- citação / princípio ---------- */
+
+.principio {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 1rem 1.25rem;
+  border-radius: 0 4px 4px 0;
+  font-size: 1.05rem;
+}
+.principio p + p { margin-top: .6rem; }
+
+/* ---------- nota de rodapé de seção ---------- */
+
+.nota {
+  font-size: .95rem;
+  color: var(--ink-mute);
+  border-top: 1px solid var(--rule-soft);
+  padding-top: .9rem;
+}
+
+/* ---------- lista de ações ---------- */
+
+.acoes { display: flex; flex-direction: column; gap: 1rem; margin: 0; padding: 0; }
+.acoes > div {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1.1rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+.acoes h3 { margin: 0; }
+.acoes p { font-size: .97rem; color: var(--ink-soft); }
+.tempo {
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+footer {
+  max-width: 100%;
+  border-top: 1px solid var(--rule);
+  padding-top: 1.25rem;
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--ink-mute);
+  line-height: 1.8;
+}
+
+@media (max-width: 640px) {
+  h2 { font-size: 1.3rem; }
+  .resumo, .acoes > div { padding: 1.1rem 1.15rem; }
+  body { padding-bottom: 4rem; }
+}
+</style>
+
+<div class="page">
+
+<header class="head">
+  <p class="eyebrow">Iris · Relatório de fim de fase</p>
+  <h1>Fase 3 — a IA que ainda não fala com ninguém</h1>
+  <p class="dek">
+    Sete marcos construíram o caminho do assistente: ler o rótulo do Purview,
+    decidir se o conteúdo pode sair, prender a autorização aos bytes, registrar
+    em diário durável, atravessar a porta HTTP e aparecer na janela.
+    <strong>Implementação e provas locais concluídas; ativação operacional e
+    aceitação contra provedor real continuam bloqueadas.</strong>
+  </p>
+  <div class="meta">
+    <span><b>25 de agosto de 2026</b></span>
+    <span>642 testes · <b>0 falhas</b> · 0 pulados</span>
+    <span>30 commits · 7 marcos técnicos (3.0–3.6)</span>
+    <span><code>95c19f1</code> → <code>433c244</code></span>
+  </div>
+</header>
+
+<div class="resumo">
+  <h2>O que importa saber, se você ler só isto</h2>
+  <ul>
+    <li><strong>No commit <code>433c244</code>, o caminho de produção da IA não
+    consegue mandar bytes para endpoint externo.</strong> O provedor de produção
+    é o <code>AssistenteIndisponivel</code>, que não tem destino nenhum, e o
+    portão recusa antes de ler qualquer mensagem. Há teste que prova isso pela
+    cadeia inteira.</li>
+    <li><strong>A IA não envia e-mail.</strong> <em>Redigir</em> só preenche o
+    compositor; o envio existente continua exigindo a sua confirmação, com a
+    prévia de sempre.</li>
+    <li><strong>O que falta não é só ligar um interruptor.</strong> Falta a
+    <em>cerimônia de ativação</em> da §28.3 — decisão sua — e falta o adaptador
+    do provedor externo, que é código e só pode ser escrito depois dela.</li>
+    <li><strong>Produção processa a mensagem selecionada, não a conversa.</strong>
+    Reconstruir thread está fora do escopo, e juntar mensagens que
+    <em>parecem</em> da mesma conversa seria decidir divulgação por
+    semelhança.</li>
+    <li><strong>Nas onze passadas de revisão do 3.5 e do 3.6, o Codex numerou 27
+    defeitos meus.</strong> Quase nenhum aparecia em teste verde — a exceção está
+    contada abaixo, e é sobre mim.</li>
+    <li><strong>Não há divergência pendente</strong> entre mim e o Codex. O
+    registro passada a passada está em <code>REVISOES-FASE3.md</code>.</li>
+  </ul>
+</div>
+
+<div class="numeros wide">
+  <div><span class="v">642</span><span class="k">testes</span></div>
+  <div><span class="v">0</span><span class="k">falhas</span></div>
+  <div><span class="v">27</span><span class="k">defeitos no 3.5 e 3.6</span></div>
+  <div><span class="v">7</span><span class="k">marcos aprovados</span></div>
+  <div><span class="v">30</span><span class="k">commits</span></div>
+  <div><span class="v">6</span><span class="k">blocos de pendência</span></div>
+</div>
+
+<p class="nota">
+  A execução da suíte está versionada em <code>RESULTADO-SUITE.md</code>, presa
+  ao commit e à versão do SDK — sem isso, "0 falhas" seria uma afirmação minha
+  que ninguém consegue conferir. O registro das passadas de revisão está em
+  <code>REVISOES-FASE3.md</code>, e é o meu resumo delas: os vereditos são
+  conversa, não artefato do repositório.
+</p>
+
+<h2><span class="num">§ 1</span>Os sete marcos</h2>
+
+<p>
+  Cada um foi escrito, revisado pelo Codex, rejeitado, corrigido, e revisado de
+  novo até passar. O 3.5 precisou de sete passadas de revisão; o 3.6, de quatro.
+  O plano da fase enumera ainda um 3.7, que é este relatório.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>Marcos da Fase 3 · o que cada um entrega</caption>
+  <thead>
+    <tr><th>Marco</th><th>O que entrega</th><th>O que ele impede</th></tr>
+  </thead>
+  <tbody>
+    <tr class="s-ok">
+      <td class="st mono-c">3.0</td>
+      <td>A medição do Purview nesta caixa, pelo broker real, só leitura</td>
+      <td>Desenhar sobre suposição: a leitura de rótulo foi medida, não imaginada</td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st mono-c">3.1</td>
+      <td>O portão — permissão como conjunção fechada de provas positivas</td>
+      <td>"Não achei motivo para negar" virar autorização</td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st mono-c">3.2</td>
+      <td>O envelope, e a capability presa ao hash, itens e versões dele</td>
+      <td>Autorizar um conteúdo e transmitir outro</td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st mono-c">3.3</td>
+      <td>O diário durável, cinco passos, com protocolo de crash</td>
+      <td>Conteúdo sair sem ninguém saber que saiu</td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st mono-c">3.4</td>
+      <td>A porta HTTP, o servidor falso local, egress num assembly só</td>
+      <td>Rede aparecer em camada que não devia ter rede</td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st mono-c">3.5</td>
+      <td>A faixa da IA: motivo em português, resumo, rascunho com desfazer</td>
+      <td>Proteção existir no ViewModel e não estar ligada a nada</td>
+    </tr>
+    <tr class="s-ok">
+      <td class="st mono-c">3.6</td>
+      <td>Provas adversariais do contrato do broker à porta do provedor</td>
+      <td>Cada camada estar certa e a costura entre elas, errada</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">§ 2</span>As seis decisões que definem a fase</h2>
+
+<h3>Permissão é conjunção fechada de provas positivas</h3>
+<p>
+  O portão não procura motivos para negar. Ele exige que <em>cada</em> condição
+  seja provada: ativação completa, coerente e vigente; endpoint HTTPS e
+  autorizado; operação autorizada; pasta autorizada; rótulo elegível e listado.
+  Faltando qualquer uma, nega — inclusive quando a razão da falta é "não
+  consegui ler".
+</p>
+
+<h3>A autorização está presa aos bytes, não à intenção</h3>
+<p>
+  A capability carrega o hash do envelope, o comprimento, os itens, as versões
+  <code>PR_CHANGE_KEY</code>, o destino e a operação. É de uso único. Trocar um
+  byte, um item, uma versão ou o destino entre autorizar e transmitir faz o cofre
+  recusar — e a conferência acontece duas vezes, na emissão e no consumo, porque
+  entre os dois momentos o envelope passa por código que pode mudar.
+</p>
+
+<h3>Leitura tem retry; mutação, não</h3>
+<p>
+  Transmitir não é idempotente. Falha depois de o voo começar é
+  <code>Ambíguo</code>, e ambíguo <strong>nunca</strong> é retentável nem
+  revertido. A tela diz, com todas as letras, que pode ter saído conteúdo e que
+  não dá para saber.
+</p>
+
+<h3>O rótulo nega, e não autoriza</h3>
+<p>
+  <code>MSIP_Labels</code> vive numa <em>named property</em> do namespace de
+  cabeçalhos de internet, e cabeçalho recebido pode ter origem fora do mecanismo
+  corporativo. Ler com perfeição não prova que ninguém consegue apresentar um
+  valor falso de classificação baixa. Daí a assimetria: sinal restritivo serve
+  para <strong>negar</strong>; ausência ou rótulo baixo não servem, sozinhos,
+  para <strong>permitir</strong>.
+</p>
+
+<h3>A porta HTTP fica num assembly só</h3>
+<p>
+  <code>Iris.Integration.Assist.Http</code> é o único assembly com a capacidade
+  HTTP que a Fase 3 abre, e há teste que varre os assemblies compilados e falha
+  se um segundo referenciar biblioteca de rede. <strong>Isso não prova ausência
+  de todo egress concebível</strong> — socket cru, processo externo, um COM que
+  busque URL seriam outras portas, e fechá-las exigiria outras provas. O
+  construtor público não consegue habilitar HTTP: o desvio de <em>loopback</em>
+  mora num construtor <code>Friend</code>, alcançável só pelos testes.
+</p>
+
+<h3>A resposta do modelo é dado passivo</h3>
+<p>
+  Ela vem de um lugar que leu o e-mail, que por sua vez veio de fora. Atravessa
+  até um <code>TextBlock</code> — não um controle que interprete Markdown, HTML
+  ou link — e até o rascunho editável, literal. Há teste que instancia a faixa de
+  verdade e lê o texto do controle real.
+</p>
+
+<h2><span class="num">§ 3</span>Injeção de prompt: onde fica a fronteira honesta</h2>
+
+<div class="principio">
+  <p>
+    O que se prova é <strong>estrutural</strong>: conteúdo não escolhe endpoint,
+    não escolhe operação, não vira instrução de sistema, e não quebra o JSON.
+  </p>
+  <p>
+    O que <strong>não</strong> se prova, e não se finge provar: que o modelo não
+    obedeça à frase. Campos separados reduzem ambiguidade e não são barreira.
+    Uma barreira de mentira é pior que nenhuma, porque alguém confia nela.
+  </p>
+</div>
+
+<p>
+  A prova de <em>escaping</em> é feita com <code>JsonDocument</code> sobre os
+  bytes que saíram — não sobre o objeto que os produziu — com uma carga montada
+  para fechar o campo <code>corpo</code> e abrir um
+  <code>instrucaoDoSistema</code> do remetente. Vale para assunto, remetente e
+  destinatário também: os quatro campos vêm do e-mail, e uma barreira que olhasse
+  só o corpo deixaria três portas abertas.
+</p>
+
+<h2><span class="num">§ 4</span>O que o Codex pegou, por tipo</h2>
+
+<p>
+  Os vinte e sete defeitos que ele numerou nas onze passadas do 3.5 e do 3.6 —
+  os únicos que dá para contar um a um, porque cada passada os enumerou. (O 3.0
+  tem mais quatro, na §34.4 do <code>FASE3.md</code>; os marcos 3.1 a 3.4 têm o
+  seu registro na mensagem de cada commit de correção, e não os recontei.)
+</p>
+
+<p>
+  Agrupados, contam uma história curta: <strong>eu escrevo proteção que não está
+  ligada a nada</strong>, e quando erro sozinho, erro para o lado de liberar ou
+  para o lado de apagar o trabalho de quem está usando.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>Os 27 defeitos das passadas do 3.5 e do 3.6, por tipo</caption>
+  <thead>
+    <tr><th>Tipo</th><th class="n">Nº</th><th>Exemplo</th></tr>
+  </thead>
+  <tbody>
+    <tr class="s-nao">
+      <td class="st">Proteção existia e não estava ligada a nada</td>
+      <td class="n">6</td>
+      <td><code>Trocou()</code> existia, os testes o chamavam, e na aplicação
+      ninguém chamava. Os botões viviam dentro da borda de aviso e sumiam
+      justamente quando a IA funcionava.</td>
+    </tr>
+    <tr class="s-par">
+      <td class="st">Perda de trabalho do usuário</td>
+      <td class="n">5</td>
+      <td>A redação escrevia por cima do que ele digitou durante a espera — e o
+      <em>Desfazer</em> devolveria o texto de antes do pedido, perdendo a edição
+      por duas vias.</td>
+    </tr>
+    <tr class="s-par">
+      <td class="st">Prova que faltava</td>
+      <td class="n">4</td>
+      <td>O elo do compositor com o adaptador de rascunho: apagar a assinatura
+      de eventos dentro dele não quebrava nada.</td>
+    </tr>
+    <tr class="s-par">
+      <td class="st">Higiene da suíte e da documentação</td>
+      <td class="n">3</td>
+      <td><code>ClearAllPools()</code> global entre classes paralelas; pastas
+      temporárias abandonadas no <code>%TEMP%</code>; uma contagem errada.</td>
+    </tr>
+    <tr class="s-nao">
+      <td class="st">Falha aberta — liberava mais do que devia</td>
+      <td class="n">2</td>
+      <td>A classificação afirmava <code>temAnexo:=False</code> fixo, sem
+      consultar nada. Um portão só, calculado com <em>Resumir</em>, habilitava
+      as duas operações.</td>
+    </tr>
+    <tr class="s-par">
+      <td class="st">Prova que provava outra coisa</td>
+      <td class="n">2</td>
+      <td>O teste de seleção móvel: os preflights já gastavam as visitas
+      contadas, e a corrida que ele descrevia nunca acontecia.</td>
+    </tr>
+    <tr class="s-par">
+      <td class="st">Estado certo e invisível</td>
+      <td class="n">2</td>
+      <td><code>PodeDesfazer</code> recusava e ninguém avisava o WPF: o botão
+      ficava habilitado mostrando estado que já não existia.</td>
+    </tr>
+    <tr class="s-nao">
+      <td class="st">Estado travado</td>
+      <td class="n">1</td>
+      <td>Trocar de mensagem durante um pedido deixava <code>Ocupado</code> em
+      <code>True</code> para sempre, sem saída a não ser fechar o Iris.</td>
+    </tr>
+    <tr class="s-nao">
+      <td class="st">Recurso COM sem dono (R7)</td>
+      <td class="n">1</td>
+      <td><code>TryCast(ns.GetItemFromID(...), MailItem)</code> perde o RCW
+      quando o item existe e não é <code>MailItem</code>.</td>
+    </tr>
+    <tr class="s-nao">
+      <td class="st">Regressão que eu mesmo introduzi</td>
+      <td class="n">1</td>
+      <td>O roteiro de controle negativo apagou uma guarda do cofre e commitou
+      assim.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h3>Os três que eu destacaria</h3>
+
+<p>
+  <strong>O controle negativo salvou a medição do 3.0.</strong> A leitura de
+  rótulo devolveu <code>Blank</code> para 120 de 120 itens, e eu quase concluí
+  que a caixa não usa Purview. O que expôs o erro foi o controle: eu lia uma DASL
+  em minúsculas, que é <em>outra</em> propriedade nomeada — sempre vazia. Sem o
+  nome inventado no conjunto de sondagem, "vazio" e "não existe" seriam
+  indistinguíveis.
+</p>
+
+<p>
+  <strong>A prova só existia sobre a imitação.</strong> Durante boa parte do 3.5,
+  o caminho de produção usava um contexto que recusava tudo, e todos os testes de
+  "fluxo" injetavam duplos. Trocar a produção de volta para a imitação deixaria a
+  suíte inteira verde. O mesmo padrão apareceu de novo no elo
+  <code>ComposerViewModel</code> → <code>RascunhoDoCompositor</code>: apagar a
+  assinatura de eventos dentro do adaptador real não quebrava nada.
+</p>
+
+<p>
+  <strong>O meu próprio roteiro de verificação desligou uma guarda.</strong> Ele
+  fotografava o arquivo antes de <em>cada</em> edição; com duas edições no mesmo
+  arquivo, a segunda foto já era da versão quebrada, e a restauração devolveu o
+  cofre sem a checagem de cobertura — commitada assim. Este é o defeito que
+  <em>teria</em> aparecido em teste verde: a suíte existente o pegaria, e ela
+  simplesmente não foi reexecutada depois do controle. Quem pegou foi o Codex,
+  lendo o código. O roteiro agora fotografa uma vez por arquivo e confere SHA-256
+  ao restaurar, e está versionado em <code>tools/controle-negativo.py</code>.
+</p>
+
+<h2><span class="num">§ 5</span>O que ficou pendente — e o que é decisão sua</h2>
+
+<div class="acoes">
+  <div>
+    <p class="tempo">Bloqueio · decisão do usuário</p>
+    <h3>A cerimônia de ativação (§28.3)</h3>
+    <p>
+      Nada sai enquanto você não declarar, por escrito e por sua conta:
+      <strong>provedor, endpoint HTTPS, modelo, região, política de retenção e de
+      treinamento aceitas, autoridade e política corporativa aplicável, quais
+      operações, quais pastas, quais rótulos e quais desfechos de leitura são
+      permitidos, o tratamento de <code>ContentBits</code> e de histórico, onde a
+      credencial fica guardada</strong> — e qual teste controlado você quer fazer
+      antes de usar de verdade. <code>ActivationRecord.DaProducao</code> devolve
+      <code>Nothing</code> hoje, e é isso que mantém a IA desligada. Não é
+      pendência técnica: é a decisão que a fase inteira foi desenhada para não
+      tomar no seu lugar.
+    </p>
+  </div>
+  <div>
+    <p class="tempo">Código · depende da ativação</p>
+    <h3>O adaptador do provedor externo</h3>
+    <p>
+      Isto <strong>é</strong> código que falta: o formato que a API aceita, a
+      autenticação, a interpretação da resposta, <em>streaming</em>, os códigos
+      de erro dela e os limites reais de tamanho e de taxa. Só pode ser escrito
+      depois de haver um provedor escolhido. O que é requisito <em>do Iris</em> —
+      ler, classificar, montar, registrar, transmitir, mostrar — já existe e está
+      provado localmente.
+    </p>
+  </div>
+  <div>
+    <p class="tempo">Recorte de escopo</p>
+    <h3>Uma mensagem, não a conversa</h3>
+    <p>
+      A produção manda para a IA <strong>a mensagem selecionada</strong>, e só
+      ela. Reconstruir conversa exigiria correlacionar por
+      <code>ConversationID</code> e por assunto, e o ESCOPO diz que reconstrução
+      perfeita de conversa está fora — juntar mensagens que <em>parecem</em> da
+      mesma conversa para mandá-las juntas seria decidir divulgação por
+      semelhança. O mecanismo aceita várias mensagens e é provado com duas; o que
+      não existe é quem as escolha.
+    </p>
+  </div>
+  <div>
+    <p class="tempo">Não medido</p>
+    <h3>Os limites da medição do 3.0</h3>
+    <p>
+      Uma conta e um <em>store</em>; amostra recente, não aleatória. Não foram
+      medidos: caixas compartilhadas, classificação própria de anexos, corpo
+      protegido por IRM e efeito colateral de leitura — abrir corpo protegido
+      pode disparar diálogo de direitos, e você não estava na máquina. Esses
+      estados são tratados como <strong>proibidos</strong>, que é o desfecho
+      seguro. E "efeito colateral não observado" não é o mesmo que "inexistente".
+    </p>
+  </div>
+  <div>
+    <p class="tempo">Não respondível por leitura</p>
+    <h3>A semântica corporativa de ausência, e a autoridade do rótulo</h3>
+    <p>
+      Nenhuma leitura do Outlook diz se "sem rótulo" é corporativamente
+      permitido, nem se um remetente externo consegue fornecer um
+      <code>MSIP_Labels</code> falso. São perguntas de política. Até haver
+      resposta, ausência não autoriza e o rótulo só nega.
+    </p>
+  </div>
+  <div>
+    <p class="tempo">Recorte de prova · decisão de custo</p>
+    <h3>HTTP real dentro da ordem inteira</h3>
+    <p>
+      O transporte é provado contra um <code>HttpListener</code> de verdade; a
+      ordem e o diário, com provedor falso. <strong>Os dois juntos não foram
+      provados.</strong> Não é impossível — um certificado local confiado pelo
+      sistema resolveria — mas custa infraestrutura de teste dedicada, e a
+      alternativa barata (desativar validação de certificado no código de
+      produção) abriria um buraco maior que o que fecharia. Pertence à aceitação
+      contra provedor real.
+    </p>
+  </div>
+</div>
+
+<p class="nota">
+  Há ainda uma pendência de confiabilidade da própria suíte, contada em
+  <code>RESULTADO-SUITE.md</code>: três falhas intermitentes de SQLite ao longo
+  do dia, mitigadas serializando as dez classes que tocam banco, com a causa
+  ainda em hipótese.
+</p>
+
+<h2><span class="num">§ 6</span>O que esta fase deliberadamente não faz</h2>
+
+<p>
+  Não envia e-mail — a redação para no compositor, e o envio continua sendo seu,
+  com a confirmação de sempre. Não escolhe provedor. Não trata anexos: mensagem
+  com anexo é negada, por inteiro, em duas barreiras independentes. Não redige
+  dados sensíveis automaticamente, porque isso não é barreira de compliance e
+  fingir que é seria pior que não ter. E não faz triagem nem busca semântica, que
+  são da Fase 4.
+</p>
+
+<p class="nota">
+  O cache continua guardando <strong>só metadado</strong>: nenhum corpo, nenhum
+  anexo. O diário de divulgação registra o que saiu, quando e para onde — e
+  <em>não</em> o conteúdo. Há teste que confere, depois de uma operação
+  completa, que o texto não está no banco.
+</p>
+
+<h2><span class="num">§ 7</span>Divergências com o Codex</h2>
+
+<p>
+  Nenhuma ficou em aberto. Três merecem registro — duas resolvidas por argumento
+  dele, e uma em que eu estava errado sobre a minha própria justificativa.
+</p>
+
+<p>
+  <strong>Envelope vazio deve continuar válido.</strong> Eu perguntei se recusar
+  no <code>EnvelopeBuilder</code> não seria mais seguro; ele respondeu que o
+  builder não conhece o conjunto aprovado, que a cobertura exata pertence ao
+  cofre, e que uma recusa ali seria defesa especial e incompleta.
+</p>
+
+<p>
+  <strong>A prova de composição por leitura de fonte é suficiente aqui.</strong>
+  Eu submeti explicitamente o desconforto de provar "qual objeto a produção
+  escolheu" lendo o código-fonte do <code>MainViewModel</code>. Ele aceitou: a
+  propriedade é estática, está acompanhada de testes executáveis do contexto
+  real, e construir um <code>MainViewModel</code> exigiria Outlook, cache e
+  Dispatcher.
+</p>
+
+<p>
+  <strong>O recorte do HTTPS local é decisão, e não impossibilidade.</strong> Eu
+  tinha escrito que provar transporte real dentro da ordem inteira
+  <em>exigiria</em> desativar a validação de certificado na produção. Ele apontou
+  que um certificado local confiado pelo sistema também resolveria. O recorte
+  fica, com a justificativa corrigida.
+</p>
+
+<footer>
+  Iris · Fase 3 · relatório gerado em 25 de agosto de 2026<br>
+  642 testes, 0 falhas · 30 commits · <code>95c19f1</code> → <code>433c244</code><br>
+  Detalhe técnico de cada marco em <code>FASE3.md</code> §28–§39 ·
+  execução da suíte em <code>RESULTADO-SUITE.md</code> ·
+  passadas de revisão em <code>REVISOES-FASE3.md</code>.
+</footer>
+
+</div>

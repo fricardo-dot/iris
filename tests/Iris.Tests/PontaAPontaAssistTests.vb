@@ -27,10 +27,14 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' ------------------------------------------------------------------
 ''' <b>POR QUE O PROVEDOR AQUI É FALSO, E ISSO É UM RECORTE DECLARADO</b>
 '''
-''' O portão exige <b>HTTPS</b>, e um servidor HTTPS local exigiria certificado
-''' — e para o cliente aceitá-lo, um desvio de validação de certificado no
-''' código de produção. Esse desvio seria um buraco <b>maior</b> que o que ele
-''' ajudaria a testar: "aceite qualquer certificado" é pior que "aceite http em
+''' O portão exige <b>HTTPS</b>, e um servidor HTTPS local exige certificado que
+''' o cliente aceite. Dá para fazer — com um certificado local confiado pelo
+''' sistema e infraestrutura de teste dedicada —, e é <b>escolha de custo</b>
+''' não fazer, e não impossibilidade.
+'''
+''' O que está descartado é o caminho barato: desativar a validação de
+''' certificado no código de produção seria um buraco <b>maior</b> que o que ele
+''' ajudaria a testar. "Aceite qualquer certificado" é pior que "aceite http em
 ''' loopback".
 '''
 ''' Então as provas ficam separadas, e o que cada uma cobre está dito:

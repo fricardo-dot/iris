@@ -31,7 +31,9 @@ Namespace Global.Iris.Tests
     ''' Não vai do COM ao socket, e dizer que vai seria mentira: o Outlook real
     ''' tem provas próprias no 3.0 e o transporte real tem as dele no
     ''' <see cref="TransporteTests"/>, contra <c>HttpListener</c>. Juntar os dois
-    ''' aqui exigiria furar a exigência de HTTPS do portão, e esse furo seria
+    ''' aqui é possível — com certificado local confiado e infraestrutura de
+    ''' teste própria — e é <b>escolha de custo</b> não fazer. O caminho barato,
+    ''' furar a exigência de HTTPS do portão, está descartado: esse furo seria
     ''' maior que o buraco que ele fecharia.
     '''
     ''' ------------------------------------------------------------------

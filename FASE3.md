@@ -841,10 +841,19 @@ fechado é a que a Fase 3 abre.
 
 ### 37.6 Um recorte de prova que ficou declarado
 
-O portão exige **HTTPS**, e um servidor HTTPS local exigiria certificado — e,
-para o cliente aceitá-lo, um desvio de validação de certificado no código de
-produção. Esse desvio seria um buraco **maior** que o que ajudaria a testar:
-*"aceite qualquer certificado"* é pior que *"aceite http em loopback"*.
+O portão exige **HTTPS**, e um servidor HTTPS local exige certificado que o
+cliente aceite. Há dois caminhos, e é **escolha**, não impossibilidade:
+
+- **certificado local confiado pelo sistema**, com infraestrutura de teste
+  dedicada — custa montagem e manutenção, e é o caminho legítimo;
+- **desativar a validação de certificado no código de produção** — barato, e um
+  buraco **maior** que o que ajudaria a testar. *"Aceite qualquer certificado"* é
+  pior que *"aceite http em loopback"*.
+
+A primeira versão deste parágrafo dizia que o segundo caminho seria *exigido*.
+Não é, e o Codex apontou. O recorte fica pelo custo do primeiro, e não por
+impossibilidade — e afirmar impossibilidade onde há custo é a mesma família de
+erro que esta fase inteira tenta não cometer.
 
 Então as provas ficam separadas: o transporte contra servidor de verdade, e a
 ordem com provedor falso. **O que não está provado é os dois juntos** — HTTP
