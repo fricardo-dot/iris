@@ -367,6 +367,88 @@ store só.
 
 ---
 
+## 34. Resultados do 3.0 — medido em 25/08/2026
+
+Contra a caixa corporativa real, pelo broker/STA, somente leitura. Reproduzível:
+`dotnet test --filter FullyQualifiedName~PurviewMedicao`.
+
+### 34.1 O achado que quase virou conclusão errada
+
+A primeira rodada devolveu `Blank` para **120 de 120** itens. Lido sem cuidado,
+isso é *"ninguém nesta caixa tem rótulo"* — e a fase inteira teria sido
+desenhada em cima disso.
+
+O controle negativo da P7 — ler, **no mesmo item e pelo mesmo caminho**, uma
+propriedade que comprovadamente não existe — mostrou outra coisa:
+
+| DASL | O que aconteceu |
+|---|---|
+| `MSIP_Labels` | lançou `MAPI_E_NOT_FOUND` (`0x8004010F`) |
+| `msip_labels` | devolveu `String` de **0 caracteres** |
+| nome inventado | lançou `MAPI_E_NOT_FOUND` |
+
+**Nome de named property é sensível a maiúsculas**, e a versão minúscula é
+**outra propriedade**, que existe vazia neste store. Eu estava lendo a
+propriedade errada, e ela respondia "vazio" com a mesma cara de "sem rótulo".
+
+E o nome inventado ter lançado prova uma segunda coisa, que valia a pena saber:
+**`GetProperty` não cria mapeamento de named property**. O `msip_labels`
+minúsculo já existia aqui; não fui eu que o criei.
+
+> Sem o controle, a medição teria produzido um número plausível, redondo e
+> falso — a partir de um artefato do meu próprio código.
+
+### 34.2 As respostas
+
+| | Pergunta | Resposta medida |
+|---|---|---|
+| **P1** | A propriedade existe? | **Sim**, sob `.../{00020386-…}/MSIP_Labels` — com a caixa alta exata |
+| **P2** | Lê sem prompt? | **Sim**. Nenhum diálogo em ~670 leituras |
+| **P3** | Prevalência | Entrada **1,5 % ± 1,2 %** (n=400) · Enviados **4,7 % ± 4,5 %** (n=86) · Rascunhos **0 %** (n=68) |
+| **P4** | O `Sensitivity` clássico concorda? | **Não medido por desenho** — ele não responde por rótulo moderno, então concordância não seria evidência de nada |
+| **P5** | Corpo recusado por IRM? | **Não medido por restrição operacional** |
+| **P6** | Vem por `Table`? | **NÃO.** `Columns.Add` recusa o DASL com `E_INVALIDARG` |
+| **P7** | Como reage a ausente? | **Lança `MAPI_E_NOT_FOUND`** — e é isso que torna `Absent` distinguível de `Blank` |
+| **P8** | Múltiplos rótulos? | **Nenhum** em 554 itens. Limite superior ≈ 0,54 % a 95% — **não** impossibilidade |
+| **P9** | Proteção separada da classificação? | Não observável nos valores desta amostra |
+| **P10** | Evidência de versão | `PR_CHANGE_KEY` veio em **20 de 20**, junto de `EntryID` e `LastModificationTime` |
+| **P11** | Outras pastas | Entrada, Enviados e Rascunhos expõem **igual**. Outros stores e caixas compartilhadas: **não disponíveis** nesta conta |
+| **P12** | Anexos têm classificação própria? | **Não medido** — anexo está fora da fase |
+| **P13** | Ler altera estado? | Nenhuma alteração observada. **Ausência de efeito não foi provada** |
+| **P16** | Autoridade | Continua sendo cabeçalho. **Ler bem não prova autoridade** |
+
+### 34.3 Três coisas que mudam o desenho
+
+**Rótulos existem nesta conta, e são poucos.** 10 itens rotulados em 554, com
+**três GUIDs distintos**. Não é uma caixa sem classificação — é uma caixa em que
+a classificação é rara e, por isso, fácil de ignorar por acidente. Um portão que
+liberasse "o caso comum" liberaria 98,5 % e vazaria justamente os 1,5 %.
+
+**O caminho barato não existe.** A `Table` recusa o DASL, então classificar custa
+**~17,6 ms por item** — a mesma ordem de grandeza que tornou o cache obrigatório
+na Fase 0. Classificar uma thread de 30 mensagens custa meio segundo de COM; uma
+pasta inteira, minutos. Isso decide o que a UI pode oferecer: classificação **sob
+demanda, no item aberto** — nunca varredura classificatória de fundo.
+
+**`Absent` e `Blank` são estados diferentes, e a maioria é `Blank`.** Dos 400 da
+Entrada: 150 `Absent`, 244 `Blank`, 6 `Present`. A propriedade existir vazia em
+61 % dos itens significa que "a propriedade está lá" não diz nada sozinho — e
+que colapsar os dois num booleano perderia a única distinção que o caminho
+oferece.
+
+### 34.4 O que continua NÃO respondido
+
+- **P5 e P13**, por restrição operacional: abrir corpo protegido pode disparar
+  diálogo de direitos, e o usuário não está na máquina. O estado fica tratado
+  como **proibido**, que é o desfecho seguro.
+- **P14**, por não ser pergunta técnica: a semântica corporativa de ausência é
+  **desconhecida** e não autoriza transmissão.
+- **P16**, por não ser respondível por leitura: só a política corporativa diz se
+  o rótulo tem autoridade.
+- **Efeito colateral de leitura**: não observado ≠ inexistente.
+
+---
+
 ## 33. O que esta fase NÃO faz
 
 - Não envia e-mail.

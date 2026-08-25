@@ -418,6 +418,26 @@ Friend NotInheritable Class FakeBroker
         Return ForaDaAlcada(Of OperationResult(Of MessageDetail))()
     End Function
 
+    Public Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
+                                              cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading))) _
+        Implements IOutlookBroker.GetSensitivityLabelsAsync
+        Return ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of LabelReading)))()
+    End Function
+
+    Public Function ProbeLabelSemanticsAsync(item As ItemKey, cancel As CancellationToken) _
+        As Task(Of OperationResult(Of NamedPropertyProbe)) _
+        Implements IOutlookBroker.ProbeLabelSemanticsAsync
+        Return ForaDaAlcada(Of OperationResult(Of NamedPropertyProbe))()
+    End Function
+
+    Public Function ProbeLabelColumnAsync(folder As FolderKey, quantas As Integer,
+                                          cancel As CancellationToken) _
+        As Task(Of OperationResult(Of LabelColumnProbe)) _
+        Implements IOutlookBroker.ProbeLabelColumnAsync
+        Return ForaDaAlcada(Of OperationResult(Of LabelColumnProbe))()
+    End Function
+
     Public Function SaveAttachmentAsync(attachment As AttachmentKey, destinationPath As String,
                                         overwrite As Boolean, cancel As CancellationToken) _
         As Task(Of OperationResult(Of String)) Implements IOutlookBroker.SaveAttachmentAsync

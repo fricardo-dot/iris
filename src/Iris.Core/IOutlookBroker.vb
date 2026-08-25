@@ -122,6 +122,55 @@ Namespace Global.Iris.Core
         ''' abrir anexo é executar conteúdo não confiável, e a decisão é da
         ''' UI, com confirmação (F1-J).
         ''' </summary>
+        ''' <summary>
+        ''' O rótulo de sensibilidade (Purview) de cada item pedido.
+        '''
+        ''' <b>Leitura pura</b>, e por isso vai por <c>ReadAsync</c>. Nunca
+        ''' escreve propriedade — nem para "testar round-trip".
+        '''
+        ''' Um item que falha não derruba os outros: cada
+        ''' <see cref="LabelReading"/> carrega o próprio desfecho, com a etapa
+        ''' e o HRESULT. Um lote que falhasse inteiro por causa de um item
+        ''' esconderia qual era.
+        '''
+        ''' Esta operação <b>não autoriza nada</b>. Ela informa o estado da
+        ''' leitura; a decisão de divulgação é da política da Fase 3, e nela
+        ''' "não consegui ler" nunca vira "pode".
+        ''' </summary>
+        Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
+                                           cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading)))
+
+        ''' <summary>
+        ''' O rótulo é projetável como coluna de <c>Table</c> nesta pasta?
+        '''
+        ''' Existe porque classificar por item custa uma ida ao COM por
+        ''' mensagem — a mesma ordem de grandeza que tornou o cache obrigatório
+        ''' na Fase 0 —, e porque a <c>Table</c> é o caminho <b>menos
+        ''' invasivo</b> de descobrir isso: projeta coluna sem materializar
+        ''' item e sem tocar em corpo.
+        '''
+        ''' Aceitar a coluna não é entregar o valor. Ver o
+        ''' <see cref="LabelColumnProbe"/>.
+        ''' </summary>
+        ''' <summary>
+        ''' O controle negativo da leitura de rótulo: como esta conta responde
+        ''' a uma named property que <b>não existe</b>.
+        '''
+        ''' Existe porque a primeira medição devolveu "vazio" para todos os
+        ''' itens, e vazio pode ser "sem rótulo" ou "esta propriedade nunca
+        ''' falha". Sem o controle, um portão trataria ruído como decisão.
+        '''
+        ''' O conjunto de DASLs é <b>fixo no adaptador</b> — nada vem do
+        ''' chamador. Named property tem mapeamento próprio no store.
+        ''' </summary>
+        Function ProbeLabelSemanticsAsync(item As ItemKey, cancel As CancellationToken) _
+            As Task(Of OperationResult(Of NamedPropertyProbe))
+
+        Function ProbeLabelColumnAsync(folder As FolderKey, quantas As Integer,
+                                       cancel As CancellationToken) _
+            As Task(Of OperationResult(Of LabelColumnProbe))
+
         Function SaveAttachmentAsync(attachment As AttachmentKey, destinationPath As String,
                                      overwrite As Boolean, cancel As CancellationToken) _
             As Task(Of OperationResult(Of String))

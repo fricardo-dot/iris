@@ -704,6 +704,40 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        Public Async Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
+                                                        cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading))) _
+            Implements IOutlookBroker.GetSensitivityLabelsAsync
+
+            ' Leitura pura: ReadAsync, com retry. Nada aqui escreve.
+            Return Await ReadAsync(Of IReadOnlyList(Of LabelReading))(
+                "outlook.getSensitivityLabels",
+                Function(app, ns) SensitivityLabels.ReadLabels(ns, items),
+                cancel)
+        End Function
+
+        Public Async Function ProbeLabelSemanticsAsync(item As ItemKey,
+                                                       cancel As CancellationToken) _
+            As Task(Of OperationResult(Of NamedPropertyProbe)) _
+            Implements IOutlookBroker.ProbeLabelSemanticsAsync
+
+            Return Await ReadAsync(Of NamedPropertyProbe)(
+                "outlook.probeLabelSemantics",
+                Function(app, ns) SensitivityLabels.ProbeSemantics(ns, item),
+                cancel)
+        End Function
+
+        Public Async Function ProbeLabelColumnAsync(folder As FolderKey, quantas As Integer,
+                                                    cancel As CancellationToken) _
+            As Task(Of OperationResult(Of LabelColumnProbe)) _
+            Implements IOutlookBroker.ProbeLabelColumnAsync
+
+            Return Await ReadAsync(Of LabelColumnProbe)(
+                "outlook.probeLabelColumn",
+                Function(app, ns) SensitivityLabelColumn.Probe(ns, folder, quantas),
+                cancel)
+        End Function
+
         Public Async Function SaveAttachmentAsync(attachment As AttachmentKey, destinationPath As String,
                                                   overwrite As Boolean, cancel As CancellationToken) _
             As Task(Of OperationResult(Of String)) Implements IOutlookBroker.SaveAttachmentAsync
