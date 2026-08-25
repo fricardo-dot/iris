@@ -37,6 +37,8 @@ Friend Class FonteFalsaMutavel
     Friend Property EstourarLote As Integer? = Nothing
     ''' <summary>Página vazia, sem fim, cursor parado: laço sem progresso.</summary>
     Friend Property VaziaSemFim As Boolean = False
+    ''' <summary>Linhas descartadas por pagina, DECLARADAS na pagina.</summary>
+    Friend Property DescartarPorPagina As Integer = 0
 
     Friend Property PaginasLidas As Integer = 0
     Friend Property VezesQueContou As Integer = 0
@@ -122,7 +124,8 @@ Friend Class FonteFalsaMutavel
         Dim proximo = If(CursorTravado, cursor, ate.ToString())
         Dim fim = truncou OrElse ate >= _chaves.Count
 
-        Dim p As New SourcePage(lote.Select(AddressOf Linha), proximo, fim, UniversoDaLeitura())
+        Dim p As New SourcePage(lote.Select(AddressOf Linha), proximo, fim, UniversoDaLeitura(),
+                                drenadoAlem:=0, descartadas:=DescartarPorPagina)
 
         ' A mutacao acontece DEPOIS de a pagina ser montada e ANTES de a
         ' proxima ser pedida — que e exatamente a janela onde o mundo muda

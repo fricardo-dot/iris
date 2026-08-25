@@ -28,6 +28,7 @@
     <ProjectReference Include="..\..\src\Iris.Cache\Iris.Cache.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Sync\Iris.Sync.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Integration\Iris.Integration.vbproj" />
+    <ProjectReference Include="..\..\src\Iris.Integration.Outlook\Iris.Integration.Outlook.vbproj" />
 
     <!--
       O harness de crash NAO e referencia de codigo - o teste o executa como

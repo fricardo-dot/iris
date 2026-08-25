@@ -1,0 +1,25 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      O adaptador do Outlook: onde a porta ISweepSource encontra o COM.
+
+      Separado do Iris.Integration porque ESTE precisa de -windows e aquele
+      nao. Manter o adaptador SQLite livre de COM e o que permite provar a
+      persistencia sem o Outlook aberto.
+    -->
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <RootNamespace>Iris.Integration.Outlook</RootNamespace>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Model\Iris.Model.vbproj" />
+    <ProjectReference Include="..\Iris.Core\Iris.Core.vbproj" />
+    <ProjectReference Include="..\Iris.Sync\Iris.Sync.vbproj" />
+    <ProjectReference Include="..\Iris.Outlook\Iris.Outlook.vbproj" />
+  </ItemGroup>
+
+</Project>

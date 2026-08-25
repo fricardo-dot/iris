@@ -54,12 +54,45 @@ Namespace Global.Iris.Sync
         Public ReadOnly Property Fim As Boolean
         Public ReadOnly Property Universo As SweepUniverse
 
+        ''' <summary>
+        ''' Quantas linhas vieram ALÉM do lote pedido, por drenagem do grupo
+        ''' empatado.
+        '''
+        ''' Existe porque a guarda de tamanho de página, escrita contra uma
+        ''' fonte sintética, teria quebrado o adaptador real. A paginação do
+        ''' Outlook não tem teto: ela vai até o fim do grupo do último instante,
+        ''' senão os empatados que ficaram para trás são pulados <b>para
+        ''' sempre</b>. Pedir 30 pode devolver 45 — nesta caixa o maior empate
+        ''' num mesmo segundo tem 16.
+        '''
+        ''' Sem este campo, eu teria duas saídas ruins: tirar a guarda, e aí
+        ''' uma fonte defeituosa pode estourar o orçamento da STA sem ninguém
+        ''' ver; ou mantê-la, e aí o adaptador real falha em toda pasta com
+        ''' empate. Declarar o excedente preserva as duas coisas.
+        ''' </summary>
+        Public ReadOnly Property DrenadoAlem As Integer
+
+        ''' <summary>
+        ''' Linhas que a fonte percorreu e DESCARTOU nesta página — não eram
+        ''' mensagem, ou não deu para ler.
+        '''
+        ''' Tem de ser declarado, e não pode sumir: o S6 compara o que a pasta
+        ''' declarava ter com o que a varredura percorreu, e o descartado faz
+        ''' parte do percorrido. Ver <c>SweepAttempt.Discarded</c> para o que
+        ''' custou descobrir isso.
+        ''' </summary>
+        Public ReadOnly Property Descartadas As Integer
+
         Public Sub New(rows As IEnumerable(Of SourceRow), nextCursor As String,
-                       fim As Boolean, universo As SweepUniverse)
+                       fim As Boolean, universo As SweepUniverse,
+                       Optional drenadoAlem As Integer = 0,
+                       Optional descartadas As Integer = 0)
             Me.Rows = If(rows, Enumerable.Empty(Of SourceRow)()).ToList()
             Me.NextCursor = nextCursor
             Me.Fim = fim
             Me.Universo = universo
+            Me.DrenadoAlem = Math.Max(0, drenadoAlem)
+            Me.Descartadas = Math.Max(0, descartadas)
         End Sub
 
         Public Function Keys() As IReadOnlyList(Of String)
@@ -253,9 +286,15 @@ Namespace Global.Iris.Sync
                     ' pagina E o orcamento de tempo da fila da STA (D5); uma
                     ' fonte que devolve milhares de linhas de uma vez trava a
                     ' UI mesmo sem nenhum laco infinito.
-                    If p.Rows.Count > _tamanhoPagina Then
-                        Return Falhar(a, $"fonte devolveu {p.Rows.Count} linhas, pedi {_tamanhoPagina}",
-                                      paginas, tentativa, abriuNoDestino)
+                    ' O excedente DECLARADO e legitimo: e a drenagem do grupo
+                    ' empatado, sem a qual empatado ficaria para tras para
+                    ' sempre. O que nao pode e a fonte estourar o lote sem
+                    ' declarar.
+                    If p.Rows.Count > _tamanhoPagina + p.DrenadoAlem Then
+                        Return Falhar(a,
+                            $"fonte devolveu {p.Rows.Count} linhas, pedi {_tamanhoPagina} " &
+                            $"e ela declarou {p.DrenadoAlem} de drenagem",
+                            paginas, tentativa, abriuNoDestino)
                     End If
 
                     ' Progresso e obrigatorio, com ou sem linhas. A guarda so
@@ -267,7 +306,8 @@ Namespace Global.Iris.Sync
                                       paginas, tentativa, abriuNoDestino)
                     End If
 
-                    proposto = SweepModel.Pagina(a, p.Keys(), p.NextCursor, p.Universo)
+                    proposto = SweepModel.Pagina(a, p.Keys(), p.NextCursor, p.Universo,
+                                                 p.Descartadas)
                     If proposto.Rejected Then Return Rejeitar(proposto, paginas, tentativa, abriuNoDestino)
 
                     ' O efeito SO acontece se o modelo mandou — e o estado so

@@ -144,7 +144,7 @@ Public Class SweepRunnerTests
 
         Assert.IsFalse(r.Publicou)
         Assert.AreEqual(0, d.Publicadas, "nao pode publicar meia varredura")
-        StringAssert.Contains(r.Motivo, "lidas 3 <> antes 4")
+        StringAssert.Contains(r.Motivo, "percorridas 3 (lidas 3 + descartadas 0) <> antes 4")
         Assert.AreEqual(1, d.Descartadas.Count, "a tentativa tem de ser descartada no destino")
     End Sub
 
@@ -158,6 +158,49 @@ Public Class SweepRunnerTests
 
         Assert.IsFalse(r.Publicou)
         Assert.AreEqual(0, d.Publicadas)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Descarte DECLARADO fecha a conta do S6.</b>
+    '''
+    ''' Medido na Caixa de Entrada do usuário: 1.022 itens declarados, 1.013
+    ''' lidos, 9 descartados por não serem mensagem — <b>estável nas três
+    ''' execuções</b>. Comparando só o que foi guardado, o S6 rejeitava a caixa
+    ''' principal TODAS as vezes, e o sintoma — "lidas 1013 &lt;&gt; antes
+    ''' 1022" — era indistinguível de uma mensagem chegando no meio. Defeito
+    ''' permanente disfarçado do comportamento correto.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Descarte_declarado_fecha_a_conta_do_S6()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d") With {.DescartarPorPagina = 1}
+        Dim d As New DestinoFalso()
+        ' A fonte diz que a pasta tem 6: 4 que ela devolve + 2 que ela descarta
+        ' (1 por pagina, em 2 paginas).
+        f.ContagemDeclarada = 6
+
+        Dim r = Rodar(f, d)
+
+        Assert.IsTrue(r.Publicou, $"descarte declarado tem de fechar a conta. motivo: {r.Motivo}")
+        Assert.AreEqual(4, r.Attempt.RowsRead)
+        Assert.AreEqual(2, r.Attempt.Discarded)
+        Assert.AreEqual(6, r.Attempt.RowsTraversed)
+    End Sub
+
+    ''' <summary>
+    ''' E descarte NÃO declarado continua rejeitando — senão a correção teria
+    ''' virado um buraco: bastaria a fonte omitir linhas em silêncio.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Descarte_NAO_declarado_continua_REJEITANDO()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c", "d")
+        Dim d As New DestinoFalso()
+        f.ContagemDeclarada = 6   ' diz 6, entrega 4, nao declara descarte
+
+        Dim r = Rodar(f, d)
+
+        Assert.IsFalse(r.Publicou,
+            "sem declarar o descarte, a diferenca continua sendo linha que sumiu")
+        StringAssert.Contains(r.Motivo, "descartadas 0")
     End Sub
 
     ''' <summary>

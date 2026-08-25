@@ -106,13 +106,46 @@ Namespace Global.Iris.Sync
         ''' <summary>Chaves já vistas. Vive em scan_stage, não no cursor.</summary>
         Public ReadOnly Property StagedKeys As IReadOnlyCollection(Of String)
         Public ReadOnly Property RowsRead As Integer
+
+        ''' <summary>
+        ''' Linhas que a fonte percorreu e DESCARTOU — não eram mensagem, ou
+        ''' não deu para ler.
+        '''
+        ''' Existe porque o S6 comparava só o que foi GUARDADO com o que a
+        ''' pasta declarava ter, e a pasta declara tudo o que tem. Medido na
+        ''' Caixa de Entrada do usuário: 1.022 declaradas, 1.013 lidas, 9
+        ''' descartadas — <b>estável nas três execuções</b>. Não era corrida de
+        ''' caixa viva: era descarte sistemático, e o S6 rejeitava a caixa
+        ''' principal <b>todas as vezes</b>.
+        '''
+        ''' O pior é como isso se parecia: "lidas 1013 &lt;&gt; antes 1022" é
+        ''' exatamente o que uma mensagem chegando no meio produziria. Um
+        ''' defeito permanente disfarçado do comportamento correto.
+        ''' </summary>
+        Public ReadOnly Property Discarded As Integer
+
         Public ReadOnly Property Cursor As String
         Public ReadOnly Property AttemptNumber As Integer
+
+        ''' <summary>
+        ''' O que a varredura PERCORREU: guardado mais descartado.
+        '''
+        ''' É esta a grandeza que se compara com a contagem da pasta. O
+        ''' descarte não é ausência de evidência — é evidência de que a linha
+        ''' foi vista e recusada, e recusa contada é diferente de linha que
+        ''' sumiu.
+        ''' </summary>
+        Public ReadOnly Property RowsTraversed As Integer
+            Get
+                Return RowsRead + Discarded
+            End Get
+        End Property
 
         Friend Sub New(stage As AttemptStage, universe As SweepUniverse, epoch As Long,
                        countBefore As Integer?, countAfter As Integer?,
                        staged As IEnumerable(Of String), rowsRead As Integer,
-                       cursor As String, attemptNumber As Integer)
+                       cursor As String, attemptNumber As Integer,
+                       Optional discarded As Integer = 0)
             Me.Stage = stage
             Me.Universe = universe
             Me.ReconcileEpoch = epoch
@@ -123,6 +156,7 @@ Namespace Global.Iris.Sync
             Me.RowsRead = rowsRead
             Me.Cursor = cursor
             Me.AttemptNumber = attemptNumber
+            Me.Discarded = discarded
         End Sub
 
         Public ReadOnly Property DistinctKeys As Integer
@@ -201,7 +235,8 @@ Namespace Global.Iris.Sync
             If count < 0 Then Return Descartar(a, "contagem inicial negativa")
             Return New SweepOutcome(
                 New SweepAttempt(AttemptStage.ContagemInicialLida, a.Universe, a.ReconcileEpoch,
-                                 count, Nothing, a.StagedKeys, 0, a.Cursor, a.AttemptNumber),
+                                 count, Nothing, a.StagedKeys, 0, a.Cursor, a.AttemptNumber,
+                                 a.Discarded),
                 Nothing)
         End Function
 
@@ -213,7 +248,8 @@ Namespace Global.Iris.Sync
         ''' </summary>
         Public Shared Function Pagina(a As SweepAttempt, chaves As IEnumerable(Of String),
                                       proximoCursor As String,
-                                      universoLido As SweepUniverse) As SweepOutcome
+                                      universoLido As SweepUniverse,
+                                      Optional descartadasNaPagina As Integer = 0) As SweepOutcome
             Dim erro = Guardas(a, {AttemptStage.ContagemInicialLida, AttemptStage.Varrendo},
                                universoLido)
             If erro IsNot Nothing Then Return Descartar(a, erro)
@@ -238,7 +274,8 @@ Namespace Global.Iris.Sync
             Return New SweepOutcome(
                 New SweepAttempt(AttemptStage.Varrendo, a.Universe, a.ReconcileEpoch,
                                  a.CountBefore, Nothing, vistas, a.RowsRead + lista.Count,
-                                 proximoCursor, a.AttemptNumber),
+                                 proximoCursor, a.AttemptNumber,
+                                 a.Discarded + Math.Max(0, descartadasNaPagina)),
                 {SweepCommand.StagePagina})
         End Function
 
@@ -251,7 +288,7 @@ Namespace Global.Iris.Sync
             Return New SweepOutcome(
                 New SweepAttempt(AttemptStage.ContagemFinalLida, a.Universe, a.ReconcileEpoch,
                                  a.CountBefore, count, a.StagedKeys, a.RowsRead,
-                                 a.Cursor, a.AttemptNumber),
+                                 a.Cursor, a.AttemptNumber, a.Discarded),
                 Nothing)
         End Function
 
@@ -281,11 +318,29 @@ Namespace Global.Iris.Sync
             If Not a.CountBefore.HasValue OrElse Not a.CountAfter.HasValue Then
                 Return Descartar(a, "faltou contagem")
             End If
-            If a.RowsRead <> a.CountBefore.Value Then
-                Return Descartar(a, $"lidas {a.RowsRead} <> antes {a.CountBefore.Value}")
+            ' O S6 compara o que foi PERCORRIDO — guardado mais descartado —
+            ' com o que a pasta declarava ter. Nao o que foi guardado.
+            '
+            ' Comparar so o guardado rejeitava a Caixa de Entrada do usuario
+            ' TODAS AS VEZES: 1.022 declaradas, 1.013 guardadas, 9 descartadas
+            ' por nao serem mensagem, estavel nas tres execucoes. E o sintoma
+            ' era "lidas 1013 <> antes 1022" — indistinguivel de uma mensagem
+            ' chegando no meio. Defeito permanente disfarcado de corrida.
+            '
+            ' Descarte nao e ausencia de evidencia: e evidencia de que a linha
+            ' foi vista e recusada. O que o S6 exige e que TUDO o que a pasta
+            ' declarava tenha sido lido ou explicitamente recusado — e recusa
+            ' declarada e mais forte que recusa silenciosa, porque obriga a
+            ' fonte a contar o que jogou fora.
+            If a.RowsTraversed <> a.CountBefore.Value Then
+                Return Descartar(a,
+                    $"percorridas {a.RowsTraversed} (lidas {a.RowsRead} + descartadas " &
+                    $"{a.Discarded}) <> antes {a.CountBefore.Value}")
             End If
-            If a.RowsRead <> a.CountAfter.Value Then
-                Return Descartar(a, $"lidas {a.RowsRead} <> depois {a.CountAfter.Value}")
+            If a.RowsTraversed <> a.CountAfter.Value Then
+                Return Descartar(a,
+                    $"percorridas {a.RowsTraversed} (lidas {a.RowsRead} + descartadas " &
+                    $"{a.Discarded}) <> depois {a.CountAfter.Value}")
             End If
             If a.DistinctKeys <> a.RowsRead Then
                 Return Descartar(a, $"distintas {a.DistinctKeys} <> lidas {a.RowsRead}")
@@ -314,7 +369,7 @@ Namespace Global.Iris.Sync
             Return New SweepOutcome(
                 New SweepAttempt(AttemptStage.Publicada, a.Universe, a.ReconcileEpoch,
                                  a.CountBefore, a.CountAfter, a.StagedKeys, a.RowsRead,
-                                 a.Cursor, a.AttemptNumber),
+                                 a.Cursor, a.AttemptNumber, a.Discarded),
                 {SweepCommand.PublicarGeracao,
                  SweepCommand.MarcarNaoVistosComoSuspeitos,
                  SweepCommand.EmitirPublicationLog},
@@ -400,7 +455,7 @@ Namespace Global.Iris.Sync
             If a IsNot Nothing Then
                 novo = New SweepAttempt(AttemptStage.Descartada, a.Universe, a.ReconcileEpoch,
                                         a.CountBefore, a.CountAfter, a.StagedKeys,
-                                        a.RowsRead, a.Cursor, a.AttemptNumber)
+                                        a.RowsRead, a.Cursor, a.AttemptNumber, a.Discarded)
             End If
             Return New SweepOutcome(novo,
                                     {SweepCommand.DescartarTentativa, SweepCommand.AgendarRetry},
