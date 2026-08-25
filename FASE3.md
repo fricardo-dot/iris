@@ -867,8 +867,10 @@ está declarado em vez de simulado.
 ### 38.1 O que o usuário vê hoje
 
 Uma frase dizendo que a IA externa **não está habilitada**, e por quê. Não é
-"recurso em construção": o mecanismo está inteiro e testado, e o que falta é
-decisão dele — a política da empresa e um provedor à escolha dele.
+"recurso em construção" e também não é "só falta ligar": implementação e provas
+**locais** estão concluídas, e continuam faltando duas coisas — a cerimônia de
+ativação da §28.3, que é decisão do usuário, e o **adaptador do provedor
+externo**, que é código e só pode ser escrito depois dela.
 
 Se algum envio ficou sem desfecho conhecido numa execução anterior, isso aparece
 **junto**: *"pode ter saído conteúdo, e não dá para saber"*. Um número desses não

@@ -14,7 +14,7 @@ dotnet test Iris.slnx
 
 | | |
 |---|---|
-| **Commit** | `433c244` |
+| **Commit** | `33ecc84` — o commit de encerramento da fase |
 | **Data** | 25 de agosto de 2026 |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
@@ -24,8 +24,14 @@ dotnet test Iris.slnx
 Test run for C:\Users\Ricardo\Documents\Iris\tests\Iris.Tests\bin\Debug\net10.0-windows\Iris.Tests.dll (.NETCoreApp,Version=v10.0)
 A total of 1 test files matched the specified pattern.
 
-Passed!  - Failed:     0, Passed:   642, Skipped:     0, Total:   642, Duration: 58 s - Iris.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   642, Skipped:     0, Total:   642, Duration: 59 s - Iris.Tests.dll (net10.0)
 ```
+
+O último commit **técnico** da fase é o `433c244`; daí em diante entraram só
+documentação, este arquivo, o `REVISOES-FASE3.md` e correções de redação em
+comentários de teste. Esta medição é do `33ecc84`, e **não** do `433c244` — a
+distinção importa porque um resultado de suíte vale para a árvore em que foi
+medido, e não para a que se gostaria que ele valesse.
 
 ## O que este número não diz
 
@@ -40,9 +46,14 @@ continua hipótese**, e uma das três ocorrências não chegou a ser identificad
 nome.
 
 **Não diz que as guardas estão ligadas.** Teste verde não é prova. O que sustenta
-essa parte é `tools/controle-negativo.py`, que desliga cada guarda e confere que
-o teste dela **falha**.
+essa parte é `tools/controle-negativo.py`, que desliga **as guardas que ele
+enumera** — cobertura e proveniência da capability, anexo no pipeline, espaço em
+branco no resultado, e a corrida de seleção — e confere que o teste de cada uma
+**falha**. Não é varredura de todas as guardas do produto: é uma lista, e ela
+está no arquivo.
 
-**Não diz que a IA funciona contra um provedor real.** Nenhum teste toca a
-internet. O transporte é provado contra um `HttpListener` em `127.0.0.1`, e a
-ordem e o diário com provedor falso.
+**Não diz que a IA funciona contra um provedor real.** Nenhum teste chama um
+provedor externo de IA: o HTTP do assistente usa só `127.0.0.1`, contra um
+`HttpListener`, e a ordem e o diário são provados com provedor falso. A suíte
+tem testes que falam com o **Outlook real**, e o comportamento de rede dele não
+é controlado aqui.

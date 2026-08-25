@@ -416,8 +416,8 @@ footer {
   <div class="meta">
     <span><b>25 de agosto de 2026</b></span>
     <span>642 testes · <b>0 falhas</b> · 0 pulados</span>
-    <span>30 commits · 7 marcos técnicos (3.0–3.6)</span>
-    <span><code>95c19f1</code> → <code>433c244</code></span>
+    <span>30 commits técnicos · 7 marcos (3.0–3.6)</span>
+    <span><code>95c19f1</code> → <code>433c244</code> · encerrada em <code>33ecc84</code></span>
   </div>
 </header>
 
@@ -427,8 +427,9 @@ footer {
     <li><strong>No commit <code>433c244</code>, o caminho de produção da IA não
     consegue mandar bytes para endpoint externo.</strong> O provedor de produção
     é o <code>AssistenteIndisponivel</code>, que não tem destino nenhum, e o
-    portão recusa antes de ler qualquer mensagem. Há teste que prova isso pela
-    cadeia inteira.</li>
+    portão recusa antes de ler qualquer mensagem. Há teste que prova isso
+    <strong>do contrato do broker até a porta do provedor</strong> — que é até
+    onde as provas desta fase chegam; do COM ao socket, não.</li>
     <li><strong>A IA não envia e-mail.</strong> <em>Redigir</em> só preenche o
     compositor; o envio existente continua exigindo a sua confirmação, com a
     prévia de sempre.</li>
@@ -439,8 +440,8 @@ footer {
     Reconstruir thread está fora do escopo, e juntar mensagens que
     <em>parecem</em> da mesma conversa seria decidir divulgação por
     semelhança.</li>
-    <li><strong>Nas onze passadas de revisão do 3.5 e do 3.6, o Codex numerou 27
-    defeitos meus.</strong> Quase nenhum aparecia em teste verde — a exceção está
+    <li><strong>Nas onze passadas de revisão de código do 3.5 e do 3.6, o Codex
+    numerou 27 defeitos meus.</strong> Quase nenhum aparecia em teste verde — a exceção está
     contada abaixo, e é sobre mim.</li>
     <li><strong>Não há divergência pendente</strong> entre mim e o Codex. O
     registro passada a passada está em <code>REVISOES-FASE3.md</code>.</li>
@@ -452,14 +453,15 @@ footer {
   <div><span class="v">0</span><span class="k">falhas</span></div>
   <div><span class="v">27</span><span class="k">defeitos no 3.5 e 3.6</span></div>
   <div><span class="v">7</span><span class="k">marcos aprovados</span></div>
-  <div><span class="v">30</span><span class="k">commits</span></div>
+  <div><span class="v">30</span><span class="k">commits técnicos</span></div>
   <div><span class="v">6</span><span class="k">blocos de pendência</span></div>
 </div>
 
 <p class="nota">
   A execução da suíte está versionada em <code>RESULTADO-SUITE.md</code>, presa
-  ao commit e à versão do SDK — sem isso, "0 falhas" seria uma afirmação minha
-  que ninguém consegue conferir. O registro das passadas de revisão está em
+  ao commit em que foi medida — <code>33ecc84</code>, o de encerramento; o último
+  commit técnico é o <code>433c244</code> — e à versão do SDK. Sem isso, "0
+  falhas" seria uma afirmação minha que ninguém consegue conferir. O registro das passadas de revisão está em
   <code>REVISOES-FASE3.md</code>, e é o meu resumo delas: os vereditos são
   conversa, não artefato do repositório.
 </p>
@@ -468,8 +470,9 @@ footer {
 
 <p>
   Cada um foi escrito, revisado pelo Codex, rejeitado, corrigido, e revisado de
-  novo até passar. O 3.5 precisou de sete passadas de revisão; o 3.6, de quatro.
-  O plano da fase enumera ainda um 3.7, que é este relatório.
+  novo até passar. O 3.5 precisou de oito passadas de revisão de código,
+  contando a que aprovou; o 3.6, de três, além de uma revisão do plano antes de
+  escrever. O plano da fase enumera ainda um 3.7, que é este relatório.
 </p>
 
 <div class="tabela-wrap wide">
@@ -601,7 +604,8 @@ footer {
 <h2><span class="num">§ 4</span>O que o Codex pegou, por tipo</h2>
 
 <p>
-  Os vinte e sete defeitos que ele numerou nas onze passadas do 3.5 e do 3.6 —
+  Os vinte e sete defeitos que ele numerou nas onze passadas de revisão de
+  código do 3.5 e do 3.6 (19 + 8) —
   os únicos que dá para contar um a um, porque cada passada os enumerou. (O 3.0
   tem mais quatro, na §34.4 do <code>FASE3.md</code>; os marcos 3.1 a 3.4 têm o
   seu registro na mensagem de cada commit de correção, e não os recontei.)
@@ -857,7 +861,8 @@ footer {
 
 <footer>
   Iris · Fase 3 · relatório gerado em 25 de agosto de 2026<br>
-  642 testes, 0 falhas · 30 commits · <code>95c19f1</code> → <code>433c244</code><br>
+  642 testes, 0 falhas, medidos em <code>33ecc84</code> ·
+  30 commits técnicos, <code>95c19f1</code> → <code>433c244</code><br>
   Detalhe técnico de cada marco em <code>FASE3.md</code> §28–§39 ·
   execução da suíte em <code>RESULTADO-SUITE.md</code> ·
   passadas de revisão em <code>REVISOES-FASE3.md</code>.

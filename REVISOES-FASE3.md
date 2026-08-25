@@ -19,16 +19,21 @@ citados, e é por aí que dá para conferir.
 | 3.2 | rejeitado e corrigido | ver commits | `277fd67`, `7d64a39`, `1a9fd34`, `b1c30de`, `b2fdcdf` |
 | 3.3 | rejeitado e corrigido | ver commits | `04d2dea`, `c786070`, `be73453` |
 | 3.4 | rejeitado e corrigido | ver commits | `b60b896`, `e6a8b62`, `24054af`, `8e3120e` |
-| **3.5** | **7** | **14** | `61a8123`, `9455e7f`, `6f8bc7b`, `8167425`, `a25a6c0`, `84119b4`, `3c95c9f` |
-| **3.6** | **4** (1 de plano + 3 de revisão) | **8** | `95416d7`, `b377b78`, `7c39cb5` |
-| Relatório | 1 | 9 | este |
+| **3.5** | **8** | **19** | `61a8123`, `9455e7f`, `6f8bc7b`, `8167425`, `a25a6c0`, `84119b4`, `3c95c9f` |
+| **3.6** | **3** (mais 1 de plano, contada à parte) | **8** | `95416d7`, `b377b78`, `7c39cb5` |
+| Relatório | 2 | 9 + 7 | `33ecc84` e este |
+
+**O critério da contagem**, porque ele não é óbvio: "passada" é uma troca de
+revisão de **código**, incluindo a que aprova. A revisão do **plano** do 3.6
+fica de fora dessa conta e aparece em separado — misturá-las daria um número
+que não quer dizer nada. Onze passadas = 8 do 3.5 + 3 do 3.6.
 
 Os achados do 3.0 estão enumerados na §34.4 do `FASE3.md`. Para 3.1–3.4 o
 enumerado é a mensagem de cada commit de correção — não recontei um a um, e por
 isso o relatório só afirma o total onde ele foi contado: **27 achados nas onze
-passadas do 3.5 e do 3.6**, mais 4 do 3.0.
+passadas do 3.5 e do 3.6** (19 + 8), mais 4 do 3.0.
 
-## Marco 3.5 — sete passadas
+## Marco 3.5 — oito passadas
 
 | # | Achados | Veredito |
 |---|---|---|
@@ -41,26 +46,35 @@ passadas do 3.5 e do 3.6**, mais 4 do 3.0.
 | 7 | 1 — o elo `ComposerViewModel` → `RascunhoDoCompositor` sem prova | REJEITADO |
 | 8 | — | **APROVADO** |
 
-*(A passada 1 e a 2 aconteceram na sessão anterior; a contagem "sete passadas" do
-relatório conta as rodadas de revisão, e a aprovação é a oitava troca.)*
+*(As passadas 1 e 2 aconteceram na sessão anterior. Achados do 3.5:
+5 + 4 + 6 + 2 + 1 + 1 = **19**.)*
 
-## Marco 3.6 — quatro passadas
+## Marco 3.6 — três passadas de código, mais a do plano
 
 | # | Achados | Veredito |
 |---|---|---|
-| plano | 6 ajustes exigidos antes de escrever | APROVADO (plano) |
+| plano | 6 ajustes exigidos antes de escrever — contada à parte | APROVADO (plano) |
 | 1 | 4 — resposta só de espaço; seleção móvel provava outra coisa; reconciliação que falhou sem prova ponta a ponta; `ClearAllPools` global e pastas temporárias abandonadas | REJEITADO |
 | 2 | 4 — guarda `g.Cobre` desligada no commit pelo próprio roteiro de controle; décima classe ainda paralela; item não pedido parava no portão e não na cobertura; contagem 21 vs 25 | REJEITADO |
 | 3 | — | **APROVADO** |
 
-## Relatório — uma passada
+## Relatório — duas passadas
 
-Nove correções, todas aceitas e aplicadas: evidência da suíte não versionada;
+**Primeira**, nove correções, todas aceitas e aplicadas: evidência da suíte não versionada;
 contagem de achados incompatível com o histórico; "mecanismo inteiro" forte
 demais; "0 bytes enviados" sem escopo; a limitação de **uma mensagem, não a
 thread**, ausente; pendências incompletas; ressalva do teste de egress; a
 inevitabilidade alegada do recorte de HTTPS; e os vereditos não auditáveis — que
 é o que este arquivo passou a registrar.
+
+**Segunda**, sete correções, também todas aceitas: o 3.5 aparecia com 14 achados
+onde o detalhamento somava 19; a contagem de passadas misturava critérios — 3.5
+sem a aprovação, 3.6 com o plano; a proveniência da execução da suíte estava
+ambígua; "nenhum teste toca a internet" era forte demais; o roteiro de controle
+negativo não cobre "cada guarda", e sim as que ele enumera — e não falhava quando
+uma mutação continuava verde; "prova pela cadeia inteira" contradizia o recorte
+declarado; e o `FASE3.md` §38.1 ainda tinha a formulação que a primeira passada
+rejeitou.
 
 ## Divergências sem consenso
 
