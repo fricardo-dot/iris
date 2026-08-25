@@ -144,12 +144,33 @@ Namespace Global.Iris.Cache
         End Sub
 
         ''' <summary>
-        ''' Publica: geração + cabeça + dívida para a UI, numa transação.
+        ''' Publica: geração + cobertura + cabeça + dívida para a UI, tudo numa
+        ''' transação.
+        '''
+        ''' <paramref name="tipoDeVarredura"/> e <paramref name="alcance"/> sao
+        ''' EIXOS DIFERENTES, e o schema os separa de proposito:
+        '''
+        '''   - <c>generation.coverage_kind</c> diz que TIPO de varredura foi -
+        '''     completa ou incremental;
+        '''   - <c>coverage_observation.coverage</c> diz QUANTO dela se
+        '''     ALCANCOU - completa, parcial ou desconhecida.
+        '''
+        ''' Uma varredura pode ser de tipo completo e alcance parcial: ela
+        ''' percorreu a pasta inteira, e o que faltou nao deixou de ser
+        ''' percorrido - deixou de ser ALCANCAVEL. Foi a §19.2, com pastas
+        ''' cheias reportando zero.
+        '''
+        ''' A observacao de cobertura vai na MESMA TRANSACAO da geracao. Fora
+        ''' dela, "publicou" e "registrou o quanto alcancou" seriam dois
+        ''' estados que podem divergir - e o divergente seria uma geracao sem
+        ''' alcance conhecido, que e pior que nao ter geracao.
         ''' </summary>
         Public Function Publicar(attemptKey As Long, folderKey As Long,
-                                 cobertura As String,
+                                 tipoDeVarredura As String,
                                  contagemAntes As Long, contagemDepois As Long,
-                                 Optional ByRef geracao As Long = 0) As PublishOutcome
+                                 Optional ByRef geracao As Long = 0,
+                                 Optional alcance As String = "desconhecida",
+                                 Optional environmentKey As Long = 1) As PublishOutcome
             Using tx = Imediata()
                 Dim epocaTentativa = Ler(tx, "SELECT reconcile_epoch FROM scan_attempt WHERE attempt_key=$a",
                                          ("$a", CObj(attemptKey)))
@@ -216,12 +237,21 @@ Namespace Global.Iris.Cache
                     "SELECT universe_fingerprint FROM scan_attempt WHERE attempt_key=$a",
                     ("$a", CObj(attemptKey))))
 
+                ' A observacao de ALCANCE, na mesma transacao.
+                Dim cov = Convert.ToInt64(Escalar(tx,
+                    "INSERT INTO coverage_observation (folder_key, environment_key, " &
+                    "universe_fingerprint, coverage, source, observed_at) " &
+                    "VALUES ($f,$e,$u,$c,'varredura',$t); SELECT last_insert_rowid()",
+                    ("$f", CObj(folderKey)), ("$e", CObj(environmentKey)),
+                    ("$u", CObj(universo)), ("$c", CObj(alcance)), ("$t", CObj(Agora()))))
+
                 Dim g = Convert.ToInt64(Escalar(tx,
                     "INSERT INTO generation (folder_key, attempt_key, coverage_kind, " &
-                    "universe_fingerprint, rows_read, count_before, count_after, distinct_keys, " &
-                    "reconcile_epoch, published_at) VALUES ($f,$a,$k,$u,$r,$b,$d,$q,$p,$t); " &
-                    "SELECT last_insert_rowid()",
-                    ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)), ("$k", CObj(cobertura)),
+                    "coverage_key, universe_fingerprint, rows_read, count_before, count_after, " &
+                    "distinct_keys, reconcile_epoch, published_at) " &
+                    "VALUES ($f,$a,$k,$cov,$u,$r,$b,$d,$q,$p,$t); SELECT last_insert_rowid()",
+                    ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)), ("$k", CObj(tipoDeVarredura)),
+                    ("$cov", CObj(cov)),
                     ("$u", CObj(universo)), ("$r", CObj(lidas)), ("$b", CObj(contagemAntes)),
                     ("$d", CObj(contagemDepois)), ("$q", CObj(distintas)),
                     ("$p", CObj(epocaPasta)), ("$t", CObj(Agora()))))
@@ -285,6 +315,31 @@ Namespace Global.Iris.Cache
         Public Function LinhasEncenadas(attemptKey As Long) As Integer
             Return Convert.ToInt32(Ler(Nothing,
                 "SELECT COUNT(*) FROM scan_stage WHERE attempt_key=$a", ("$a", CObj(attemptKey))))
+        End Function
+
+        ''' <summary>
+        ''' Marca a tentativa como descartada. Sem isto, toda varredura que não
+        ''' publica deixa uma linha <c>aberta</c> ou <c>varrendo</c> no banco,
+        ''' e a retomada seguinte encontra lixo que parece trabalho.
+        ''' </summary>
+        Public Sub Descartar(attemptKey As Long, motivo As String)
+            Using tx = Imediata()
+                Executar(tx, "UPDATE scan_attempt SET stage='descartada', ended_at=$t, " &
+                    "rejection=$r WHERE attempt_key=$a AND stage NOT IN ('publicada','descartada')",
+                    ("$a", CObj(attemptKey)), ("$t", CObj(Agora())),
+                    ("$r", CObj(Recortar(motivo))))
+                tx.Commit()
+            End Using
+        End Sub
+
+        Public Function EpocaDaPasta(folderKey As Long) As Long
+            Return Convert.ToInt64(Ler(Nothing,
+                "SELECT reconcile_epoch FROM folder WHERE folder_key=$f", ("$f", CObj(folderKey))))
+        End Function
+
+        Private Shared Function Recortar(s As String) As String
+            If s Is Nothing Then Return Nothing
+            Return If(s.Length <= 500, s, s.Substring(0, 500))
         End Function
 
         Public Function EstagioDa(attemptKey As Long) As String

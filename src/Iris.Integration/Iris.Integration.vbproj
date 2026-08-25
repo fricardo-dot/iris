@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      Onde as portas do Iris.Sync encontram a infraestrutura.
+
+      Iris.Sync define ISweepSource e ISweepSink e NAO conhece SQLite nem COM.
+      Fazer Iris.Sync referenciar Iris.Cache inverteria a fronteira e amarraria
+      a orquestracao ao banco. Entao a dependencia aponta para dentro, e este
+      projeto e quem conhece os dois lados.
+
+      Sem -windows: o adaptador SQLite nao ve COM. O adaptador do Outlook, que
+      ve, entra no 2.2b e vai para outro lugar.
+    -->
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Integration</RootNamespace>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Iris.Core\Iris.Core.vbproj" />
+    <ProjectReference Include="..\Iris.Cache\Iris.Cache.vbproj" />
+    <ProjectReference Include="..\Iris.Sync\Iris.Sync.vbproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Iris.Tests" />
+  </ItemGroup>
+
+</Project>
