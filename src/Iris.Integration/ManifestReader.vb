@@ -50,13 +50,32 @@ Namespace Global.Iris.Integration
         Public ReadOnly Property PublishedAt As String
         Public ReadOnly Property Items As IReadOnlyList(Of ManifestItem)
 
+        ''' <summary>
+        ''' Se o alcance do Iris ENCOLHEU desde a geração anterior.
+        '''
+        ''' Está aqui porque o <see cref="ContractionDetector"/> precisava de um
+        ''' consumidor. Sem ele, o detector calculava um veredito que ninguém
+        ''' lia — e a §25 afirmava que "encolheu → as conclusões anteriores
+        ''' caem", quando o que acontecia era "o detector consegue devolver um
+        ''' diagnóstico, se alguém o chamar".
+        '''
+        ''' O efeito real é este: a contração entra na <see cref="Ressalva"/>, e
+        ''' a ressalva é o que a UI mostra. Não é invalidação de conclusão —
+        ''' <b>não há conclusão a invalidar</b>, porque em cached a cobertura já
+        ''' é sempre parcial e ausência já é proibida (§23). É aviso, e o aviso
+        ''' é a única consequência que o escopo aceito comporta.
+        ''' </summary>
+        Public ReadOnly Property Contracao As ContractionReport
+
         Friend Sub New(folderKey As Long, generationKey As Long?, cobertura As FolderCoverage,
-                       publishedAt As String, items As IEnumerable(Of ManifestItem))
+                       publishedAt As String, items As IEnumerable(Of ManifestItem),
+                       Optional contracao As ContractionReport = Nothing)
             Me.FolderKey = folderKey
             Me.GenerationKey = generationKey
             Me.Cobertura = cobertura
             Me.PublishedAt = publishedAt
             Me.Items = If(items, Enumerable.Empty(Of ManifestItem)()).ToList()
+            Me.Contracao = contracao
         End Sub
 
         ''' <summary>
@@ -81,15 +100,22 @@ Namespace Global.Iris.Integration
                 If GenerationKey Is Nothing Then
                     Return "Esta pasta ainda não foi varrida."
                 End If
+                Dim base As String
                 Select Case Cobertura
                     Case FolderCoverage.Completa
-                        Return Nothing
+                        base = Nothing
                     Case FolderCoverage.Parcial
-                        Return "Acervo parcial: o Outlook não expõe tudo o que existe no servidor. " &
+                        base = "Acervo parcial: o Outlook não expõe tudo o que existe no servidor. " &
                                "Pode faltar mensagem, e mensagem marcada como suspeita pode já ter sido apagada."
                     Case Else
-                        Return "Alcance desconhecido: não dá para dizer o quanto desta pasta o Iris enxerga."
+                        base = "Alcance desconhecido: não dá para dizer o quanto desta pasta o Iris enxerga."
                 End Select
+
+                ' A contração vem PRIMEIRO quando existe: é a informação mais
+                ' recente e a mais acionável — alguma coisa mudou agora.
+                Dim aviso = Contracao?.Aviso
+                If aviso Is Nothing Then Return base
+                Return If(base Is Nothing, aviso, aviso & " " & base)
             End Get
         End Property
     End Class
@@ -114,10 +140,12 @@ Namespace Global.Iris.Integration
     Public NotInheritable Class ManifestReader
 
         Private ReadOnly _conn As SqliteConnection
+        Private ReadOnly _detector As ContractionDetector
 
         Public Sub New(db As CacheDatabase)
             If db Is Nothing Then Throw New ArgumentNullException(NameOf(db))
             _conn = db.Connection
+            _detector = New ContractionDetector(db)
         End Sub
 
         Public Function Ler(folderKey As Long) As FolderManifest
@@ -147,6 +175,9 @@ Namespace Global.Iris.Integration
                                           Nothing, Nothing)
             End If
 
+            ' O detector tem um consumidor: e este.
+            Dim contracao = _detector.Comparar(folderKey)
+
             Dim itens As New List(Of ManifestItem)()
             Using cmd = _conn.CreateCommand()
                 ' So associacoes cuja geracao ja foi PUBLICADA. Linhas
@@ -174,7 +205,7 @@ Namespace Global.Iris.Integration
                 End Using
             End Using
 
-            Return New FolderManifest(folderKey, geracao, cobertura, publicadaEm, itens)
+            Return New FolderManifest(folderKey, geracao, cobertura, publicadaEm, itens, contracao)
         End Function
 
         Private Shared Function DaCobertura(s As String) As FolderCoverage

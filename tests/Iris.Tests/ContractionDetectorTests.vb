@@ -228,6 +228,57 @@ Public Class ContractionDetectorTests
     End Sub
 
     ' ==================================================================
+    ' O detector tem um CONSUMIDOR
+
+    ''' <summary>
+    ''' A contração aparece na ressalva do manifesto — que é o que a UI mostra.
+    '''
+    ''' Sem isto o detector calculava um veredito que ninguém lia, e a §25
+    ''' afirmava que "encolheu → as conclusões anteriores caem" quando o que
+    ''' acontecia era "o detector consegue devolver um diagnóstico, se alguém
+    ''' o chamar".
+    '''
+    ''' E o efeito é <b>aviso</b>, não invalidação: não há conclusão a
+    ''' invalidar, porque em cached a cobertura já é sempre parcial e ausência
+    ''' já é proibida (§23).
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_contracao_aparece_na_ressalva_do_manifesto()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Varrer(db, 1, "a", "b", "c", "d")
+            Varrer(db, 2, "a", "b")
+
+            Dim m = New ManifestReader(db).Ler(1)
+
+            Assert.IsNotNull(m.Contracao, "o manifesto tem de carregar o veredito")
+            Assert.AreEqual(ContractionVerdict.Encolheu, m.Contracao.Verdict)
+            StringAssert.Contains(m.Ressalva, "passou a enxergar menos",
+                "a contracao tem de chegar na ressalva, que e o que a UI mostra")
+            StringAssert.Contains(m.Ressalva, "Acervo parcial",
+                "e a ressalva de cobertura continua junto")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' E sem contração a ressalva não ganha ruído: só o que já havia.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Sem_contracao_a_ressalva_nao_ganha_ruido()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Varrer(db, 1, "a", "b")
+            Varrer(db, 2, "a", "b", "novo")
+
+            Dim m = New ManifestReader(db).Ler(1)
+
+            Assert.AreEqual(ContractionVerdict.Estavel, m.Contracao.Verdict)
+            Assert.IsFalse(m.Ressalva.Contains("passou a enxergar menos"),
+                "chegar e-mail nao pode virar aviso de contracao")
+        End Using
+    End Sub
+
+    ' ==================================================================
 
     Private Shared Sub Exec(db As CacheDatabase, sql As String)
         Using cmd = db.Connection.CreateCommand()

@@ -58,6 +58,56 @@ Public Class ImportacaoRealTests
     ''' Medir exigia exatamente isto: o adaptador real, na fila da STA, contra
     ''' a caixa do usuário.
     ''' </summary>
+    ''' <summary>
+    ''' <b>Qual tamanho de lote cabe no orçamento da D5.</b>
+    '''
+    ''' A primeira medição usou lote de 100 e eu reportei a execução mais
+    ''' favorável — máximo de 62 ms — ignorando as outras quatro do mesmo
+    ''' arquivo, que deram 107, 120, 98 e 115. O orçamento é sobre latência
+    ''' <b>máxima</b>, então a D5 estava medida e <b>reprovada</b>.
+    '''
+    ''' A saída não é mover o orçamento até o resultado passar. O tamanho do
+    ''' lote é o botão de ajuste; o orçamento é o requisito. Este teste varre a
+    ''' mesma pasta com lotes diferentes e reporta o máximo de cada um, em
+    ''' várias execuções — porque uma execução só foi exatamente o que me
+    ''' enganou.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Qual_tamanho_de_lote_cabe_no_orcamento_da_D5() As Task
+        Const Orcamento As Integer = 100
+        Const Repeticoes As Integer = 3
+
+        Using broker = Await AbrirAsync()
+            Dim alvo = Await AcharPastaAsync(broker, "Caixa de Entrada")
+            Dim universo As New SweepUniverse(
+                alvo.StoreId, alvo.EntryId, "todos", Nothing, 1, "cached|janela-nao-lida")
+
+            Anotar("")
+            Anotar("=== D5: qual lote cabe em " & Orcamento & " ms ===")
+            Anotar("tamanho | exec | lotes |  min | mediana |  MAX | cabe?")
+
+            For Each tamanho In {25, 50, 100}
+                For rep = 1 To Repeticoes
+                    Dim fonte As New OutlookSweepSource(broker, alvo, universo, 1)
+                    Dim relogio As New RelogioDeLotes(fonte)
+                    ' Sem destino: aqui a medicao e da LEITURA, e escrever no
+                    ' SQLite misturaria o custo do banco com o do COM.
+                    Dim ms As New List(Of Long)()
+                    Dim cursor As String = Nothing
+                    Do
+                        Dim p = relogio.LerPagina(cursor, tamanho, CancellationToken.None)
+                        If p.Fim Then Exit Do
+                        cursor = p.NextCursor
+                    Loop
+                    ms = relogio.Lotes.Select(Function(x) x.Ms).ToList()
+                    Dim mx = If(ms.Count = 0, 0L, ms.Max())
+                    Anotar($"{tamanho,7} | {rep,4} | {ms.Count,5} | {If(ms.Count = 0, 0L, ms.Min()),4} | " &
+                           $"{Mediana(ms),7} | {mx,4} | {If(mx <= Orcamento, "SIM", "NAO")}")
+                Next
+            Next
+        End Using
+    End Function
+
     <TestMethod>
     Public Async Function Importa_uma_pasta_real_e_mede_a_latencia_por_lote() As Task
         Using broker = Await AbrirAsync()
@@ -94,7 +144,12 @@ Public Class ImportacaoRealTests
                 Anotar($"idas COM  : {fonte.IdasAoProvider}")
                 Anotar($"descartadas: {fonte.Descartadas}  (nao-mensagem ou erro de leitura)")
                 Anotar("")
+                ' A CONDICAO faz parte da medicao. Medir com a suite inteira
+                ' no ar da max 184 ms; isolado da 57. Nenhum dos dois e errado
+                ' - errado e publicar um sem dizer qual.
                 Anotar("=== D5: latencia por lote (ms) ===")
+                Anotar("    condicao: rode via tools/medir-d5.ps1 para a medicao ISOLADA," &
+                       " que e a normativa")
                 For Each l In relogio.Lotes
                     Anotar($"  lote {l.Numero,3}: {l.Ms,6} ms   {l.Linhas,4} linhas")
                 Next

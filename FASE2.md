@@ -2890,8 +2890,8 @@ exceção não tratada.
 | 5 | Itens de teste devolvidos | ok, **com exceção declarada** — três cópias ficaram em Itens Excluídos (§11), por segurança, e a pasta `Iris Q4R` vazia que o tenant recusou excluir (§21.4) |
 | 6 | Corpus adversarial da Q2 com oráculo prévio | ok |
 | 7 | Critério operacional de invalidação, com dado | ok — S6 |
-| 8 | Latência máxima por lote | **ok** — §24.4: medido, mediana 56 ms, máx 62 ms |
-| 9 | Crash entre commit, checkpoint e publicação | **ok** — §22.1 + §24.3. Mecanismo completo e testado; o consumidor da UI é do 2.4 |
+| 8 | Latência máxima por lote | **ok** — §24.4: máx **58 ms** em condição isolada (a normativa), orçamento 100 ms |
+| 9 | Crash entre commit, checkpoint e publicação | **parcial** — §22.1 + §24.3: persistência, dreno e entrega ao-menos-uma-vez provados. Falta o consumidor real da UI, e o critério fala em *publicação para a UI* |
 | 10 | Reconciliação antiga não sobrescreve nova | **ok** — §22.2 |
 
 ### 22.9 O que ficou de fora do 2.1, e por quê
@@ -3081,8 +3081,18 @@ uma derrota em recurso é grande e eu já escrevi a versão inflada:
 
 | | |
 |---|---|
-| **Serve para** | invalidar. Encolheu → as conclusões anteriores caem |
+| **Serve para** | avisar. Encolheu → a ressalva do manifesto diz isso ao usuário |
 | **Não serve para** | autorizar. Nunca transforma cobertura desconhecida em completa |
+
+E o verbo importa. A primeira versão desta seção dizia *"encolheu → as
+conclusões anteriores caem"*, e o Codex mostrou que o que acontecia era *"o
+detector consegue devolver um diagnóstico, se alguém o chamar"* — nenhum código
+de produção o chamava, e ele não mexia em época, cobertura nem associação.
+
+Agora o `ManifestReader` o consulta e a contração entra na **ressalva**, que é o
+que a UI mostra. E o efeito é **aviso**, não invalidação: <b>não há conclusão a
+invalidar</b>, porque em cached a cobertura já é sempre parcial e ausência já é
+proibida (§23). Aviso é a única consequência que o escopo aceito comporta.
 
 Os buracos, e são estruturais, não detalhes:
 
@@ -3285,7 +3295,7 @@ falhou; religuei, passou.
 
 ### 24.3 O critério 9 fechado
 
-O `PublicationDrain` é o consumidor que faltava. A ordem das duas linhas **é**
+O `PublicationDrain` é o **entregador** que faltava — não o consumidor. Ele recebe um `IPublicationConsumer` de fora e chama `Receber`; quem implementa essa interface hoje é só o teste. A ordem das duas linhas **é**
 a escolha: consumir vem antes de marcar drenada, então morrer entre as duas
 repete a entrega. A ordem inversa daria *no máximo uma vez* — morrer no meio
 perderia a geração para sempre, com a UI mostrando estado velho e nada no
@@ -3300,24 +3310,54 @@ cabeça da fila, e o bloqueio é deliberado — marcar como drenada uma geraçã
 que a UI não recebeu seria perder em silêncio. O que mudou não é o bloqueio: é
 ele deixar de ser invisível.
 
-> **O que falta do critério 9:** o consumidor da UI. O mecanismo existe e é
-> testado; quem implementa `IPublicationConsumer` hoje é só o teste.
+> **Por isso o critério 9 fica PARCIAL.** A infraestrutura está pronta e
+> testada ponta a ponta; *"publicação para a UI"* não está, porque não há UI
+> consumindo. Marcá-lo `ok` seria o mesmo arredondamento que o Codex já me
+> pegou fazendo duas vezes nesta fase.
 
-### 24.4 D5 medida — o último critério que era "decidido e não medido"
+### 24.4 D5 medida — e o ambiente de medição era parte da medição
 
-Caixa de Entrada real, 1.022 itens declarados, lote de 100:
+Este é o item que eu quase entreguei errado, e o erro é o da fase inteira.
 
-| | |
-|---|---|
-| lotes | 11 |
-| **mínimo** | **44 ms** |
-| **mediana** | **56 ms** |
-| **máximo** | **62 ms** |
-| total da varredura | 921 ms |
-| idas ao COM | 13 |
+**A primeira versão desta seção dizia:** Caixa de Entrada, 11 lotes de 100,
+máximo 62 ms, *"todos abaixo do orçamento de 100 ms"*.
 
-O orçamento decidido era **100 ms por lote**. Todos abaixo, com folga de 38 ms
-no pior caso. Medido na fila da STA contra a caixa do usuário, não estimado.
+**O que o arquivo de medições continha:** cinco execuções, três delas acima do
+orçamento — 107, 120 e 115 ms. Eu reportei a favorável e ignorei as outras
+quatro. Quem achou foi o Codex, lendo o arquivo inteiro.
+
+Mas a conclusão óbvia — *"então a D5 reprovou"* — também estava errada. As
+execuções ruins aconteceram com a **suíte inteira no ar**: o MSTest roda 12
+workers em paralelo, e outros testes disputavam a mesma fila da STA, mais os
+testes de crash gerando processos.
+
+Medido nas três condições, mesma pasta, mesmo lote de 100:
+
+| Condição | mín | mediana | **máx** | cabe em 100 ms? |
+|---|---|---|---|---|
+| **Isolado** (o produto) | 41–47 | 48–53 | **57–58** | **sim** |
+| Dois testes COM em paralelo | 59–64 | 67–70 | 74–76 | sim |
+| Suíte inteira, 12 workers | 86 | 115 | **184** | não |
+
+> **Nenhum dos dois números que eu quase publiquei era a medição do produto.**
+> "62 ms, todos abaixo" era uma execução escolhida a dedo; "120 ms, reprovado"
+> era o custo do paralelismo do meu próprio teste.
+
+O ambiente de medição era parte da medição, e eu não tinha declarado qual.
+**Número sem condição declarada não é medição** — é uma das leituras que ele
+admite.
+
+A condição normativa é a **isolada**: o produto não roda 317 testes em paralelo
+consigo mesmo. Reprodutível por `tools/medir-d5.ps1`, que existe para que o
+número nunca mais saia sem a condição junto.
+
+**Resultado:** orçamento de 100 ms por lote, máximo medido de 58 ms na condição
+normativa, com lote de 100 linhas. Cabe, com folga de 42 ms.
+
+E o tamanho do lote é o botão, medido também — 25, 50 e 100 linhas, três
+execuções cada, todas abaixo do orçamento. O custo por lote quase não varia com
+o tamanho (máx 50–90 ms em 25 linhas contra 52–57 em 100), o que diz que o
+custo dominante é a **ida ao COM**, e não o número de linhas.
 
 ### 24.5 Dois defeitos que só a caixa real revelava
 
