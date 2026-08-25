@@ -3634,9 +3634,27 @@ indistinguível de *"não há nada guardado"*.
 - **O app não varre.** O cache só tem o que uma importação manual colocou nele,
   então numa máquina limpa a faixa dirá *"esta pasta ainda não foi varrida"* —
   que é a verdade.
-- **A faixa não foi verificada visualmente.** Ela compila, os bindings resolvem
-  e há teste cobrando que estejam lá; abrir o app conectaria ao Outlook do
-  usuário, e isso não é coisa de fazer sem ele pedir.
+- **A faixa renderiza — verificado, não suposto.** Eu tinha declarado isto como
+  limitação: *"compila e os bindings resolvem, mas ninguém olhou a tela"*, e
+  empurrado a verificação para o usuário. Estava errado nas duas pontas.
+
+  Resolver o caminho do binding é bem menos que mostrar o texto: um `Style` com
+  `Visibility` errada, um conversor que devolve `Collapsed` sempre, uma linha de
+  `Grid` com altura zero — qualquer um deixa o binding perfeito e o texto
+  invisível. E a distinção entre *o caminho resolve* e *o texto aparece* é
+  exatamente o assunto desta fase.
+
+  Olhar a tela também não precisava do usuário: precisava de um `Measure` e um
+  `Arrange` fora do vídeo. `FaixaDoAcervoRenderizaTests` constrói a faixa,
+  arranja em 900 px, percorre a árvore visual conferindo a visibilidade de cada
+  nó no caminho — um `TextBlock` perfeito dentro de um pai colapsado não é lido
+  por ninguém — e cobra o texto da ressalva. Com contraponto (sem ressalva a
+  faixa tem altura zero) e controle (a leitura acha um texto plantado).
+
+  O que continua não verificado é a janela INTEIRA montada: ela exige um
+  `MainViewModel`, que exige o broker, que exige o Outlook. Por isso este teste
+  anda junto do de bindings, que lê o XAML de verdade — um cobre o que o outro
+  não alcança.
 - **O dreno periódico roda a cada 30 s** e hoje quase nunca acha trabalho,
   porque nada no app publica. O intervalo é folgado de propósito: bater no
   banco a cada segundo para não achar nada seria custo sem informação.
