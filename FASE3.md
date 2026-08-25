@@ -1,150 +1,255 @@
 # Fase 3 — IA sob demanda
 
-> Plano. Escrito antes de qualquer código, para ser derrubado antes de
-> qualquer código.
+> Plano, segunda versão. A primeira foi escrita antes de qualquer código
+> justamente para ser derrubada barato, e foi: o Codex achou sete bloqueadores
+> estruturais. Estão incorporados aqui, com os nomes dele.
 
 ## 28. O que esta fase é, e o que ela não pode ser
 
-O ESCOPO.md descreve a Fase 3 em uma linha: *"Resumo e redação sobre a mensagem
-ou thread aberta."* A linha é curta e o assunto não é.
+O ESCOPO descreve a Fase 3 em uma linha: *"Resumo e redação sobre a mensagem ou
+thread aberta."* A linha é curta e o assunto não é.
 
 O que muda aqui, e não mudou em nenhuma fase anterior: **conteúdo da caixa
-corporativa do usuário passa a poder sair da máquina**. Todas as fases até agora
-leram, guardaram e mostraram — sempre dentro do computador dele. Um resumo feito
-por API externa é a primeira vez que texto de e-mail de trabalho atravessa a
-fronteira.
+corporativa passa a poder sair da máquina**. Todas as fases até agora leram,
+guardaram e mostraram — sempre dentro do computador. Um resumo por API externa é
+a primeira vez que texto de e-mail de trabalho atravessa a fronteira.
 
-Isso não é detalhe de implementação. É o risco **R11** do ESCOPO, e ele é
-explícito sobre a mitigação:
-
-> Mitigação principal: **política explícita de permissão e opt-in**, não
-> tentativa automática de redigir dados.
-
-E lista, item por item: escopo de pastas habilitado explicitamente e nunca por
-padrão; bloquear mensagens protegidas ou classificadas; log de metadados e nunca
-de conteúdo; confirmação explícita antes de anexos; verificar a política
-corporativa aplicável.
+Isso é o risco **R11**, e ele já prescreve a mitigação: *política explícita de
+permissão e opt-in, não tentativa automática de redigir dados*.
 
 ### 28.1 O bloqueio herdado da Fase 0
 
-A §10 do ESCOPO registra, sob *"O que continua NÃO validado"*:
+A §10 do ESCOPO, sob *"O que continua NÃO validado"*:
 
 > **Rótulos de sensibilidade do Purview** (`MSIP_Labels` via `PropertyAccessor`).
-> `MailItem.Sensitivity` é a propriedade clássica e não responde por rótulos
-> modernos. **Obrigatório antes da Fase 3.**
+> **Obrigatório antes da Fase 3.**
 
-Ou seja: a fase começa por uma medição, não por código de produto. Enquanto o
-Iris não souber ler o rótulo de uma mensagem, ele não tem como saber o que está
-proibido de mandar para fora — e nesse estado a única política defensável é
-mandar nada.
+A fase começa por uma medição, não por código de produto. Enquanto o Iris não
+souber ler o rótulo, ele não sabe o que está proibido de mandar — e nesse estado
+a única política defensável é mandar nada.
 
-### 28.2 A decisão que eu tomo, e o usuário revisa depois
+### 28.2 O que eu decido, e o que continua sendo do usuário
 
 O usuário pediu execução independente e não está no computador. Duas coisas
 dependem dele e não podem ser supridas por mim:
 
-1. **A política corporativa aplicável.** Não dá para inferir de arquivo nenhum
-   nesta máquina se a empresa permite mandar corpo de e-mail para API externa.
-2. **A escolha do provedor e a credencial.** Chave de API é dele, e não é coisa
-   que eu configure.
+1. **A política corporativa aplicável.** Não é inferível de arquivo nenhum nesta
+   máquina.
+2. **O provedor e a credencial.** A escolha é dele; chave de API não é coisa que
+   eu configure.
 
-Então a fase é construída **inteira** e entregue com a transmissão **fechada** —
-o mesmo desenho da §23, que ele já aceitou: o mecanismo existe, é testado, e a
-política de produção autoriza **zero**. Ligar exige um ato explícito dele,
-registrado, com data e texto.
+Então a transmissão fica **fechada**. Mas — e esta é a primeira correção do
+Codex — **não vou chamar isso de "Fase 3 concluída"**. A analogia com a §23 é
+fraca: lá o modo degradado ainda entrega um acervo útil; aqui transmissão zero
+significa que o resultado central da fase **não funciona em produção**.
 
-Não é o mesmo que "não fiz". O portão, o diário, a porta, os provedores, a UI e
-a prova de que nada escapa por fora ficam prontos e verificáveis. O que não
-acontece é conteúdo dele sair desta máquina por decisão minha.
+A formulação honesta, e a que vale para o relatório:
+
+> **Implementação e provas locais concluídas. Ativação operacional e aceitação
+> contra provedor real bloqueadas por decisão externa.**
+
+Pelo mesmo motivo, **não escolho provedor**. Escrever um adaptador para uma API
+específica seria antecipar uma decisão que este plano diz ser dele. O que fica
+pronto é a **porta** e o servidor HTTP **local falso** que a exercita; o
+provedor HTTP concreto é escrito como **referência não configurável**, e **não
+conta como integração validada**.
 
 **Nada de e-mail é enviado nesta fase**, como em todas as anteriores.
 
+### 28.3 A cerimônia de ativação
+
+Ligar a transmissão, quando ele quiser, exige um ato explícito e versionado que
+declare: a autoridade/política que permite; provedor, endpoint, modelo e região;
+a política de retenção e treinamento aceita; as pastas e rótulos permitidos; a
+credencial no armazenamento apropriado; e um teste controlado escolhido por ele.
+Só depois disso a fase passa a **operacionalmente aceita**.
+
 ---
 
-## 29. Marcos
+## 29. Os sete bloqueadores, e como o desenho responde
 
-### 3.0 — A medição do Purview (desbloqueia a fase)
+O Codex mostrou que um portão pode **parecer** fail-closed e ser contornável sem
+nunca devolver "permitido" formalmente. Estes são os caminhos, e a resposta de
+cada um.
 
-Contra a caixa real, somente leitura. Perguntas, cada uma com resposta medida:
+### 29.1 A unidade de decisão não é "um pedaço de conteúdo"
+
+Uma thread tem mensagens com **rótulos diferentes**, pastas diferentes e
+resultados de leitura diferentes. Decidir sobre "o conteúdo" apaga isso.
+
+**Regra:** cada mensagem carrega identidade, pasta, rótulo e resultado de
+leitura próprios. E na primeira versão, **um membro que não seja comprovadamente
+permitido nega a thread inteira** — resumo parcial é fácil demais de confundir
+com resumo completo.
+
+### 29.2 Exigir o veredito no construtor não basta
+
+Um veredito pode ser reutilizado para outro texto, emitido antes de o texto
+mudar, ou associado ao item certo e a uma serialização diferente.
+
+**Regra:** a autorização é uma **capability opaca**, emitida só pela política,
+vinculada ao **hash dos bytes exatos** a transmitir, ao conjunto e versão dos
+itens, à pasta, à operação, ao provedor/modelo, à versão da política e da
+autorização — com validade curta e **consumo único**. O transmissor **recalcula
+o hash imediatamente antes de enviar**; divergiu, nega.
+
+Isso fecha o TOCTOU que a P10 vai medir.
+
+### 29.3 Conteúdo citado destrói a segurança "por mensagem"
+
+Mensagem sem rótulo pode citar integralmente uma classificada. Remover citação
+não é barreira: heurística falha por idioma, cliente, HTML e edição manual.
+
+**Regra:** esta fase adota a premissa de que **o rótulo do item governa o corpo
+inteiro daquele item**, e a registra como **premissa corporativa a confirmar** —
+não como fato. É mais uma razão para a transmissão nascer fechada: a premissa
+não foi confirmada por ninguém.
+
+### 29.4 O pipeline de conteúdo precisa ser especificado, não improvisado
+
+Assunto, remetentes e destinatários **são conteúdo**. Corpo tem HTML malformado,
+texto oculto, CSS, comentários, entidades, RTF, `cid:`, data URIs, imagens
+inline e OLE. O plano especifica: qual campo entra, como é normalizado, que
+limite em **bytes UTF-8 da requisição final**, truncamento **determinístico por
+fronteira de mensagem** e **visível**, e **nenhuma busca de recurso remoto**.
+Anexo inline é anexo, não "corpo grátis" — e anexo está fora desta fase.
+
+### 29.5 O e-mail é dado hostil, e a resposta do modelo também
+
+A resposta **nunca** vira comando: não escolhe endpoint, modelo ou header; não
+pede nova chamada; não aciona COM; não cria destinatário nem anexo; não envia;
+não abre URL; não renderiza HTML ou Markdown ativo; não sobrescreve o rascunho
+sem revisão.
+
+O provedor **não tem tools nem function calling** nesta fase. Instrução do
+sistema, instrução do usuário e conteúdo do e-mail vão em **campos estruturais
+separados** — concatenar tudo num prompt único é o que torna a injeção fácil.
+
+Redigir insere no composer, que é **mutação local**: preserva o texto anterior e
+oferece desfazer.
+
+### 29.6 O diário precisa de protocolo de crash
+
+Registrar depois da chamada perde justamente os casos que importam.
+
+**Cinco passos:** intenção durável **antes** da tentativa → hash dos bytes
+exatos → início da transmissão → conclusão ou falha → **`Ambiguous`** se o
+processo morrer ou a conexão cair depois de o envio poder ter começado. É a
+mesma disciplina do `ErrorKind.Ambiguous` que o CLAUDE.md já impõe às mutações.
+
+Decisão **negada** não registra hash como se algo tivesse saído.
+
+### 29.7 Concorrência e obsolescência
+
+Enquanto a IA responde, o usuário troca de mensagem, edita o rascunho, pede
+outra geração ou fecha a janela — e o item pode mudar no Outlook. **Resposta
+velha não aparece em contexto novo nem sobrescreve edição posterior.** Cada
+operação tem `RequestId` e geração, e o resultado só é publicado depois de
+conferir o contexto.
+
+---
+
+## 30. A fronteira HTTP
+
+Quando existir provedor: redirects **desativados**; endpoint fixo pela
+configuração autorizada e **nunca vindo do prompt**; só HTTPS; credencial nunca
+em query string nem em log; **nenhum retry automático depois de a transmissão
+começar** — é a regra "leitura tem retry, mutação não" do CLAUDE.md aplicada ao
+egress; timeout e cancelamento **não** significam que o provedor não recebeu, e
+viram `Ambiguous`; limites de request e response; corpo de status **não
+registrado**, porque pode ecoar conteúdo; exceções e telemetria sanitizadas.
+
+E a regra arquitetural, corrigida: um teste de IL que só provasse que o
+`Iris.App` não instancia provedor **não prova que outro assembly não abre rede**.
+A regra é **todo egress de IA vive num único assembly de infraestrutura**, com
+teste arquitetural sobre as referências de rede e **controle positivo**.
+
+---
+
+## 31. Arquitetura
+
+```
+Iris.Model
+    ↑
+Iris.Core
+    ↑
+Iris.Assist          contratos, política, montagem, orquestração
+    ↑                (sem COM, sem WPF, sem SQLite, sem HTTP)
+├─ Iris.Integration.Assist.Http     o UNICO com egress
+├─ Iris.Integration.Assist          diário sobre o Iris.Cache
+└─ extração via broker (sem tipo COM cruzando)
+    ↑
+Iris.App             composition root + UI
+```
+
+Distinção que o Codex cobrou e que eu não tinha: **`IAssistantProvider`** é a
+porta externa — "chamar o modelo". O **serviço de aplicação** que aplica
+política, monta contexto, registra intenção e publica resultado é outra coisa.
+Um nome só para os dois faria alguém confundir chamar o modelo com executar a
+operação segura.
+
+---
+
+## 32. Marcos
+
+| | O quê |
+|---|---|
+| **3.0** | A medição do Purview, **pelo broker real**, somente leitura |
+| **3.1** | `LabelReading` e `DisclosurePolicy` — o portão, falha fechada |
+| **3.2** | Montagem de contexto e a **capability vinculada aos bytes** |
+| **3.3** | O diário durável, com os cinco passos e o `Ambiguous` |
+| **3.4** | A porta, o servidor falso local, e o provedor de referência |
+| **3.5** | A UI: motivo em português, resumo, rascunho com desfazer |
+| **3.6** | Provas adversariais ponta a ponta |
+| **3.7** | Relatório — e a ativação real **fica pendente** |
+
+### 3.0 — a medição, e por onde ela passa
+
+**Pelo broker/STA real, não por um script à parte.** Medir por outro caminho
+mede o Outlook, não o caminho do produto — o erro metodológico que o próprio
+ESCOPO adverte.
 
 | | Pergunta |
 |---|---|
 | **P1** | `MSIP_Labels` existe nesta conta? Sob qual DASL? |
 | **P2** | Dá para ler sem prompt do Object Model guard? |
-| **P3** | Em que fração das mensagens aparece, e com que valores? |
+| **P3** | Em que fração das mensagens aparece? |
 | **P4** | O `Sensitivity` clássico concorda com o rótulo moderno? |
 | **P5** | Existe mensagem cujo corpo o OOM recusa (IRM)? Como recusa? |
 | **P6** | O rótulo vem por `Table` (barato) ou exige abrir o item? |
-| **P7** | Como `PropertyAccessor` reage a propriedade **ausente**? |
+| **P7** | Como o `PropertyAccessor` reage a propriedade **ausente**? |
+| **P8** | Pode haver **múltiplos** rótulos? Qual prevalece? Como distinguir removido, obsoleto e desconhecido? |
+| **P9** | O valor informa **proteção/criptografia** separada da classificação? |
+| **P10** | O rótulo pode mudar entre ler o corpo e transmitir? Que identidade/versão detecta isso? |
+| **P11** | Enviados, rascunhos, compartilhadas e outros stores expõem igual? |
+| **P12** | Anexos e mensagens embutidas têm classificação própria? |
+| **P13** | Ler corpo ou rótulo **dispara download** ou altera estado local? |
+| **P14** | Qual a semântica de **ausência**? |
+| **P15** | Aparecem propriedades alternativas quando `MSIP_Labels` não aparece? |
 
-A **P7 é a mais importante da lista**, e é por um motivo que já custou caro nesta
-base: se "não tem rótulo" e "não consegui ler o rótulo" chegarem ao código como
-o mesmo valor, o portão vai liberar mensagem classificada toda vez que a leitura
-falhar. As duas têm de ser distinguíveis no tipo, não por convenção.
+Sobre a **P14**, e é o que fecha o portão: *"sem rótulo"* **não** significa
+*"permitido"*. Isso vem da política corporativa, não da propriedade.
 
-Saída: `tools/medir-purview.ps1`-equivalente em teste de integração, mais a
-resposta escrita aqui.
+E a **P7** não é sozinha a mais importante — a **P10** é estrutural do mesmo
+jeito, porque é ela que amarra a decisão ao que de fato foi transmitido. O tipo
+de leitura precisa representar, no mínimo: **ausente comprovado**, **lido**,
+**leitura negada**, **item protegido/IRM**, **erro transitório**, **item
+indisponível ou parcialmente baixado**, **valor vazio**, **valor malformado ou
+desconhecido**, **múltiplos/conflito**, **item mudou durante a leitura**.
 
-### 3.1 — O portão (`DisclosurePolicy`)
+Só "ausente versus exceção" **não fecha o portão**.
 
-Decide se um pedaço de conteúdo pode sair da máquina. Falha **fechada**, e em
-graus, como o `EnvironmentPolicy` da Fase 2.
-
-Nega, e diz por quê, quando:
-- o rótulo não pôde ser lido — **ilegível é proibido**, não "sem rótulo";
-- há rótulo e ele não está numa allowlist explícita;
-- a pasta não foi habilitada explicitamente;
-- não há autorização registrada do usuário;
-- é anexo (fora de escopo nesta fase, por inteiro).
-
-Prova obrigatória: **a configuração de produção autoriza zero**, com teste, como
-a matriz da §22.
-
-### 3.2 — A porta (`Iris.Assist`)
-
-Projeto novo, `net10.0`, sem COM e sem WPF — como o `Iris.Sync`. Define
-`IAssistant` e os DTOs. Nenhum provedor concreto mora aqui.
-
-Um `AssistantRequest` **só pode ser construído a partir de conteúdo já liberado
-pelo portão** — não por disciplina de quem chama, mas porque o construtor exige
-o veredito. Se der para montar um pedido sem passar pelo portão, o portão é
-decoração.
-
-### 3.3 — O diário (`DisclosureLog`)
-
-Tabela nova no cache: quando, qual item, veredito, hash SHA-256 do que saiu,
-tamanho em bytes, modelo, desfecho. **Nunca o conteúdo** — um log com o texto
-cria mais uma cópia sensível, e é o R11 dizendo isso.
-
-Controle negativo obrigatório: plantar uma isca no corpo, rodar o caminho
-inteiro, e varrer o banco atrás da isca. Achou, reprova.
-
-### 3.4 — Provedores
-
-- `AssistenteFalso`, determinístico, para teste.
-- `AssistenteIndisponivel` — **o padrão de produção**. Recusa e diz por quê.
-- `AssistenteHttp` para a Messages API da Anthropic, escrito e testado contra um
-  servidor HTTP **local** falso. Sem chave, sem endereço de produção, desligado.
-
-Prova: teste sobre o IL do `Iris.App` de que nenhum provedor de rede é
-instanciado sem autorização — o mesmo instrumento da §26.2.
-
-### 3.5 — A UI
-
-Painel sobre a mensagem aberta:
-- quando o portão nega, **o motivo aparece em português**, não um código;
-- quando libera, o resumo aparece com o modelo e o tamanho enviados à vista;
-- redigir produz **rascunho no composer**, nunca envio.
-
-### 3.6 — Ponta a ponta, e o relatório
+A medição registra **contagens e valores pseudonimizados**. Nome completo de
+rótulo e amostra de corpo não vão para o relatório se a contagem basta.
 
 ---
 
-## 30. O que esta fase NÃO faz
+## 33. O que esta fase NÃO faz
 
 - Não envia e-mail.
-- Não manda nada para fora sem ato explícito do usuário, registrado.
-- Não redige dados sensíveis automaticamente — o ESCOPO rebaixou isso por não
-  ser barreira de compliance, e fingir que é seria pior que não ter.
+- Não manda nada para fora — a transmissão nasce fechada e depende da §28.3.
+- Não escolhe provedor.
+- Não redige dados sensíveis automaticamente: o ESCOPO rebaixou isso por não ser
+  barreira de compliance, e fingir que é seria pior que não ter.
 - Não trata anexos.
 - Não faz triagem nem busca semântica (Fase 4).
