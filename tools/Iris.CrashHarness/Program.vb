@@ -190,7 +190,7 @@ Namespace Global.Iris.CrashHarness
                 "ativacao-harness", 1, "harness", agora.AddDays(-1),
                 "provedor-de-teste", "https://exemplo.invalido/v1", "modelo-de-teste",
                 "local", "sem retencao", {AssistOperation.Resumir}, {pasta},
-                Array.Empty(Of String)(), {LabelReadingKind.Absent}, {0})
+                Array.Empty(Of String)(), {LabelReadingKind.Absent}, {0}, ate:=agora.AddDays(30))
 
             Dim mensagens As New List(Of MessageClassification)()
             Dim partes As New List(Of MessagePart)()

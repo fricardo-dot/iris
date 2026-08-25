@@ -52,7 +52,7 @@ Public Class AssistenteViewModelTests
                                     "local", "sem retenção",
                                     operacoes, {Pasta},
                                     Array.Empty(Of String)(),
-                                    {LabelReadingKind.Absent}, {0})
+                                    {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
     End Function
 
     Private Shared Function Classificada(n As Integer) As MessageClassification

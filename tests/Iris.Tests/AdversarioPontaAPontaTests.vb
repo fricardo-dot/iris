@@ -108,7 +108,7 @@ Namespace Global.Iris.Tests
                                         "local", "sem retenção",
                                         {AssistOperation.Resumir, AssistOperation.Redigir},
                                         {Pasta}, Array.Empty(Of String)(),
-                                        {LabelReadingKind.Absent}, {0})
+                                        {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
         End Function
 
         ''' <summary>Um rótulo que a ativação lista — o caso que passa.</summary>

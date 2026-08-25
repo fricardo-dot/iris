@@ -95,7 +95,7 @@ Public Class PontaAPontaAssistTests
                                     "local", "sem retenção",
                                     {AssistOperation.Resumir}, {Pasta},
                                     Array.Empty(Of String)(),
-                                    {LabelReadingKind.Absent}, {0})
+                                    {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
     End Function
 
     Private Shared Function Destino(endereco As String) As AssistDestination

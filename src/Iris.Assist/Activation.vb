@@ -57,8 +57,32 @@ Namespace Global.Iris.Assist
 
         ''' <summary>Quem autorizou, e sob que política. Texto obrigatório.</summary>
         Public ReadOnly Property Autoridade As String
+
+        ''' <summary>
+        ''' <b>A política corporativa aplicável foi verificada?</b>
+        '''
+        ''' Campo próprio, e não um adjetivo enfiado na <see cref="Autoridade"/>.
+        ''' As duas perguntas são diferentes: <i>quem autorizou</i> e <i>sob que
+        ''' apuração</i>. Escrever "não verificada" no campo de autoria responde
+        ''' a pergunta errada e some da vista de quem procura a resposta certa.
+        '''
+        ''' <c>False</c> não impede a ativação — é decisão do dono da caixa —,
+        ''' mas fica <b>visível na faixa o tempo todo</b>, e não enterrado no
+        ''' arquivo.
+        ''' </summary>
+        Public ReadOnly Property PoliticaCorporativaVerificada As Boolean
+
         Public ReadOnly Property Quando As DateTimeOffset
-        ''' <summary>Depois disto, não vale mais. <c>Nothing</c> = sem prazo.</summary>
+
+        ''' <summary>
+        ''' Depois disto, não vale mais. <b>Obrigatório e finito.</b>
+        '''
+        ''' Já foi opcional, e <c>Nothing</c> queria dizer "sem prazo". Uma
+        ''' autorização sem prazo é uma decisão tomada uma vez e obedecida para
+        ''' sempre: quem a concedeu esquece, o provedor muda de política, a
+        ''' pasta de teste vira pasta de trabalho, e nada obriga ninguém a olhar
+        ''' de novo. O prazo é o que força a reencontrar a decisão.
+        ''' </summary>
         Public ReadOnly Property Ate As DateTimeOffset?
 
         Public ReadOnly Property Provedor As String
@@ -66,8 +90,40 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Endpoint As String
         Public ReadOnly Property Modelo As String
         Public ReadOnly Property Regiao As String
-        ''' <summary>A política de retenção e treinamento que foi aceita.</summary>
+        ''' <summary>
+        ''' A política de retenção e treinamento que foi aceita, <b>em texto</b>
+        ''' — para quem ler o registro depois.
+        '''
+        ''' Ela <b>descreve</b>; quem <b>impõe</b> é
+        ''' <see cref="ExigirRetencaoZero"/> e
+        ''' <see cref="ProvedoresPermitidos"/>. Os dois papéis ficam separados
+        ''' de propósito: cruzar texto livre com comportamento seria adivinhar o
+        ''' que a frase quis dizer.
+        ''' </summary>
         Public ReadOnly Property RetencaoAceita As String
+
+        ''' <summary>
+        ''' <b>Exigir retenção zero no próprio pedido.</b>
+        '''
+        ''' Sem isto, a autorização declarava "retenção aceita: nenhuma" e o
+        ''' pedido não impunha nada — o registro seria uma frase bonita sem
+        ''' efeito, e a frase bonita é pior que o silêncio porque alguém confia
+        ''' nela.
+        '''
+        ''' Com gateway, é isto que vira restrição de roteamento no pedido.
+        ''' </summary>
+        Public ReadOnly Property ExigirRetencaoZero As Boolean
+
+        ''' <summary>
+        ''' Os provedores subjacentes que o pedido autoriza — vazio quer dizer
+        ''' <b>qualquer um</b> que satisfaça as outras restrições.
+        '''
+        ''' Existe porque gateway roteia: o endpoint autorizado é o do gateway, e
+        ''' quem de fato processa o conteúdo pode ser outro, com região e
+        ''' retenção próprias. Listar aqui é o único jeito de a autorização
+        ''' falar sobre quem realmente vê a mensagem.
+        ''' </summary>
+        Public ReadOnly Property ProvedoresPermitidos As IReadOnlyList(Of String)
 
         Public ReadOnly Property Operacoes As IReadOnlyList(Of AssistOperation)
         Public ReadOnly Property Pastas As IReadOnlyList(Of FolderKey)
@@ -100,7 +156,10 @@ Namespace Global.Iris.Assist
                        leituras As IEnumerable(Of LabelReadingKind),
                        contentBits As IEnumerable(Of Integer),
                        Optional ate As DateTimeOffset? = Nothing,
-                       Optional ignorarHistorico As Boolean = False)
+                       Optional ignorarHistorico As Boolean = False,
+                       Optional politicaCorporativaVerificada As Boolean = False,
+                       Optional exigirRetencaoZero As Boolean = False,
+                       Optional provedoresPermitidos As IEnumerable(Of String) = Nothing)
             Me.Id = If(id, "")
             Me.Versao = versao
             Me.Autoridade = If(autoridade, "")
@@ -118,6 +177,9 @@ Namespace Global.Iris.Assist
             Me.Leituras = Congelar(leituras)
             Me.ContentBits = Congelar(contentBits)
             Me.IgnorarHistorico = ignorarHistorico
+            Me.PoliticaCorporativaVerificada = politicaCorporativaVerificada
+            Me.ExigirRetencaoZero = exigirRetencaoZero
+            Me.ProvedoresPermitidos = Congelar(provedoresPermitidos)
         End Sub
 
         Private Shared Function Congelar(Of T)(o As IEnumerable(Of T)) As IReadOnlyList(Of T)
@@ -168,7 +230,8 @@ Namespace Global.Iris.Assist
                    Regiao.Trim().Length > 0 AndAlso
                    RetencaoAceita.Trim().Length > 0 AndAlso
                    Operacoes.Count > 0 AndAlso
-                   Pastas.Count > 0
+                   Pastas.Count > 0 AndAlso
+                   Ate.HasValue
         End Function
 
         ''' <summary>
@@ -188,10 +251,19 @@ Namespace Global.Iris.Assist
         ''' </list>
         ''' </summary>
         Public Function Coerente() As Boolean
-            If Ate.HasValue AndAlso Ate.Value < Quando Then Return False
+            ' O PRAZO TEM DE SER UM PRAZO. Igual a Quando nao e prazo: e uma
+            ' autorizacao que nasce vencida, e "nasce vencida" e um jeito
+            ' silencioso de a IA nunca funcionar sem ninguem entender por que.
+            If Not Ate.HasValue OrElse Ate.Value <= Quando Then Return False
+
             If Operacoes.Contains(AssistOperation.Nenhuma) Then Return False
             If Leituras.Any(Function(k) Not LabelPolicy.Elegivel(k)) Then Return False
             If Rotulos.Any(Function(r) r Is Nothing) Then Return False
+
+            ' Provedor subjacente em branco na lista casaria com nada e pareceria
+            ' uma restricao. Restricao que nao restringe e pior que nenhuma.
+            If ProvedoresPermitidos.Any(Function(p) String.IsNullOrWhiteSpace(p)) Then Return False
+
             Return True
         End Function
 
@@ -207,7 +279,10 @@ Namespace Global.Iris.Assist
 
         Public Function Vigente(agora As DateTimeOffset) As Boolean
             If agora < Quando Then Return False
-            Return Not Ate.HasValue OrElse agora <= Ate.Value
+            ' Sem prazo NAO vale mais. Antes era `Not Ate.HasValue OrElse ...`,
+            ' que fazia a ausencia de prazo virar vigencia eterna — a falha
+            ' aberta de sempre, com a ausencia de dado virando permissao.
+            Return Ate.HasValue AndAlso agora <= Ate.Value
         End Function
 
     End Class
