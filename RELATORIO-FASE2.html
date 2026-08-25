@@ -406,614 +406,319 @@ footer {
   <p class="eyebrow">Iris · Relatório de fim de fase</p>
   <h1>Fase 2 — o que ficou medido</h1>
   <p class="dek">
-    O Marco 2.1 fechou a persistência: schema executável, banco real, primitivas
-    transacionais e provas de crash. E duas medições derrubaram coisas que eu
-    tinha escrito como certas — a última delas no fim do dia, com você mexendo
-    no cursor da janela.
+    Cinco marcos, do schema executável à varredura real contra a sua caixa. O
+    que a fase produziu de mais valioso não foram as respostas — foram as
+    perguntas que se revelaram mal feitas, e três medições que derrubaram
+    coisas que eu tinha escrito como certas.
   </p>
   <div class="meta">
     <span><b>24 de agosto de 2026</b></span>
-    <span>261 testes · <b>0 falhas</b> · 3 pulados sem Outlook</span>
-    <span>14 commits · <code>f83f4e3</code> → <code>HEAD</code></span>
-    <span>3 passadas de revisão com o Codex</span>
+    <span>320 testes · <b>0 falhas</b> · 0 pulados</span>
+    <span>8 passadas de revisão com o Codex</span>
+    <span><code>f83f4e3</code> → <code>HEAD</code></span>
   </div>
 </header>
 
 <section class="resumo">
   <h2>O essencial, sem suavizar</h2>
   <ul>
-    <li><strong>Critério 10 fechado.</strong> Geração velha terminando tarde é
-      recusada, e há teste medindo a armadilha — não supondo.</li>
-    <li><strong>Critério 9 parcial.</strong> A dívida de publicação sobrevive ao
-      crash e é consultável. Mas <strong>não existe consumidor na UI ainda</strong>,
-      então "publicar para a UI" está entregue pela metade.</li>
-    <li><strong>A Q8 autoriza zero inferências hoje.</strong> Consequência real:
-      o Iris <strong>não pode concluir que uma mensagem sumiu de uma pasta</strong>.
-      É o estado honesto, não uma pendência escondida.</li>
-    <li><strong>A política de ambiente ainda não é aplicada pelo produto.</strong>
-      Ela é o modelo da autorização, não o cumprimento. Nada impede hoje um
-      chamador de contorná-la.</li>
-    <li><strong>O token da janela não era a janela.</strong> Você moveu o cursor
-      três vezes e o registro do perfil não mudou uma linha. A identidade de
-      ambiente ficou <strong>incompleta por construção</strong> em modo cached —
-      permanentemente, não como pendência.</li>
-    <li><strong>A contagem do servidor não vem pelo caminho que varri.</strong>
-      65.536 tags <code>PT_LONG</code>, 22 legíveis, nenhuma devolve o número —
-      e ficaram de fora outros tipos e as propriedades nomeadas. O detector que
-      sobra <strong>invalida, mas não autoriza</strong>: não pega o caso em que a
-      janela sempre foi pequena, que é o desta caixa.</li>
-    <li><strong>A suíte imprime "Passed!" pulando os testes que tocam o
-      Outlook.</strong> Descoberto hoje, sem conserto ainda.</li>
-    <li><strong>O teste de crash cobre morte do processo, não falta de energia.</strong></li>
+    <li><strong>A Fase 2 fecha, com uma exceção que é decisão sua</strong> — o
+      critério 9 está parcial: o mecanismo de publicação está completo e
+      testado, mas não há UI consumindo. Ou você aceita levar isso ao 2.4, ou a
+      fase não fecha.</li>
+    <li><strong>O Iris varre e publica a sua Caixa de Entrada</strong> —
+      1.013 itens, cobertura <em>parcial</em>. Retomada após cancelamento
+      converge sem duplicata.</li>
+    <li><strong>A Q8 morreu duas vezes</strong>, e as duas por medição: a janela
+      de sincronização não é legível, e a contagem do servidor não vem pelo
+      OOM.</li>
+    <li><strong>O Iris não conclui que uma mensagem sumiu de uma pasta</strong> —
+      decisão sua, §23, com gatilhos de reabertura escritos.</li>
+    <li><strong>O manifesto é um acervo, não o estado corrente da caixa.</strong>
+      A UI ainda não mostra isso.</li>
   </ul>
 </section>
 
-<h2><span class="num">01</span>O que o 2.1 entregou</h2>
-
-<p>
-  Planejei 7 passos e entreguei 4. Os que sobraram são de outra classe — dependem
-  da sua caixa ou de orquestração que ainda não existe —, e isso virou a
-  recomendação de tamanho para o 2.2.
-</p>
+<h2><span class="num">01</span>Os cinco marcos</h2>
 
 <div class="wide tabela-wrap">
 <table>
-  <caption>Marco 2.1 — passos</caption>
-  <thead>
-    <tr><th class="n">Passo</th><th>O que é</th><th>Estado</th></tr>
-  </thead>
+  <caption>Fase 2 — o que cada marco entregou</caption>
+  <thead><tr><th>Marco</th><th>O quê</th><th>Estado</th></tr></thead>
   <tbody>
     <tr class="s-ok">
-      <td class="st n">1</td>
-      <td>Presença e varredura — <code>PresencePolicy</code>, <code>SweepModel</code>, <code>RetryPolicy</code></td>
-      <td><span class="chip medido">Entregue</span></td>
+      <td class="st"><strong>2.0</strong></td>
+      <td>As nove perguntas medidas contra a caixa real: paginação, correlação,
+        identidade, custo do conteúdo, morte do Outlook</td>
+      <td><span class="chip medido">Fechado</span></td>
     </tr>
     <tr class="s-ok">
-      <td class="st n">2</td>
-      <td>Gate de schema executável — invariantes como código, não como comentário</td>
-      <td><span class="chip medido">Entregue</span></td>
+      <td class="st"><strong>2.1</strong></td>
+      <td>Persistência: schema executável, banco SQLite real com introspecção,
+        primitivas transacionais com prova de crash</td>
+      <td><span class="chip medido">Fechado</span></td>
     </tr>
     <tr class="s-ok">
-      <td class="st n">3</td>
-      <td>DDL, introspecção e migração SQLite — o banco real contra o modelo</td>
-      <td><span class="chip medido">Entregue</span></td>
+      <td class="st"><strong>2.2a</strong></td>
+      <td>Orquestração contra provider falso mutável, destino SQLite, dreno da
+        publicação, manifesto</td>
+      <td><span class="chip medido">Fechado</span></td>
     </tr>
     <tr class="s-ok">
-      <td class="st n">4</td>
-      <td>Primitivas transacionais com injeção de crash</td>
-      <td><span class="chip medido">Entregue</span></td>
+      <td class="st"><strong>2.2b</strong></td>
+      <td>Adaptador Outlook, importação real, D5 medida</td>
+      <td><span class="chip medido">Fechado</span></td>
     </tr>
-    <tr class="s-nao">
-      <td class="st n">5</td>
-      <td>Orquestração do <code>Iris.Sync</code> contra provider falso mutável</td>
-      <td><span class="chip falta">Fica para o 2.2a</span></td>
-    </tr>
-    <tr class="s-nao">
-      <td class="st n">6</td>
-      <td>Adaptador Outlook + DTO de manifesto; medir o orçamento de 100&nbsp;ms</td>
-      <td><span class="chip falta">Fica para o 2.2b</span></td>
-    </tr>
-    <tr class="s-nao">
-      <td class="st n">7</td>
-      <td>Importação real e retomada</td>
-      <td><span class="chip falta">Fica para o 2.2b</span></td>
+    <tr class="s-ok">
+      <td class="st"><strong>2.3</strong></td>
+      <td>Detector de contração — o que sobrou da Q8 depois dos dois resultados
+        negativos</td>
+      <td><span class="chip medido">Fechado</span></td>
     </tr>
   </tbody>
 </table>
 </div>
 
-<h2><span class="num">02</span>Critério 9 — morrer no meio</h2>
-
-<p>
-  O critério pede que gravar as linhas, avançar o checkpoint e publicar sobrevivam
-  a morrer no meio. A resposta não é "tentar de novo": é escolher as fronteiras de
-  forma que todo estado intermediário possível seja aceitável.
-</p>
-
-<div class="principio">
-  <p><strong>Linhas e checkpoint vão na mesma transação.</strong> Separados, morrer
-  entre os dois deixa o checkpoint à frente das linhas — e a retomada
-  <em>pula mensagens</em>. Perda silenciosa: sem erro, sem log, invisível para
-  qualquer contagem que confie no cursor.</p>
-  <p><strong>A publicação é uma linha, não um evento.</strong> Evento perdido num
-  crash não deixa rastro. Uma linha em <code>publication_log</code>, gravada na
-  mesma transação da geração, deixa.</p>
-</div>
-
-<p>
-  Os cinco cenários, medidos matando o processo com <code>TerminateProcess</code> e
-  relendo o arquivo com um leitor independente — o <code>sqlite3</code> do Python,
-  outra biblioteca, outro processo, nenhuma linha de Iris.
-</p>
+<h2><span class="num">02</span>Os dez critérios de pronto</h2>
 
 <div class="wide tabela-wrap">
 <table>
-  <caption>tools/conferir-crash.py — estado no disco depois de cada morte</caption>
-  <thead>
-    <tr>
-      <th>Morre em</th><th>stage</th><th>cursor</th>
-      <th class="n">linhas</th><th class="n">ger.</th><th class="n">dívida</th><th>cabeça</th>
-    </tr>
-  </thead>
+  <caption>FASE2.md §8 — estado final</caption>
+  <thead><tr><th class="n">#</th><th>Critério</th><th>Estado</th></tr></thead>
   <tbody>
-    <tr>
-      <td>dentro da página</td><td class="mono-c">aberta</td><td class="mono-c dim">—</td>
-      <td class="n">0</td><td class="n">0</td><td class="n">0</td><td class="dim">ausente</td>
-    </tr>
-    <tr>
-      <td>depois do commit da página</td><td class="mono-c">varrendo</td><td class="mono-c">cursor-1</td>
-      <td class="n">2</td><td class="n">0</td><td class="n">0</td><td class="dim">ausente</td>
-    </tr>
-    <tr>
-      <td>dentro da publicação</td><td class="mono-c">varrendo</td><td class="mono-c">cursor-3</td>
-      <td class="n">6</td><td class="n">0</td><td class="n">0</td><td class="dim">ausente</td>
-    </tr>
-    <tr>
-      <td>depois do commit da publicação</td><td class="mono-c">publicada</td><td class="mono-c">cursor-3</td>
-      <td class="n">6</td><td class="n">1</td><td class="n">1 <em>não drenada</em></td><td class="mono-c">1</td>
-    </tr>
-    <tr>
-      <td class="dim">não morre</td><td class="mono-c">publicada</td><td class="mono-c">cursor-3</td>
-      <td class="n">6</td><td class="n">1</td><td class="n">1</td><td class="mono-c">1</td>
-    </tr>
-  </tbody>
-</table>
-</div>
-
-<h3>O controle negativo, e por que ele existe</h3>
-
-<p>
-  Sem ele, as cinco linhas acima passariam idênticas num escritor que
-  <em>não grava nada</em>. Então eu ligo o defeito — avançar o checkpoint em
-  transação própria antes de gravar as linhas, que é o desenho ingênuo
-  <em>salva o progresso primeiro</em> — e exijo que a conferência acuse:
-</p>
-
-<pre class="wide"><code>=== controle negativo: defeito 'checkpoint-antes' ===
-  estado: stage=varrendo cursor=cursor-1 linhas=0
-  ACUSOU 3 divergencia(s), como devia:
-      - stage: 'varrendo', esperado 'aberta'
-      - cursor: 'cursor-1', esperado None
-      - cursor AVANCOU com zero linhas gravadas — perda silenciosa</code></pre>
-
-<p class="nota">
-  <strong>Matar não é lançar.</strong> Injetar exceção prova <em>atomicidade</em> —
-  mas o processo segue vivo e o SQLite roda o rollback com ordem. Matar prova
-  <em>durabilidade</em>. E <code>Environment.Exit</code> não serve: ele roda
-  finalizadores, ou seja, deixa o processo arrumar a casa antes de morrer.
-  Um teste que "mata" assim exercita o caminho de encerramento limpo.
-  <strong>Falta de energia continua não coberta.</strong>
-</p>
-
-<h2><span class="num">03</span>Critério 10 — a chave que ordena</h2>
-
-<p>
-  Geração velha terminando tarde não pode sobrescrever a nova. A armadilha inteira
-  está em <em>qual chave ordena</em>:
-</p>
-
-<div class="principio">
-  <p><code>generation_key</code> é atribuída no INSERT, que só acontece ao
-  <strong>publicar</strong>. A varredura velha que termina tarde recebe a chave
-  <strong>maior</strong> — e um teste de monotonicidade sobre ela aprovaria
-  exatamente o caso que deveria barrar.</p>
-</div>
-
-<p>
-  Por isso a cabeça avança por <code>scan_attempt.attempt_key</code>, atribuída ao
-  <strong>abrir</strong>. Há teste medindo que a velha receberia a chave maior.
-</p>
-
-<p class="nota">
-  <strong>Mas isto é "a tentativa aberta por último vence", e não é o mesmo que
-  "os dados mais frescos vencem".</strong> Tentativas sobrepostas intercalam
-  leituras; a mais velha pode, em tese, ter lido parte dos dados depois da nova.
-  É aproximação conservadora — erra descartando trabalho bom, nunca deixando a
-  cabeça recuar — e não trava nada, porque a guarda só compara com a cabeça
-  <em>publicada</em>.
-</p>
-
-<h2><span class="num">04</span>Q8 — o que a sua caixa mostrou</h2>
-
-<p>
-  A matriz de providers não se levanta mexendo no cursor desta máquina: já foi
-  medido que custa horas e dezenas de GB, e você tem 8 GB livres. Então a resposta
-  virou <strong>declaração de escopo suportado</strong> com degradação explícita
-  para todo o resto.
-</p>
-
-<div class="wide numeros">
-  <div><span class="v">108</span><span class="k">pastas varridas</span></div>
-  <div><span class="v">95</span><span class="k">reportando zero</span></div>
-  <div><span class="v">1.979</span><span class="k">mensagens alcançadas</span></div>
-  <div><span class="v">2024-10-09</span><span class="k">a mais antiga</span></div>
-</div>
-
-<p>
-  <strong>O OOM não expõe a janela de sincronização.</strong> Enumerei os membros
-  de <code>Store</code>: só <code>IsCachedExchange</code> e
-  <code>ExchangeStoreType</code>, nenhum <code>Sync*</code>, nenhum
-  <code>Window*</code>. O valor existe apenas no registro do perfil.
-</p>
-
-<pre class="wide"><code>Outlook\1ed55df826d22a4c8add1bed4cf69a00
-    00036601 = 84-09-00-00      &lt;- a conta
-Outlook\1ed55df826d22a4c8add1bed4cf69a00\GroupsStore
-    00036601 = 80-01-00-00      &lt;- outro valor, outra chave</code></pre>
-
-<p>
-  Uso os bytes crus como token opaco: a impressão digital precisa ser
-  <strong>estável</strong> e <strong>sensível</strong>, e nenhuma das duas exige
-  saber o que os bytes significam. Mas <em>não decodificar</em> não é
-  <em>não verificar</em> — e eu tinha escrito no código que não precisava verificar.
-</p>
-
-<h3>E o token não era a janela</h3>
-
-<p>
-  Você moveu o cursor três vezes. O registro do perfil inteiro — 294 valores,
-  blobs comparados por <em>hash</em> e não por tamanho — não mudou em nada. A
-  única diferença entre os retratos foi uma subchave <code>GroupMailbox</code>
-  renomeada, com todos os valores iguais.
-</p>
-
-<div class="wide tabela-wrap">
-<table>
-  <caption>O cursor mudou. O registro, não.</caption>
-  <thead><tr><th>Configuração</th><th><code>00036601</code></th><th>Perfil inteiro</th></tr></thead>
-  <tbody>
-    <tr><td>1 mês (inicial)</td><td class="mono-c">84-09-00-00</td><td class="dim">—</td></tr>
-    <tr><td>tentativa de 2 semanas</td><td class="mono-c">84-09-00-00</td><td class="dim">idêntico</td></tr>
-    <tr><td><strong>3 meses</strong>, conferido na tela</td><td class="mono-c">84-09-00-00</td><td class="dim">idêntico</td></tr>
-    <tr><td>de volta a 1 mês</td><td class="mono-c">84-09-00-00</td><td class="dim">idêntico</td></tr>
-  </tbody>
-</table>
-</div>
-
-<div class="principio">
-  <p>Somando com a medição anterior — o OOM também não expõe a janela —:
-  <strong>a janela não é legível nem pelo OOM nem pelo registro do perfil.</strong></p>
-  <p>Em modo cached, a impressão digital do ambiente é <strong>incompleta por
-  construção</strong>. O Iris não tem como saber que a janela mudou, e por isso
-  degrada sempre. É o comportamento certo, mas é permanente.</p>
-</div>
-
-<p class="nota">
-  <strong>O que sobreviveu:</strong> o mecanismo degradou corretamente o tempo
-  todo. Nada foi autorizado, nada vazou de um universo para outro. O desenho
-  falhou no lugar certo — que é o que "falhar fechado" quer dizer.
-  <br><br>
-  <strong>E uma armadilha que quase virou medição:</strong> a primeira tentativa
-  reverteu sozinha. O Outlook disse <em>"Conta atualizada com êxito"</em>, pediu
-  reinício, e depois do reinício o cursor estava de volta em 1 mês. Eu ia
-  registrar "o token não é sensível" a partir de um teste que não tinha testado
-  nada. Quem pegou foi você, conferindo a tela.
-</p>
-
-<h3>A saída provável: medir o efeito, não a configuração</h3>
-
-<p>
-  Apareceu um candidato melhor, por acidente, olhando a barra de status do
-  Outlook.
-</p>
-
-<div class="wide tabela-wrap">
-<table>
-  <caption>Outlook contra OOM, mesma pasta</caption>
-  <thead><tr><th>Pasta</th><th class="n">Outlook</th><th class="n">OOM</th><th></th></tr></thead>
-  <tbody>
-    <tr><td>Caixa de Entrada — itens</td><td class="n">17.728</td><td class="n">1.018</td><td><span class="chip falta">diverge 17×</span></td></tr>
-    <tr><td>Caixa de Entrada — não lidos</td><td class="n">219</td><td class="n">219</td><td><span class="chip medido">bate</span></td></tr>
-    <tr><td>1. Backup — itens</td><td class="n">145</td><td class="n">35</td><td><span class="chip falta">diverge 4×</span></td></tr>
-    <tr><td>1. Backup — não lidos</td><td class="n">2</td><td class="n">2</td><td><span class="chip medido">bate</span></td></tr>
-  </tbody>
-</table>
-</div>
-
-<p>
-  <strong>Não lido bate, total não bate.</strong> Isso descarta as explicações
-  fáceis: se a barra somasse outro escopo, ou mostrasse tudo do servidor, o não
-  lido também divergiria. A leitura que sobra é que a UI mostra o total do
-  <strong>servidor</strong> e o OOM o do <strong>OST</strong>.
-</p>
-<p class="nota">
-  <em>Por que</em> os não lidos coincidem, eu não medi. A explicação óbvia é que
-  mensagem não lida tende a ser recente — mas mensagem antiga também fica não
-  lida, e uma janela curta o bastante a excluiria. A aba Sincronização confirmou
-  os totais; não confirmou a causa da coincidência.
-</p>
-
-<p>
-  A aba <em>Sincronização</em> de cada pasta confirmou os números exatos, e a
-  interpretação com eles:
-</p>
-
-<div class="wide tabela-wrap">
-<table>
-  <caption>Propriedades da pasta → Sincronização</caption>
-  <thead><tr><th>Pasta</th><th class="n">Servidor contém</th><th class="n">Offline contém</th></tr></thead>
-  <tbody>
-    <tr><td>1. Backup</td><td class="n">145</td><td class="n">35</td></tr>
-    <tr><td>Caixa de Entrada</td><td class="n">17.728</td><td class="n">1.018</td></tr>
-  </tbody>
-</table>
-</div>
-
-<p>
-  Então cacei a propriedade MAPI. Primeiro em três faixas <em>plausíveis</em> —
-  e faixa plausível é palpite disfarçado de método: se o valor estivesse fora
-  dela, o negativo diria mais sobre onde eu procurei do que sobre onde ele está.
-  É o mesmo erro do token, um degrau acima. Então varri o espaço inteiro.
-</p>
-
-<div class="wide numeros">
-  <div><span class="v">65.536</span><span class="k">tags testados</span></div>
-  <div><span class="v">22</span><span class="k">legíveis na pasta</span></div>
-  <div><span class="v">0</span><span class="k">que devolvem 145</span></div>
-</div>
-
-<div class="principio">
-  <p><strong>Nenhuma proptag não nomeada de tipo <code>PT_LONG</code>, entre os
-  65.536 identificadores, legível por <code>Folder.PropertyAccessor</code> na
-  pasta testada, devolveu 145.</strong></p>
-  <p>A frase é comprida de propósito, porque a curta seria falsa. A varredura é
-  exaustiva <strong>num eixo só</strong>: ficaram de fora os outros tipos, as
-  propriedades <em>nomeadas</em> (cujo id depende do mapping do store, então não
-  dá para varrer por força bruta), valores calculados, e outras interfaces MAPI.</p>
-  <p>E o <code>PropertyAccessor</code> recusa parte do espaço MAPI
-  <em>lançando</em> — indistinguível de ausência daqui. Para a decisão do Iris dá
-  no mesmo: <strong>por esta via, o número não vem.</strong></p>
-</div>
-
-<p class="nota">
-  Antes disso, <code>Items.Count</code>, <code>PR_CONTENT_COUNT</code> e a
-  <code>Table</code> deram os mesmos 1.018 e 35 — três caminhos concordando por
-  lerem o <strong>mesmo OST</strong>. Terceira vez nesta fase.
-  <br><br>
-  E um dado de capacidade que vale guardar: uma pasta expõe <strong>22</strong>
-  propriedades <code>PT_LONG</code> legíveis por essa via, de 65.536 possíveis. O
-  <code>PropertyAccessor</code> sobre <code>Folder</code> é uma janela bem mais
-  estreita do que eu supunha.
-</p>
-
-<h3>O que sobra, e a recomendação</h3>
-
-<p>
-  <strong>Extended MAPI — hipótese, não caminho demonstrado.</strong> O que está
-  provado é que o Outlook <em>conhece</em> o número, porque ele o exibe. Não está
-  provado que exista uma propriedade acessível por <code>IMAPIFolder</code> ou
-  Redemption carregando-o. São candidatos plausíveis para um <em>spike</em>, e é
-  o spike que decidiria — dependência nova, e superfície que a Fase 1 evitou de
-  propósito.
-</p>
-
-<p>
-  <strong>O próprio manifesto do Iris como referência</strong> — se a varredura
-  de hoje enxerga menos do que a de ontem na mesma pasta, alguma coisa encolheu,
-  e isso basta para invalidar conclusões de ausência sem precisar saber por quê.
-</p>
-
-<p>
-  A segunda é melhor do que parece, e não por ser barata: ela mede o que
-  <strong>o Iris enxerga</strong>. A contagem do servidor responderia "quanto
-  existe"; o manifesto responde "quanto eu alcanço, e mudou?".
-</p>
-
-<p>
-  Mas ele <strong>invalida, não autoriza</strong> — e essa distinção é onde eu
-  já escrevi a versão inflada uma vez. Os buracos são estruturais, não detalhes:
-</p>
-
-<div class="wide tabela-wrap">
-<table>
-  <caption>O que o detector não pega</caption>
-  <thead><tr><th>Caso</th><th>Por quê</th></tr></thead>
-  <tbody>
-    <tr><td><strong>A janela sempre foi pequena</strong></td>
-      <td>Se o Iris nunca viu o que falta, não há contração para detectar. É o estado desta caixa hoje.</td></tr>
-    <tr><td>Encolhimento compensado</td>
-      <td>Correio novo chega, a contagem não se mexe, o detector não dispara.</td></tr>
-    <tr><td>Troca balanceada</td>
-      <td>Itens saem e entram mantendo o mesmo total.</td></tr>
-    <tr><td>Item que sumiu</td>
-      <td>Mesmo comparando conjuntos, não se distingue excluído de movido de fora-da-janela.</td></tr>
-  </tbody>
-</table>
-</div>
-
-<p class="nota">
-  Ou seja: <strong>histórico de alcance observado se acumula; cobertura não.</strong>
-  Cobertura exige uma referência externa do universo, e essa referência continua
-  sem fonte. O detector é legítimo como mecanismo conservador de invalidação —
-  seria racionalização vendê-lo como resposta à Q8.
-</p>
-
-<h3>Reconhecer não é autorizar</h3>
-
-<p>
-  A primeira versão da política reconhecia o seu ambiente e daí concedia três
-  inferências: concluir ausência, afirmar cobertura completa, usar incremental.
-  O Codex apontou o salto, e ele é grande — <em>"medi quantos itens o OOM alcançou"
-  não implica "medi a correção das três inferências"</em>. E duas delas têm
-  evidência <em>contra</em>, nesta mesma fase: pastas cheias reportando zero, e a
-  pasta de origem não distinguindo movido de excluído.
-</p>
-
-<div class="principio">
-  <p>Hoje a matriz <strong>autoriza zero inferências</strong>. A consequência de
-  produto é real: <strong>o Iris não pode concluir que uma mensagem sumiu de uma
-  pasta.</strong></p>
-  <p>E "a matriz concede zero" ainda não é "o produto impõe zero" — a política é o
-  modelo da autorização, não o cumprimento dela. Ligar as duas coisas é do 2.2.</p>
-</div>
-
-<h2><span class="num">05</span>Os dez critérios de pronto</h2>
-
-<div class="wide tabela-wrap">
-<table>
-  <caption>FASE2.md §8 — estado em 24/08/2026</caption>
-  <thead>
-    <tr><th class="n">#</th><th>Critério</th><th>Estado</th></tr>
-  </thead>
-  <tbody>
-    <tr class="s-par">
-      <td class="st n">1</td>
-      <td>Q1, Q3, Q4, Q7, Q8 com número; Q2, Q5, Q6, Q9 com conclusão semântica</td>
-      <td><span class="chip parcial">Parcial</span> <span class="dim">Q8 como escopo declarado, não como matriz</span></td>
-    </tr>
+    <tr class="s-ok"><td class="st n">1</td><td>Perguntas com número ou conclusão semântica</td>
+      <td><span class="chip medido">ok</span> <span class="dim">Q8 decidida por escopo (§23)</span></td></tr>
     <tr class="s-ok"><td class="st n">2</td><td>Limitação escrita em cada resposta</td><td><span class="chip medido">ok</span></td></tr>
-    <tr class="s-ok"><td class="st n">3</td><td>Recomendação de tamanho de cada marco seguinte</td><td><span class="chip medido">ok</span> <span class="dim">§22.10</span></td></tr>
-    <tr class="s-ok"><td class="st n">4</td><td>Revisão externa do resultado</td><td><span class="chip medido">ok</span> <span class="dim">3 passadas; 10 defeitos reais</span></td></tr>
-    <tr class="s-ok">
-      <td class="st n">5</td><td>Itens de teste devolvidos ao original</td>
-      <td><span class="chip medido">ok</span> <span class="dim">com exceção declarada: 3 cópias em Itens Excluídos e a pasta <code>Iris Q4R</code> que o tenant recusou excluir</span></td>
-    </tr>
-    <tr class="s-ok"><td class="st n">6</td><td>Corpus adversarial da Q2 com oráculo escrito antes</td><td><span class="chip medido">ok</span></td></tr>
-    <tr class="s-ok"><td class="st n">7</td><td>Critério operacional de invalidação, escolhido com dado</td><td><span class="chip medido">ok</span> <span class="dim">S6</span></td></tr>
-    <tr class="s-nao">
-      <td class="st n">8</td><td>Latência máxima por lote</td>
-      <td><span class="chip falta">Decidido, não medido</span> <span class="dim">100&nbsp;ms; medir exige o passo 6</span></td>
-    </tr>
-    <tr class="s-par">
-      <td class="st n">9</td><td>Crash entre commit, checkpoint e publicação</td>
-      <td><span class="chip parcial">Parcial</span> <span class="dim">persistência provada; entrega à UI não existe</span></td>
-    </tr>
-    <tr class="s-ok"><td class="st n">10</td><td>Reconciliação antiga não sobrescreve a nova</td><td><span class="chip medido">ok</span></td></tr>
+    <tr class="s-ok"><td class="st n">3</td><td>Recomendação de tamanho dos marcos seguintes</td><td><span class="chip medido">ok</span></td></tr>
+    <tr class="s-ok"><td class="st n">4</td><td>Revisão externa do resultado</td>
+      <td><span class="chip medido">ok</span> <span class="dim">8 passadas, defeito real em todas</span></td></tr>
+    <tr class="s-ok"><td class="st n">5</td><td>Itens de teste devolvidos</td>
+      <td><span class="chip medido">ok</span> <span class="dim">com exceções declaradas</span></td></tr>
+    <tr class="s-ok"><td class="st n">6</td><td>Corpus adversarial com oráculo prévio</td><td><span class="chip medido">ok</span></td></tr>
+    <tr class="s-ok"><td class="st n">7</td><td>Critério operacional de invalidação, com dado</td><td><span class="chip medido">ok</span> <span class="dim">S6</span></td></tr>
+    <tr class="s-ok"><td class="st n">8</td><td>Latência máxima por lote</td>
+      <td><span class="chip medido">ok</span> <span class="dim">máx <strong>58 ms</strong> contra orçamento de 100</span></td></tr>
+    <tr class="s-par"><td class="st n">9</td><td>Crash entre commit, checkpoint e publicação</td>
+      <td><span class="chip parcial">Parcial</span> <span class="dim">mecanismo provado; <strong>falta a UI consumir</strong></span></td></tr>
+    <tr class="s-ok"><td class="st n">10</td><td>Reconciliação antiga não sobrescreve nova</td><td><span class="chip medido">ok</span></td></tr>
   </tbody>
 </table>
 </div>
 
-<h2><span class="num">06</span>Os erros que a medição pegou</h2>
+<h2><span class="num">03</span>As medições que decidiram coisas</h2>
+
+<div class="wide numeros">
+  <div><span class="v">58 ms</span><span class="k">latência máx por lote</span></div>
+  <div><span class="v">1.013</span><span class="k">itens publicados</span></div>
+  <div><span class="v">65.536</span><span class="k">proptags varridos</span></div>
+  <div><span class="v">294</span><span class="k">valores de registro comparados</span></div>
+</div>
+
+<h3>D5 — e o ambiente de medição era parte da medição</h3>
 
 <p>
-  Três, e o primeiro é o erro do projeto inteiro em forma nova.
+  Este é o item que eu quase entreguei errado, e o erro é o da fase inteira.
+</p>
+
+<p>
+  A primeira versão dizia <em>"máximo 62 ms, todos abaixo do orçamento"</em>. O
+  arquivo de medições continha <strong>cinco execuções</strong>, três delas
+  acima — 107, 120 e 115 ms. Eu reportei a favorável e ignorei as outras
+  quatro; quem achou foi o Codex, lendo o arquivo em vez do que eu escrevi
+  sobre ele.
+</p>
+
+<p>
+  Mas a conclusão óbvia — <em>"então a D5 reprovou"</em> — também estava errada.
+  As execuções ruins aconteceram com a <strong>suíte inteira no ar</strong> —
+  12 workers do MSTest, sob concorrência e carga dos demais testes. As medições
+  mostram a associação; não isolam qual recurso especificamente foi disputado.
+</p>
+
+<div class="wide tabela-wrap">
+<table>
+  <caption>Mesma pasta, mesmo lote de 100, três condições</caption>
+  <thead><tr><th>Condição</th><th class="n">mín</th><th class="n">mediana</th><th class="n">máx</th><th>cabe em 100 ms?</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Isolado</strong> — o produto</td><td class="n">41–47</td><td class="n">48–53</td><td class="n"><strong>57–58</strong></td><td><span class="chip medido">sim</span></td></tr>
+    <tr><td>Dois testes COM em paralelo</td><td class="n">59–64</td><td class="n">67–70</td><td class="n">74–76</td><td><span class="chip medido">sim</span></td></tr>
+    <tr><td>Suíte inteira, 12 workers</td><td class="n">86</td><td class="n">115</td><td class="n"><strong>184</strong></td><td><span class="chip falta">não</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="principio">
+  <p><strong>Nenhum dos dois números que eu quase publiquei era a medição do
+  produto.</strong> "62 ms, todos abaixo" era uma execução escolhida a dedo;
+  "120 ms, reprovado" era o custo do paralelismo do meu próprio teste.</p>
+  <p><strong>Número sem condição declarada não é medição</strong> — é uma das
+  leituras que ele admite. <code>tools/medir-d5.ps1</code> existe para que ele
+  nunca mais saia sem a condição junto.</p>
+</div>
+
+<p class="nota">
+  O que isto <em>não</em> estabelece: limite sob carga arbitrária do Outlook ou
+  do sistema. A medição com dois testes COM concorrentes é o controle contra a
+  objeção de "máquina ociosa" — mas dois não é muitos.
+</p>
+
+<h2><span class="num">04</span>Os erros que a medição pegou</h2>
+
+<p>
+  A parte mais útil da fase. Cada um destes passou por revisão, por teste verde,
+  ou pelos dois.
 </p>
 
 <h3>Uma frase virando constante</h3>
 <p>
-  Escrevi a linha da matriz de ambientes com janela <strong>"1 mês"</strong>. Esse
-  número veio de uma frase sua em conversa e de uma medição de dois dias antes —
-  não de leitura nenhuma. Era uma afirmação não medida <em>dentro da classe que
-  existe para impedir afirmações não medidas</em>. A varredura de hoje me
-  contradisse: 1.979 mensagens até 2024-10-09, contra 1.004. A janela tinha mudado.
+  Escrevi <code>"1 mês"</code> na matriz de ambientes a partir de uma frase sua
+  em conversa. Depois troquei por <code>"84-09-00-00"</code>, que veio de uma
+  leitura — e a troca parecia mais rigorosa. Não era: os dois valores estavam
+  igualmente desconectados da janela.
+  <strong>Medir com cuidado a coisa errada não é melhor que não medir.</strong>
 </p>
 
 <h3>Onze testes verdes sobre um schema quebrado</h3>
 <p>
   O gerador de DDL supunha que a chave primária de <code>x</code> se chama
-  <code>x_key</code>. <code>environment_profile</code> tem
-  <code>environment_key</code>. O SQLite <strong>aceita</strong>
-  <code>REFERENCES pai(coluna_inexistente)</code> no CREATE e só reclama no primeiro
-  INSERT. Os 11 testes do passo 3 passaram por cima porque a introspecção comparava
-  só a <em>tabela</em> alvo da FK, nunca a <em>coluna</em>. Quem acusou foi o
-  primeiro INSERT real.
+  <code>x_key</code>. O SQLite aceita <code>REFERENCES pai(coluna_inexistente)</code>
+  no CREATE e só reclama no primeiro INSERT. Os 11 testes passaram porque a
+  introspecção comparava a <em>tabela</em> alvo da FK, nunca a <em>coluna</em>.
 </p>
 
 <h3>Um conferidor que não conferia</h3>
 <p>
   Escrevi <code>conferir-crash.py</code> com três invariantes fracos e chamei de
-  verificação independente. O defeito <code>checkpoint-antes</code> — o que motivou
-  o desenho inteiro — passava por todos os três, porque nenhum cobrava
-  <em>"cursor avançado com zero linhas"</em>. É o meu erro recorrente na forma mais
-  pura: escrever um verificador para uma propriedade e não verificar se ele
-  distingue a violação dela.
+  verificação independente. O defeito que motivou o desenho inteiro passava por
+  todos os três.
 </p>
 
-<h2><span class="num">07</span>O que precisa de você</h2>
+<h3>O gate que zerava o produto</h3>
+<p>
+  Passei <code>PodeAfirmarCoberturaCompleta</code> como permissão para
+  <em>abrir</em> a varredura. Como o seu ambiente autoriza zero, o efeito era:
+  <strong>o Iris não varreria nada na sua máquina</strong> — e eu tinha um teste
+  afirmando que era assim. São duas perguntas diferentes:
+  <em>posso observar?</em> e <em>posso declarar que observei tudo?</em>
+</p>
+
+<h3>Uma varredura recusada alterando o que já estava publicado</h3>
+<p>
+  <code>GravarPagina</code> escrevia direto nas tabelas do acervo. Numa
+  encarnação <strong>já existente</strong>, substituía o metadado publicado e
+  devolvia a associação para <em>presente</em> — e rejeitar depois não desfazia
+  nada. Meu teste não pegava porque só usava itens <em>novos</em>.
+</p>
+
+<h3>O S6 rejeitando a sua Caixa de Entrada todas as vezes</h3>
+<p>
+  1.022 declaradas, 1.013 lidas, <strong>9 descartadas</strong> por não serem
+  mensagem — estável nas três execuções. O S6 comparava só o guardado com o
+  declarado, e a caixa principal nunca publicaria.
+</p>
+<div class="principio">
+  <p>E o pior era o disfarce: <em>"lidas 1013 &lt;&gt; antes 1022"</em> é
+  exatamente o que uma mensagem chegando no meio produziria.
+  <strong>Defeito permanente vestido de comportamento correto.</strong></p>
+  <p>Só descobri porque rodei três vezes e a diferença ficou estável em 9 —
+  corrida não dá o mesmo número três vezes.</p>
+</div>
+
+<h2><span class="num">05</span>A Q8, e as duas mortes dela</h2>
+
+<p>
+  A pergunta era a matriz de providers. Você mexeu no cursor da janela três
+  vezes, e o registro do perfil inteiro — 294 valores, blobs comparados por
+  hash — não mudou uma linha. <strong>A janela não é legível.</strong>
+</p>
+
+<p>
+  Então a aba Sincronização revelou que o Outlook <em>tem</em> os dois números
+  (servidor 17.728, offline 1.018), e eu cacei a propriedade MAPI. Primeiro em
+  faixas "prováveis" — que é palpite disfarçado de método. Depois no espaço
+  inteiro: <strong>65.536 tags, 22 legíveis, nenhuma devolve o número.</strong>
+</p>
+
+<p>
+  O que sobrou é o <strong>detector de contração</strong>: se a varredura de
+  hoje enxerga menos que a de ontem na mesma pasta, alguma coisa encolheu. Ele
+  <strong>avisa, nunca autoriza</strong> — e não pega o caso da sua caixa, onde
+  a janela sempre foi pequena e o Iris nunca viu o que falta.
+</p>
+
+<h2><span class="num">06</span>O que precisa de você</h2>
 
 <div class="wide acoes">
   <div>
-    <span class="tempo">decisão · abre ou fecha uma porta</span>
-    <h3>Extended MAPI entra no projeto?</h3>
+    <span class="tempo">decisão · é o que falta para fechar</span>
+    <h3>O critério 9 fecha no 2.4?</h3>
     <p>
-      A contagem do servidor existe abaixo do OOM. Chegar nela exige
-      <code>IMAPIFolder</code> direto ou Redemption — dependência nova, e uma
-      superfície que a Fase 1 evitou de propósito.
+      O critério pede que a <em>publicação para a UI</em> sobreviva ao crash. A
+      persistência da dívida está provada, o dreno está testado, a entrega é
+      ao-menos-uma-vez — mas quem implementa <code>IPublicationConsumer</code>
+      hoje é só o teste. Não há UI consumindo.
     </p>
     <p>
-      Minha recomendação é <strong>não</strong>, por enquanto: o manifesto do
-      próprio Iris responde a pergunta que importa ("quanto eu alcanço, e
-      mudou?") sem dependência nenhuma. Mas é porta que você pode querer aberta,
-      e vale saber que ela está aí.
-    </p>
-  </div>
-  <div>
-    <span class="tempo">decisão</span>
-    <h3>Confirmar o recorte do 2.2</h3>
-    <p>
-      Proponho separar o que se verifica de graça do que exige a sua caixa:
-      <strong>2.2a</strong> (orquestração, DTO, consumidor do log, cumprimento da
-      política — 3 a 4 passos) e <strong>2.2b</strong> (adaptador Outlook e a
-      medição de 100&nbsp;ms — 2 passos, no máximo).
-    </p>
-    <p>
-      A base é uma amostra só — o 2.1 —, então é recomendação, não lei. Separo
-      porque custa pouco e o custo de errar é um marco que não fecha.
+      <strong>Se você aceitar levar o consumidor real para o 2.4</strong>, a
+      Fase 2 fecha com essa exceção declarada. Se o pronto original continua
+      exigindo a entrega efetiva, falta trabalho de integração e a fase não
+      fecha.
     </p>
   </div>
   <div>
-    <span class="tempo">revisão visual</span>
-    <h3>Ler a §22 do FASE2.md</h3>
+    <span class="tempo">quando quiser</span>
+    <h3>Ler a §23 e a §24 do FASE2.md</h3>
     <p>
-      É a seção nova, com tudo o que está acima em detalhe — incluindo as duas
-      medições que não estão neste relatório e as armadilhas de PowerShell/OOM que
-      valem para quem for mexer nos scripts.
+      A §23 é a decisão de escopo que você aceitou, com o custo listado e os
+      cinco gatilhos de reabertura. A §24 é o 2.2 em detalhe, incluindo as três
+      condições da D5 e por que nenhuma delas sozinha era a medição.
     </p>
   </div>
 </div>
 
-<h2><span class="num">08</span>Onde eu ainda posso estar errado</h2>
-
-<p>
-  A parte do relatório que a minha narrativa naturalmente suavizaria, então ela
-  fica separada e no fim, onde não dá para não ver.
-</p>
+<h2><span class="num">07</span>Onde eu ainda posso estar errado</h2>
 
 <div class="wide tabela-wrap">
 <table>
   <caption>Limitações conhecidas</caption>
-  <thead><tr><th>O que</th><th>Por quê importa</th></tr></thead>
+  <thead><tr><th>O quê</th><th>Por que importa</th></tr></thead>
   <tbody>
-    <tr>
-      <td><strong>A Q8 autoriza zero</strong></td>
-      <td>O Iris não pode concluir ausência. Se a UI depender disso, ela não funciona ainda.</td>
-    </tr>
-    <tr>
-      <td><strong>A política não é aplicada</strong></td>
-      <td>Existe como modelo; nada no produto a consulta. Um chamador futuro pode contorná-la sem esbarrar em nada.</td>
-    </tr>
-    <tr>
-      <td><strong>Identidade de ambiente</strong></td>
-      <td><strong>Incompleta por construção.</strong> A janela não é legível, então o Iris não detecta quando ela muda — e mudança de janela invalida toda conclusão de ausência. Degradação permanente, não pendência.</td>
-    </tr>
-    <tr>
-      <td><strong>A suíte pula em silêncio</strong></td>
-      <td>Os 3 testes que tocam o Outlook real pulam quando ele não está aberto, e o cabeçalho continua verde. Um resultado que parece igual quando a cobertura mudou.</td>
-    </tr>
-    <tr>
-      <td><strong>Publicação para a UI</strong></td>
-      <td>A dívida persiste e é consultável; ninguém consome. E a entrega será <em>ao menos uma vez</em> — o consumidor terá de ser idempotente.</td>
-    </tr>
-    <tr>
-      <td><strong><code>attempt_key</code></strong></td>
-      <td>Implementa "última tentativa aberta vence", não "dados mais frescos vencem". Pode descartar resultado bom.</td>
-    </tr>
-    <tr>
-      <td><strong>Crash test</strong></td>
-      <td>Cobre término abrupto do processo. Não cobre falta de energia, corrupção de mídia nem morte do kernel.</td>
-    </tr>
-    <tr>
-      <td><strong>Um store só</strong></td>
-      <td>O script de varredura agrega todos os stores. Hoje coincide porque só há um; com dois, o número deixa de descrever a caixa que a matriz nomeia.</td>
-    </tr>
+    <tr><td><strong>Não há UI</strong></td>
+      <td>Nem o dreno da publicação, nem a ressalva do manifesto, nem o aviso de
+        contração são consumidos por código de produção. O backend está pronto;
+        a apresentação não existe.</td></tr>
+    <tr><td><strong>Identidade de ambiente incompleta</strong></td>
+      <td>A janela não é legível, então o Iris não detecta quando ela muda — e
+        mudança de janela invalidaria toda conclusão de ausência. Degradação
+        permanente, não pendência.</td></tr>
+    <tr><td><strong>Mutação balanceada passa pelo S6</strong></td>
+      <td>Um item sai e outro entra entre as contagens: os números fecham e a
+        varredura publica um manifesto que nunca existiu. Documentado como teste
+        que <em>passa</em>.</td></tr>
+    <tr><td><strong>Cobertura sempre parcial</strong></td>
+      <td>Sem ausência, sem incremental, sem "esta pasta eu conheço inteira". O
+        produto é um <strong>arquivo histórico conservador</strong>, não uma
+        representação convergente da caixa.</td></tr>
+    <tr><td><strong>D5 sob carga arbitrária</strong></td>
+      <td>Medida isolada e com dois testes COM concorrentes. Não estabelece
+        limite com o Outlook sob uso pesado.</td></tr>
+    <tr><td><strong>Crash test</strong></td>
+      <td>Cobre término abrupto do processo. Não cobre falta de energia,
+        corrupção de mídia nem morte do kernel.</td></tr>
+    <tr><td><strong>Uma caixa, uma máquina</strong></td>
+      <td>Tudo foi medido no seu Exchange cached. PST e Exchange online nunca
+        foram tocados.</td></tr>
   </tbody>
 </table>
 </div>
 
 <footer>
-  Iris · Fase 2 · Marco 2.1<br>
-  Detalhe completo em <code>FASE2.md</code> §22 · medições em <code>tools/q8-*.ps1</code> e <code>tools/conferir-crash.py</code><br>
-  260 testes, 0 falhas · <code>dotnet test Iris.slnx</code>
+  Iris · Fase 2 · marcos 2.0 a 2.3<br>
+  Detalhe completo em <code>FASE2.md</code> §§22–25 · medições reproduzíveis em
+  <code>tools/medir-d5.ps1</code>, <code>tools/conferir-crash.py</code> e
+  <code>tools/q8-*.ps1</code><br>
+  320 testes, 0 falhas, 0 pulados · <code>dotnet test Iris.slnx</code> com o
+  Outlook aberto
 </footer>
 
 </div>

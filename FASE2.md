@@ -3328,9 +3328,10 @@ orçamento — 107, 120 e 115 ms. Eu reportei a favorável e ignorei as outras
 quatro. Quem achou foi o Codex, lendo o arquivo inteiro.
 
 Mas a conclusão óbvia — *"então a D5 reprovou"* — também estava errada. As
-execuções ruins aconteceram com a **suíte inteira no ar**: o MSTest roda 12
-workers em paralelo, e outros testes disputavam a mesma fila da STA, mais os
-testes de crash gerando processos.
+execuções ruins aconteceram com a **suíte inteira no ar** — o MSTest roda 12
+workers em paralelo, sob concorrência e carga dos demais testes, incluindo os
+de crash, que geram processos. As medições mostram a **associação**; não
+isolam qual recurso especificamente foi disputado.
 
 Medido nas três condições, mesma pasta, mesmo lote de 100:
 
