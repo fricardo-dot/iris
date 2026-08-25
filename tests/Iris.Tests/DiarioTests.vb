@@ -1,0 +1,517 @@
+Imports System.Collections.Generic
+Imports System.IO
+Imports System.Linq
+Imports Iris.Assist
+Imports Iris.Cache
+Imports Iris.Core
+Imports Iris.Integration
+Imports Iris.Model
+Imports Microsoft.Data.Sqlite
+Imports Microsoft.VisualStudio.TestTools.UnitTesting
+
+''' <summary>
+''' <b>O diário do egress — o 3.3.</b>
+'''
+''' ------------------------------------------------------------------
+''' <b>POR QUE REGISTRAR NO FIM NÃO SERVE</b>
+'''
+''' Um diário escrito quando o envio termina registra os envios que
+''' terminaram — e perde justamente os que importam. Se o processo morre
+''' durante a transmissão não há linha nenhuma, e o registro passa a afirmar,
+''' <b>por omissão</b>, que nada saiu.
+'''
+''' Daí os cinco passos, e daí a reconciliação da abertura.
+''' </summary>
+<TestClass>
+Public Class DiarioTests
+
+    Private _pasta As String
+    Private _caminho As String
+
+    Private Shared ReadOnly Agora As New DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero)
+    Private Const Endereco As String = "https://exemplo.invalido/v1"
+
+    <TestInitialize>
+    Public Sub Preparar()
+        _pasta = Path.Combine(Path.GetTempPath(), "iris-diario-" & Guid.NewGuid().ToString("N"))
+        Directory.CreateDirectory(_pasta)
+        _caminho = Path.Combine(_pasta, "cache.db")
+    End Sub
+
+    <TestCleanup>
+    Public Sub Limpar()
+        SqliteConnection.ClearAllPools()
+        Try
+            If Directory.Exists(_pasta) Then Directory.Delete(_pasta, True)
+        Catch
+        End Try
+    End Sub
+
+    Private Function Abrir() As CacheDatabase
+        Dim falha As OpenFailure = Nothing
+        Dim db = CacheDatabase.Open(_caminho, CacheSchema.Intended(), falha)
+        Assert.IsNotNull(db, $"{falha}")
+        Return db
+    End Function
+
+    ' ---- fixtures ------------------------------------------------------
+
+    Private Shared Function Chave(n As Integer) As ItemKey
+        Return New ItemKey($"E-{n}", "store-1")
+    End Function
+
+    Private Shared Function Autorizacao() As ActivationRecord
+        Return New ActivationRecord("ativacao-1", 3, "teste", Agora.AddDays(-1),
+                                    "provedor-de-teste", Endereco, "modelo-de-teste",
+                                    "local", "sem retenção",
+                                    {AssistOperation.Resumir},
+                                    {New FolderKey("store-1", "pasta-1")},
+                                    Array.Empty(Of String)(),
+                                    {LabelReadingKind.Absent}, {0})
+    End Function
+
+    Private Shared Function Voo() As PreflightRequest
+        Return New PreflightRequest(AssistOperation.Resumir,
+                                    New FolderKey("store-1", "pasta-1"),
+                                    New AssistDestination("provedor-de-teste", Endereco,
+                                                          "modelo-de-teste"))
+    End Function
+
+    Private Shared Function Mensagem(n As Integer) As MessageClassification
+        Dim l As New LabelReading(Chave(n), LabelReadingKind.Absent, LabelReadStage.Parse,
+                                  version:=New LabelVersionEvidence($"E-{n}", Agora, $"CK-{n}"))
+        Return New MessageClassification(Chave(n), New FolderKey("store-1", "pasta-1"), l)
+    End Function
+
+    Private Shared Function Parte(n As Integer, Optional corpo As String = "olá") As MessagePart
+        Dim r = ContentPipeline.Preparar(
+            New MessageSnapshot(Chave(n), $"CK-{n}", $"assunto {n}", "de@x.invalido",
+                                {"para@x.invalido"}, corpo, False, True))
+        Assert.IsTrue(r.Ok, $"{r.Recusa}")
+        Return r.Parte
+    End Function
+
+    ''' <summary>Uma capability de verdade, vinda do portão de verdade.</summary>
+    Private Shared Function Autorizada(Optional corpo As String = "olá") _
+                                       As (Cap As DisclosureCapability, Cofre As CapabilityLedger)
+        Dim d = New DisclosurePolicy(Autorizacao()).
+                Decidir(New DisclosureRequest(Voo(), {Mensagem(1)}), Agora)
+        Assert.IsTrue(d.Permitido, $"{d.Motivo}")
+
+        Dim env = New EnvelopeBuilder().Montar(AssistOperation.Resumir, "resuma",
+                                               {Parte(1, corpo)})
+        Assert.IsTrue(env.Ok, $"{env.Recusa}")
+
+        Dim cofre As New CapabilityLedger()
+        Dim c = cofre.Emitir(d, env.Envelope, Agora)
+        Assert.IsNotNull(c)
+        Return (c, cofre)
+    End Function
+
+    ' ==================================================================
+    ' Os cinco passos
+
+    <TestMethod>
+    Public Sub Intencao_Iniciando_Concluir_chega_em_Concluida()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+
+            j.Intencao(a.Cap, mensagens:=1, quando:=Agora)
+            Assert.AreEqual(DisclosureStage.Intencionada, j.Ler(1)(0).Estagio)
+
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
+            Assert.AreEqual(DisclosureStage.EmVoo, j.Ler(1)(0).Estagio)
+
+            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(2))
+            Assert.AreEqual(DisclosureStage.Concluida, j.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' A intenção guarda hash, tamanho, modelo, endpoint e a ativação — e é
+    ''' gravada <b>antes</b> de qualquer transmissão.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_intencao_guarda_o_que_o_R11_manda()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, mensagens:=1, quando:=Agora)
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(a.Cap.Hash, e.Hash)
+            Assert.AreEqual(a.Cap.Comprimento, e.Bytes)
+            Assert.AreEqual("modelo-de-teste", e.Modelo)
+            Assert.AreEqual(Endereco, e.Endpoint)
+            Assert.AreEqual("ativacao-1", e.AtivacaoId)
+            Assert.AreEqual(3, e.AtivacaoVersao)
+            Assert.AreEqual(1, e.Mensagens)
+        End Using
+    End Sub
+
+    ' ==================================================================
+    ' O protocolo de crash
+
+    ''' <summary>
+    ''' <b>Morrer EM VOO vira ambíguo.</b>
+    '''
+    ''' Os bytes podem ter chegado ao provedor, e ninguém vai saber. É a mesma
+    ''' disciplina do <c>ErrorKind.Ambiguous</c> que o CLAUDE.md impõe às
+    ''' mutações — e aqui a "mutação" é o conteúdo ter saído da máquina.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Morrer_EM_VOO_vira_AMBIGUA()
+        Dim id As Guid
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            id = a.Cap.RequestId
+            j.Intencao(a.Cap, 1, Agora)
+            j.Iniciando(id, Agora.AddSeconds(1))
+            ' E o processo morre aqui. Nenhum Concluir, nenhum Falhar.
+        End Using
+
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            Assert.AreEqual(1, j.Reconciliar(Agora.AddHours(1)),
+                            "uma divulgacao ficou sem desfecho conhecido")
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(DisclosureStage.Ambigua, e.Estagio)
+            StringAssert.Contains(e.Motivo, "em voo")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Morrer só com a INTENÇÃO vira não-enviada.</b>
+    '''
+    ''' O contraponto, e o que dá sentido ao de cima: se todo crash virasse
+    ''' ambíguo, "ambíguo" deixaria de significar alguma coisa. Ali a
+    ''' transmissão não tinha começado, e isso se sabe.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Morrer_so_com_a_INTENCAO_vira_NAO_ENVIADA()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, 1, Agora)
+        End Using
+
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            Assert.AreEqual(0, j.Reconciliar(Agora.AddHours(1)),
+                            "nada ficou ambiguo — a transmissao nao tinha comecado")
+            Assert.AreEqual(DisclosureStage.NaoEnviada, j.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+    ''' <summary>Concluída não é mexida pela reconciliação.</summary>
+    <TestMethod>
+    Public Sub A_reconciliacao_nao_mexe_no_que_ja_terminou()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, 1, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora)
+            j.Concluir(a.Cap.RequestId, Agora)
+
+            Assert.AreEqual(0, j.Reconciliar(Agora.AddHours(1)))
+            Assert.AreEqual(DisclosureStage.Concluida, j.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Ambígua NUNCA volta a ser não-enviada.</b>
+    '''
+    ''' Uma vez que os bytes podem ter saído, nenhuma informação posterior
+    ''' desfaz isso — nem uma chamada explícita dizendo que não chegou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ambigua_nunca_volta_a_ser_NAO_ENVIADA()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, 1, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora)
+            j.Falhar(a.Cap.RequestId, Agora, "timeout", podeTerChegado:=True)
+            Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio)
+
+            j.Falhar(a.Cap.RequestId, Agora, "na verdade nao chegou", podeTerChegado:=False)
+
+            Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio,
+                "uma vez que pode ter saido, nada desfaz")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Falhar EM VOO é ambíguo mesmo quando o chamador jura que não chegou.</b>
+    '''
+    ''' Ele não pode saber: entre "a conexão caiu" e "a conexão caiu depois de o
+    ''' servidor ler o corpo" não há diferença observável deste lado.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Falhar_EM_VOO_e_ambiguo_mesmo_jurando_que_nao_chegou()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, 1, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora)
+
+            j.Falhar(a.Cap.RequestId, Agora, "conexao caiu", podeTerChegado:=False)
+
+            Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+    ''' <summary>Falhar antes de começar é não-enviada, e isso se sabe.</summary>
+    <TestMethod>
+    Public Sub Falhar_ANTES_de_comecar_e_NAO_ENVIADA()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, 1, Agora)
+
+            j.NaoEnviou(a.Cap.RequestId, Agora, "capability recusada")
+
+            Assert.AreEqual(DisclosureStage.NaoEnviada, j.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' Não dá para pular passo: <c>Concluir</c> sem <c>Iniciando</c> não pega.
+    '''
+    ''' Se pegasse, um envio que nunca começou apareceria como concluído — e o
+    ''' diário passaria a afirmar que conteúdo saiu quando não saiu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Concluir_sem_Iniciando_nao_pega()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, 1, Agora)
+
+            j.Concluir(a.Cap.RequestId, Agora)
+
+            Assert.AreEqual(DisclosureStage.Intencionada, j.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+    ' ==================================================================
+    ' O que o diário NUNCA guarda
+
+    ''' <summary>
+    ''' <b>A isca.</b> Nenhum trecho do conteúdo aparece em lugar nenhum do
+    ''' banco — nem em coluna, nem em nome, nem em índice.
+    '''
+    ''' O R11 do ESCOPO: <i>um log com o texto cria mais uma cópia sensível</i>.
+    ''' O teste varre o arquivo inteiro, byte a byte, porque procurar coluna por
+    ''' coluna provaria só as colunas que eu lembrei de olhar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_diario_NAO_guarda_conteudo()
+        Const isca = "ISCA-QUE-NAO-PODE-VAZAR-4711"
+
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada(corpo:=isca)
+            j.Intencao(a.Cap, 1, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora)
+            j.Concluir(a.Cap.RequestId, Agora)
+        End Using
+
+        SqliteConnection.ClearAllPools()
+        Dim cru = File.ReadAllBytes(_caminho)
+        Dim texto = Text.Encoding.UTF8.GetString(cru)
+
+        Assert.IsFalse(texto.Contains(isca),
+            "o conteudo apareceu no banco — o diario virou mais uma copia sensivel")
+        StringAssert.Contains(texto, "provedor-de-teste",
+            "controle: a varredura ACHA o que esta la de verdade")
+    End Sub
+
+    ''' <summary>
+    ''' O motivo guarda <b>código</b>, e quem chama é quem tem de respeitar
+    ''' isso — corpo de erro do provedor pode ecoar o conteúdo enviado.
+    '''
+    ''' Aqui o que se cobra é que o campo exista e sobreviva, não que ele filtre
+    ''' — filtrar texto de terceiro seria fingir barreira. A regra está no XML
+    ''' doc da interface, onde quem chama a lê.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_motivo_sobrevive_e_e_lido()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, 1, Agora)
+            j.NaoEnviou(a.Cap.RequestId, Agora, "portao negou: PastaNaoAutorizada")
+
+            StringAssert.Contains(j.Ler(1)(0).Motivo, "PastaNaoAutorizada")
+        End Using
+    End Sub
+
+    ' ==================================================================
+
+    ''' <summary>
+    ''' Várias divulgações convivem, e a leitura devolve a mais recente
+    ''' primeiro.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Varias_convivem_e_a_mais_recente_vem_primeiro()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            Dim primeira = Autorizada("um")
+            j.Intencao(primeira.Cap, 1, Agora)
+            Dim segunda = Autorizada("dois")
+            j.Intencao(segunda.Cap, 1, Agora.AddMinutes(1))
+
+            Dim tudo = j.Ler(10)
+            Assert.AreEqual(2, tudo.Count)
+            Assert.AreEqual(segunda.Cap.RequestId, tudo(0).RequestId)
+        End Using
+    End Sub
+
+
+    ' ==================================================================
+    ' O crash de VERDADE
+
+    ''' <summary>
+    ''' <b>Fechar o <c>Using</c> não é morrer — e a diferença é o assunto.</b>
+    '''
+    ''' Os testes acima fecham a conexão e reabrem. Isso prova que a
+    ''' reconciliação lê o que ficou escrito, e <b>não</b> prova que ficou
+    ''' escrito: fechar dá ao SQLite a chance de descarregar tudo com ordem, que
+    ''' é exatamente o que um crash não dá.
+    '''
+    ''' Aqui o processo é morto com <c>TerminateProcess</c> logo depois de
+    ''' gravar o passo. Ninguém desfaz nada, ninguém fecha nada. Se a intenção e
+    ''' o "em voo" não estiverem <b>durados</b> no disco, a reabertura não acha
+    ''' nada — e o diário estaria afirmando, por omissão, que nada saiu.
+    ''' </summary>
+    <TestMethod, TestCategory("Integracao")>
+    Public Sub Morto_EM_VOO_de_verdade_a_reabertura_acha_AMBIGUA()
+        Dim r = RodarHarness("em-voo")
+
+        Assert.AreNotEqual(0, r.ExitCode, "o harness tinha de MORRER, nao terminar")
+        Dim id = IdDoPedido(r.Stdout)
+
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            Assert.AreEqual(1, j.Reconciliar(Agora),
+                "a intencao e o inicio do voo tinham de estar DURADOS no disco")
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(id, e.RequestId)
+            Assert.AreEqual(DisclosureStage.Ambigua, e.Estagio)
+            Assert.IsFalse(String.IsNullOrEmpty(e.Hash),
+                "o hash do que PODE ter saido tem de estar la — e o que alguem procura")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' E morto logo depois da intenção, a reabertura acha <b>não-enviada</b>.
+    '''
+    ''' O contraponto que dá sentido ao de cima: se todo crash virasse ambíguo,
+    ''' "ambíguo" deixaria de significar alguma coisa.
+    ''' </summary>
+    <TestMethod, TestCategory("Integracao")>
+    Public Sub Morto_APOS_A_INTENCAO_a_reabertura_acha_NAO_ENVIADA()
+        Dim r = RodarHarness("apos-intencao")
+
+        Assert.AreNotEqual(0, r.ExitCode, "o harness tinha de MORRER")
+        Dim id = IdDoPedido(r.Stdout)
+
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            Assert.AreEqual(0, j.Reconciliar(Agora),
+                "nada ficou ambiguo — a transmissao nao tinha comecado")
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(id, e.RequestId)
+            Assert.AreEqual(DisclosureStage.NaoEnviada, e.Estagio)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' O controle: sem morrer, o harness chega a <c>Concluida</c>.
+    '''
+    ''' Sem ele, um harness que explodisse na abertura do banco passaria nos
+    ''' dois testes acima — "morreu" e "nunca começou" produzem o mesmo código
+    ''' de saída.
+    ''' </summary>
+    <TestMethod, TestCategory("Integracao")>
+    Public Sub Controle_sem_morrer_o_harness_CONCLUI()
+        Dim r = RodarHarness("nenhum")
+
+        Assert.AreEqual(0, r.ExitCode, r.Stderr)
+
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Assert.AreEqual(DisclosureStage.Concluida, j.Ler(1)(0).Estagio)
+        End Using
+    End Sub
+
+    ' ==================================================================
+
+    Private Structure Resultado
+        Public ExitCode As Integer
+        Public Stdout As String
+        Public Stderr As String
+    End Structure
+
+    Private Function RodarHarness(ponto As String) As Resultado
+        Dim psi As New Diagnostics.ProcessStartInfo(LocalizarHarness()) With {
+            .RedirectStandardOutput = True,
+            .RedirectStandardError = True,
+            .UseShellExecute = False,
+            .CreateNoWindow = True}
+        For Each a In {_caminho, "diario", ponto}
+            psi.ArgumentList.Add(a)
+        Next
+
+        Using proc = Diagnostics.Process.Start(psi)
+            Dim o = proc.StandardOutput.ReadToEnd()
+            Dim e = proc.StandardError.ReadToEnd()
+            If Not proc.WaitForExit(60000) Then
+                proc.Kill(True)
+                Assert.Fail("o harness travou")
+            End If
+            If e.Contains("Unhandled exception") OrElse e.Contains("abrir falhou") Then
+                Assert.Fail("o harness falhou em vez de morrer no ponto pedido:" &
+                            Environment.NewLine & e)
+            End If
+            Return New Resultado With {.ExitCode = proc.ExitCode, .Stdout = o, .Stderr = e}
+        End Using
+    End Function
+
+    Private Shared Function IdDoPedido(saida As String) As Guid
+        Dim linha = saida.Split(Environment.NewLine.ToCharArray(),
+                                StringSplitOptions.RemoveEmptyEntries).
+                    FirstOrDefault(Function(l) l.StartsWith("requestId="))
+        Assert.IsNotNull(linha, "o harness nao disse qual foi o pedido: " & saida)
+        Return Guid.Parse(linha.Substring("requestId=".Length).Trim())
+    End Function
+
+    Private Shared _exe As String
+
+    Private Shared Function LocalizarHarness() As String
+        If _exe IsNot Nothing Then Return _exe
+        Dim d = New DirectoryInfo(AppContext.BaseDirectory)
+        While d IsNot Nothing AndAlso Not File.Exists(Path.Combine(d.FullName, "Iris.slnx"))
+            d = d.Parent
+        End While
+        Assert.IsNotNull(d, "nao achei a raiz do repositorio")
+        Dim raiz = Path.Combine(d.FullName, "tools", "Iris.CrashHarness", "bin")
+        Dim achado = Directory.GetFiles(raiz, "Iris.CrashHarness.exe", SearchOption.AllDirectories).
+                     OrderByDescending(Function(f) File.GetLastWriteTimeUtc(f)).FirstOrDefault()
+        Assert.IsNotNull(achado, "Iris.CrashHarness.exe nao encontrado")
+        _exe = achado
+        Return _exe
+    End Function
+
+End Class

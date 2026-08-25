@@ -3,7 +3,9 @@ Imports System.Diagnostics
 Imports System.IO
 Imports Iris.Cache
 Imports Iris.Core
+Imports Iris.Assist
 Imports Iris.Integration
+Imports Iris.Model
 
 Namespace Global.Iris.CrashHarness
 
@@ -31,12 +33,25 @@ Namespace Global.Iris.CrashHarness
     Module Program
 
         Public Function Main(args As String()) As Integer
+            ' Modo DIARIO: grava a intencao, comeca o voo, e MORRE. Existe
+            ' porque fechar um Using nao e morrer - o SQLite fecha com ordem,
+            ' e a prova de durabilidade do diario precisa de um processo que
+            ' nao fecha nada. Ver o XML doc deste modulo.
+            '
+            ' A conferencia vem ANTES da aridade do modo antigo: com tres
+            ' argumentos ela nunca seria alcancada.
+            If args.Length = 3 AndAlso String.Equals(args(1), "diario", StringComparison.Ordinal) Then
+                Return Diario(args(0), args(2))
+            End If
+
             If args.Length < 4 Then
                 Console.Error.WriteLine("uso: <db> <folderKey> <ponto> <kill|throw> [attemptKeyParaRetomar]")
+                Console.Error.WriteLine("     <db> diario <apos-intencao|em-voo|nenhum>")
                 Return 2
             End If
 
             Dim caminho = args(0)
+
             Dim folderKey = Long.Parse(args(1))
             Dim ponto = args(2)
             Dim modo = args(3)
@@ -108,6 +123,85 @@ Namespace Global.Iris.CrashHarness
                 End If
                 Return 0
             End Using
+        End Function
+
+        ''' <summary>
+        ''' O diário do egress, morrendo no ponto pedido.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE UM PROCESSO DE VERDADE</b>
+        '''
+        ''' O teste do diário fecha o <c>Using</c> e reabre o banco. Isso prova
+        ''' que a reconciliação lê o que ficou escrito — e <b>não</b> prova que
+        ''' ficou escrito: fechar o <c>Using</c> dá ao SQLite a chance de
+        ''' descarregar tudo com ordem, que é exatamente o que um crash não dá.
+        '''
+        ''' Aqui o processo é morto com <c>TerminateProcess</c> depois de gravar
+        ''' o passo. Se a intenção e o "em voo" não estiverem <b>durados</b> no
+        ''' disco, a reabertura não acha nada — e o diário estaria afirmando, por
+        ''' omissão, que nada saiu.
+        ''' </summary>
+        Private Function Diario(caminho As String, ponto As String) As Integer
+            Dim falha As OpenFailure = Nothing
+            Using db = CacheDatabase.Open(caminho, CacheSchema.Intended(), falha)
+                If db Is Nothing Then
+                    Console.Error.WriteLine($"abrir falhou: {falha}")
+                    Return 3
+                End If
+
+                Dim j As New SqliteDisclosureJournal(db)
+                Dim c = CapabilityDeTeste()
+                Console.Out.WriteLine($"requestId={c.RequestId}")
+                Console.Out.Flush()
+
+                j.Intencao(c, mensagens:=2, quando:=DateTimeOffset.UtcNow)
+                If String.Equals(ponto, "apos-intencao", StringComparison.Ordinal) Then Morrer()
+
+                j.Iniciando(c.RequestId, DateTimeOffset.UtcNow)
+                If String.Equals(ponto, "em-voo", StringComparison.Ordinal) Then Morrer()
+
+                j.Concluir(c.RequestId, DateTimeOffset.UtcNow)
+                Return 0
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Uma capability de verdade, do portão de verdade.
+        '''
+        ''' Fabricar uma aqui provaria o diário contra um objeto que a produção
+        ''' nunca produz — o erro que a Q1 cobrou.
+        ''' </summary>
+        Private Function CapabilityDeTeste() As DisclosureCapability
+            Dim agora = DateTimeOffset.UtcNow
+            Dim pasta As New FolderKey("store-1", "pasta-1")
+            Dim destino As New AssistDestination("provedor-de-teste",
+                                                 "https://exemplo.invalido/v1",
+                                                 "modelo-de-teste")
+            Dim ativacao As New ActivationRecord(
+                "ativacao-harness", 1, "harness", agora.AddDays(-1),
+                "provedor-de-teste", "https://exemplo.invalido/v1", "modelo-de-teste",
+                "local", "sem retencao", {AssistOperation.Resumir}, {pasta},
+                Array.Empty(Of String)(), {LabelReadingKind.Absent}, {0})
+
+            Dim mensagens As New List(Of MessageClassification)()
+            Dim partes As New List(Of MessagePart)()
+            For n = 1 To 2
+                Dim chave As New ItemKey($"E-{n}", "store-1")
+                Dim leitura As New LabelReading(chave, LabelReadingKind.Absent,
+                                                LabelReadStage.Parse,
+                                                version:=New LabelVersionEvidence(
+                                                    $"E-{n}", agora, $"CK-{n}"))
+                mensagens.Add(New MessageClassification(chave, pasta, leitura))
+                partes.Add(ContentPipeline.Preparar(
+                    New MessageSnapshot(chave, $"CK-{n}", $"assunto {n}", "de@x.invalido",
+                                        {"para@x.invalido"}, "corpo", False, True)).Parte)
+            Next
+
+            Dim voo As New PreflightRequest(AssistOperation.Resumir, pasta, destino)
+            Dim d = New DisclosurePolicy(ativacao).
+                    Decidir(New DisclosureRequest(voo, mensagens), agora)
+            Dim env = New EnvelopeBuilder().Montar(AssistOperation.Resumir, "resuma", partes)
+            Return New CapabilityLedger().Emitir(d, env.Envelope, agora)
         End Function
 
         Public Const TotalDePaginas As Integer = 3

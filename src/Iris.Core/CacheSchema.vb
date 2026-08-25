@@ -366,6 +366,37 @@ Namespace Global.Iris.Core
                 Col("last_attempt_at", "TEXT")
             }, {Unico("generation_key")}))
 
+            ' ----------------------------------------------------------
+            ' O diario do egress (FASE3 §29.6).
+            '
+            ' NUNCA guarda conteudo: nem trecho, nem assunto, nem nome de
+            ' rotulo, nem corpo de resposta do provedor - que pode ECOAR o que
+            ' foi enviado. O R11 do ESCOPO e explicito, e o teste da isca
+            ' cobra.
+            '
+            ' Sem chave estrangeira para pasta ou item de proposito: o diario
+            ' de uma divulgacao TEM de sobreviver a mensagem sumir da caixa.
+            ' Um CASCADE aqui apagaria justamente o registro que alguem iria
+            ' procurar.
+            t.Add(New SchemaTable("disclosure_log", {
+                Col("request_id", "TEXT", pk:=True, obrigatoria:=True),
+                Col("capability_id", "TEXT", obrigatoria:=True),
+                Col("stage", "TEXT", obrigatoria:=True),
+                Col("activation_id", "TEXT", obrigatoria:=True),
+                Col("activation_version", "INTEGER", obrigatoria:=True),
+                Col("operation", "TEXT", obrigatoria:=True),
+                Col("provider", "TEXT", obrigatoria:=True),
+                Col("endpoint", "TEXT", obrigatoria:=True),
+                Col("model", "TEXT", obrigatoria:=True),
+                Col("payload_hash", "TEXT"),
+                Col("payload_bytes", "INTEGER", obrigatoria:=True,
+                    check:="payload_bytes >= 0"),
+                Col("message_count", "INTEGER", obrigatoria:=True,
+                    check:="message_count >= 0"),
+                Col("at", "TEXT", obrigatoria:=True),
+                Col("reason", "TEXT")
+            }))
+
             Return New CacheSchema(t)
         End Function
 

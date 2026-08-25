@@ -615,6 +615,101 @@ para virar uma quebra que ninguém veria.
 
 ---
 
+## 36. Marcos 3.2 e 3.3
+
+### 36.1 O envelope — um buffer só
+
+`AssistEnvelope` é o **corpo final da requisição**, materializado uma vez.
+`Bytes()` devolve cópia; `Integro()` confere; a serialização mora num lugar só,
+chamada tanto para medir quanto para produzir.
+
+Truncamento é **por fronteira de mensagem** e vai declarado no próprio payload
+(`conteudoOmitido`, `mensagensOmitidas`). O limite é em **bytes UTF-8 do pedido
+final**, medido a cada mensagem acrescentada — estimar e somar daria um número
+próximo e errado, porque escaping depende do conteúdo. E se nem o envelope
+vazio couber, **recusa**: um envelope maior que o teto é um envelope que o
+provedor rejeita *depois* de o conteúdo ter saído da máquina.
+
+Assunto, remetente e destinatários entram como **conteúdo**. O `EntryID` não
+entra — o provedor não precisa dele.
+
+### 36.2 A capability — presa a bytes, itens e versões
+
+Não descreve conteúdo: descreve o hash, o comprimento, o destino, a operação, a
+ativação (id **e** versão), os itens **e as versões deles**, e um prazo que é o
+menor entre dois minutos e o fim da ativação.
+
+O que o Codex derrubou aqui, em três rodadas:
+
+- **O "sim" não estava preso ao que o tornou um sim.** O cofre pedia
+  `decisao.Permitido` e depois aceitava, em parâmetros separados, qualquer
+  ativação, destino e envelope. `DisclosureGrant` fechou isso.
+- **O hash não prova proveniência.** O `EntryID` não entra nos bytes, então dois
+  envelopes com o mesmo texto e itens diferentes têm o **mesmo hash**. Há teste
+  que constrói as gêmeas e mostra.
+- **O grant prendia o rótulo à versão e o corpo a nada.** O rótulo do item X é
+  lido em `CK-1`, o portão aprova, o corpo muda, o corpo é extraído em `CK-2`, e
+  o envelope continuava dizendo apenas "item X". Agora `MessagePart` carrega a
+  `ChangeKey` da mesma leitura, e o par `(item, versão)` é comparado.
+- **A operação do grant não estava presa à operação serializada.** Um grant para
+  `Resumir` emitia sobre um envelope montado como `Redigir`.
+
+E **truncado ou com corpo incompleto não vira autorização**: uma thread que não
+coube não vira uma thread menor.
+
+### 36.3 O pipeline de conteúdo
+
+`MessagePart` *afirmava* que o corpo já era texto seguro, e nada cobrava —
+qualquer chamador passava HTML, `cid:` ou corpo pela metade. Escaping de JSON
+impede quebrar a estrutura do documento; não impede o conteúdo ser o que não
+devia.
+
+`ContentPipeline` converte HTML em texto com comentário, `script` e `style`
+saindo **antes** das tags — se saíssem depois, o conteúdo deles viraria texto
+visível, e é ali que mora o que o usuário nunca viu na tela. Referência embutida
+é procurada **no cru e no decodificado**, em todo campo: `<img src="cid&#58;x">`
+não contém `cid:` no cru e o provedor lê a entidade do mesmo jeito.
+
+**HTML mal formado recusa.** Expressão regular não é parser: `<script>SEGREDO`
+sem fechar não casa com o padrão de bloco, a tag some junto com as outras, e
+`SEGREDO` vira texto legítimo. Enquanto não houver parser de verdade, o mínimo
+honesto é recusar o que não dá para interpretar.
+
+Unicode é **preservado sem normalização** — normalizar mudaria o que o usuário
+escreveu. O que sai são caracteres de controle e marcadores de direção, que não
+são texto.
+
+### 36.4 O diário, e o protocolo de crash
+
+Um diário escrito no fim registra os envios que terminaram e perde justamente os
+que importam: se o processo morre durante a transmissão não há linha nenhuma, e
+o registro passa a afirmar **por omissão** que nada saiu.
+
+Cinco passos: intenção durável **antes** da tentativa, com o hash dos bytes →
+início do voo → conclusão ou falha → reconciliação na abertura seguinte.
+
+| Onde morreu | Vira | Por quê |
+|---|---|---|
+| Depois da intenção | `NaoEnviada` | a transmissão não tinha começado, e isso se sabe |
+| **Em voo** | **`Ambigua`** | os bytes podem ter chegado, e ninguém vai saber |
+
+`Ambigua` **nunca** volta a ser `NaoEnviada`, nem com uma chamada explícita
+dizendo que não chegou. E falhar em voo é ambíguo mesmo quando o chamador jura
+que não chegou: entre *"a conexão caiu"* e *"a conexão caiu depois de o servidor
+ler o corpo"* não há diferença observável deste lado.
+
+**O diário nunca guarda conteúdo** — nem trecho, nem assunto, nem nome de
+rótulo, nem corpo de resposta de erro, que pode **ecoar o que foi enviado**. O
+teste planta uma isca e varre o arquivo do banco inteiro, byte a byte, porque
+procurar coluna por coluna provaria só as colunas de que eu lembrei.
+
+**E a prova de crash é com processo morto de verdade.** Fechar o `Using` não é
+morrer: dá ao SQLite a chance de descarregar tudo com ordem, que é exatamente o
+que um crash não dá. O harness da Fase 2 ganhou um modo `diario` e é morto com
+`TerminateProcess` depois de gravar o passo.
+
+---
+
 ## 33. O que esta fase NÃO faz
 
 - Não envia e-mail.

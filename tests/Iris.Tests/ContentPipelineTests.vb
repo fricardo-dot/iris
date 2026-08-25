@@ -343,21 +343,25 @@ Public Class ContentPipelineTests
     ' O snapshot
 
     ''' <summary>
-    ''' <b>Os amigos do <c>Iris.Model</c> são exatamente dois.</b>
+    ''' <b>Os amigos do <c>Iris.Model</c> são exatamente estes três.</b>
     '''
-    ''' <c>Iris.Outlook</c>, que é a borda que lê do provider, e
-    ''' <c>Iris.Tests</c>. Um terceiro assembly na lista significaria mais uma
-    ''' camada capaz de montar <c>MessageSnapshot</c> — e o tipo existe
-    ''' justamente para que só uma o faça.
+    ''' <c>Iris.Outlook</c> é a borda que lê do provider — a única camada de
+    ''' <b>produção</b> capaz de montar um <c>MessageSnapshot</c>. Os outros
+    ''' dois são aparato de teste: <c>Iris.Tests</c> e o harness de crash, que
+    ''' precisa produzir uma capability de verdade em vez de fabricar uma.
+    '''
+    ''' O teste existe para que acrescentar um quarto seja uma <b>decisão</b> e
+    ''' não um descuido: cada amigo é mais uma camada capaz de montar o
+    ''' snapshot, e o tipo existe justamente para limitar quem o faz.
     ''' </summary>
     <TestMethod>
-    Public Sub Os_amigos_do_Model_sao_exatamente_dois()
+    Public Sub Os_amigos_do_Model_sao_exatamente_estes()
         Dim amigos = GetType(MessageSnapshot).Assembly.
             GetCustomAttributes(GetType(Runtime.CompilerServices.InternalsVisibleToAttribute), False).
             Cast(Of Runtime.CompilerServices.InternalsVisibleToAttribute)().
             Select(Function(a) a.AssemblyName).OrderBy(Function(n) n).ToArray()
 
-        CollectionAssert.AreEqual({"Iris.Outlook", "Iris.Tests"}, amigos,
+        CollectionAssert.AreEqual({"Iris.CrashHarness", "Iris.Outlook", "Iris.Tests"}, amigos,
             "mais um amigo e mais uma camada capaz de montar o snapshot")
     End Sub
 

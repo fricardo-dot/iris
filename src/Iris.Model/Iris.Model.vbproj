@@ -17,6 +17,12 @@
          sabe disso. Ver o XML doc do tipo, inclusive o que ele NAO prova. -->
     <InternalsVisibleTo Include="Iris.Outlook" />
     <InternalsVisibleTo Include="Iris.Tests" />
+    <!-- O harness de crash e apparato de teste, como o Iris.Tests: ele
+         precisa montar um snapshot para produzir uma capability DE VERDADE,
+         e fabricar uma seria provar o diario contra um objeto que a producao
+         nunca produz. Esta na lista de propósito, e o teste que fixa a lista
+         e onde essa decisao fica visivel. -->
+    <InternalsVisibleTo Include="Iris.CrashHarness" />
   </ItemGroup>
 
 </Project>

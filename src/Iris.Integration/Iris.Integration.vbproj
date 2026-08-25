@@ -23,6 +23,7 @@
     <ProjectReference Include="..\Iris.Core\Iris.Core.vbproj" />
     <ProjectReference Include="..\Iris.Cache\Iris.Cache.vbproj" />
     <ProjectReference Include="..\Iris.Sync\Iris.Sync.vbproj" />
+    <ProjectReference Include="..\Iris.Assist\Iris.Assist.vbproj" />
   </ItemGroup>
 
   <ItemGroup>
