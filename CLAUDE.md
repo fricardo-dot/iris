@@ -18,6 +18,16 @@ Casos reais desta base, todos custando tempo de depuração:
 | `legado` | função `Legado()` do teste | "tipo não pode ser inferido" |
 | `lista` | função `Lista()` do teste | "tipo não pode ser inferido" |
 | `voltarAEditar` | método `VoltarAEditar()` | "expressão não é um método" |
+| `reconciliacao` | propriedade `Reconciliacao` | `NullReferenceException` na primeira leitura, longe daqui |
+| `corpo` | função `Corpo()` do teste | "argumento não especificado para o parâmetro" |
+| `versao` | função `Versao()` | "tipo não pode ser inferido" |
+| `pasta` | função `Pasta()` | "tipo não pode ser inferido" |
+| `destino` | função `Destino()` | "tipo não pode ser inferido" |
+
+O `reconciliacao` é o pior da lista e merece nome: num construtor,
+`Reconciliacao = reconciliacao` atribui o **parâmetro a ele mesmo**, a
+propriedade fica `Nothing`, e o compilador não diz nada. Dentro de um
+construtor, escreva `Me.Reconciliacao = reconciliacao`.
 
 **Regra prática:** antes de nomear um local, procure o nome no arquivo
 ignorando maiúsculas. Se já existe como método, tipo ou propriedade,
