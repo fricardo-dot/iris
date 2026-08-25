@@ -3698,22 +3698,39 @@ pontas divergissem. **Isso afrouxava**, e o Codex mostrou como: bastava a Table
 perder de verdade uma mensagem *e* chegar outra na janela para o defeito real
 sair rotulado de "caixa viva".
 
-A correção que ficou tolera **exatamente o que mudou, e nada além**. Três
-travessias — Table (T₁), iteração (I), Table (T₂) — e a asserção é
+A correção que ficou troca a igualdade por **duas inclusões**. Três travessias
+— Table (T₁), iteração (I), Table (T₂) — e a asserção é
 
 > `T₁ ∩ T₂ ⊆ I ⊆ T₁ ∪ T₂`
 
-O **núcleo** `T₁ ∩ T₂` é o que a Table viu nas duas pontas; some e volta com o
-mesmo `EntryID` não acontece, então existiu durante a janela inteira e a
-iteração tinha de tê-lo visto. O **universo** `T₁ ∪ T₂` é tudo o que a Table viu
-em algum momento; o que a iteração viu e a Table não viu em ponta nenhuma é
-perda da Table.
+Nunca sai inconclusiva. E com `T₁ = T₂` — a pasta parada durante a janela — o
+núcleo e o universo colapsam no mesmo conjunto e a dupla inclusão vira `I = T₁`:
+**exatamente** a asserção original.
 
-Com a pasta parada, `T₁ = T₂` e a dupla inclusão **vira a igualdade original** —
-nenhuma detecção foi trocada por sossego. O ponto cego que sobra está declarado
-no XML doc do teste: perda da Table restrita a **uma** das pontas, numa janela
-em que a pasta também mudou, cai em `universo \ núcleo` e é tolerada. É perda
-intermitente; a Q1 existe pela sistemática, que continua sendo pega.
+**O que ela não prova.** A frase que eu tinha escrito — "tolera exatamente o que
+mudou, e nada além" — está errada, e o Codex derrubou. Três travessias são três
+observações **com duração**, não instantâneos, e nenhuma observa a pasta durante
+a outra. Daí:
+
+- **Falso positivo:** mensagem que chega depois de T₁ e é apagada antes de T₂ é
+  vista só por I, e o teste acusa a Table de perda com as duas Tables corretas.
+  A janela é curta — a existência inteira tem de caber entre o fim de T₁ e o
+  começo de T₂ — mas existe. A do teste antigo era **maior**, não menor.
+- **Falso negativo:** `T₁ ∩ T₂` não demonstra existência contínua. Item que suma
+  durante I e volte antes de T₂ está no núcleo sem ter estado lá o tempo todo.
+  Que o mesmo `EntryID` não reapareça após remoção real é o comportamento
+  esperado do store, não uma impossibilidade afirmável para todo provider e todo
+  estado de cache — e some-e-volta também acontece sem remoção, por
+  ressincronização do cached mode.
+- **Tudo o que cai em `(T₁ ∪ T₂) \ (T₁ ∩ T₂)` é tolerado**, seja lá o que for —
+  não só perda da Table numa ponta. A faixa é tolerada por não ser decidível,
+  não por ser inofensiva.
+
+Comparado ao antigo, **há relaxamento quando a pasta mexe**: T₁ contém X, I
+omite X, T₂ não contém X falhava antes e passa agora. Com a pasta parada não se
+paga nada, e é esse o caso comum. O que continua sendo pego é **perda
+sistemática** da Table — some das duas pontas, cai fora do universo, reprova. É
+por ela que a Q1 existe.
 
 **Três testes proibiam `Falhou` por inteiro.** O Outlook pode recusar uma
 chamada a qualquer momento, e quando recusa o runner descarta e não publica —
@@ -3728,10 +3745,26 @@ de soluço do ambiente. E `TotalAtStart` é **violação de contrato** — a pri
 página tem de trazer o total, e há teste cobrando isso — e estava na lista.
 
 A causa agora é **estruturada**. `SourceUnavailableException` carrega o
-`ErrorKind`, `SweepResult.CausaDaFonte` o preserva, e o critério é `Busy` ou
-`NotConnected` — a mesma lista do `OperationResult.IsRetryable`, com teste
-cobrando que as duas não divirjam. Defeito de contrato da fonte sai como
-exceção comum, chega **sem causa**, e reprova.
+`ErrorKind` e `SweepResult.CausaDaFonte` o preserva. Defeito de contrato da
+fonte sai como exceção comum, chega **sem causa**, e reprova.
+
+Duas correções vieram da passada seguinte do Codex, e as duas são do mesmo
+feitio — **eu tinha resolvido metade e declarado inteiro**:
+
+- **O tipo não identifica a origem.** O `Catch` cobre o método inteiro, e o
+  destino é chamado lá dentro. Um sink lançando `SourceUnavailableException`
+  saía classificado como recusa do provider, e daí como soluço tolerado. Quem
+  marca a origem agora é a **chamada** (`NaFonte`), por identidade da exceção.
+  Há controle negativo: desfeita a marcação, o teste falha.
+- **A regra estava em três cópias**, e eu tinha posto um teste comparando
+  **duas** — a terceira, a que de fato decidia se uma falha reprovava, ficou de
+  fora. Agora a política vive em `ErrorPolicy.Transitorio` e as três a
+  consultam. O teste que comparava cópias virou o **pino da política**: fixa,
+  `ErrorKind` por `ErrorKind`, o que é tolerado.
+
+E `ErrorKind.Cancelled` deixou de virar `Falhou`: o adaptador o converte em
+`OperationCanceledException`. "O usuário mandou parar" e "a varredura quebrou"
+são desfechos diferentes para quem lê o log depois.
 
 Isso vive em `CausaDaFalhaTests.vb` porque a regra não pode morar só num teste
 que **só falha quando o Outlook tem soluço** — ali ela nunca seria exercitada

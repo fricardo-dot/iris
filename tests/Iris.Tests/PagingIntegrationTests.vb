@@ -184,32 +184,57 @@ Public Class PagingIntegrationTests
     ''' real sair rotulado de "caixa viva".
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>O CONSERTO: TOLERAR EXATAMENTE A MUDANÇA, E NADA ALÉM</b>
+    ''' <b>O CONSERTO: DUAS INCLUSÕES EM VEZ DE UMA IGUALDADE</b>
     '''
-    ''' Três travessias, nesta ordem: Table (T1), iteração (I), Table (T2).
-    ''' Duas quantidades saem daí:
+    ''' Três travessias, nesta ordem: Table (T₁), iteração (I), Table (T₂). A
+    ''' asserção é
     '''
-    '''   <c>Núcleo = T1 ∩ T2</c> — o que a Table viu nas <b>duas</b> pontas.
-    '''   Uma mensagem some e volta com o MESMO EntryID? Não acontece: apagar
-    '''   e receber de novo gera identidade nova. Então o núcleo existiu
-    '''   durante a janela inteira, e a iteração tinha de tê-lo visto.
+    '''   <c>T₁ ∩ T₂ ⊆ I ⊆ T₁ ∪ T₂</c>
     '''
-    '''   <c>Universo = T1 ∪ T2</c> — tudo o que a Table viu em algum momento.
-    '''   O que a iteração viu e a Table não viu em ponta nenhuma é perda da
-    '''   Table, não chegada de correio.
+    ''' Nunca sai inconclusivo. E com <c>T₁ = T₂</c> — a pasta parada durante a
+    ''' janela — o núcleo e o universo colapsam no mesmo conjunto e a dupla
+    ''' inclusão vira <c>I = T₁</c>: <b>exatamente</b> a asserção original.
     '''
-    ''' A asserção é <c>Núcleo ⊆ I ⊆ Universo</c>.
+    ''' ------------------------------------------------------------------
+    ''' <b>O QUE ISTO NÃO PROVA — E É PRECISO DIZER</b>
     '''
-    ''' <b>Com a pasta parada isso é IDÊNTICO ao teste original</b>: T1 = T2
-    ''' faz núcleo e universo colapsarem no mesmo conjunto, e a dupla inclusão
-    ''' vira igualdade. Nenhuma detecção foi trocada por sossego. Com a pasta
-    ''' mexendo, a tolerância é <b>exatamente</b> o que mexeu — e nada mais.
+    ''' A tentação é escrever que a tolerância é "exatamente o que mudou, e
+    ''' nada além". <b>Não é</b>, e o Codex derrubou a frase. Três travessias
+    ''' são três observações com duração, não três instantâneos, e nenhuma
+    ''' delas observa a pasta durante a outra.
     '''
-    ''' <b>O ponto cego que sobra, declarado:</b> uma perda da Table que
-    ''' aconteça em UMA das duas pontas só, numa janela em que a pasta também
-    ''' mudou, cai em <c>Universo \ Núcleo</c> e é tolerada. É perda
-    ''' intermitente, não sistemática; a Q1 existe pela sistemática, que
-    ''' continua sendo pega.
+    ''' <b>Falso positivo que este teste pode produzir:</b> uma mensagem que
+    ''' chega depois de T₁ e é apagada antes de T₂ é vista só por I. Aí
+    ''' <c>I ⊄ T₁ ∪ T₂</c> e o teste acusa a Table de ter perdido, com as duas
+    ''' Tables corretas. A janela é curta — a existência inteira da mensagem
+    ''' tem de caber entre o fim de T₁ e o começo de T₂ — mas existe, e o
+    ''' teste antigo tinha uma janela <b>maior</b> para o mesmo tipo de
+    ''' engano, não menor.
+    '''
+    ''' <b>Falso negativo pelo mesmo motivo:</b> <c>T₁ ∩ T₂</c> não demonstra
+    ''' existência contínua. Um item que suma durante I e volte antes de T₂
+    ''' está no núcleo sem ter estado lá o tempo todo. Que o mesmo
+    ''' <c>EntryID</c> não reapareça depois de uma remoção real é o
+    ''' comportamento esperado do store, <b>não</b> uma impossibilidade que eu
+    ''' possa afirmar para todo provider e todo estado de cache — e some e
+    ''' volta também acontece sem remoção nenhuma, por ressincronização do
+    ''' cached mode ou atualização da Table.
+    '''
+    ''' <b>E tudo o que cai em <c>(T₁ ∪ T₂) \ (T₁ ∩ T₂)</c> é tolerado —
+    ''' seja lá o que for.</b> Não só perda da Table numa ponta: iteração
+    ''' perdendo item que só uma das Tables trouxe, Table inventando item numa
+    ''' ponta só, e defeito cancelando com mutação real dentro da união. A
+    ''' faixa é tolerada por não ser decidível, não por ser inofensiva.
+    '''
+    ''' Comparado ao teste antigo, <b>há relaxamento</b> quando a pasta mexe:
+    ''' T₁ contém X, I omite X, T₂ não contém X falhava antes e passa agora.
+    ''' O que se compra com isso é não chamar de defeito uma pasta viva; o que
+    ''' se paga está escrito acima. Com a pasta parada não se paga nada, e é
+    ''' esse o caso comum.
+    '''
+    ''' O que continua sendo pego, e é o motivo de a Q1 existir: <b>perda
+    ''' sistemática</b> da Table. Ela some das duas pontas, cai fora do
+    ''' universo, e reprova.
     ''' </summary>
     <TestMethod, TestCategory("Integracao")>
     Public Async Function Table_e_iteracao_leem_o_MESMO_conjunto() As Task

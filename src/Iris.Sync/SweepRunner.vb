@@ -267,13 +267,23 @@ Namespace Global.Iris.Sync
             Dim tentativa As Long = 0
             Dim abriuNoDestino = False
 
+            ' A ULTIMA recusa que veio DA FONTE, guardada por identidade.
+            '
+            ' O destino pode lancar SourceUnavailableException tambem — nada o
+            ' impede — e o TIPO sozinho nao diz de onde a excecao veio. Marcar
+            ' a fronteira na chamada e o que faz CausaDaFonte significar o que
+            ' o nome promete. Sem isto, um sink lancando esse tipo sairia
+            ' classificado como recusa do provider, e um defeito de
+            ' persistencia viraria "soluco do Outlook" no teste de integracao.
+            Dim recusaDaFonte As SourceUnavailableException = Nothing
+
             Try
                 tentativa = _destino.AbrirTentativa(universo, epoca, numeroDaTentativa)
                 abriuNoDestino = True
 
                 ' --- contagem inicial ---
                 If ct.IsCancellationRequested Then Return Cancelar(a, paginas, tentativa, abriuNoDestino)
-                Dim antes = _fonte.Contar(ct)
+                Dim antes = NaFonte(Function() _fonte.Contar(ct), recusaDaFonte)
                 If antes Is Nothing Then
                     Return Falhar(a, "fonte devolveu contagem nula", paginas, tentativa, abriuNoDestino)
                 End If
@@ -292,7 +302,8 @@ Namespace Global.Iris.Sync
                                       paginas, tentativa, abriuNoDestino)
                     End If
 
-                    Dim p = _fonte.LerPagina(cursor, _tamanhoPagina, ct)
+                    Dim p = NaFonte(Function() _fonte.LerPagina(cursor, _tamanhoPagina, ct),
+                                    recusaDaFonte)
                     If p Is Nothing Then
                         Return Falhar(a, "fonte devolveu pagina nula", paginas, tentativa, abriuNoDestino)
                     End If
@@ -338,7 +349,7 @@ Namespace Global.Iris.Sync
 
                 ' --- contagem final ---
                 If ct.IsCancellationRequested Then Return Cancelar(a, paginas, tentativa, abriuNoDestino)
-                Dim depois = _fonte.Contar(ct)
+                Dim depois = NaFonte(Function() _fonte.Contar(ct), recusaDaFonte)
                 If depois Is Nothing Then
                     Return Falhar(a, "fonte devolveu contagem nula", paginas, tentativa, abriuNoDestino)
                 End If
@@ -373,7 +384,12 @@ Namespace Global.Iris.Sync
                 ' A fonte recusou, e disse POR QUE. O desfecho e o mesmo -
                 ' descarta, nunca publica metade - mas a causa sobrevive
                 ' classificada, em vez de virar texto para alguem interpretar.
-                Return Falhar(a, ex.Message, paginas, tentativa, abriuNoDestino, ex.Kind)
+                '
+                ' So classifica se foi a FONTE que lancou ESTA excecao. Vinda
+                ' do destino, cai sem causa - como qualquer outro defeito.
+                Dim daFonte As ErrorKind? = Nothing
+                If ReferenceEquals(ex, recusaDaFonte) Then daFonte = ex.Kind
+                Return Falhar(a, ex.Message, paginas, tentativa, abriuNoDestino, daFonte)
             Catch ex As Exception
                 ' Falha da fonte ou do destino. Em qualquer fronteira o efeito
                 ' e o mesmo: descarta. Nunca publica metade.
@@ -382,6 +398,25 @@ Namespace Global.Iris.Sync
         End Function
 
         ' ==============================================================
+
+        ''' <summary>
+        ''' Roda uma chamada <b>da fonte</b> marcando a fronteira: se ela
+        ''' recusar, a recusa fica registrada por identidade e é relançada
+        ''' intacta.
+        '''
+        ''' O tipo da exceção não identifica a origem — o destino pode lançar
+        ''' o mesmo tipo, e o <c>Catch</c> cobre o método inteiro. Quem marca a
+        ''' origem é a <b>chamada</b>, e é isto aqui.
+        ''' </summary>
+        Private Shared Function NaFonte(Of T)(chamada As Func(Of T),
+                                              ByRef recusa As SourceUnavailableException) As T
+            Try
+                Return chamada()
+            Catch ex As SourceUnavailableException
+                recusa = ex
+                Throw
+            End Try
+        End Function
 
         Private Function Rejeitar(r As SweepOutcome, paginas As Integer,
                                   tentativa As Long, abriuNoDestino As Boolean) As SweepResult

@@ -51,7 +51,7 @@ Namespace Global.Iris.Model
         ''' </summary>
         Public ReadOnly Property IsRetryable As Boolean
             Get
-                Return Kind = ErrorKind.Busy OrElse Kind = ErrorKind.NotConnected
+                Return ErrorPolicy.Transitorio(Kind)
             End Get
         End Property
 

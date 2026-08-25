@@ -42,16 +42,16 @@ Namespace Global.Iris.Sync
         End Sub
 
         ''' <summary>
-        ''' O ambiente pode recusar e voltar ao normal sozinho — só
-        ''' <see cref="ErrorKind.Busy"/> e <see cref="ErrorKind.NotConnected"/>.
+        ''' O ambiente pode ter produzido esta recusa sozinho.
         '''
-        ''' É a MESMA regra do <see cref="OperationResult(Of T).IsRetryable"/>, e
-        ''' de propósito: se um dia ela mudar lá, tem de mudar aqui junto, e uma
-        ''' cópia da lista escondida num teste não mudaria.
+        ''' Delega ao <see cref="ErrorPolicy.Transitorio"/>, que é o único lugar
+        ''' onde a lista existe. Já foi uma cópia escrita à mão aqui, e havia
+        ''' outras duas — a divergência entre cópias de uma regra de tolerância
+        ''' só aparece como intermitência, meses depois.
         ''' </summary>
         Public ReadOnly Property DoAmbiente As Boolean
             Get
-                Return Kind = ErrorKind.Busy OrElse Kind = ErrorKind.NotConnected
+                Return ErrorPolicy.Transitorio(Kind)
             End Get
         End Property
 

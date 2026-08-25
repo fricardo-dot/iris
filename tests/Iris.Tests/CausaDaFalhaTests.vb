@@ -31,10 +31,11 @@ Public Class CausaDaFalhaTests
         Return New SweepUniverse("store-1", "pasta-1", "f", Nothing, 1, "amb-1")
     End Function
 
-    Private Shared Function Rodar(f As FonteFalsaMutavel) As SweepResult
+    Private Shared Function Rodar(f As FonteFalsaMutavel,
+                                  Optional d As DestinoFalso = Nothing) As SweepResult
         Dim cap = EnvironmentPolicy.Capacidades(
             New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing))
-        Return New SweepRunner(f, New DestinoFalso(), 2).
+        Return New SweepRunner(f, If(d, New DestinoFalso()), 2).
                Executar(Universo(), 0, 1, cap, CancellationToken.None)
     End Function
 
@@ -94,6 +95,31 @@ Public Class CausaDaFalhaTests
             "num teste que tolera soluco do ambiente. Motivo: " & r.Motivo)
     End Sub
 
+    ''' <summary>
+    ''' <b>O DESTINO lançando o mesmo tipo NÃO vira causa da fonte.</b>
+    '''
+    ''' O <c>Catch</c> do runner cobre o método inteiro, e o destino é chamado
+    ''' lá dentro — <c>AbrirTentativa</c>, <c>GravarPagina</c>,
+    ''' <c>EpocaCorrente</c>, <c>Publicar</c>. Classificar pelo TIPO fazia um
+    ''' defeito de persistência sair como recusa do provider, e daí como
+    ''' "soluço do Outlook" tolerado no teste de importação real.
+    '''
+    ''' Quem marca a origem é a CHAMADA, não o tipo. Este teste é o que cobra
+    ''' isso, e ele falha na versão anterior da correção.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Recusa_vinda_do_DESTINO_nao_e_causa_da_fonte()
+        Dim f As New FonteFalsaMutavel(Universo(), "a", "b", "c")
+        Dim d As New DestinoFalso() With {.RecusarAoGravar = ErrorKind.Busy}
+
+        Dim r = Rodar(f, d)
+
+        Assert.AreEqual(SweepConclusion.Falhou, r.Conclusion)
+        Assert.IsFalse(r.CausaDaFonte.HasValue,
+            "o destino lancou, nao a fonte — o TIPO nao pode decidir a origem. " &
+            "Motivo: " & r.Motivo)
+    End Sub
+
     ''' <summary>Publicação limpa não inventa causa nenhuma.</summary>
     <TestMethod>
     Public Sub Varredura_que_publica_nao_tem_causa()
@@ -106,41 +132,55 @@ Public Class CausaDaFalhaTests
     ' ==================================================================
 
     ''' <summary>
-    ''' A lista do que o ambiente produz sozinho é <b>exatamente</b> a do
-    ''' <c>OperationResult.IsRetryable</c>, e não uma cópia que envelhece à parte.
+    ''' <b>O pino da política.</b> Fixa, <c>ErrorKind</c> por <c>ErrorKind</c>,
+    ''' o que o ambiente produz sozinho.
     '''
-    ''' Este teste existe porque a duplicata é a falha silenciosa aqui: alguém
-    ''' acrescenta um <c>ErrorKind</c> transitório num lugar, esquece o outro, e
-    ''' a divergência só aparece como intermitência meses depois.
+    ''' A regra vive num lugar só — <see cref="ErrorPolicy.Transitorio"/> — e
+    ''' <c>IsRetryable</c>, <c>DoAmbiente</c> e o teste de importação real
+    ''' todos a consultam. Antes eram três cópias escritas à mão, e eu tinha
+    ''' posto um teste comparando <b>duas</b> delas e chamado de resolvido: o
+    ''' Codex mostrou a terceira, que era justamente a que decidia se uma
+    ''' falha reprovava.
+    '''
+    ''' Com uma cópia só, comparar cópias virou tautologia. O que resta a
+    ''' cobrar é o <b>conteúdo</b> da política — e é isto: mexer nela quebra
+    ''' este teste, que é onde a decisão tem de ser tomada de novo.
+    '''
+    ''' <c>Ambiguous</c> e <c>Cancelled</c> aparecem na lista dos negados de
+    ''' propósito: são os dois que alguém tolera sem pensar. Repetir
+    ''' <c>Ambiguous</c> é o pior que se pode fazer, e <c>Cancelled</c> tem
+    ''' desfecho próprio.
     ''' </summary>
     <TestMethod>
-    Public Sub DoAmbiente_bate_com_Retryable_em_TODO_ErrorKind()
+    Public Sub A_politica_do_que_e_transitorio_esta_pinada()
+        Dim toleram = {ErrorKind.Busy, ErrorKind.NotConnected}
+
         For Each k As ErrorKind In [Enum].GetValues(GetType(ErrorKind))
             If k = ErrorKind.None Then Continue For
-
-            Dim retryable = OperationResult(Of Integer).Fail(k, "x").IsRetryable
-            Dim doAmbiente = New SourceUnavailableException(k, "x").DoAmbiente
-
-            Assert.AreEqual(retryable, doAmbiente,
-                $"{k}: as duas nocoes de 'transitorio' divergiram")
+            Assert.AreEqual(toleram.Contains(k), ErrorPolicy.Transitorio(k),
+                $"{k}: a politica do que o ambiente produz sozinho mudou")
         Next
+
+        Assert.IsFalse(ErrorPolicy.Transitorio(ErrorKind.Ambiguous),
+                       "Ambiguous NUNCA e tolerado: repetir e o pior que se pode fazer")
+        Assert.IsFalse(ErrorPolicy.Transitorio(ErrorKind.Cancelled),
+                       "Cancelled tem desfecho proprio, nao e soluco do ambiente")
     End Sub
 
     ''' <summary>
-    ''' Controle: a lista não é vazia nem universal. Sem isto, um
-    ''' <c>DoAmbiente</c> que devolvesse sempre <c>False</c> passaria no teste
-    ''' de cima junto com um <c>Retryable</c> igualmente quebrado.
+    ''' E as duas fachadas realmente delegam — não voltaram a ter cópia
+    ''' própria por baixo.
     ''' </summary>
     <TestMethod>
-    Public Sub Controle_a_lista_do_ambiente_nao_e_vazia_nem_universal()
-        Assert.IsTrue(New SourceUnavailableException(ErrorKind.Busy, "x").DoAmbiente,
-                      "Busy TEM de ser tolerado")
-        Assert.IsTrue(New SourceUnavailableException(ErrorKind.NotConnected, "x").DoAmbiente,
-                      "NotConnected TEM de ser tolerado")
-        Assert.IsFalse(New SourceUnavailableException(ErrorKind.Unexpected, "x").DoAmbiente,
-                       "Unexpected NAO pode ser tolerado")
-        Assert.IsFalse(New SourceUnavailableException(ErrorKind.Denied, "x").DoAmbiente,
-                       "Denied NAO pode ser tolerado")
+    Public Sub As_fachadas_delegam_a_politica()
+        For Each k As ErrorKind In [Enum].GetValues(GetType(ErrorKind))
+            If k = ErrorKind.None Then Continue For
+            Dim esperado = ErrorPolicy.Transitorio(k)
+            Assert.AreEqual(esperado, OperationResult(Of Integer).Fail(k, "x").IsRetryable,
+                            $"{k}: IsRetryable divergiu da politica")
+            Assert.AreEqual(esperado, New SourceUnavailableException(k, "x").DoAmbiente,
+                            $"{k}: DoAmbiente divergiu da politica")
+        Next
     End Sub
 
 End Class

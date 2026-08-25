@@ -104,8 +104,15 @@ Namespace Global.Iris.Integration.Outlook
             Dim q As New MessageQuery(_pasta, MessageSort.ReceivedDesc, _geracaoDaConsulta)
             Dim r = _broker.GetMessagePageAsync(q, cursor, alvo, ct).GetAwaiter().GetResult()
             If Not r.Succeeded Then
-                ' Recusa do provider vai CLASSIFICADA. Quem julga o desfecho
-                ' julga sobre o ErrorKind, nao sobre esta frase.
+                ' Cancelamento nao e recusa. O broker devolve Cancelled quando
+                ' o token cai entre a guarda do runner e o inicio da chamada, e
+                ' sair dai como Falhou trocaria "o usuario mandou parar" por
+                ' "a varredura quebrou" - dois desfechos com significados
+                ' diferentes para quem le o log depois.
+                If r.Kind = ErrorKind.Cancelled Then Throw New OperationCanceledException(ct)
+
+                ' O resto vai CLASSIFICADO. Quem julga o desfecho julga sobre o
+                ' ErrorKind, nao sobre esta frase.
                 Throw New SourceUnavailableException(r.Kind, r.Detail)
             End If
             Return r.Value

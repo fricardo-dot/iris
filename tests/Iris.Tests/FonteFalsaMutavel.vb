@@ -179,6 +179,11 @@ Friend Class DestinoFalso
     Friend Property Epoca As Long = 0
     Friend Property Abertas As Integer = 0
     Friend Property LancarAoGravar As Boolean = False
+    ''' <summary>
+    ''' O DESTINO lança <c>SourceUnavailableException</c> — o mesmo tipo que a
+    ''' fonte usa. Existe para provar que o tipo sozinho não classifica origem.
+    ''' </summary>
+    Friend Property RecusarAoGravar As ErrorKind? = Nothing
     Friend Property LancarAoPublicar As Boolean = False
     Friend Property LancarNaEpoca As Boolean = False
     Friend Property RespostaAoPublicar As SinkPublishResult = SinkPublishResult.Publicada
@@ -199,6 +204,9 @@ Friend Class DestinoFalso
                             linhas As IReadOnlyList(Of SourceRow),
                             cursorDepois As String) Implements ISweepSink.GravarPagina
         If LancarAoGravar Then Throw New InvalidOperationException("destino falhou ao gravar")
+        If RecusarAoGravar.HasValue Then
+            Throw New SourceUnavailableException(RecusarAoGravar.Value, "destino, nao fonte")
+        End If
         Paginas.Add((pagina, linhas.Select(Function(l) l.Key).ToList(), cursorDepois))
     End Sub
 

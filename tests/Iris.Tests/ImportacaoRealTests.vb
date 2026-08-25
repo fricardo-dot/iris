@@ -288,9 +288,11 @@ Public Class ImportacaoRealTests
     '''
     ''' Agora a causa vem estruturada em
     ''' <see cref="SweepResult.CausaDaFonte"/>, e o critério é
-    ''' <see cref="SourceUnavailableException.DoAmbiente"/>: só
-    ''' <c>Busy</c> e <c>NotConnected</c>. Defeito de contrato da fonte não
-    ''' chega classificado, então cai aqui como falha sem causa — e reprova.
+    ''' <see cref="ErrorPolicy.Transitorio"/> — <b>a mesma função</b> que
+    ''' <c>IsRetryable</c> e <c>DoAmbiente</c> consultam, não uma lista repetida
+    ''' aqui. Repetida foi a primeira versão, e era a cópia que ninguém
+    ''' comparava com as outras. Defeito de contrato da fonte não chega
+    ''' classificado, então cai aqui como falha sem causa — e reprova.
     '''
     ''' E a invariante de segurança é cobrada em TODOS os desfechos, inclusive
     ''' no aceito: nada pode ficar pela metade.
@@ -303,10 +305,12 @@ Public Class ImportacaoRealTests
         Assert.IsTrue(r.CausaDaFonte.HasValue,
             "falha SEM causa da fonte e defeito meu, nao soluco da caixa: " & motivo)
 
+        ' ErrorPolicy.Transitorio, e nao a lista repetida aqui: esta era a
+        ' TERCEIRA copia da regra, e a unica que decidia se uma falha reprova.
         Dim k = r.CausaDaFonte.Value
-        Assert.IsTrue(k = ErrorKind.Busy OrElse k = ErrorKind.NotConnected,
+        Assert.IsTrue(ErrorPolicy.Transitorio(k),
             $"a fonte recusou com {k}, que NAO e recusa que o ambiente produz " &
-            "sozinho — Busy e NotConnected sao; o resto e defeito: " & motivo)
+            "sozinho — so Busy e NotConnected sao; o resto e defeito: " & motivo)
 
         Anotar($"AVISO: a fonte recusou com {k} e a varredura foi descartada")
     End Sub
