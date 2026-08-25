@@ -29,9 +29,12 @@ Namespace Global.Iris.Integration
     ''' <summary>
     ''' O que o Iris sabe sobre uma pasta — <b>e o quanto disso ele alcançou</b>.
     '''
-    ''' A cobertura não é um campo opcional que a UI pode ignorar: ela vem
-    ''' junto, no mesmo objeto, e não há como obter os itens sem obtê-la. É a
-    ''' §23 virando estrutura em vez de recomendação.
+    ''' A cobertura vem no MESMO objeto que os itens, então quem pega a lista
+    ''' já tem a ressalva na mão. É acoplamento útil, e é o que dá para fazer
+    ''' desta camada — <b>não é enforcement de apresentação</b>: nada impede o
+    ''' chamador de ler só <c>Items</c> e ignorar o resto. Impedir de verdade
+    ''' exigiria um modelo de apresentação já qualificado, ou um componente
+    ''' visual que recuse renderizar conteúdo parcial sem a ressalva.
     '''
     ''' O motivo é concreto. Em modo cached o Iris publica cobertura
     ''' <c>Parcial</c>, e o manifesto é um <b>acervo</b>, não o estado corrente
@@ -60,8 +63,7 @@ Namespace Global.Iris.Integration
         ''' Se este manifesto pode ser exibido como o estado corrente da pasta.
         '''
         ''' Falso sempre que a cobertura não for <c>Completa</c> — e hoje ela
-        ''' nunca é, em modo cached (§23). A UI é obrigada a consultar isto
-        ''' porque o dado de exibição só vem por aqui.
+        ''' nunca é, em modo cached (§23).
         ''' </summary>
         Public ReadOnly Property EhEstadoCorrente As Boolean
             Get
@@ -95,10 +97,19 @@ Namespace Global.Iris.Integration
     ''' <summary>
     ''' Lê o manifesto publicado de uma pasta.
     '''
-    ''' Só devolve o que está na geração <b>publicada</b> — linhas encenadas de
-    ''' uma tentativa em curso não aparecem. É a fronteira de geração sendo
-    ''' respeitada na leitura, e ela é o que impede que uma varredura pela
-    ''' metade vaze para a UI.
+    ''' Devolve as associações que já pertencem a alguma geração publicada.
+    '''
+    ''' Isso <b>não</b> é o mesmo que "o retrato exato da última geração": uma
+    ''' associação carrega a geração em que foi vista por último, e o filtro é
+    ''' <c>generation_key IS NOT NULL</c>. O que a fronteira garante é que
+    ''' linhas de uma tentativa que nunca publicou não aparecem — e desde que a
+    ''' encenação parou de tocar o acervo, elas nem chegam a existir fora de
+    ''' <c>scan_stage</c>.
+    '''
+    ''' <b>As duas consultas não estão no mesmo snapshot.</b> A cabeça pode
+    ''' mudar entre a primeira e a segunda, e o manifesto sairia com a cobertura
+    ''' de uma geração e os itens de outra. Não é grave hoje — publicação é
+    ''' rara e a UI relê — mas é dívida escrita, não descuido.
     ''' </summary>
     Public NotInheritable Class ManifestReader
 

@@ -291,12 +291,38 @@ Namespace Global.Iris.Core
 
             ' As linhas ainda NÃO publicadas. É aqui que vive o conjunto de
             ' chaves vistas — nunca serializado dentro do cursor.
+            ' A ENCENAÇÃO carrega o metadado, e não só a chave.
+            '
+            ' Isto mudou depois de uma revisão do 2.2a, e a razão é a fronteira
+            ' de visibilidade. Antes, gravar uma página escrevia direto em
+            ' `incarnation`, `metadata_observation` e `association` — as tabelas
+            ' do ACERVO. Numa encarnação que já existia, isso substituía o
+            ' metadado publicado e devolvia a associação para `presente`. Se a
+            ' tentativa fosse rejeitada depois, nada disso era desfeito: uma
+            ' varredura recusada alterava o manifesto que a UI mostra.
+            '
+            ' O teste que eu tinha não pegava porque só usava itens NOVOS,
+            ' cujas associações ainda não pertencem a geração nenhuma.
+            '
+            ' Agora a página só toca aqui. O acervo é materializado a partir
+            ' desta tabela na transação da PUBLICAÇÃO — antes disso, nada do
+            ' que foi lido é visível.
             t.Add(New SchemaTable("scan_stage", {
                 Col("stage_key", "INTEGER", pk:=True, obrigatoria:=True),
                 Col("attempt_key", "INTEGER", obrigatoria:=True, refs:="scan_attempt", aoExcluir:=DeleteAction.Cascade),
                 Col("provider_entry_id", "TEXT", obrigatoria:=True, doProvider:=True),
                 Col("page_number", "INTEGER", obrigatoria:=True, check:="page_number >= 1"),
-                Col("cursor_after", "TEXT")
+                Col("cursor_after", "TEXT"),
+                Col("search_key", "TEXT", doProvider:=True),
+                Col("internet_message_id", "TEXT", doProvider:=True),
+                Col("subject", "TEXT"),
+                Col("sender_name", "TEXT"),
+                Col("received_at", "TEXT"),
+                Col("last_modified_at", "TEXT"),
+                Col("size_bytes", "INTEGER"),
+                Col("has_attachments", "INTEGER", check:="has_attachments IN (0,1)"),
+                Col("is_unread", "INTEGER", check:="is_unread IN (0,1)"),
+                Col("message_class", "TEXT")
             }, {Unico("attempt_key", "provider_entry_id")}))
 
             ' O resultado PUBLICADO. Imutável.
@@ -320,11 +346,24 @@ Namespace Global.Iris.Core
             ' O que precisa ser reprocessado depois de crash. Entra no MESMO
             ' commit da publicação: se saísse antes, um crash entre os dois
             ' reprocessaria uma publicação que nunca houve.
+            ' A DIVIDA para a UI.
+            '
+            ' delivery_attempts e last_error existem porque a entrega e AO
+            ' MENOS UMA VEZ e o consumidor pode falhar sempre. Nesse caso o
+            ' dreno trava na cabeca da fila e as geracoes seguintes nunca
+            ' chegam - bloqueio real, e a escolha e mante-lo (marcar como
+            ' drenada uma geracao que a UI nao recebeu seria perder em
+            ' silencio). O que nao da e ele ser INVISIVEL: sem contagem e sem
+            ' o ultimo erro, ninguem descobre que a fila parou.
             t.Add(New SchemaTable("publication_log", {
                 Col("log_key", "INTEGER", pk:=True, obrigatoria:=True),
                 Col("generation_key", "INTEGER", obrigatoria:=True, refs:="generation", aoExcluir:=DeleteAction.Cascade),
                 Col("emitted_at", "TEXT", obrigatoria:=True),
-                Col("drained_at", "TEXT")
+                Col("drained_at", "TEXT"),
+                Col("delivery_attempts", "INTEGER", obrigatoria:=True,
+                    check:="delivery_attempts >= 0"),
+                Col("last_error", "TEXT"),
+                Col("last_attempt_at", "TEXT")
             }, {Unico("generation_key")}))
 
             Return New CacheSchema(t)

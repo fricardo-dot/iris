@@ -102,9 +102,10 @@ Namespace Global.Iris.Integration
         ''' Não confundir com <c>generation.coverage_kind</c>: aquele diz que
         ''' TIPO de varredura foi — completa ou incremental —, este diz QUANTO
         ''' dela se alcançou. Uma varredura pode ser de tipo completo e alcance
-        ''' parcial: ela percorreu a pasta inteira, e o que faltou não deixou
-        ''' de ser percorrido — deixou de ser <b>alcançável</b>. Foi a §19.2,
-        ''' com pastas cheias reportando zero.
+        ''' parcial: ela percorreu integralmente <b>o conjunto que o provider
+        ''' expôs</b>, que não é a pasta inteira. Foi a §19.2, com pastas cheias
+        ''' reportando zero — e essa diferença entre o exposto e o real é
+        ''' exatamente o motivo de a cobertura ser parcial.
         '''
         ''' A primeira versão desta classe traduzia parcial como 'completa' e
         ''' justificava no comentário. Era mentir na coluna errada: o alcance

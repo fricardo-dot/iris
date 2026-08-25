@@ -129,8 +129,13 @@ def conferir(ponto: str, rc: int, e: dict, esp: dict) -> list:
             d.append(f"{campo}: {real!r}, esperado {alvo!r}")
 
     # Invariantes estruturais, alem do estado esperado.
-    if e["linhas"] != e["encarnacoes"]:
-        d.append(f"linhas encenadas ({e['linhas']}) != encarnacoes ({e['encarnacoes']})")
+    # Encarnacao so existe DEPOIS de publicar: a pagina encena, e o acervo e
+    # materializado na transacao da publicacao. Antes de publicar tem de haver
+    # ZERO; depois, uma por linha encenada.
+    esperadas = e["linhas"] if e["geracoes"] > 0 else 0
+    if e["encarnacoes"] != esperadas:
+        d.append(f"encarnacoes {e['encarnacoes']}, esperado {esperadas} "
+                 f"(publicou={e['geracoes'] > 0}, encenadas={e['linhas']})")
     if e["ger_keys"] != e["log_keys"]:
         # Contagem igual nao basta: as CHAVES tem de ser as mesmas.
         d.append(f"geracoes {e['ger_keys']} != divida {e['log_keys']}")

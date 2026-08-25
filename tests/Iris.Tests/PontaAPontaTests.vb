@@ -275,15 +275,16 @@ Public Class PontaAPontaTests
     End Sub
 
     ''' <summary>
-    ''' Linhas de uma tentativa REJEITADA nao vazam para o manifesto.
+    ''' Linhas de uma tentativa REJEITADA não aparecem no manifesto — e agora
+    ''' nem chegam ao acervo.
     '''
-    ''' O GravarPagina escreve encarnacao, metadado e associacao nas tabelas
-    ''' permanentes antes da publicacao — foi por isso que a "fatia de captura"
-    ''' antecipada foi rejeitada na §23.5. A fronteira que impede o vazamento e
-    ''' o generation_key: so associacao de geracao publicada entra.
+    ''' A primeira versão deste teste afirmava o contrário: que o
+    ''' <c>GravarPagina</c> escrevia em <c>incarnation</c> antes da publicação
+    ''' e que a fronteira do <c>generation_key</c> segurava o vazamento. A
+    ''' fronteira segurava — mas só para itens NOVOS, e era esse o buraco.
     ''' </summary>
     <TestMethod>
-    Public Sub Tentativa_rejeitada_nao_vaza_para_o_manifesto()
+    Public Sub Tentativa_rejeitada_nao_toca_o_acervo()
         Dim falha As OpenFailure = Nothing
         Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
             Dim fonte As New FonteFalsaMutavel(Universo(), "E-1", "E-2", "E-3", "E-4")
@@ -291,14 +292,173 @@ Public Class PontaAPontaTests
             Dim runner As New SweepRunner(fonte, New SqliteSweepSink(db, FolderKey, EnvKey), 2)
             Assert.IsFalse(runner.Executar(Universo(), 0, 1, Real(), CancellationToken.None).Publicou)
 
-            ' As linhas ESTAO nas tabelas permanentes...
-            Assert.IsTrue(Contar(db, "incarnation") > 0,
-                "GravarPagina escreve antes da publicacao — e por isso que a fronteira importa")
+            Assert.AreEqual(0, Contar(db, "incarnation"),
+                "a pagina so ENCENA: o acervo nao pode ter sido tocado")
+            Assert.AreEqual(0, Contar(db, "association"))
+            Assert.IsTrue(Contar(db, "scan_stage") > 0, "mas as linhas ficaram encenadas")
 
-            ' ...e mesmo assim o manifesto nao as mostra.
             Dim m = New ManifestReader(db).Ler(FolderKey)
-            Assert.AreEqual(0, m.Items.Count, "geracao nao publicada nao vaza para a UI")
+            Assert.AreEqual(0, m.Items.Count)
             Assert.IsNull(m.GenerationKey)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>O teste que faltava, e que o buraco exigia.</b>
+    '''
+    ''' Uma tentativa rejeitada não pode alterar o que JÁ ESTAVA PUBLICADO.
+    '''
+    ''' Era exatamente aqui que o defeito vivia, e o meu teste anterior não
+    ''' chegava perto: ele só usava itens novos, cujas associações ainda não
+    ''' pertencem a geração nenhuma, então a fronteira do
+    ''' <c>generation_key</c> as escondia. Com um item <b>preexistente</b>, o
+    ''' <c>GravarPagina</c> substituía o metadado publicado e devolvia a
+    ''' associação para <c>presente</c> — e rejeitar depois não desfazia nada.
+    ''' Uma varredura recusada alterava o manifesto que a UI mostra.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Tentativa_rejeitada_nao_altera_item_JA_PUBLICADO()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Dim sink As New SqliteSweepSink(db, FolderKey, EnvKey)
+
+            ' 1. Uma geracao publicada, com assunto conhecido.
+            Dim r1 = New SweepRunner(New FonteFalsaMutavel(Universo(), "E-1", "E-2"), sink, 2).
+                     Executar(Universo(), 0, 1, Real(), CancellationToken.None)
+            Assert.IsTrue(r1.Publicou, r1.Motivo)
+
+            Dim antes = New ManifestReader(db).Ler(FolderKey)
+            Assert.AreEqual(2, antes.Items.Count)
+            Dim assuntoAntes = antes.Items.First(Function(i) i.ProviderEntryId = "E-1").Subject
+            Dim geracaoAntes = antes.GenerationKey
+
+            ' 2. Uma segunda tentativa que le os MESMOS itens e e REJEITADA.
+            Dim fonte2 As New FonteFalsaMutavel(Universo(), "E-1", "E-2", "E-3")
+            fonte2.Agenda(1) = Sub(x) x.Remover("E-3")
+            Dim r2 = New SweepRunner(fonte2, sink, 2).
+                     Executar(Universo(), 0, 2, Real(), CancellationToken.None)
+            Assert.IsFalse(r2.Publicou, "a segunda tem de ser rejeitada")
+
+            ' 3. O manifesto tem de estar INTACTO.
+            Dim depois = New ManifestReader(db).Ler(FolderKey)
+            Assert.AreEqual(2, depois.Items.Count, "a rejeitada nao pode acrescentar item")
+            Assert.AreEqual(geracaoAntes, depois.GenerationKey, "a cabeca nao pode ter mudado")
+            Assert.AreEqual(assuntoAntes,
+                depois.Items.First(Function(i) i.ProviderEntryId = "E-1").Subject,
+                "a rejeitada nao pode ter substituido o metadado publicado")
+            Assert.IsFalse(depois.Items.Any(Function(i) i.ProviderEntryId = "E-3"),
+                "E-3 foi lido pela tentativa rejeitada e nao pode aparecer")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Não vistos viram SUSPEITOS</b> — o efeito que era emitido e nunca
+    ''' executado.
+    '''
+    ''' O <c>SweepModel</c> emitia <c>MarcarNaoVistosComoSuspeitos</c> e ninguém
+    ''' executava: o sink nem tinha a operação. Depois de uma geração com A e B
+    ''' e outra só com A, o B continuava <c>presente</c> e o manifesto o
+    ''' devolvia como se estivesse lá.
+    '''
+    ''' E suspeito é onde para. Geração que passa NÃO promove suspeita a
+    ''' ausência — nem por contagem, nem por tempo. É a §23.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Item_que_sumiu_na_segunda_geracao_vira_SUSPEITO_e_nao_ausente()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Dim sink As New SqliteSweepSink(db, FolderKey, EnvKey)
+
+            Dim r1 = New SweepRunner(New FonteFalsaMutavel(Universo(), "E-1", "E-2"), sink, 2).
+                     Executar(Universo(), 0, 1, Real(), CancellationToken.None)
+            Assert.IsTrue(r1.Publicou, r1.Motivo)
+
+            ' Segunda geracao: E-2 sumiu.
+            Dim r2 = New SweepRunner(New FonteFalsaMutavel(Universo(), "E-1"), sink, 2).
+                     Executar(Universo(), 0, 2, Real(), CancellationToken.None)
+            Assert.IsTrue(r2.Publicou, r2.Motivo)
+
+            Dim m = New ManifestReader(db).Ler(FolderKey)
+            Assert.AreEqual(2, m.Items.Count, "o item que sumiu nao some do acervo")
+
+            Dim e1 = m.Items.First(Function(i) i.ProviderEntryId = "E-1")
+            Dim e2 = m.Items.First(Function(i) i.ProviderEntryId = "E-2")
+
+            Assert.AreEqual(PresenceState.Presente, e1.Presence)
+            Assert.AreEqual(PresenceState.Suspeito, e2.Presence,
+                "nao visto na geracao publicada tem de virar SUSPEITO")
+            Assert.AreNotEqual(PresenceState.AusenteDaPasta, e2.Presence,
+                "e NUNCA ausente: cached nao conclui ausencia (§23)")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' E suspeito volta a presente quando o item reaparece — visto é visto,
+    ''' venha de onde vier.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Suspeito_volta_a_presente_quando_o_item_reaparece()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Dim sink As New SqliteSweepSink(db, FolderKey, EnvKey)
+
+            Dim a1 = New SweepRunner(New FonteFalsaMutavel(Universo(), "E-1", "E-2"), sink, 2).
+                     Executar(Universo(), 0, 1, Real(), CancellationToken.None)
+            Dim a2 = New SweepRunner(New FonteFalsaMutavel(Universo(), "E-1"), sink, 2).
+                     Executar(Universo(), 0, 2, Real(), CancellationToken.None)
+            Assert.IsTrue(a1.Publicou AndAlso a2.Publicou)
+
+            Dim suspeito = New ManifestReader(db).Ler(FolderKey).Items.
+                First(Function(i) i.ProviderEntryId = "E-2")
+            Assert.AreEqual(PresenceState.Suspeito, suspeito.Presence)
+
+            ' O item volta.
+            Dim a3 = New SweepRunner(New FonteFalsaMutavel(Universo(), "E-1", "E-2"), sink, 2).
+                     Executar(Universo(), 0, 3, Real(), CancellationToken.None)
+            Assert.IsTrue(a3.Publicou, a3.Motivo)
+
+            Dim voltou = New ManifestReader(db).Ler(FolderKey).Items.
+                First(Function(i) i.ProviderEntryId = "E-2")
+            Assert.AreEqual(PresenceState.Presente, voltou.Presence, "o item voltou")
+        End Using
+    End Sub
+    ''' <summary>
+    ''' Fila travada fica VISÍVEL.
+    '''
+    ''' Um consumidor que falha sempre trava o dreno na cabeça da fila, e as
+    ''' gerações seguintes nunca chegam. <b>O bloqueio é deliberado</b> — marcar
+    ''' como drenada uma geração que a UI não recebeu seria perder em silêncio,
+    ''' e pular a cabeça entregaria as seguintes fora de ordem.
+    '''
+    ''' O que não pode é o bloqueio ser invisível. Depois de N falhas, quem
+    ''' perguntar descobre onde travou e por quê.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Fila_travada_fica_VISIVEL()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
+            Dim sink As New SqliteSweepSink(db, FolderKey, EnvKey)
+            Dim r = New SweepRunner(New FonteFalsaMutavel(Universo(), "E-1"), sink, 2).
+                    Executar(Universo(), 0, 1, Real(), CancellationToken.None)
+            Assert.IsTrue(r.Publicou, r.Motivo)
+
+            Dim drain As New PublicationDrain(db)
+            Dim ui As New ConsumidorFalso() With {.Lancar = True}
+
+            Assert.IsNull(drain.TravadoEm(), "ainda nao tentou nenhuma vez")
+
+            For i = 1 To 3
+                Try
+                    drain.Drenar(ui)
+                Catch ex As InvalidOperationException
+                End Try
+            Next
+
+            Dim travada = drain.TravadoEm()
+            Assert.IsNotNull(travada, "depois de 3 falhas a fila tem de se declarar travada")
+            StringAssert.Contains(drain.UltimoErro(travada.Value), "UI falhou",
+                "o motivo tem de estar no banco, senao ninguem descobre por que parou")
+            Assert.AreEqual(1, drain.Pendentes().Count, "e continua pendente, que e o certo")
         End Using
     End Sub
 

@@ -52,10 +52,10 @@ Namespace Global.Iris.Cache
     ''' geração com dívida registrada e consultável.
     '''
     ''' <b>O que está provado, e o que não está.</b> Está provado que a dívida
-    ''' persiste ao término abrupto do processo e é consultável depois. NÃO
-    ''' está provado que "a UI drena ao voltar": não existe consumidor de
-    ''' <see cref="PublicacoesPendentes"/> no produto ainda — só o teste chama.
-    ''' A integração é do 2.2.
+    ''' persiste ao término abrupto do processo e é consultável depois, e o
+    ''' <c>PublicationDrain</c> do 2.2a é o mecanismo que a consome. O que ainda
+    ''' não existe é o consumidor da UI: quem implementa
+    ''' <c>IPublicationConsumer</c> hoje é só o teste.
     '''
     ''' E quando existir, a entrega será <b>ao menos uma vez</b>: morrer depois
     ''' de a UI agir e antes de <see cref="MarcarDrenada"/> repete a entrega. É
@@ -113,18 +113,36 @@ Namespace Global.Iris.Cache
 
             Using tx = Imediata()
                 For Each l In linhas
-                    Dim incK = GarantirEncarnacao(tx, folderKey, l)
-                    GravarMetadado(tx, incK, l)
-                    GarantirAssociacao(tx, folderKey, incK)
-
+                    ' A pagina SO ENCENA. Nada do acervo — encarnacao,
+                    ' metadado, associacao — e tocado aqui.
+                    '
+                    ' Antes era o contrario, e o defeito era grave: numa
+                    ' encarnacao que ja existia, gravar a pagina substituia o
+                    ' metadado PUBLICADO e devolvia a associacao para
+                    ' 'presente'. Se a tentativa fosse rejeitada depois, nada
+                    ' disso era desfeito — uma varredura RECUSADA alterava o
+                    ' manifesto que a UI mostra. O teste nao pegava porque so
+                    ' usava itens NOVOS, cujas associacoes ainda nao pertencem
+                    ' a geracao nenhuma.
+                    '
                     ' O unico (attempt_key, provider_entry_id) e o que torna a
                     ' releitura apos crash inofensiva: a mesma mensagem
                     ' encenada duas vezes conta uma vez so.
                     Executar(tx, "INSERT INTO scan_stage (attempt_key, provider_entry_id, " &
-                        "page_number, cursor_after) VALUES ($a,$p,$n,$c) " &
+                        "page_number, cursor_after, search_key, internet_message_id, subject, " &
+                        "sender_name, received_at, last_modified_at, size_bytes, has_attachments, " &
+                        "is_unread, message_class) " &
+                        "VALUES ($a,$p,$n,$c,$sk,$mid,$s,$sn,$r,$lm,$sz,$ha,$iu,$mc) " &
                         "ON CONFLICT (attempt_key, provider_entry_id) DO NOTHING",
                         ("$a", CObj(attemptKey)), ("$p", CObj(l.ProviderEntryId)),
-                        ("$n", CObj(pagina)), ("$c", CObj(cursorDepois)))
+                        ("$n", CObj(pagina)), ("$c", CObj(cursorDepois)),
+                        ("$sk", CObj(l.SearchKey)), ("$mid", CObj(l.InternetMessageId)),
+                        ("$s", CObj(l.Subject)), ("$sn", CObj(l.SenderName)),
+                        ("$r", CObj(l.ReceivedAt)), ("$lm", CObj(l.LastModifiedAt)),
+                        ("$sz", If(l.SizeBytes.HasValue, CObj(l.SizeBytes.Value), Nothing)),
+                        ("$ha", If(l.HasAttachments.HasValue, CObj(If(l.HasAttachments.Value, 1, 0)), Nothing)),
+                        ("$iu", If(l.IsUnread.HasValue, CObj(If(l.IsUnread.Value, 1, 0)), Nothing)),
+                        ("$mc", CObj(l.MessageClass)))
                 Next
 
                 ' rows_read e DERIVADO, nao incrementado. Incrementar conta
@@ -156,9 +174,8 @@ Namespace Global.Iris.Cache
         '''     ALCANCOU - completa, parcial ou desconhecida.
         '''
         ''' Uma varredura pode ser de tipo completo e alcance parcial: ela
-        ''' percorreu a pasta inteira, e o que faltou nao deixou de ser
-        ''' percorrido - deixou de ser ALCANCAVEL. Foi a §19.2, com pastas
-        ''' cheias reportando zero.
+        ''' percorreu integralmente O CONJUNTO QUE O PROVIDER EXPOS, que nao e a
+        ''' pasta inteira. Foi a §19.2, com pastas cheias reportando zero.
         '''
         ''' A observacao de cobertura vai na MESMA TRANSACAO da geracao. Fora
         ''' dela, "publicou" e "registrou o quanto alcancou" seriam dois
@@ -259,6 +276,37 @@ Namespace Global.Iris.Cache
                 Executar(tx, "UPDATE folder SET published_generation_key = $g WHERE folder_key = $f",
                     ("$g", CObj(g)), ("$f", CObj(folderKey)))
 
+                ' ===== MATERIALIZACAO =====
+                '
+                ' O acervo so recebe as linhas AQUI, a partir da encenacao, e
+                ' dentro desta transacao. Enquanto a tentativa nao publica,
+                ' nada do que ela leu e visivel — e uma tentativa rejeitada nao
+                ' deixa marca nenhuma no que a UI mostra.
+                Materializar(tx, attemptKey, folderKey, g)
+
+                ' ===== NAO VISTOS -> SUSPEITOS =====
+                '
+                ' O comando MarcarNaoVistosComoSuspeitos era EMITIDO pelo
+                ' modelo e nunca EXECUTADO por ninguem: o sink nem tinha a
+                ' operacao. Efeito: depois de uma geracao com A e B e outra so
+                ' com A, o B continuava 'presente' — e o manifesto o devolvia
+                ' como se estivesse la.
+                '
+                ' So 'presente' vira 'suspeito'. NaoVerificado continua
+                ' NaoVerificado (suspeita pressupoe presenca anterior), e
+                ' suspeito continua suspeito — geracao que passa NAO promove
+                ' suspeita a ausencia, nem por contagem nem por tempo. E o
+                ' AplicarGeracao da PresencePolicy, em SQL.
+                Executar(tx,
+                    "UPDATE association SET presence='suspeito', version = version + 1, " &
+                    "       generation_key = $g " &
+                    "WHERE folder_key = $f AND presence = 'presente' " &
+                    "  AND item_key NOT IN (" &
+                    "    SELECT i.item_key FROM incarnation i JOIN scan_stage s " &
+                    "    ON s.provider_entry_id = i.provider_entry_id " &
+                    "    WHERE i.folder_key = $f AND s.attempt_key = $a)",
+                    ("$g", CObj(g)), ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)))
+
                 Executar(tx, "UPDATE association SET generation_key = $g " &
                     "WHERE folder_key = $f AND item_key IN (" &
                     "  SELECT i.item_key FROM incarnation i JOIN scan_stage s " &
@@ -270,8 +318,8 @@ Namespace Global.Iris.Cache
                     "WHERE attempt_key=$a", ("$a", CObj(attemptKey)), ("$t", CObj(Agora())))
 
                 ' A DIVIDA para a UI, na MESMA transacao.
-                Executar(tx, "INSERT INTO publication_log (generation_key, emitted_at) " &
-                    "VALUES ($g,$t)", ("$g", CObj(g)), ("$t", CObj(Agora())))
+                Executar(tx, "INSERT INTO publication_log (generation_key, emitted_at, " &
+                    "delivery_attempts) VALUES ($g,$t,0)", ("$g", CObj(g)), ("$t", CObj(Agora())))
 
                 CrashInjection.Talvez(CrashInjection.DentroDaPublicacaoAntesDoCommit)
                 tx.Commit()
@@ -295,6 +343,32 @@ Namespace Global.Iris.Cache
                 End Using
             End Using
             Return r
+        End Function
+
+        ''' <summary>
+        ''' Registra que a entrega foi TENTADA e falhou. Sem isto, um consumidor
+        ''' que falha sempre trava a fila em silencio.
+        ''' </summary>
+        Public Sub RegistrarFalhaNaEntrega(geracao As Long, erro As String)
+            Using tx = Imediata()
+                Executar(tx, "UPDATE publication_log SET delivery_attempts = delivery_attempts + 1, " &
+                    "last_error = $e, last_attempt_at = $t WHERE generation_key = $g",
+                    ("$g", CObj(geracao)), ("$e", CObj(Recortar(erro))), ("$t", CObj(Agora())))
+                tx.Commit()
+            End Using
+        End Sub
+
+        Public Function TentativasDeEntrega(geracao As Long) As Integer
+            Return Convert.ToInt32(Ler(Nothing,
+                "SELECT delivery_attempts FROM publication_log WHERE generation_key=$g",
+                ("$g", CObj(geracao))))
+        End Function
+
+        Public Function UltimoErroDeEntrega(geracao As Long) As String
+            Dim v = Ler(Nothing,
+                "SELECT last_error FROM publication_log WHERE generation_key=$g",
+                ("$g", CObj(geracao)))
+            Return If(v Is Nothing, Nothing, Convert.ToString(v))
         End Function
 
         Public Sub MarcarDrenada(geracao As Long)
@@ -365,6 +439,96 @@ Namespace Global.Iris.Cache
         End Sub
 
         ' ==============================================================
+
+        ''' <summary>
+        ''' Leva a encenação para o acervo, dentro da transação da publicação.
+        '''
+        ''' Tudo é feito em SQL de conjunto, sem laço por linha, e não é
+        ''' otimização: uma varredura da Caixa de Entrada desta caixa tem mil
+        ''' linhas, e mil idas ao SQLite dentro de uma transação com o lock de
+        ''' escrita segurado é tempo em que ninguém mais publica.
+        ''' </summary>
+        Private Sub Materializar(tx As SqliteTransaction, attemptKey As Long,
+                                 folderKey As Long, geracao As Long)
+            ' 1-2. ITEM + ENCARNACAO para cada encenada que ainda nao tem
+            ' encarnacao nesta pasta.
+            '
+            ' Em laco, e nao em SQL de conjunto. A versao de conjunto casava
+            ' os itens recem-criados com as linhas encenadas por ROW_NUMBER e
+            ' por created_at — e Agora() devolve valor novo a cada chamada,
+            ' entao os dois passos nem usavam o mesmo carimbo. Truque frageis
+            ' para ganhar idas ao banco dentro de uma transacao que ja e curta
+            ' e o tipo de coisa que quebra em silencio quando a ordem muda.
+            Dim faltando As New List(Of String)()
+            Using cmd = _conn.CreateCommand()
+                cmd.CommandText =
+                    "SELECT s.provider_entry_id FROM scan_stage s " &
+                    "WHERE s.attempt_key = $a AND NOT EXISTS (" &
+                    "  SELECT 1 FROM incarnation i WHERE i.folder_key = $f " &
+                    "    AND i.provider_entry_id = s.provider_entry_id) " &
+                    "ORDER BY s.stage_key"
+                cmd.Transaction = tx
+                cmd.Parameters.AddWithValue("$a", attemptKey)
+                cmd.Parameters.AddWithValue("$f", folderKey)
+                Using rd = cmd.ExecuteReader()
+                    While rd.Read()
+                        faltando.Add(rd.GetString(0))
+                    End While
+                End Using
+            End Using
+
+            For Each id In faltando
+                Dim itemK = Convert.ToInt64(Escalar(tx,
+                    "INSERT INTO item (created_at) VALUES ($t); SELECT last_insert_rowid()",
+                    ("$t", CObj(Agora()))))
+                Executar(tx,
+                    "INSERT INTO incarnation (item_key, folder_key, provider_entry_id, " &
+                    "  search_key, internet_message_id, first_seen_generation, last_seen_generation) " &
+                    "SELECT $i, $f, s.provider_entry_id, s.search_key, s.internet_message_id, $g, $g " &
+                    "FROM scan_stage s WHERE s.attempt_key = $a AND s.provider_entry_id = $p",
+                    ("$i", CObj(itemK)), ("$f", CObj(folderKey)), ("$g", CObj(geracao)),
+                    ("$a", CObj(attemptKey)), ("$p", CObj(id)))
+            Next
+
+            ' 3. METADADO: substitui o da encarnacao pelo encenado.
+            Executar(tx,
+                "DELETE FROM metadata_observation WHERE incarnation_key IN (" &
+                "  SELECT i.incarnation_key FROM incarnation i JOIN scan_stage s " &
+                "  ON s.provider_entry_id = i.provider_entry_id " &
+                "  WHERE i.folder_key = $f AND s.attempt_key = $a)",
+                ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)))
+
+            Executar(tx,
+                "INSERT INTO metadata_observation (incarnation_key, generation_key, subject, " &
+                "  sender_name, received_at, last_modified_at, size_bytes, has_attachments, " &
+                "  is_unread, message_class) " &
+                "SELECT i.incarnation_key, $g, s.subject, s.sender_name, s.received_at, " &
+                "       s.last_modified_at, s.size_bytes, s.has_attachments, s.is_unread, " &
+                "       s.message_class " &
+                "FROM incarnation i JOIN scan_stage s " &
+                "  ON s.provider_entry_id = i.provider_entry_id " &
+                "WHERE i.folder_key = $f AND s.attempt_key = $a",
+                ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)), ("$g", CObj(geracao)))
+
+            ' 4. last_seen_generation das que ja existiam.
+            Executar(tx,
+                "UPDATE incarnation SET last_seen_generation = $g " &
+                "WHERE folder_key = $f AND provider_entry_id IN (" &
+                "  SELECT provider_entry_id FROM scan_stage WHERE attempt_key = $a)",
+                ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)), ("$g", CObj(geracao)))
+
+            ' 5. ASSOCIACAO: visto e visto, venha de onde vier — inclusive de
+            '    AusenteDaPasta, porque o item voltou.
+            Executar(tx,
+                "INSERT INTO association (item_key, folder_key, presence, observability, version) " &
+                "SELECT i.item_key, $f, 'presente', 'observavel', 0 " &
+                "FROM incarnation i JOIN scan_stage s " &
+                "  ON s.provider_entry_id = i.provider_entry_id " &
+                "WHERE i.folder_key = $f AND s.attempt_key = $a " &
+                "ON CONFLICT (item_key, folder_key) DO UPDATE SET " &
+                "  presence='presente', observability='observavel', version = version + 1",
+                ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)))
+        End Sub
 
         Private Function GarantirEncarnacao(tx As SqliteTransaction, folderKey As Long,
                                             l As StagedRow) As Long

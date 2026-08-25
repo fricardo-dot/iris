@@ -28,6 +28,23 @@
     <ProjectReference Include="..\..\src\Iris.Cache\Iris.Cache.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Sync\Iris.Sync.vbproj" />
     <ProjectReference Include="..\..\src\Iris.Integration\Iris.Integration.vbproj" />
+
+    <!--
+      O harness de crash NAO e referencia de codigo - o teste o executa como
+      PROCESSO. Mas precisa ser CONSTRUIDO junto, e ReferenceOutputAssembly
+      false diz exatamente isso.
+
+      Sem esta linha o exe fica obsoleto em silencio: quando o CacheSchema
+      mudou, o harness continuou compilado contra o schema velho e passou a
+      ver as colunas novas como "EXTRA no banco". Quem acusou foi a
+      introspeccao, fazendo o trabalho dela.
+
+      E o tools/conferir-crash.py NAO pegaria isso: ele cria o banco com o
+      PROPRIO harness, entao fica auto-consistente com qualquer versao,
+      inclusive velha.
+    -->
+    <ProjectReference Include="..\..\tools\Iris.CrashHarness\Iris.CrashHarness.vbproj"
+                      ReferenceOutputAssembly="false" />
     <ProjectReference Include="..\..\src\Iris.App\Iris.App.vbproj" />
   </ItemGroup>
 

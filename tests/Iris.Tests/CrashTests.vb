@@ -97,7 +97,14 @@ Public Class CrashTests
 
         Comparar(Sub(c)
                      Assert.AreEqual(2, Contar(c, "scan_stage"), "so a pagina 1")
-                     Assert.AreEqual(2, Contar(c, "incarnation"))
+                     ' ZERO encarnacoes, e e o desenho: a pagina so ENCENA. O
+                     ' acervo e materializado a partir de scan_stage na
+                     ' transacao da PUBLICACAO. Antes, gravar a pagina escrevia
+                     ' direto em incarnation/metadata/association, e uma
+                     ' tentativa rejeitada depois alterava o manifesto da UI.
+                     Assert.AreEqual(0, Contar(c, "incarnation"),
+                        "a pagina encena; o acervo so e tocado ao publicar")
+                     Assert.AreEqual(0, Contar(c, "association"))
                      Assert.AreEqual("cursor-1", Texto(c, "SELECT cursor FROM scan_attempt"))
                      Assert.AreEqual("varrendo", Texto(c, "SELECT stage FROM scan_attempt"))
                      Assert.AreEqual(2L, Convert.ToInt64(Valor(c, "SELECT rows_read FROM scan_attempt")))
@@ -119,6 +126,8 @@ Public Class CrashTests
 
         Comparar(Sub(c)
                      Assert.AreEqual(TotalLinhas, Contar(c, "scan_stage"), "as 3 paginas ficaram")
+                     Assert.AreEqual(0, Contar(c, "incarnation"),
+                        "morreu antes de publicar: o acervo nao foi tocado")
                      Assert.AreEqual(0, Contar(c, "generation"), "nenhuma geracao")
                      Assert.AreEqual(0, Contar(c, "publication_log"), "nenhuma divida")
                      Assert.IsNull(Valor(c, "SELECT published_generation_key FROM folder"),

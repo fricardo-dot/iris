@@ -4,7 +4,9 @@ Imports Iris.Cache
 Namespace Global.Iris.Integration
 
     ''' <summary>
-    ''' Quem consome uma geração publicada. A UI implementa isto.
+    ''' Quem consome uma geração publicada. A UI vai implementar isto — hoje
+    ''' só o teste implementa, e é honesto dizer que o mecanismo existe e o
+    ''' consumidor da UI ainda não.
     '''
     ''' <b>Precisa ser idempotente</b>, e não é zelo: a entrega é
     ''' <i>ao menos uma vez</i>. Ver <see cref="PublicationDrain"/>.
@@ -62,11 +64,45 @@ Namespace Global.Iris.Integration
 
             Dim n = 0
             For Each g In _writer.PublicacoesPendentes()
-                consumidor.Receber(g)
+                Try
+                    consumidor.Receber(g)
+                Catch ex As Exception
+                    ' A falha fica REGISTRADA antes de propagar. Sem isso, um
+                    ' consumidor que falha sempre trava a fila em silencio: as
+                    ' geracoes seguintes nunca chegam e nada no banco diz por
+                    ' que. Ver TravadoEm.
+                    _writer.RegistrarFalhaNaEntrega(g, $"{ex.GetType().Name}: {ex.Message}")
+                    Throw
+                End Try
                 _writer.MarcarDrenada(g)
                 n += 1
             Next
             Return n
+        End Function
+
+        ''' <summary>
+        ''' A geração em que a fila travou, se travou — a que já falhou
+        ''' <paramref name="limite"/> vezes ou mais e continua na cabeça.
+        '''
+        ''' <b>O bloqueio é deliberado e continua.</b> Marcar como drenada uma
+        ''' geração que a UI não recebeu seria perder em silêncio o que este
+        ''' desenho existe para não perder, e pular a cabeça entregaria as
+        ''' seguintes fora de ordem. O que este método muda não é o bloqueio: é
+        ''' ele deixar de ser <b>invisível</b>.
+        '''
+        ''' Quem chama decide o que fazer — avisar o usuário, registrar, parar
+        ''' de tentar. O que não dá é ninguém saber que a fila parou.
+        ''' </summary>
+        Public Function TravadoEm(Optional limite As Integer = 3) As Long?
+            Dim pendentes = _writer.PublicacoesPendentes()
+            If pendentes.Count = 0 Then Return Nothing
+            Dim cabeca = pendentes(0)
+            If _writer.TentativasDeEntrega(cabeca) >= limite Then Return cabeca
+            Return Nothing
+        End Function
+
+        Public Function UltimoErro(geracao As Long) As String
+            Return _writer.UltimoErroDeEntrega(geracao)
         End Function
 
     End Class
