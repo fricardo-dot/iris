@@ -90,10 +90,19 @@ mudar, ou associado ao item certo e a uma serialização diferente.
 **Regra:** a autorização é uma **capability opaca**, emitida só pela política,
 vinculada ao **hash dos bytes exatos** a transmitir, ao conjunto e versão dos
 itens, à pasta, à operação, ao provedor/modelo, à versão da política e da
-autorização — com validade curta e **consumo único**. O transmissor **recalcula
-o hash imediatamente antes de enviar**; divergiu, nega.
+autorização — com validade curta e **consumo único**.
 
-Isso fecha o TOCTOU que a P10 vai medir.
+E "recalcular o hash antes de enviar" **não basta**: ainda permite serializar
+para autorizar, serializar de novo, conferir, e mandar uma terceira
+representação — escaping, ordem de JSON e normalização divergem entre as etapas.
+A regra é mais forte:
+
+> O pipeline materializa **um envelope imutável de bytes, uma única vez**. A
+> política autoriza o hash **daqueles** bytes, e o transmissor manda
+> **exatamente aquele buffer**.
+
+A capability guarda hash, comprimento e identidade do envelope. **Não** guarda
+texto remontável — o conteúdo continua só em memória.
 
 ### 29.3 Conteúdo citado destrói a segurança "por mensagem"
 
@@ -123,7 +132,12 @@ sem revisão.
 
 O provedor **não tem tools nem function calling** nesta fase. Instrução do
 sistema, instrução do usuário e conteúdo do e-mail vão em **campos estruturais
-separados** — concatenar tudo num prompt único é o que torna a injeção fácil.
+separados** — concatenar tudo num prompt único torna a injeção mais fácil.
+
+Mas campo separado **não impede** injeção: o modelo ainda pode obedecer ao
+conteúdo do e-mail. A barreira real é a de cima — **saída tratada como texto
+passivo, sem tools e sem efeito**. Campo estruturado reduz ambiguidade; não é
+defesa.
 
 Redigir insere no composer, que é **mutação local**: preserva o texto anterior e
 oferece desfazer.
@@ -220,27 +234,136 @@ ESCOPO adverte.
 | **P7** | Como o `PropertyAccessor` reage a propriedade **ausente**? |
 | **P8** | Pode haver **múltiplos** rótulos? Qual prevalece? Como distinguir removido, obsoleto e desconhecido? |
 | **P9** | O valor informa **proteção/criptografia** separada da classificação? |
-| **P10** | O rótulo pode mudar entre ler o corpo e transmitir? Que identidade/versão detecta isso? |
+| **P10** | Que **evidência de versão** existe (`EntryID`, `LastModificationTime`, `PR_CHANGE_KEY`, `PR_RECORD_KEY`), e que mudanças ela detecta? O que fica **sem garantia atômica**? |
 | **P11** | Enviados, rascunhos, compartilhadas e outros stores expõem igual? |
 | **P12** | Anexos e mensagens embutidas têm classificação própria? |
 | **P13** | Ler corpo ou rótulo **dispara download** ou altera estado local? |
-| **P14** | Qual a semântica de **ausência**? |
+| **P14** | *(não é pergunta de medição — ver abaixo)* |
 | **P15** | Aparecem propriedades alternativas quando `MSIP_Labels` não aparece? |
 
-Sobre a **P14**, e é o que fecha o portão: *"sem rótulo"* **não** significa
-*"permitido"*. Isso vem da política corporativa, não da propriedade.
+| **P16** | Qual a **autoridade** de `MSIP_Labels` nesta conta? Um remetente externo pode fornecer ou falsificar o mesmo header? |
 
-E a **P7** não é sozinha a mais importante — a **P10** é estrutural do mesmo
+#### A P14 saiu da medição, e é de propósito
+
+Nenhuma leitura do Outlook responde se *"sem rótulo"* é corporativamente
+permitido. O resultado do 3.0 para ela **já é conhecido antes de medir**:
+
+> Semântica corporativa de ausência: **desconhecida**; não autoriza transmissão.
+
+Prometer que o experimento responde isso seria fingir que uma pergunta de
+política é uma pergunta técnica. Ela fica bloqueada pela cerimônia da §28.3.
+
+#### A P16, e por que ela derruba o uso *positivo* do rótulo
+
+O DASL usual aponta para uma named property do namespace de **cabeçalhos de
+internet**:
+
+```
+http://schemas.microsoft.com/mapi/string/{00020386-0000-0000-C000-000000000046}/MSIP_Labels
+```
+
+Cabeçalho recebido pode ter origem fora do mecanismo corporativo. Mesmo lendo
+`MSIP_Labels` com perfeição, isso **não prova** que ninguém consegue apresentar
+um valor falso de classificação baixa.
+
+Daí a assimetria, que vale até a política corporativa dizer o contrário:
+
+- **sinal restritivo serve para NEGAR**;
+- **ausência, rótulo baixo ou valor em allowlist não servem, sozinhos, para
+  PERMITIR**.
+
+#### O tipo de leitura, e por que "ausente versus exceção" não basta
+
+A **P7** não é sozinha a mais importante — a **P10** é estrutural do mesmo
 jeito, porque é ela que amarra a decisão ao que de fato foi transmitido. O tipo
-de leitura precisa representar, no mínimo: **ausente comprovado**, **lido**,
-**leitura negada**, **item protegido/IRM**, **erro transitório**, **item
-indisponível ou parcialmente baixado**, **valor vazio**, **valor malformado ou
-desconhecido**, **múltiplos/conflito**, **item mudou durante a leitura**.
-
-Só "ausente versus exceção" **não fecha o portão**.
+precisa representar, no mínimo: **ausente comprovado**, **lido**, **leitura
+negada**, **item protegido/IRM**, **erro transitório**, **item indisponível ou
+parcialmente baixado**, **valor vazio**, **valor malformado ou desconhecido**,
+**múltiplos/conflito**, **item mudou durante a leitura**.
 
 A medição registra **contagens e valores pseudonimizados**. Nome completo de
 rótulo e amostra de corpo não vão para o relatório se a contagem basta.
+
+### 3.0 — como a medição é executada, sem o usuário na máquina
+
+A caixa é corporativa e viva, e o usuário não está aqui para fechar um diálogo
+modal. A ordem é do menos invasivo para o mais:
+
+**A. Inspeção passiva.** Numa amostra pequena, registrar `EntryID`,
+`LastModificationTime`, `UnRead`, classe e tamanho — um antes/depois observável.
+
+**B. Piloto por `Table`, 20 linhas.** Adicionar a coluna DASL e ler. Evita
+materializar 20 RCWs de `MailItem`, responde cedo se a propriedade é projetável,
+e mostra como coluna ausente é representada. **Sem tocar** em `Body`,
+`HTMLBody`, `RTFBody`, `Attachments.Item`, `GetConversation()` ou propriedade de
+IRM.
+
+**C. Confirmação por item**, em poucos casos escolhidos do piloto: presente,
+aparentemente ausente, vazio, valor diferente, item normal. Via
+`PropertyAccessor` pelo broker, comparando com o que a `Table` deu.
+
+**D. Expansão adaptativa** — 20 → 100 → até 400 por pasta —, e só se não houve
+prompt, bloqueio, mutação observável nem latência anormal. **Ao primeiro indício
+adverso, para.**
+
+**E. Protegidos ficam de fora.** Nada de corpo protegido com o usuário ausente:
+uma chamada dessas pode abrir diálogo de autenticação ou de direitos. Para
+mensagens com indício de IRM, só metadado já demonstrado seguro; P5 e P13 saem
+como **"não medido por restrição operacional"**, e o estado é tratado como
+proibido. Isso **é** resultado válido — o spike não tem obrigação de provocar
+todo comportamento possível.
+
+**O ovo e a galinha da P13.** Não há como provar de antemão que uma leitura
+nunca hidrata conteúdo. O que dá para fazer é reduzir exposição, e registrar
+honestamente o que se sabe no fim:
+
+> Nenhuma alteração foi observada nesta amostra. **Ausência de download ou de
+> efeito colateral não foi provada.**
+
+#### Amostragem
+
+Adaptativa e **estratificada**, não "as N mais recentes": recentes e antigas
+dentro da janela acessível, remetente interno e externo, lidas e não lidas,
+tamanhos diferentes, com e sem anexo (por metadado).
+
+Para prevalência (P3), 384–400 observações dão margem aproximada de ±5 pontos a
+95%; 100 dão quase ±10. Teto inicial de 400 **por pasta**, não por caixa.
+
+A **P8 é diferente**: amostra nenhuma prova que múltiplo rótulo não existe. Zero
+casos em 400 vira
+
+> Nenhum observado; limite superior aproximado de prevalência ≈ 0,75% a 95% —
+> **não** impossibilidade.
+
+A **P11** não é respondível só pela Caixa de Entrada. Inbox primeiro; depois, se
+o piloto for seguro, amostras pequenas em Enviados e Rascunhos. Compartilhadas e
+outros stores ficam **"não disponíveis/não medidos"** enquanto a conta tiver um
+store só.
+
+#### Armadilhas do `PropertyAccessor`, listadas antes de tropeçar
+
+- Propriedade ausente costuma vir como `MAPI_E_NOT_FOUND` (`0x8004010F`).
+  **Nem toda `COMException` é ausência.**
+- `GetProperty` e coluna de `Table` podem representar ausência de formas
+  **diferentes**. Comparar tipo real, HRESULT e valor — não string.
+- `GetProperties` em lote devolve erro **por elemento**; o adaptador tem de
+  preservar resultado por propriedade.
+- O valor pode conter **vários GUIDs** e registros históricos, inclusive
+  `Enabled=False`. Não modelar como um par nome/valor.
+- `Name` **não é identidade estável**; usar o GUID.
+- Malformado, GUID inválido, duplicidade conflitante ou campo obrigatório
+  faltando vira `MalformedOrUnknown`, **nunca "sem rótulo"**.
+- A propriedade pode existir com **string vazia** — distinto de ausente.
+- `Table.Columns.Add` pode **aceitar a coluna e entregar erro nas linhas**.
+  Armadilha já vista nesta base com outras propriedades.
+- A propriedade pode **não aparecer justamente em mensagem criptografada**.
+- **Nunca** `SetProperty`, nem para testar round-trip.
+- Não gerar nomes de propriedade candidatos em massa: named properties têm
+  mapeamento próprio no store.
+- Preservar o HRESULT **e a etapa**: obter o `PropertyAccessor`, resolver a
+  propriedade e ler o valor são falhas diferentes.
+- **R7 do CLAUDE.md**: nada de `mail.PropertyAccessor.GetProperty(...)`
+  encadeado.
 
 ---
 
