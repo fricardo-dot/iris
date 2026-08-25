@@ -2886,12 +2886,12 @@ exceção não tratada.
 | 1 | Q1,Q3,Q4,Q7,Q8 com número; Q2,Q5,Q6,Q9 semânticas | **Q8 decidida por escopo** (§23, aceita pelo usuário em 24/08/2026). Não virou matriz medida — virou limitação aceita, com gatilhos de reabertura |
 | 2 | Limitação escrita em cada resposta | ok |
 | 3 | Recomendação de tamanho de cada marco seguinte | ok — §22.10 |
-| 4 | Revisão externa do RESULTADO | ok — 3 passadas do Codex, 10 defeitos reais |
+| 4 | Revisão externa do RESULTADO | ok — 6 passadas do Codex ao longo do 2.1/2.2, e cada uma achou defeito real |
 | 5 | Itens de teste devolvidos | ok, **com exceção declarada** — três cópias ficaram em Itens Excluídos (§11), por segurança, e a pasta `Iris Q4R` vazia que o tenant recusou excluir (§21.4) |
 | 6 | Corpus adversarial da Q2 com oráculo prévio | ok |
 | 7 | Critério operacional de invalidação, com dado | ok — S6 |
-| 8 | Latência máxima por lote | **D5 decidido (100 ms); NÃO medido** |
-| 9 | Crash entre commit, checkpoint e publicação | **parcial** — §22.1: a persistência da dívida está provada; a **entrega à UI** não existe ainda |
+| 8 | Latência máxima por lote | **ok** — §24.4: medido, mediana 56 ms, máx 62 ms |
+| 9 | Crash entre commit, checkpoint e publicação | **ok** — §22.1 + §24.3. Mecanismo completo e testado; o consumidor da UI é do 2.4 |
 | 10 | Reconciliação antiga não sobrescreve nova | **ok** — §22.2 |
 
 ### 22.9 O que ficou de fora do 2.1, e por quê
@@ -3225,3 +3225,185 @@ mensagens. Dois motivos, e o segundo é técnico e eu não tinha visto:
 
 A captura da cauda vira o **primeiro resultado útil do 2.2b**, com a
 orquestração já provada contra provider falso.
+
+
+---
+
+## 24. Marco 2.2 — a orquestração, e o que a caixa real revelou
+
+O 2.2 sai do modelo e vai para o mundo. Foi dividido conforme a §22.10 —
+**2.2a** com o que se verifica de graça, **2.2b** com o que exige a caixa do
+usuário — e a separação se pagou: os dois defeitos mais graves do 2.2a foram
+achados por revisão, e os dois do 2.2b só apareceram contra o Outlook de
+verdade.
+
+### 24.1 O conflito de contrato que zerava o produto
+
+O `SweepRunner` passava `PodeAfirmarCoberturaCompleta` como permissão para
+**abrir** a varredura. Como a matriz autoriza zero e o ambiente do usuário é
+cached com janela não legível, o efeito era: **o Iris não varreria nada na
+máquina dele**. E havia um teste meu afirmando que era assim.
+
+São duas perguntas separadas, e misturá-las custou o produto inteiro:
+
+> *posso observar e guardar positivos?*  — contra —  *posso declarar que
+> observei tudo?*
+
+A §23 bloqueou três **inferências**, não a operação. Falta de cobertura não
+invalida observação positiva. O gate desceu de "abrir" para "concluir", e o
+que resta em `Abrir` é só ambiente **não identificado** — sem saber onde se
+está, nem o positivo tem a quem ser atribuído.
+
+E `MarcarNaoVistosComoSuspeitos` sai **sempre**, inclusive com cobertura
+parcial: `Suspeito` não é conclusão negativa, é exatamente *"não vi e não
+posso concluir por quê"*. Condicioná-lo bloquearia a resposta honesta e
+deixaria o item como `Presente`, afirmação mais forte do que a evidência
+sustenta.
+
+### 24.2 A fronteira de visibilidade, e o teste que não chegava perto
+
+`GravarPagina` escrevia direto em `incarnation`, `metadata_observation` e
+`association` — as tabelas do **acervo**. Numa encarnação que **já existia**,
+isso substituía o metadado publicado e devolvia a associação para `presente`.
+Rejeitar a tentativa depois não desfazia nada: **uma varredura recusada
+alterava o manifesto que a UI mostra.**
+
+O meu teste não pegava porque só usava itens **novos**, cujas associações ainda
+não pertencem a geração nenhuma — a fronteira do `generation_key` as escondia.
+Com item preexistente, a fronteira não ajudava em nada.
+
+A correção não foi remendar a leitura: **a página só encena.** `scan_stage`
+ganhou as colunas de metadado, e o acervo é materializado a partir dela na
+transação da **publicação**. Enquanto a tentativa não publica, nada do que ela
+leu existe fora da encenação.
+
+E um efeito que era **emitido e nunca executado**: o modelo mandava
+`MarcarNaoVistosComoSuspeitos` e ninguém escutava — o sink nem tinha a
+operação. Depois de uma geração com A e B e outra só com A, o B continuava
+`presente`. Corrigido, com controle negativo: desliguei o UPDATE, o teste
+falhou; religuei, passou.
+
+### 24.3 O critério 9 fechado
+
+O `PublicationDrain` é o consumidor que faltava. A ordem das duas linhas **é**
+a escolha: consumir vem antes de marcar drenada, então morrer entre as duas
+repete a entrega. A ordem inversa daria *no máximo uma vez* — morrer no meio
+perderia a geração para sempre, com a UI mostrando estado velho e nada no
+disco indicando que faltou algo.
+
+Entre repetir e perder, repetir é recuperável. Mas isso **transfere uma
+obrigação**: o consumidor tem de ser idempotente, e há teste medindo a
+repetição — obrigação transferida em comentário é obrigação esquecida.
+
+Fila travada agora é **visível**. Consumidor que falha sempre bloqueia a
+cabeça da fila, e o bloqueio é deliberado — marcar como drenada uma geração
+que a UI não recebeu seria perder em silêncio. O que mudou não é o bloqueio: é
+ele deixar de ser invisível.
+
+> **O que falta do critério 9:** o consumidor da UI. O mecanismo existe e é
+> testado; quem implementa `IPublicationConsumer` hoje é só o teste.
+
+### 24.4 D5 medida — o último critério que era "decidido e não medido"
+
+Caixa de Entrada real, 1.022 itens declarados, lote de 100:
+
+| | |
+|---|---|
+| lotes | 11 |
+| **mínimo** | **44 ms** |
+| **mediana** | **56 ms** |
+| **máximo** | **62 ms** |
+| total da varredura | 921 ms |
+| idas ao COM | 13 |
+
+O orçamento decidido era **100 ms por lote**. Todos abaixo, com folga de 38 ms
+no pior caso. Medido na fila da STA contra a caixa do usuário, não estimado.
+
+### 24.5 Dois defeitos que só a caixa real revelava
+
+**A guarda de tamanho de página teria quebrado o adaptador.** Escrita contra
+fonte sintética, ela falhava quando a página vinha maior que o lote pedido —
+e a paginação do Outlook **não tem teto**: ela drena o grupo do último
+instante, senão empatado fica para trás para sempre. Pedir 30 pode devolver
+45, e nesta caixa o maior empate num mesmo segundo tem 16. `SourcePage` passou
+a declarar o excedente, e excedente declarado é legítimo.
+
+**E o S6 rejeitava a Caixa de Entrada todas as vezes.** Este é o achado do
+2.2b:
+
+| | |
+|---|---|
+| declaradas pela pasta | 1.022 |
+| lidas | 1.013 |
+| **descartadas** | **9** |
+
+Estável nas **três** execuções. As 9 não são mensagem; a contagem da pasta as
+inclui, a paginação as pula, e o S6 comparava só o que foi **guardado** com o
+que a pasta **declarava**. A caixa principal do usuário nunca publicaria.
+
+> E o pior era o disfarce: *"lidas 1013 &lt;&gt; antes 1022"* é exatamente o que
+> uma mensagem chegando no meio produziria. **Defeito permanente vestido de
+> comportamento correto.**
+
+Só descobri porque rodei três vezes e a diferença ficou estável em 9 — corrida
+não dá o mesmo número três vezes.
+
+O S6 agora compara o **percorrido** (lidas + descartadas) com o declarado.
+Descarte não é ausência de evidência: é evidência de que a linha foi vista e
+recusada. E recusa **declarada** é mais forte que recusa silenciosa, porque
+obriga a fonte a contar o que jogou fora — há teste cobrando que descarte
+**não** declarado continue rejeitando, senão a correção viraria um buraco.
+
+### 24.6 O resultado contra a caixa real
+
+Depois das correções, com as capacidades reais do usuário:
+
+| | |
+|---|---|
+| Caixa de Entrada | **PUBLICADA**, 1.013 itens, cobertura **Parcial** |
+| retomada após cancelamento | convergiu para 1.013, **sem duplicata** |
+
+O segundo é o critério que o Codex acrescentou ao pronto do 2.1: importação
+real interrompida, seguida de varredura limpa, converge para o mesmo
+manifesto.
+
+### 24.7 O manifesto: a §23 virando estrutura
+
+`FolderManifest` entrega itens **e** cobertura no mesmo objeto, com a ressalva
+escrita. É acoplamento útil — e não é *enforcement* de apresentação: nada
+impede o chamador de ler só `Items`. Impedir de verdade exigiria um modelo de
+apresentação já qualificado, ou um componente visual que recuse renderizar
+conteúdo parcial sem a ressalva. Fica registrado como o que é.
+
+---
+
+## 25. Marco 2.3 — o detector de contração
+
+O conteúdo original do 2.3 era validar o token da janela e, se servisse,
+demonstrar as inferências. O token morreu na §22.4 e a contagem do servidor é
+inalcançável pela §22.11. Sobra o que o próprio Iris já guardou.
+
+**Ele invalida, nunca autoriza**, e a distinção precisa ficar escrita porque
+eu já escrevi a versão inflada uma vez.
+
+| | |
+|---|---|
+| **Serve para** | invalidar. Encolheu → as conclusões anteriores caem |
+| **Não serve para** | autorizar. Nunca transforma cobertura desconhecida em completa |
+
+Compara **conjuntos**, não contagens: encolhimento compensado por correio novo
+mantém a contagem igual e passaria batido. E lê o que cada geração **viu**
+(`scan_stage` pela tentativa), não o estado corrente da associação — olhando a
+associação, a resposta seria sempre a de agora, porque a geração seguinte já
+sobrescreveu, e o detector nunca acusaria nada.
+
+### 25.1 O buraco que ele não fecha, escrito como teste
+
+Se a **janela sempre foi pequena**, não há contração a detectar: o Iris nunca
+viu o que falta. É o estado desta caixa — 1.013 itens alcançáveis numa Caixa
+de Entrada que o servidor diz ter 17.728.
+
+O detector responde `Estavel`, e está certo: nada encolheu. Mas **`Estavel` não
+é `Completa`**, e confundir os dois seria exatamente transformar a derrota da
+Q8 em recurso. Há teste cobrando que o manifesto continue `Parcial` nesse
+cenário.
