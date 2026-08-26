@@ -19,9 +19,14 @@
     outros. Leia o que saiu, confira, e salve voce mesmo.
 
 .EXAMPLE
-    .\tools\preparar-ativacao.ps1 -Pasta "Iris-Teste"
+    Caminho ABSOLUTO, que e o caso normal: um PowerShell novo abre em
+    C:\WINDOWS\system32, e caminho relativo ao repositorio nao existe la.
+
+    powershell -ExecutionPolicy Bypass -File "C:\Users\Ricardo\Documents\Iris\tools\preparar-ativacao.ps1" -Pasta "Iris-Teste"
 
 .EXAMPLE
+    Ja dentro do repositorio:
+
     .\tools\preparar-ativacao.ps1 -Pasta "Iris-Teste" -Modelo "anthropic/claude-sonnet-5" -Dias 30
 #>
 [CmdletBinding()]
