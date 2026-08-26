@@ -98,10 +98,14 @@ $daPasta = [System.Security.AccessControl.FileSystemRights]::CreateFiles -bor
            [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
            [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
-function Conferir($alvo, $perigosos, $rotulo) {
+function Conferir($alvo, $perigosos, $rotulo, $donoTemDeSerEu = $true) {
     $acl = Get-Acl $alvo
     $donoSid = try { $acl.GetOwner([System.Security.Principal.SecurityIdentifier]) } catch { $null }
-    $donoOk = ($null -ne $donoSid) -and ($donoSid.Value -eq $eu.Value)
+    $donoOk = if ($donoTemDeSerEu) {
+        ($null -ne $donoSid) -and ($donoSid.Value -eq $eu.Value)
+    } else {
+        ($null -ne $donoSid) -and ($permitidos -contains $donoSid.Value)
+    }
 
     Write-Host ""
     Write-Host ("{0}: {1}" -f $rotulo, $alvo)
@@ -137,11 +141,23 @@ function Conferir($alvo, $perigosos, $rotulo) {
     return [pscustomobject]@{ DonoOk = $donoOk; Sobrando = $sobrando }
 }
 
+$mae = Split-Path -Parent $pasta
+
 $rArquivo = Conferir $Caminho $doArquivo "Arquivo"
 $rPasta   = Conferir $pasta   $daPasta   "Pasta  "
+# A MAE TAMBEM: quem cria e apaga nela renomeia a pasta inteira e poe outra
+# no lugar, com outra ativacao dentro. Nela o dono pode ser o sistema.
+$rMae     = Conferir $mae     $daPasta   "Mae    " $false
 
-$intrusos = @($rArquivo.Sobrando) + @($rPasta.Sobrando)
-$donoOk = $rArquivo.DonoOk -and $rPasta.DonoOk
+$intrusos = @($rArquivo.Sobrando) + @($rPasta.Sobrando) + @($rMae.Sobrando)
+$donoOk = $rArquivo.DonoOk -and $rPasta.DonoOk -and $rMae.DonoOk
+
+if ((New-Object System.IO.DirectoryInfo $pasta).Attributes -band `
+    [System.IO.FileAttributes]::ReparsePoint) {
+    Write-Host ""
+    Write-Host "A pasta e um link (junction). O Iris vai RECUSAR." -ForegroundColor Red
+    $intrusos += "junction"
+}
 
 Write-Host ""
 if ($intrusos.Count -eq 0 -and $donoOk) {

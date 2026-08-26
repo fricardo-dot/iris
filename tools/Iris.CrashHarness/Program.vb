@@ -167,6 +167,17 @@ Namespace Global.Iris.CrashHarness
             Console.WriteLine($"existe:  {IO.File.Exists(alvo)}")
             Console.WriteLine()
 
+            ' ISTO NAO CONFERE PERMISSAO, e dizer isso alto importa.
+            '
+            ' A conferencia de dono e ACL mora no Iris.App, que e WPF e alvo
+            ' -windows; este harness e console e net10.0, e referencia-lo
+            ' arrastaria a interface inteira para dentro de uma ferramenta de
+            ' diagnostico. Sem o aviso, "CARREGOU" seria lido como "esta tudo
+            ' certo" — e o que ele prova e so conteudo e politica.
+            Console.WriteLine("AVISO: este modo NAO confere dono, ACL, nem a pasta.")
+            Console.WriteLine("       Para isso: tools\conferir-permissao.ps1")
+            Console.WriteLine()
+
             Dim r = ActivationLoader.Carregar(alvo, agora)
 
             If Not r.Carregou Then

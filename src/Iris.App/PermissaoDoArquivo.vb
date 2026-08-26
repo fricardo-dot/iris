@@ -30,6 +30,23 @@ Namespace Global.Iris.App
     ''' sistema, porque é o mesmo handle.
     '''
     ''' ------------------------------------------------------------------
+    ''' <b>ONDE A CONFIANÇA COMEÇA</b>
+    '''
+    ''' Três níveis, e depois <b>para</b>: o arquivo, a pasta que o contém, e a
+    ''' <b>pasta-mãe</b> — que é quem controla o <i>nome</i> da pasta. Sem o
+    ''' terceiro, quem pudesse criar e apagar em <c>%LOCALAPPDATA%</c> renomearia
+    ''' a pasta <c>Iris</c> e poria outra no lugar, com outra ativação dentro.
+    '''
+    ''' Acima disso não se confere, e isso é <b>decisão declarada</b> e não
+    ''' esquecimento: a recursão não tem fim natural, e quem controla a raiz do
+    ''' perfil já controla a sessão inteira — o arquivo de ativação seria o menor
+    ''' dos problemas. O limite fica escrito aqui para que uma revisão futura
+    ''' discuta o limite, e não descubra a ausência dele.
+    '''
+    ''' <b>Junction também não.</b> Uma pasta que é ponto de nova análise aponta
+    ''' para outro lugar, e o outro lugar ninguém conferiu.
+    '''
+    ''' ------------------------------------------------------------------
     ''' <b>O QUE PASSA</b>
     '''
     ''' O dono tem de ser <b>você</b>. E ninguém além de você, do
@@ -72,7 +89,31 @@ Namespace Global.Iris.App
 
                 Dim di As New DirectoryInfo(pasta)
                 If Not di.Exists Then Return False
-                Return Limpo(di.GetAccessControl(), meuSid, DaPasta)
+
+                ' JUNCTION NAO. Uma pasta que e ponto de nova analise aponta
+                ' para outro lugar, e o outro lugar ninguem conferiu — nem o
+                ' dono dele, nem quem escreve la.
+                If di.LinkTarget IsNot Nothing OrElse
+                   (di.Attributes And FileAttributes.ReparsePoint) <> 0 Then
+                    Return False
+                End If
+
+                If Not Limpo(di.GetAccessControl(), meuSid, DaPasta) Then Return False
+
+                ' E A PASTA-MAE, QUE E ONDE A CONFIANCA COMECA.
+                '
+                ' Quem tem CreateDirectories e DeleteSubdirectoriesAndFiles em
+                ' %LOCALAPPDATA% renomeia a pasta Iris e poe outra no lugar —
+                ' ou uma junction — antes da proxima abertura. Conferir a pasta
+                ' e nao a mae fecharia a porta e deixaria a parede.
+                Dim mae = di.Parent
+                If mae Is Nothing OrElse Not mae.Exists Then Return False
+                ' Na mae o dono pode ser o SISTEMA, e nao eu: %LOCALAPPDATA% e
+                ' do usuario, mas C:\ e de Administradores. Exigir dono==eu ali
+                ' reprovaria layout normal do Windows, e barreira que ninguem
+                ' satisfaz vira barreira desligada.
+                Return Limpo(mae.GetAccessControl(), meuSid, DaPasta,
+                             donoTemDeSerEu:=False)
 
             Catch
                 ' Falha fechada: nao consegui conferir e nao vou supor.
@@ -85,16 +126,22 @@ Namespace Global.Iris.App
         ''' </summary>
         Private Shared Function Limpo(seguranca As FileSystemSecurity,
                                       meuSid As SecurityIdentifier,
-                                      perigosos As FileSystemRights) As Boolean
-
-            Dim dono = TryCast(seguranca.GetOwner(GetType(SecurityIdentifier)),
-                               SecurityIdentifier)
-            If dono Is Nothing OrElse Not dono.Equals(meuSid) Then Return False
+                                      perigosos As FileSystemRights,
+                                      Optional donoTemDeSerEu As Boolean = True) As Boolean
 
             Dim permitidos As New HashSet(Of SecurityIdentifier) From {meuSid}
             permitidos.Add(New SecurityIdentifier(WellKnownSidType.LocalSystemSid, Nothing))
             permitidos.Add(New SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,
                                                   Nothing))
+
+            Dim dono = TryCast(seguranca.GetOwner(GetType(SecurityIdentifier)),
+                               SecurityIdentifier)
+            If dono Is Nothing Then Return False
+            If donoTemDeSerEu Then
+                If Not dono.Equals(meuSid) Then Return False
+            ElseIf Not permitidos.Contains(dono) Then
+                Return False
+            End If
 
             For Each regra As FileSystemAccessRule In
                 seguranca.GetAccessRules(True, True, GetType(SecurityIdentifier))

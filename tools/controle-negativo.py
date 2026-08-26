@@ -136,11 +136,31 @@ CENARIOS = [
 
     dict(nome="conferencia do DIRETORIO da ativacao",
          edicoes=[(PERM,
-                   "                Return Limpo(di.GetAccessControl(), meuSid, DaPasta)",
-                   "                Return True")],
+                   "                If Not Limpo(di.GetAccessControl(), meuSid, DaPasta) Then Return False",
+                   "                ' desligado")],
          filtro="FullyQualifiedName~PermissaoDoArquivoTests",
          esperados={"ACE_perigosa_SO_no_diretorio_reprova"},
          porque="quem cria e apaga na pasta troca o arquivo sem tocar nele"),
+
+    dict(nome="conferencia da PASTA-MAE",
+         edicoes=[(PERM,
+                   """                Return Limpo(mae.GetAccessControl(), meuSid, DaPasta,
+                             donoTemDeSerEu:=False)""",
+                   "                Return True")],
+         filtro="FullyQualifiedName~PermissaoDoArquivoTests",
+         esperados={"ACE_perigosa_so_na_PASTA_MAE_reprova"},
+         porque="quem troca a pasta inteira poe outra ativacao dentro"),
+
+    dict(nome="junction na pasta da ativacao",
+         edicoes=[(PERM,
+                   """                If di.LinkTarget IsNot Nothing OrElse
+                   (di.Attributes And FileAttributes.ReparsePoint) <> 0 Then
+                    Return False
+                End If""",
+                   "                ' desligado")],
+         filtro="FullyQualifiedName~Pasta_que_e_JUNCTION_nao_passa",
+         esperados={"Pasta_que_e_JUNCTION_nao_passa"},
+         porque="o conteudo viria de um lugar que ninguem conferiu"),
 
     dict(nome="lista de provedores nao pode ser vazia",
          edicoes=[(ATIV,

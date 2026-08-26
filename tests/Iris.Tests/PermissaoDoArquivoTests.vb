@@ -1,4 +1,5 @@
 Imports System.Collections.Generic
+Imports System.Diagnostics
 Imports System.IO
 Imports System.Security.AccessControl
 Imports System.Security.Principal
@@ -71,11 +72,25 @@ Namespace Global.Iris.Tests
         ''' também — e o <c>%TEMP%</c> tem exatamente as entradas a mais que o
         ''' resto deste arquivo existe para detectar.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Duas</b> pastas limpas encaixadas, e devolve a de dentro.
+        '''
+        ''' Duas porque a conferência olha três níveis: arquivo, pasta e
+        ''' <b>pasta-mãe</b>. Uma pasta só deixaria o <c>%TEMP%</c> como avó — e o
+        ''' <c>%TEMP%</c> tem exatamente as entradas a mais que este arquivo
+        ''' existe para detectar, o que faria todo controle daqui reprovar por um
+        ''' motivo que não é o dele.
+        ''' </summary>
         Private Function PastaLimpa() As String
-            Dim pasta = Path.Combine(Path.GetTempPath(),
-                                     "iris-perm-" & Guid.NewGuid().ToString("N"))
+            Dim raiz = Limpar(Path.Combine(Path.GetTempPath(),
+                                           "iris-perm-" & Guid.NewGuid().ToString("N")))
+            Return Limpar(Path.Combine(raiz, "dentro"))
+        End Function
+
+        ''' <summary>Cria a pasta com herança cortada, dono eu, e só eu.</summary>
+        Private Function Limpar(pasta As String) As String
             Directory.CreateDirectory(pasta)
-            _pastas.Add(pasta)
+            _pastas.Insert(0, pasta)   ' a de dentro apaga primeiro
 
             Dim di As New DirectoryInfo(pasta)
             Dim acl = di.GetAccessControl()
@@ -277,10 +292,7 @@ Namespace Global.Iris.Tests
         ''' </summary>
         <TestMethod>
         Public Sub ACE_HERDADA_do_diretorio_reprova()
-            Dim pasta = Path.Combine(Path.GetTempPath(),
-                                     "iris-perm-dir-" & Guid.NewGuid().ToString("N"))
-            Directory.CreateDirectory(pasta)
-            _pastas.Add(pasta)
+            Dim pasta = Limpar(Path.Combine(PastaLimpa(), "com-heranca"))
 
             Dim di As New DirectoryInfo(pasta)
             Dim aclDir = di.GetAccessControl()
@@ -307,25 +319,9 @@ Namespace Global.Iris.Tests
         ''' </summary>
         <TestMethod>
         Public Sub Controle_diretorio_LIMPO_o_arquivo_passa()
-            Dim pasta = Path.Combine(Path.GetTempPath(),
-                                     "iris-perm-dir-" & Guid.NewGuid().ToString("N"))
-            Directory.CreateDirectory(pasta)
-            _pastas.Add(pasta)
-
-            Dim di As New DirectoryInfo(pasta)
-            Dim aclDir = di.GetAccessControl()
-            aclDir.SetAccessRuleProtection(True, False)
-            For Each regra In aclDir.GetAccessRules(True, False, GetType(SecurityIdentifier)).
-                              Cast(Of FileSystemAccessRule)().ToList()
-                aclDir.RemoveAccessRule(regra)
-            Next
-            aclDir.AddAccessRule(New FileSystemAccessRule(
-                Eu, FileSystemRights.FullControl,
-                InheritanceFlags.ObjectInherit Or InheritanceFlags.ContainerInherit,
-                PropagationFlags.None, AccessControlType.Allow))
-            di.SetAccessControl(aclDir)
-
-            Dim caminho = Path.Combine(pasta, "ativacao.json")
+            ' A cadeia inteira limpa: avo, pasta e arquivo. O arquivo herda a
+            ' ACL da pasta e ninguem mexe nele.
+            Dim caminho = Path.Combine(PastaLimpa(), "ativacao.json")
             File.WriteAllText(caminho, "{}")
 
             Assert.IsTrue(Passa(caminho))
@@ -391,6 +387,94 @@ Namespace Global.Iris.Tests
 
             Assert.IsFalse(Passa(doSistema))
         End Sub
+
+        ''' <summary>
+        ''' <b>ACE perigosa só na PASTA-MÃE reprova.</b>
+        '''
+        ''' O terceiro nível, e o último que se confere. Quem tem
+        ''' <c>CreateDirectories</c> e <c>DeleteSubdirectoriesAndFiles</c> na
+        ''' mãe <b>renomeia a pasta inteira</b> e põe outra no lugar, com outra
+        ''' ativação dentro — sem nunca tocar no arquivo nem na pasta que o Iris
+        ''' confere.
+        '''
+        ''' A ACE é <b>sem herança</b>: o teste confere que ela não chegou nem à
+        ''' pasta nem ao arquivo, e mesmo assim a conferência recusa.
+        ''' </summary>
+        <TestMethod>
+        Public Sub ACE_perigosa_so_na_PASTA_MAE_reprova()
+            Dim caminho = Arquivo()
+            Dim pasta As New DirectoryInfo(Path.GetDirectoryName(caminho))
+            Dim mae = pasta.Parent
+
+            Dim todos = New SecurityIdentifier(WellKnownSidType.WorldSid, Nothing)
+            Dim acl = mae.GetAccessControl()
+            acl.AddAccessRule(New FileSystemAccessRule(
+                todos,
+                FileSystemRights.CreateDirectories Or
+                FileSystemRights.DeleteSubdirectoriesAndFiles,
+                InheritanceFlags.None,          ' NAO desce
+                PropagationFlags.None,
+                AccessControlType.Allow))
+            mae.SetAccessControl(acl)
+
+            Assert.IsFalse(TemAce(pasta.FullName, todos), "nao devia ter descido para a pasta")
+            Assert.IsFalse(TemAce(caminho, todos), "nem para o arquivo")
+
+            Assert.IsFalse(Passa(caminho),
+                           "quem troca a pasta inteira escolhe a autorizacao")
+        End Sub
+
+        ''' <summary>
+        ''' <b>Pasta que é junction não passa.</b>
+        '''
+        ''' Um ponto de nova análise aponta para outro lugar — e o outro lugar
+        ''' ninguém conferiu: nem o dono dele, nem quem escreve lá. Conferir a
+        ''' ACL do link diria coisas sobre o link, e o conteúdo viria de outro
+        ''' sítio.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Pasta_que_e_JUNCTION_nao_passa()
+            Dim real = PastaLimpa()
+            Dim caminho = Path.Combine(real, "ativacao.json")
+            File.WriteAllText(caminho, "{}")
+            Assert.IsTrue(Passa(caminho), "controle: pela pasta de verdade, passa")
+
+            ' JUNCTION, e nao symlink: symlink exige privilegio e junction
+            ' NAO. Um teste que usasse symlink mediria um vetor que quase
+            ' ninguem consegue usar, e deixaria de fora o que qualquer conta
+            ' cria.
+            Dim link = Path.Combine(Path.GetDirectoryName(real), "atalho")
+            Using cmd = Process.Start(New ProcessStartInfo("cmd.exe") With {
+                .Arguments = $"/c mklink /J ""{link}"" ""{real}""",
+                .UseShellExecute = False,
+                .RedirectStandardOutput = True,
+                .RedirectStandardError = True,
+                .CreateNoWindow = True})
+                cmd.WaitForExit(10000)
+                Assert.AreEqual(0, cmd.ExitCode,
+                                "nao consegui criar a junction: " & cmd.StandardError.ReadToEnd())
+            End Using
+            _pastas.Insert(0, link)
+
+            Assert.IsTrue((New DirectoryInfo(link).Attributes And
+                           FileAttributes.ReparsePoint) <> 0,
+                          "o teste so mede alguma coisa se isto for reparse point")
+
+            Assert.IsFalse(Passa(Path.Combine(link, "ativacao.json")),
+                           "o mesmo arquivo, alcancado por link, nao pode passar")
+        End Sub
+
+        ''' <summary>Alguém com esse SID aparece na ACL deste objeto?</summary>
+        Private Shared Function TemAce(caminho As String, quem As SecurityIdentifier) As Boolean
+            Dim seguranca As FileSystemSecurity =
+                If(Directory.Exists(caminho),
+                   CType(New DirectoryInfo(caminho).GetAccessControl(), FileSystemSecurity),
+                   New FileInfo(caminho).GetAccessControl())
+
+            Return seguranca.GetAccessRules(True, True, GetType(SecurityIdentifier)).
+                   Cast(Of FileSystemAccessRule)().
+                   Any(Function(r) r.IdentityReference.Value = quem.Value)
+        End Function
 
         ''' <summary><b>Sem fluxo, não passa.</b> Falha fechada.</summary>
         <TestMethod>
