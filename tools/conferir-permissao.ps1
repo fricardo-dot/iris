@@ -21,7 +21,8 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Caminho = (Join-Path $env:ProgramData "Iris\ativacao.json")
+    [string] $Caminho = (Join-Path ([Environment]::GetFolderPath(
+        [Environment+SpecialFolder]::CommonApplicationData)) "Iris\ativacao.json")
 )
 
 $ErrorActionPreference = 'Stop'
@@ -40,16 +41,21 @@ if (-not (Test-Path -LiteralPath $Caminho)) {
     # existe. Foi a hipotese que sobrou depois de conta, perfil e elevacao
     # terem sido descartados.
     Write-Host ("  procurei em ... [{0}]" -f $Caminho)
-    Write-Host ("  LOCALAPPDATA .. [{0}]  ({1} caracteres)" -f $env:LOCALAPPDATA, $env:LOCALAPPDATA.Length)
+    $raizComum = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)
+    Write-Host ("  ProgramData ... [{0}]  ({1} caracteres)" -f $raizComum, $raizComum.Length)
     Write-Host ("  quem .......... {0}" -f $eu0.Name)
     Write-Host ("  elevado ....... {0}" -f $elevado)
     Write-Host ""
 
     # E PROCURA DE VERDADE, em vez de so reclamar.
+    # O lugar de hoje primeiro, e os antigos depois: quem migrou de versao
+    # tem o arquivo no caminho velho, e dizer "nao existe" o mandaria recriar
+    # o que ja escreveu.
     $tentativas = @(
+        (Join-Path ([Environment]::GetFolderPath(
+            [Environment+SpecialFolder]::CommonApplicationData)) "Iris\ativacao.json")
+        (Join-Path $env:ProgramData "Iris\ativacao.json")
         (Join-Path $env:LOCALAPPDATA "Iris\ativacao.json")
-        (Join-Path $env:USERPROFILE "AppData\Local\Iris\ativacao.json")
-        ("C:\Users\" + $env:USERNAME + "\AppData\Local\Iris\ativacao.json")
     ) | Select-Object -Unique
 
     $achou = $null

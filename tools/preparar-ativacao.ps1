@@ -16,7 +16,7 @@
     Por padrao NAO grava: a ativacao e o unico ponto do Iris em que voce
     assume, por escrito, que conteudo da sua caixa pode sair da maquina.
 
-    Com -Salvar ele grava em %ProgramData%\Iristivacao.json e provisiona a
+    Com -Salvar ele grava em %ProgramData%\Iris\ativacao.json e provisiona a
     pasta com ACL propria. O ato deliberado continua sendo seu -- pasta,
     modelo e prazo saem destes parametros --, e o que -Salvar tira e a
     transcricao a mao, que so acrescentava chance de errar.
@@ -145,7 +145,12 @@ $json = [ordered]@{
 # %ProgramData% e nao %LOCALAPPDATA%: a conferencia de permissao olha a
 # pasta-mae, e num perfil real ela nao passa -- ACE herdada de sobra. Ver o
 # doc de ActivationLoader.CaminhoPadrao.
-$destino = Join-Path $env:ProgramData "Iris\ativacao.json"
+#
+# E resolvido pela MESMA API do produto, e nao por $env:ProgramData: a
+# variavel de ambiente pode divergir da pasta que o .NET resolve, e a
+# ferramenta escreveria num lugar que o Iris nao le.
+$raiz = [Environment]::GetFolderPath([Environment+SpecialFolder]::CommonApplicationData)
+$destino = Join-Path $raiz "Iris\ativacao.json"
 
 Write-Host "----- inicio do JSON -----" -ForegroundColor Cyan
 Write-Host $json
@@ -165,9 +170,22 @@ if ($Salvar) {
     # direito de criar, e o Iris recusa isso na pasta que contem a ativacao --
     # quem cria ali dentro troca o arquivo.
     $eu = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
-    & icacls $pastaDestino /grant:r `
+    $saida = & icacls $pastaDestino /grant:r `
         "*${eu}:(OI)(CI)(M)" "*S-1-5-18:(OI)(CI)(F)" "*S-1-5-32-544:(OI)(CI)(F)" `
-        /inheritance:r | Out-Null
+        /inheritance:r 2>&1
+
+    # FALHA DO icacls TEM DE PARAR AQUI, ANTES DE GRAVAR.
+    #
+    # No PowerShell 5.1 um executavel nativo que falha nao levanta erro: o
+    # roteiro imprimiria "GRAVADO" sobre uma pasta que continua com a heranca
+    # do %ProgramData% -- e Users pode criar ali dentro, o que e exatamente o
+    # que o Iris recusa. Gravar antes de conferir seria anunciar sucesso sobre
+    # uma ativacao que nao vai carregar.
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "NAO consegui ajustar a permissao da pasta. Nada foi gravado." -ForegroundColor Red
+        Write-Host $saida
+        exit 1
+    }
 
     [IO.File]::WriteAllText($destino, $json, (New-Object Text.UTF8Encoding $false))
     Write-Host "GRAVADO em: $destino" -ForegroundColor Green
