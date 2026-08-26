@@ -54,6 +54,14 @@ Namespace Global.Iris.CrashHarness
                 Return Ativacao(If(args.Length > 1, args(1), Nothing))
             End If
 
+            ' Modo HISTORICO: le o diario de divulgacao do cache de producao.
+            ' Existe para conferir o canario -- uma linha, um RequestId, um
+            ' desfecho -- sem abrir o banco na mao.
+            If args.Length >= 1 AndAlso String.Equals(args(0), "historico",
+                                                      StringComparison.Ordinal) Then
+                Return Historico(If(args.Length > 1, args(1), Nothing))
+            End If
+
             If args.Length < 4 Then
                 Console.Error.WriteLine("uso: <db> <folderKey> <ponto> <kill|throw> [attemptKeyParaRetomar]")
                 Console.Error.WriteLine("     <db> diario <apos-intencao|em-voo|nenhum>")
@@ -158,6 +166,60 @@ Namespace Global.Iris.CrashHarness
         ''' costuma ir para um chat ou um bilhete, e o arquivo descreve a caixa
         ''' corporativa de alguem.
         ''' </summary>
+        ''' <summary>
+        ''' O diário de divulgação, do mais recente para o mais antigo.
+        '''
+        ''' <b>Não mostra conteúdo</b>, porque não há: o diário registra o que
+        ''' saiu, quando e sob qual autorização — nunca o texto. Se um dia
+        ''' aparecer texto aqui, é defeito, e é grave.
+        ''' </summary>
+        Private Function Historico(caminho As String) As Integer
+            Dim alvo = If(String.IsNullOrWhiteSpace(caminho),
+                          IO.Path.Combine(
+                              Environment.GetFolderPath(
+                                  Environment.SpecialFolder.LocalApplicationData),
+                              "Iris", "cache.db"),
+                          caminho)
+
+            Console.WriteLine($"cache:  {alvo}")
+            Console.WriteLine($"existe: {IO.File.Exists(alvo)}")
+            Console.WriteLine()
+
+            If Not IO.File.Exists(alvo) Then
+                Console.WriteLine("Sem cache nao ha diario — e sem diario a IA fica")
+                Console.WriteLine("desligada, de proposito. O cache nasce na primeira")
+                Console.WriteLine("abertura do Iris.")
+                Return 1
+            End If
+
+            Dim falha As OpenFailure = Nothing
+            Using db = CacheDatabase.Open(alvo, CacheSchema.Intended(), falha)
+                If db Is Nothing Then
+                    Console.WriteLine($"o cache nao abriu: {falha}")
+                    Return 1
+                End If
+
+                Dim linhas = New SqliteDisclosureJournal(db).Ler(20)
+                If linhas.Count = 0 Then
+                    Console.WriteLine("Diario VAZIO: nada saiu desta maquina.")
+                    Return 0
+                End If
+
+                Console.WriteLine($"{linhas.Count} linha(s), da mais recente:")
+                Console.WriteLine()
+                For Each e In linhas
+                    Console.WriteLine($"  {e.Estagio,-12} req={e.RequestId}")
+                    Console.WriteLine($"    ativacao ... {e.AtivacaoId} v{e.AtivacaoVersao}")
+                    Console.WriteLine($"    operacao ... {e.Operacao}   mensagens: {e.Mensagens}")
+                    Console.WriteLine($"    provedor ... {e.Provedor} / {e.Modelo}")
+                    Console.WriteLine($"    bytes ...... {e.Bytes}   hash: {e.Hash}")
+                    Console.WriteLine($"    nota ....... {e.Nota}")
+                    Console.WriteLine()
+                Next
+            End Using
+            Return 0
+        End Function
+
         Private Function Ativacao(caminho As String) As Integer
             Dim alvo = If(String.IsNullOrWhiteSpace(caminho),
                           ActivationLoader.CaminhoPadrao(), caminho)
