@@ -130,15 +130,25 @@ Write-Host ""
 Write-Host "Para consertar, rode:" -ForegroundColor Cyan
 Write-Host ""
 $aspas = [char]34
-$linha1 = "  icacls " + $aspas + $Caminho + $aspas + " /inheritance:r"
-$linha2 = "  icacls " + $aspas + $Caminho + $aspas + " /grant:r " + $aspas + "*" + $eu.Value + ":(R,W)" + $aspas
-$linha3 = "  icacls " + $aspas + $Caminho + $aspas + " /grant:r " + $aspas + "*S-1-5-18:(F)" + $aspas + " " + $aspas + "*S-1-5-32-544:(F)" + $aspas
-Write-Host $linha1 -ForegroundColor Green
-Write-Host $linha2 -ForegroundColor Green
-Write-Host $linha3 -ForegroundColor Green
+# UM COMANDO SO, E A ORDEM IMPORTA.
+#
+# A primeira versao mandava /inheritance:r primeiro e as concessoes depois,
+# em chamadas separadas. Entre uma e outra o arquivo fica SEM ACE nenhuma:
+# quem parasse no meio -- ou tivesse o comando falhando -- perdia o acesso
+# ao proprio arquivo. Concede primeiro, corta a heranca depois, numa
+# invocacao so.
+#
+# (M) e nao (R,W) para voce: sem Delete nao da para substituir a ativacao
+# depois, e o erro apareceria como uma falha de permissao sem explicacao.
+$cmd = "icacls " + $aspas + $Caminho + $aspas +
+       " /grant:r " + $aspas + "*" + $eu.Value + ":(M)" + $aspas +
+       " " + $aspas + "*S-1-5-18:(F)" + $aspas +
+       " " + $aspas + "*S-1-5-32-544:(F)" + $aspas +
+       " /inheritance:r"
+Write-Host $cmd -ForegroundColor Green
 Write-Host ""
-Write-Host "O primeiro corta a heranca - e de la que vem o que sobra. Os" -ForegroundColor Yellow
-Write-Host "outros devolvem so voce, o SYSTEM e os Administradores." -ForegroundColor Yellow
+Write-Host "Concede primeiro e corta a heranca depois, numa chamada so: entre" -ForegroundColor Yellow
+Write-Host "os dois passos o arquivo ficaria sem permissao nenhuma." -ForegroundColor Yellow
 Write-Host ""
 Write-Host "Depois, confira de novo:" -ForegroundColor Cyan
 Write-Host "  dotnet run --project tools\Iris.CrashHarness -- ativacao"
