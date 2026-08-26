@@ -30,28 +30,45 @@ $eu0 = [System.Security.Principal.WindowsIdentity]::GetCurrent()
 $elevado = (New-Object System.Security.Principal.WindowsPrincipal $eu0).IsInRole(
     [System.Security.Principal.WindowsBuiltInRole]::Administrator)
 
-if (-not (Test-Path $Caminho)) {
+if (-not (Test-Path -LiteralPath $Caminho)) {
     Write-Host ""
-    Write-Host "Nao achei ativacao em: $Caminho" -ForegroundColor Yellow
+    Write-Host "Nao achei ativacao." -ForegroundColor Yellow
     Write-Host ""
-    # DIZER QUEM ESTA OLHANDO, e nao so que nao achou.
-    #
-    # %LOCALAPPDATA% depende da conta. Num PowerShell ELEVADO o Windows pode
-    # entregar o perfil de outra conta, e ai o roteiro procura num lugar que
-    # nao e o seu -- e "nao existe" manda a pessoa recriar um arquivo que ja
-    # existe, no lugar errado.
-    Write-Host "Quem esta olhando: $($eu0.Name)"
-    Write-Host "LOCALAPPDATA:      $env:LOCALAPPDATA"
-    Write-Host "Elevado:           $elevado"
+
+    # OS CAMINHOS ENTRE COLCHETES, de proposito: espaco no fim de uma variavel
+    # de ambiente e invisivel, e produz um caminho que IMPRIME igual e NAO
+    # existe. Foi a hipotese que sobrou depois de conta, perfil e elevacao
+    # terem sido descartados.
+    Write-Host ("  procurei em ... [{0}]" -f $Caminho)
+    Write-Host ("  LOCALAPPDATA .. [{0}]  ({1} caracteres)" -f $env:LOCALAPPDATA, $env:LOCALAPPDATA.Length)
+    Write-Host ("  quem .......... {0}" -f $eu0.Name)
+    Write-Host ("  elevado ....... {0}" -f $elevado)
     Write-Host ""
-    if ($elevado) {
-        Write-Host "Voce esta num PowerShell ELEVADO. Tente de novo num prompt" -ForegroundColor Yellow
-        Write-Host "comum, ou passe o caminho na mao:" -ForegroundColor Yellow
-    } else {
-        Write-Host "Se o arquivo estiver em outro lugar, passe o caminho:" -ForegroundColor Yellow
+
+    # E PROCURA DE VERDADE, em vez de so reclamar.
+    $tentativas = @(
+        (Join-Path $env:LOCALAPPDATA "Iris\ativacao.json")
+        (Join-Path $env:USERPROFILE "AppData\Local\Iris\ativacao.json")
+        ("C:\Users\" + $env:USERNAME + "\AppData\Local\Iris\ativacao.json")
+    ) | Select-Object -Unique
+
+    $achou = $null
+    foreach ($t in $tentativas) {
+        $existe = Test-Path -LiteralPath $t
+        $marca = if ($existe) { "ACHEI" } else { "nao  " }
+        Write-Host ("  {0}  [{1}]" -f $marca, $t)
+        if ($existe -and -not $achou) { $achou = $t }
     }
     Write-Host ""
-    Write-Host "  ... conferir-permissao.ps1 -Caminho `"C:\caminho\do\ativacao.json`"" -ForegroundColor Green
+
+    if ($achou) {
+        Write-Host "O arquivo esta la. Rode de novo apontando para ele:" -ForegroundColor Green
+        Write-Host ""
+        Write-Host ("  ... conferir-permissao.ps1 -Caminho " + [char]34 + $achou + [char]34) -ForegroundColor Green
+    } else {
+        Write-Host "Nenhum dos caminhos acima tem o arquivo." -ForegroundColor Yellow
+        Write-Host "Se souber onde ele esta, passe -Caminho." -ForegroundColor Yellow
+    }
     Write-Host ""
     exit 1
 }
