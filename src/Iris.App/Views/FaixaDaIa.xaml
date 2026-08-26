@@ -20,6 +20,7 @@
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
+            <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
         <!-- OS BOTOES: visiveis SEMPRE, habilitados so quando da.
@@ -67,10 +68,27 @@
             </StackPanel>
         </Border>
 
+        <!-- O AVISO DA CERIMONIA: linha propria, e SEMPRE visivel quando tem
+             o que dizer.
+
+             Separado do aviso comum porque aquele e substituido a cada
+             operacao. Aqui moram duas coisas que nao podem sumir: o motivo de
+             a ativacao nao ter sido aceita, e o fato de a politica corporativa
+             nao ter sido verificada - que some da vista justamente enquanto a
+             IA funciona bem e ninguem tem motivo para reler nada. -->
+        <Border Grid.Row="2"
+                Visibility="{Binding TemAvisoDaAtivacao, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}"
+                Padding="16,4">
+            <TextBlock Text="{Binding AvisoDaAtivacao}"
+                       TextWrapping="Wrap" FontSize="12" FontWeight="SemiBold"
+                       AutomationProperties.Name="Situacao da ativacao da IA" />
+        </Border>
+
         <!-- O RESULTADO. TextBlock e nao qualquer coisa que interprete: a
              resposta veio de um lugar que leu o e-mail, que por sua vez veio
              de fora. Texto passivo e a barreira, e ela e estrutural. -->
-        <Border Grid.Row="2"
+        <Border Grid.Row="3"
                 Visibility="{Binding TemResultado, Converter={StaticResource BoolToVis},
                                      FallbackValue=Collapsed}"
                 Padding="16,4">

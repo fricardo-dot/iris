@@ -137,24 +137,51 @@ Public Class EgressArquiteturaTests
     End Sub
 
     ''' <summary>
-    ''' E ele é o <b>único</b>: nenhum outro projeto de produção depende dele.
+    ''' <b>Só o composition root depende do assembly de egress.</b>
     '''
-    ''' Depender do assembly de egress é ganhar a capacidade de egress de
-    ''' segunda mão — e a regra é sobre capacidade, não sobre uso.
+    ''' Depender dele é ganhar a capacidade de egress de segunda mão, e a regra
+    ''' é sobre <b>capacidade</b>, não sobre uso.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A EXCEÇÃO, E POR QUE ELA É UMA SÓ</b>
+    '''
+    ''' A regra era "ninguém". Ela mudou quando a IA foi ativada, porque alguém
+    ''' tem de escolher o provedor e construí-lo — e esse alguém é o
+    ''' <c>Iris.App</c>, onde a composição acontece e onde a decisão do usuário
+    ''' vira objeto.
+    '''
+    ''' A exceção está escrita <b>aqui</b> e não em lugar nenhum, de propósito:
+    ''' uma regra que passa a admitir exceções sem que a lista delas fique num
+    ''' lugar visível é uma regra que perde a primeira e depois todas. Se um
+    ''' segundo projeto aparecer nesta lista, este teste é que decide se ele
+    ''' entra.
     ''' </summary>
     <TestMethod>
-    Public Sub Ninguem_MAIS_depende_do_assembly_de_egress()
+    Public Sub SO_o_composition_root_depende_do_assembly_de_egress()
         Const egress = "Iris.Integration.Assist.Http"
+        ' "Iris", e nao "Iris.App": o projeto Iris.App produz um assembly
+        ' chamado Iris. Essa diferenca ja quebrou um teste desta suite antes,
+        ' que dizia cobrir o Iris.App e nao cobria nada.
+        Dim permitido = New HashSet(Of String)(StringComparer.Ordinal) From {"Iris"}
 
-        Dim culpados = Producao().
+        Dim dependentes = Producao().
             Where(Function(a) a.GetName().Name <> egress).
             Where(Function(a) a.GetReferencedAssemblies().
                                 Any(Function(r) r.Name = egress)).
             Select(Function(a) a.GetName().Name).ToList()
 
+        Dim culpados = dependentes.Where(Function(n) Not permitido.Contains(n)).ToList()
         Assert.AreEqual(0, culpados.Count,
-            "depender do assembly de egress e ganhar a capacidade de segunda mao: " &
+            "so o composition root pode adquirir egress de segunda mao: " &
             String.Join(", ", culpados))
+
+        ' E O COMPOSITION ROOT DEPENDE MESMO.
+        '
+        ' Sem isto, apagar a referencia do Iris.App deixaria o teste verde e a
+        ' IA sem provedor — a permissao viraria uma lista de nomes que nao
+        ' descreve nada.
+        CollectionAssert.Contains(dependentes, "Iris",
+            "se o composition root nao referencia o egress, nao ha provedor a montar")
     End Sub
 
     ''' <summary>

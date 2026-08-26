@@ -63,13 +63,15 @@ Namespace Global.Iris.App.ViewModels
         Public Sub New(ui As Dispatcher, transmissor As AssistTransmitter,
                        politica As DisclosurePolicy, relogio As Func(Of DateTimeOffset),
                        reconciliacao As ReconciliationResult,
-                       contexto As IAssistContext, rascunho As IRascunho)
+                       contexto As IAssistContext, rascunho As IRascunho,
+                       Optional avisoDaAtivacao As String = "")
             _ui = ui
             _transmissor = transmissor
             _politica = politica
             _relogio = relogio
             _contexto = If(contexto, CType(New ContextoIndisponivel(), IAssistContext))
             _rascunho = rascunho
+            Me.AvisoDaAtivacao = If(avisoDaAtivacao, "")
 
             ' O RASCUNHO MUDOU: reconsulta os comandos.
             '
@@ -102,6 +104,34 @@ Namespace Global.Iris.App.ViewModels
 
         ''' <summary>O que aconteceu na reconciliação da abertura.</summary>
         Public ReadOnly Property Reconciliacao As ReconciliationResult
+
+        ''' <summary>
+        ''' <b>O que a cerimônia de ativação tem a dizer — sempre visível.</b>
+        '''
+        ''' Duas coisas cabem aqui, e as duas precisam ficar na tela o tempo
+        ''' todo em vez de aparecer só quando algo falha:
+        '''
+        ''' <list type="bullet">
+        ''' <item>o <b>motivo</b> de o arquivo de ativação não ter sido aceito —
+        ''' campo com erro de digitação, prazo vencido, JSON malformado. Sem
+        ''' isso, quem escreveu o arquivo errado vê a mesma frase de quem nunca
+        ''' escreveu arquivo nenhum;</item>
+        ''' <item>que a <b>política corporativa não foi verificada</b>. Isso não
+        ''' impede a ativação — é decisão do dono da caixa —, mas some da vista
+        ''' se ficar só dentro do arquivo, e some justamente enquanto a IA
+        ''' funciona bem e ninguém tem motivo para reler nada.</item>
+        ''' </list>
+        '''
+        ''' Separado do <see cref="Aviso"/> de propósito: aquele é substituído a
+        ''' cada operação, e este não pode ser.
+        ''' </summary>
+        Public ReadOnly Property AvisoDaAtivacao As String
+
+        Public ReadOnly Property TemAvisoDaAtivacao As Boolean
+            Get
+                Return AvisoDaAtivacao.Length > 0
+            End Get
+        End Property
 
         ''' <summary>
         ''' <b>Visível sempre, habilitado só quando dá.</b>
@@ -195,7 +225,8 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property TemAlgoADizer As Boolean
             Get
-                Return TemAviso OrElse Reconciliacao.Aviso.Length > 0
+                Return TemAviso OrElse Reconciliacao.Aviso.Length > 0 OrElse
+                       TemAvisoDaAtivacao
             End Get
         End Property
 

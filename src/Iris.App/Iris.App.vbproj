@@ -28,6 +28,11 @@
     <ProjectReference Include="..\Iris.Cache\Iris.Cache.vbproj" />
     <ProjectReference Include="..\Iris.Integration\Iris.Integration.vbproj" />
     <ProjectReference Include="..\Iris.Assist\Iris.Assist.vbproj" />
+    <!-- O UNICO assembly com HTTP, e o Iris.App e o UNICO que pode
+         referencia-lo: aqui e o composition root, o lugar onde a escolha de
+         provedor e feita. Qualquer outra referencia a este projeto seria
+         egress de segunda mao, e o EgressArquiteturaTests acusa. -->
+    <ProjectReference Include="..\Iris.Integration.Assist.Http\Iris.Integration.Assist.Http.vbproj" />
   </ItemGroup>
 
   <ItemGroup>

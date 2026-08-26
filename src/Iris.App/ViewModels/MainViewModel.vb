@@ -3,6 +3,8 @@ Imports CommunityToolkit.Mvvm.ComponentModel
 Imports CommunityToolkit.Mvvm.Input
 Imports Iris.Core
 Imports Iris.Assist
+Imports Iris.Integration
+Imports Iris.Integration.Assist.Http
 Imports Iris.Model
 
 Namespace Global.Iris.App.ViewModels
@@ -427,36 +429,116 @@ Namespace Global.Iris.App.ViewModels
             Return (pasta, {selecionada.Key})
         End Function
 
+        ''' <summary>
+        ''' O que a cerimônia tem a dizer, em português — e o que fica dito
+        ''' mesmo quando ela dá certo.
+        '''
+        ''' Carregou <b>e</b> a política foi verificada: nada. Nos outros casos,
+        ''' uma frase que diz onde olhar. O nome do campo com problema entra; o
+        ''' <b>valor</b> nunca — o arquivo tem endpoint e identificador de
+        ''' pasta, e esta frase vai para a tela.
+        ''' </summary>
+        Private Shared Function AtivacaoEmPortugues(r As ActivationLoadResult) As String
+            If r.Carregou Then
+                If r.Record.PoliticaCorporativaVerificada Then Return ""
+                Return "A política corporativa aplicável NÃO foi verificada. " &
+                       "A IA está ligada por decisão sua, e a autorização vence em " &
+                       r.Record.Ate.Value.ToLocalTime().ToString("dd/MM/yyyy") & "."
+            End If
+
+            Dim onde = If(r.Campo.Length > 0, $" (campo ""{r.Campo}"")", "")
+
+            Select Case r.Falha
+                Case ActivationLoadFailure.Ausente
+                    ' O caso NORMAL: nao ha arquivo, e a IA nasce desligada.
+                    ' Nao e erro, e dizer "erro" mandaria o usuario procurar
+                    ' defeito onde ha so ausencia de decisao.
+                    Return ""
+                Case ActivationLoadFailure.CampoDesconhecido
+                    Return "A ativação não foi aceita: há um campo que o Iris não " &
+                           "conhece" & onde & ". Pode ser erro de digitação num campo que importa."
+                Case ActivationLoadFailure.CampoDuplicado
+                    Return "A ativação não foi aceita: um campo aparece duas vezes" & onde &
+                           ", e não dá para saber qual delas vale."
+                Case ActivationLoadFailure.CampoFaltando
+                    Return "A ativação não foi aceita: falta um campo obrigatório" & onde & "."
+                Case ActivationLoadFailure.TipoErrado
+                    Return "A ativação não foi aceita: um campo está com o tipo errado" &
+                           onde & "."
+                Case ActivationLoadFailure.ValorInvalido
+                    Return "A ativação não foi aceita: há um valor que não dá para " &
+                           "interpretar" & onde & ". Datas precisam de fuso, e nomes de " &
+                           "operação e de rótulo vão por extenso, nunca por número."
+                Case ActivationLoadFailure.JsonInvalido
+                    Return "A ativação não foi aceita: o arquivo não é JSON válido. " &
+                           "Comentário e vírgula sobrando não são aceitos."
+                Case ActivationLoadFailure.Incompleta
+                    Return "A ativação não foi aceita: falta preencher campo obrigatório, " &
+                           "ou não há pasta nenhuma autorizada."
+                Case ActivationLoadFailure.Incoerente
+                    Return "A ativação não foi aceita: ela declara algo que não pode ser " &
+                           "declarado — prazo invertido, ou desfecho de leitura que não é " &
+                           "prova de nada."
+                Case ActivationLoadFailure.EndpointInseguro
+                    Return "A ativação não foi aceita: o endereço não é HTTPS."
+                Case ActivationLoadFailure.PrazoLongoDemais
+                    Return "A ativação não foi aceita: o prazo passa de 90 dias."
+                Case ActivationLoadFailure.NaoEhArquivoComum
+                    Return "A ativação não foi aceita: o caminho não é um arquivo comum."
+                Case ActivationLoadFailure.GrandeDemais
+                    Return "A ativação não foi aceita: o arquivo é grande demais."
+                Case Else
+                    Return "A ativação não foi aceita, e não foi possível ler o arquivo."
+            End Select
+        End Function
+
         Private Function MontarAssistente(ui As Global.System.Windows.Threading.Dispatcher) _
                                           As AssistenteViewModel
             Dim relogio As Func(Of DateTimeOffset) = Function() DateTimeOffset.Now
-            Dim politica = DisclosurePolicy.DaProducao()
+
+            ' A CERIMONIA, lida do arquivo. Sem arquivo — o caso normal — a
+            ' ativacao e Nothing e a politica nega tudo, exatamente como antes.
+            ' Com arquivo invalido, tambem nega, e o motivo aparece na faixa.
+            Dim ativacao = ActivationLoader.Carregar(relogio())
+            Dim politica As New DisclosurePolicy(ativacao.Record)
 
             Dim diario As IDisclosureJournal = Acervo?.Diario
             Dim reconciliacao = If(diario Is Nothing,
                                    ReconciliationResult.NaoRodou(),
                                    ReconciliationResult.Rodar(diario, relogio()))
 
+            ' O PROVEDOR — UM SO, e o mesmo para o transmissor e o contexto.
+            '
+            ' Havia dois `New AssistenteIndisponivel()` separados, e o destino
+            ' que o contexto declarava vinha de um objeto diferente do que
+            ' transmitia. Enquanto os dois eram indisponiveis dava na mesma;
+            ' com provedor de verdade, seriam duas verdades sobre para onde o
+            ' conteudo vai.
+            '
+            ' Sem ativacao valida continua sendo o AssistenteIndisponivel, que
+            ' nao tem destino: o portao recusa antes de qualquer leitura.
+            Dim provedor As IAssistantProvider =
+                If(ativacao.Carregou,
+                   CType(New OpenRouterAssistantProvider(
+                             ativacao.Record,
+                             CredencialDoWindows.Leitor()), IAssistantProvider),
+                   New AssistenteIndisponivel())
+
             Dim transmissor As New AssistTransmitter(
                 politica, New CapabilityLedger(),
                 If(diario, CType(New DiarioAusente(), IDisclosureJournal)),
-                New AssistenteIndisponivel(), relogio)
-
+                provedor, relogio)
 
             ' O CONTEXTO DE VERDADE. Ler a mensagem, classificar e montar o
             ' envelope sao requisitos do Iris, e independem de qual API vai
-            ' receber os bytes — deixa-los para depois faria faltar o caminho
-            ' central ate o Outlook mesmo depois da cerimonia de ativacao.
-            '
-            ' O destino vem do PROVEDOR, e o provedor da producao nao tem
-            ' nenhum: o portao recusa antes de qualquer leitura.
-            Dim provedor As IAssistantProvider = New AssistenteIndisponivel()
+            ' receber os bytes.
             Dim contexto As New ContextoDoOutlook(
                 _broker, provedor.Destino, AddressOf SelecaoParaIa)
 
             Dim vm As New AssistenteViewModel(ui, transmissor, politica, relogio,
                                               reconciliacao, contexto,
-                                              New RascunhoDoCompositor(Composer))
+                                              New RascunhoDoCompositor(Composer),
+                                              AtivacaoEmPortugues(ativacao))
 
             ' O aviso da abertura entra na tela mesmo sem ninguem pedir nada:
             ' "pode ter saido conteudo e ninguem sabe" nao espera interacao.
