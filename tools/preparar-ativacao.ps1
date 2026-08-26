@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
     Monta o texto da cerimonia de ativacao da IA, com os identificadores da
-    pasta ja preenchidos. NAO grava nada.
+    pasta ja preenchidos. So grava com -Salvar.
 
 .DESCRIPTION
     A ativacao precisa do StoreID e do EntryID da pasta autorizada, e esses
@@ -13,10 +13,13 @@
     Este roteiro le o Outlook (SO LEITURA, nada e criado, movido ou apagado),
     acha a pasta pelo nome, e IMPRIME o JSON pronto na tela.
 
-    NAO GRAVA O ARQUIVO DE PROPOSITO. A ativacao e o unico ponto do Iris em que
-    voce assume, por escrito, que conteudo da sua caixa pode sair da maquina.
-    Um roteiro que gravasse sozinho transformaria isso num comando entre
-    outros. Leia o que saiu, confira, e salve voce mesmo.
+    Por padrao NAO grava: a ativacao e o unico ponto do Iris em que voce
+    assume, por escrito, que conteudo da sua caixa pode sair da maquina.
+
+    Com -Salvar ele grava em %ProgramData%\Iristivacao.json e provisiona a
+    pasta com ACL propria. O ato deliberado continua sendo seu -- pasta,
+    modelo e prazo saem destes parametros --, e o que -Salvar tira e a
+    transcricao a mao, que so acrescentava chance de errar.
 
 .EXAMPLE
     Caminho ABSOLUTO, que e o caso normal: um PowerShell novo abre em
@@ -139,7 +142,10 @@ $json = [ordered]@{
     contentBits                   = @(0)
 } | ConvertTo-Json -Depth 5
 
-$destino = Join-Path $env:LOCALAPPDATA "Iris\ativacao.json"
+# %ProgramData% e nao %LOCALAPPDATA%: a conferencia de permissao olha a
+# pasta-mae, e num perfil real ela nao passa -- ACE herdada de sobra. Ver o
+# doc de ActivationLoader.CaminhoPadrao.
+$destino = Join-Path $env:ProgramData "Iris\ativacao.json"
 
 Write-Host "----- inicio do JSON -----" -ForegroundColor Cyan
 Write-Host $json
@@ -152,7 +158,17 @@ if ($Salvar) {
         Write-Host "Nao vou sobrescrever: apague a antiga se for essa a intencao." -ForegroundColor Red
         exit 1
     }
-    New-Item -ItemType Directory -Force (Split-Path $destino) | Out-Null
+    $pastaDestino = Split-Path $destino
+    New-Item -ItemType Directory -Force $pastaDestino | Out-Null
+
+    # A PASTA NASCE COM ACL PROPRIA. Em %ProgramData% a heranca traz Users com
+    # direito de criar, e o Iris recusa isso na pasta que contem a ativacao --
+    # quem cria ali dentro troca o arquivo.
+    $eu = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+    & icacls $pastaDestino /grant:r `
+        "*${eu}:(OI)(CI)(M)" "*S-1-5-18:(OI)(CI)(F)" "*S-1-5-32-544:(OI)(CI)(F)" `
+        /inheritance:r | Out-Null
+
     [IO.File]::WriteAllText($destino, $json, (New-Object Text.UTF8Encoding $false))
     Write-Host "GRAVADO em: $destino" -ForegroundColor Green
     Write-Host "Confira com:  dotnet run --project tools\Iris.CrashHarness -- ativacao" -ForegroundColor Green

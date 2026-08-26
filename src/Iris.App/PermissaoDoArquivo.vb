@@ -38,10 +38,13 @@ Namespace Global.Iris.App
     ''' a pasta <c>Iris</c> e poria outra no lugar, com outra ativação dentro.
     '''
     ''' Acima disso não se confere, e isso é <b>decisão declarada</b> e não
-    ''' esquecimento: a recursão não tem fim natural, e quem controla a raiz do
-    ''' perfil já controla a sessão inteira — o arquivo de ativação seria o menor
-    ''' dos problemas. O limite fica escrito aqui para que uma revisão futura
-    ''' discuta o limite, e não descubra a ausência dele.
+    ''' esquecimento: a recursão não tem fim natural. O limite fica escrito aqui
+    ''' para que uma revisão futura discuta o limite, e não descubra a ausência
+    ''' dele.
+    '''
+    ''' A âncora usa um conjunto de direitos <b>mais estreito</b> que os outros
+    ''' dois — ver <see cref="DaAncora"/>. É o que faz a regra ser satisfazível
+    ''' numa máquina real em vez de exigir cirurgia de ACL no perfil.
     '''
     ''' <b>Junction também não.</b> Uma pasta que é ponto de nova análise aponta
     ''' para outro lugar, e o outro lugar ninguém conferiu.
@@ -108,11 +111,17 @@ Namespace Global.Iris.App
                 ' e nao a mae fecharia a porta e deixaria a parede.
                 Dim mae = di.Parent
                 If mae Is Nothing OrElse Not mae.Exists Then Return False
-                ' Na mae o dono pode ser o SISTEMA, e nao eu: %LOCALAPPDATA% e
-                ' do usuario, mas C:\ e de Administradores. Exigir dono==eu ali
-                ' reprovaria layout normal do Windows, e barreira que ninguem
-                ' satisfaz vira barreira desligada.
-                Return Limpo(mae.GetAccessControl(), meuSid, DaPasta,
+
+                ' Junction na mae tambem nao: ela decide onde a pasta mora.
+                If mae.LinkTarget IsNot Nothing OrElse
+                   (mae.Attributes And FileAttributes.ReparsePoint) <> 0 Then
+                    Return False
+                End If
+
+                ' A ANCORA usa um conjunto de direitos MAIS ESTREITO, e o dono
+                ' pode ser o sistema. Ver o doc de DaAncora para por que criar
+                ' nao e o mesmo que substituir.
+                Return Limpo(mae.GetAccessControl(), meuSid, DaAncora,
                              donoTemDeSerEu:=False)
 
             Catch
@@ -173,6 +182,36 @@ Namespace Global.Iris.App
         Private Shared ReadOnly DoArquivo As FileSystemRights =
             FileSystemRights.WriteData Or
             FileSystemRights.AppendData Or
+            FileSystemRights.Delete Or
+            FileSystemRights.ChangePermissions Or
+            FileSystemRights.TakeOwnership
+
+        ''' <summary>
+        ''' Os direitos que permitem <b>substituir a pasta</b> — e só eles.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>CRIAR NÃO É SUBSTITUIR, E ESSA DISTINÇÃO É O QUE TORNA A ÂNCORA
+        ''' ALCANÇÁVEL</b>
+        '''
+        ''' Na âncora eu usava o mesmo conjunto da pasta, e com ele
+        ''' <b>nenhuma localização padrão do Windows passava</b>: medi
+        ''' <c>%LOCALAPPDATA%</c>, <c>%USERPROFILE%</c> e <c>C:\</c>, e os três
+        ''' reprovavam. Uma barreira que ninguém consegue satisfazer é uma
+        ''' barreira que alguém desliga.
+        '''
+        ''' O erro estava no conjunto. Quem tem <c>CreateDirectories</c> numa
+        ''' raiz consegue criar pastas <b>irmãs</b> — e não consegue apagar nem
+        ''' renomear uma pasta que já existe e está protegida. Para substituí-la
+        ''' é preciso <c>DeleteSubdirectoriesAndFiles</c>, <c>Delete</c> no
+        ''' filho, ou poder mudar a ACL.
+        '''
+        ''' Então a âncora recusa exatamente esses, e <b>tolera criar</b>. Com
+        ''' isso <c>%ProgramData%</c> passa — <c>Users</c> tem ali só
+        ''' <c>WD,AD</c> — e o Iris ganha uma raiz onde a autorização pode morar
+        ''' sem exigir cirurgia de ACL no perfil de ninguém.
+        ''' </summary>
+        Private Shared ReadOnly DaAncora As FileSystemRights =
+            FileSystemRights.DeleteSubdirectoriesAndFiles Or
             FileSystemRights.Delete Or
             FileSystemRights.ChangePermissions Or
             FileSystemRights.TakeOwnership

@@ -144,12 +144,26 @@ CENARIOS = [
 
     dict(nome="conferencia da PASTA-MAE",
          edicoes=[(PERM,
-                   """                Return Limpo(mae.GetAccessControl(), meuSid, DaPasta,
+                   """                Return Limpo(mae.GetAccessControl(), meuSid, DaAncora,
                              donoTemDeSerEu:=False)""",
                    "                Return True")],
          filtro="FullyQualifiedName~PermissaoDoArquivoTests",
-         esperados={"ACE_perigosa_so_na_PASTA_MAE_reprova"},
+         esperados={"ACE_perigosa_so_na_PASTA_MAE_reprova",
+                    "Cada_direito_de_SUBSTITUICAO_reprova_sozinho_na_ancora"},
          porque="quem troca a pasta inteira poe outra ativacao dentro"),
+
+    dict(nome="a ancora tolera CRIAR (conjunto estreito)",
+         edicoes=[(PERM,
+                   """        Private Shared ReadOnly DaAncora As FileSystemRights =
+            FileSystemRights.DeleteSubdirectoriesAndFiles Or""",
+                   """        Private Shared ReadOnly DaAncora As FileSystemRights =
+            FileSystemRights.CreateFiles Or
+            FileSystemRights.CreateDirectories Or
+            FileSystemRights.DeleteSubdirectoriesAndFiles Or""")],
+         filtro="FullyQualifiedName~PermissaoDoArquivoTests",
+         esperados={"Na_ancora_CRIAR_e_tolerado",
+                    "Controle_a_ACL_do_ProgramData_PASSA"},
+         porque="apertar a ancora faz NENHUMA raiz padrao do Windows passar"),
 
     dict(nome="junction na pasta da ativacao",
          edicoes=[(PERM,

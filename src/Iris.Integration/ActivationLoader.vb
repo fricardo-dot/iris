@@ -163,10 +163,27 @@ Namespace Global.Iris.Integration
             "retencaoAceita", "exigirRetencaoZero", "provedoresPermitidos",
             "operacoes", "pastas", "leituras", "contentBits"}
 
-        ''' <summary><c>%LOCALAPPDATA%\Iris\ativacao.json</c>.</summary>
+        ''' <summary>
+        ''' <c>%ProgramData%\Iris\ativacao.json</c>.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE NÃO <c>%LOCALAPPDATA%</c></b>
+        '''
+        ''' Porque a conferência de permissão olha a <b>pasta-mãe</b>, e num
+        ''' perfil real ela não passa: <c>%LOCALAPPDATA%</c> e
+        ''' <c>%USERPROFILE%</c> costumam carregar ACEs herdadas de sobra — nesta
+        ''' máquina, um SID órfão de outro computador com controle total. Limpar
+        ''' isso significaria cortar herança no perfil inteiro.
+        '''
+        ''' <c>%ProgramData%</c> tem, para <c>Users</c>, apenas <c>WD,AD</c> —
+        ''' criar. Ninguém além de <c>SYSTEM</c> e <c>Administradores</c> pode
+        ''' apagar, renomear ou mudar a ACL de uma pasta que já existe ali. É a
+        ''' raiz onde a autorização mora sem exigir cirurgia no perfil de
+        ''' ninguém.
+        ''' </summary>
         Public Shared Function CaminhoPadrao() As String
             Return Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData),
                 "Iris", "ativacao.json")
         End Function
 

@@ -476,6 +476,143 @@ Namespace Global.Iris.Tests
                    Any(Function(r) r.IdentityReference.Value = quem.Value)
         End Function
 
+        ''' <summary>
+        ''' <b>Criar na âncora é tolerado; substituir, não.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A DISTINÇÃO QUE TORNA A REGRA SATISFAZÍVEL</b>
+        '''
+        ''' A âncora usava o mesmo conjunto de direitos da pasta, e com ele
+        ''' <b>nenhuma localização padrão do Windows passava</b> — medi
+        ''' <c>%LOCALAPPDATA%</c>, <c>%USERPROFILE%</c> e <c>C:\</c>.
+        '''
+        ''' Quem tem <c>CreateDirectories</c> numa raiz cria pastas <b>irmãs</b>;
+        ''' não apaga nem renomeia uma pasta que já existe e está protegida. Para
+        ''' substituí-la é preciso <c>DeleteSubdirectoriesAndFiles</c>,
+        ''' <c>Delete</c>, ou poder mudar a ACL.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Na_ancora_CRIAR_e_tolerado()
+            Dim caminho = Arquivo()
+            Dim mae = New DirectoryInfo(Path.GetDirectoryName(caminho)).Parent
+
+            Dim acl = mae.GetAccessControl()
+            acl.AddAccessRule(New FileSystemAccessRule(
+                New SecurityIdentifier(WellKnownSidType.WorldSid, Nothing),
+                FileSystemRights.CreateFiles Or FileSystemRights.CreateDirectories,
+                InheritanceFlags.None, PropagationFlags.None, AccessControlType.Allow))
+            mae.SetAccessControl(acl)
+
+            Assert.IsTrue(Passa(caminho),
+                          "criar irmao nao substitui pasta protegida que ja existe")
+        End Sub
+
+        ''' <summary>
+        ''' <b>Cada direito de substituição reprova sozinho na âncora.</b>
+        '''
+        ''' O par do teste de cima. Com o intruso recebendo um direito por vez,
+        ''' um esquecimento no conjunto <c>DaAncora</c> vira uma linha vermelha
+        ''' com nome — em vez de sumir porque <c>FullControl</c> cobria tudo.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Cada_direito_de_SUBSTITUICAO_reprova_sozinho_na_ancora()
+            For Each direito In {FileSystemRights.DeleteSubdirectoriesAndFiles,
+                                 FileSystemRights.Delete,
+                                 FileSystemRights.ChangePermissions,
+                                 FileSystemRights.TakeOwnership}
+                Dim caminho = Arquivo()
+                Dim mae = New DirectoryInfo(Path.GetDirectoryName(caminho)).Parent
+
+                Dim acl = mae.GetAccessControl()
+                acl.AddAccessRule(New FileSystemAccessRule(
+                    New SecurityIdentifier(WellKnownSidType.WorldSid, Nothing),
+                    direito, InheritanceFlags.None, PropagationFlags.None,
+                    AccessControlType.Allow))
+                mae.SetAccessControl(acl)
+
+                Assert.IsFalse(Passa(caminho), $"{direito} na ancora tinha de reprovar")
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' <b>Controle vivo: a ACL medida do <c>%ProgramData%</c> passa.</b>
+        '''
+        ''' Reproduz o que o <c>icacls</c> mostrou na raiz real —
+        ''' <c>SYSTEM(F)</c>, <c>Administradores(F)</c>, <c>CREATOR OWNER</c>
+        ''' herança-só, <c>Users(RX)</c> e <c>Users(WD,AD,WEA,WA)</c>.
+        '''
+        ''' É o teste que amarra a escolha do local ao código: se um dia alguém
+        ''' apertar o conjunto <c>DaAncora</c> sem perceber, é aqui que a
+        ''' localização padrão do Iris deixa de funcionar — e não em produção, na
+        ''' máquina de alguém.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Controle_a_ACL_do_ProgramData_PASSA()
+            Dim caminho = Arquivo()
+            Dim mae = New DirectoryInfo(Path.GetDirectoryName(caminho)).Parent
+            Dim users = New SecurityIdentifier(WellKnownSidType.BuiltinUsersSid, Nothing)
+            Dim criador = New SecurityIdentifier(WellKnownSidType.CreatorOwnerSid, Nothing)
+
+            Dim acl = mae.GetAccessControl()
+            acl.AddAccessRule(New FileSystemAccessRule(
+                users, FileSystemRights.ReadAndExecute,
+                InheritanceFlags.ObjectInherit Or InheritanceFlags.ContainerInherit,
+                PropagationFlags.None, AccessControlType.Allow))
+            acl.AddAccessRule(New FileSystemAccessRule(
+                users,
+                FileSystemRights.WriteData Or FileSystemRights.AppendData Or
+                FileSystemRights.WriteExtendedAttributes Or
+                FileSystemRights.WriteAttributes,
+                InheritanceFlags.ContainerInherit, PropagationFlags.None,
+                AccessControlType.Allow))
+            ' CREATOR OWNER com (IO): molde para o que nascer, nao vale para a
+            ' propria pasta. O produto ignora, e este teste cobra que ignore.
+            acl.AddAccessRule(New FileSystemAccessRule(
+                criador, FileSystemRights.FullControl,
+                InheritanceFlags.ObjectInherit Or InheritanceFlags.ContainerInherit,
+                PropagationFlags.InheritOnly, AccessControlType.Allow))
+            mae.SetAccessControl(acl)
+
+            Assert.IsTrue(Passa(caminho),
+                          "a raiz que o Iris escolheu tem de passar na propria conferencia")
+        End Sub
+
+        ''' <summary>
+        ''' <b>Mãe que é junction reprova.</b>
+        '''
+        ''' Ela decide onde a pasta mora: um link ali faz a árvore inteira vir de
+        ''' outro lugar.
+        ''' </summary>
+        <TestMethod>
+        Public Sub MAE_que_e_junction_reprova()
+            Dim raiz = PastaLimpa()
+            Dim dentro = Limpar(Path.Combine(raiz, "dentro"))
+            Dim caminho = Path.Combine(dentro, "ativacao.json")
+            File.WriteAllText(caminho, "{}")
+            Assert.IsTrue(Passa(caminho), "controle: pela arvore de verdade, passa")
+
+            Dim link = Path.Combine(Path.GetDirectoryName(raiz), "atalho-mae")
+            Junction(link, raiz)
+            _pastas.Insert(0, link)
+
+            Assert.IsFalse(Passa(Path.Combine(link, "dentro", "ativacao.json")),
+                           "a mae alcancada por link nao pode passar")
+        End Sub
+
+        ''' <summary>Cria uma junction. Não exige privilégio; symlink exigiria.</summary>
+        Private Shared Sub Junction(link As String, alvo As String)
+            Using cmd = Process.Start(New ProcessStartInfo("cmd.exe") With {
+                .Arguments = $"/c mklink /J ""{link}"" ""{alvo}""",
+                .UseShellExecute = False,
+                .RedirectStandardOutput = True,
+                .RedirectStandardError = True,
+                .CreateNoWindow = True})
+                cmd.WaitForExit(10000)
+                Assert.AreEqual(0, cmd.ExitCode,
+                                "nao consegui criar a junction: " & cmd.StandardError.ReadToEnd())
+            End Using
+        End Sub
+
         ''' <summary><b>Sem fluxo, não passa.</b> Falha fechada.</summary>
         <TestMethod>
         Public Sub Sem_fluxo_NAO_passa()

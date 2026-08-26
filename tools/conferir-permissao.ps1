@@ -21,7 +21,7 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Caminho = (Join-Path $env:LOCALAPPDATA "Iris\ativacao.json")
+    [string] $Caminho = (Join-Path $env:ProgramData "Iris\ativacao.json")
 )
 
 $ErrorActionPreference = 'Stop'
@@ -98,6 +98,15 @@ $daPasta = [System.Security.AccessControl.FileSystemRights]::CreateFiles -bor
            [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
            [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
+# NA ANCORA o conjunto e MAIS ESTREITO, e e o que torna a regra satisfazivel:
+# quem cria pasta numa raiz nao apaga nem renomeia uma que ja existe e esta
+# protegida. Com o conjunto da pasta aqui, NENHUMA raiz padrao do Windows
+# passaria -- medido em %LOCALAPPDATA%, %USERPROFILE% e C:\.
+$daAncora = [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+            [System.Security.AccessControl.FileSystemRights]::Delete -bor
+            [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+            [System.Security.AccessControl.FileSystemRights]::TakeOwnership
+
 function Conferir($alvo, $perigosos, $rotulo, $donoTemDeSerEu = $true) {
     $acl = Get-Acl $alvo
     $donoSid = try { $acl.GetOwner([System.Security.Principal.SecurityIdentifier]) } catch { $null }
@@ -147,16 +156,18 @@ $rArquivo = Conferir $Caminho $doArquivo "Arquivo"
 $rPasta   = Conferir $pasta   $daPasta   "Pasta  "
 # A MAE TAMBEM: quem cria e apaga nela renomeia a pasta inteira e poe outra
 # no lugar, com outra ativacao dentro. Nela o dono pode ser o sistema.
-$rMae     = Conferir $mae     $daPasta   "Mae    " $false
+$rMae     = Conferir $mae     $daAncora  "Mae    " $false
 
 $intrusos = @($rArquivo.Sobrando) + @($rPasta.Sobrando) + @($rMae.Sobrando)
 $donoOk = $rArquivo.DonoOk -and $rPasta.DonoOk -and $rMae.DonoOk
 
-if ((New-Object System.IO.DirectoryInfo $pasta).Attributes -band `
-    [System.IO.FileAttributes]::ReparsePoint) {
-    Write-Host ""
-    Write-Host "A pasta e um link (junction). O Iris vai RECUSAR." -ForegroundColor Red
-    $intrusos += "junction"
+foreach ($d in @($pasta, $mae)) {
+    if ((New-Object System.IO.DirectoryInfo $d).Attributes -band `
+        [System.IO.FileAttributes]::ReparsePoint) {
+        Write-Host ""
+        Write-Host "$d e um link (junction). O Iris vai RECUSAR." -ForegroundColor Red
+        $intrusos += "junction"
+    }
 }
 
 Write-Host ""
@@ -192,6 +203,9 @@ $aspas = [char]34
 # Em cada um: concede primeiro, corta a heranca depois, numa invocacao so.
 # Comecar por /inheritance:r deixaria o objeto sem ACE nenhuma entre os dois
 # passos.
+# A MAE NAO ENTRA NO CONSERTO. Se ela reprovar, a saida nao e mexer na ACL
+# dela -- e por a ativacao numa raiz que ja passe. O padrao do Iris e
+# %ProgramData%\Iris, escolhido por isso.
 $cmdPasta = "icacls " + $aspas + $pasta + $aspas +
             " /grant:r " + $aspas + "*" + $eu.Value + ":(OI)(CI)(M)" + $aspas +
             " " + $aspas + "*S-1-5-18:(OI)(CI)(F)" + $aspas +
