@@ -64,6 +64,9 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 CAP = "src/Iris.Assist/Capability.vb"
 PIPE = "src/Iris.Assist/ContentPipeline.vb"
 VM = "src/Iris.App/ViewModels/AssistenteViewModel.vb"
+TRANS = "src/Iris.Assist/AssistTransmitter.vb"
+ATIV = "src/Iris.Assist/Activation.vb"
+ORP = "src/Iris.Integration.Assist.Http/OpenRouterAssistantProvider.vb"
 ADV = "tests/Iris.Tests/AdversarioPontaAPontaTests.vb"
 
 ADVF = "FullyQualifiedName~AdversarioPontaAPontaTests"
@@ -119,6 +122,43 @@ CENARIOS = [
          filtro=ADVF,
          esperados={"Resposta_so_de_ESPACO_nao_e_resposta"},
          porque="tres espacos escapavam do aviso e eram aplicados no rascunho"),
+
+    # ---- a ativacao ----
+
+    dict(nome="clone do corpo preparado",
+         edicoes=[(TRANS,
+                   "                corpo = If(devolvido Is Nothing, Nothing, CType(devolvido.Clone(), Byte()))",
+                   "                corpo = devolvido")],
+         filtro="FullyQualifiedName~Corpo_ADULTERADO_depois_de_conferido_nao_sai",
+         esperados={"Corpo_ADULTERADO_depois_de_conferido_nao_sai"},
+         porque="sem a copia, o provedor adultera depois de o hash ter sido conferido"),
+
+    dict(nome="lista de provedores nao pode ser vazia",
+         edicoes=[(ATIV,
+                   "            If ProvedoresPermitidos.Count = 0 Then Return False",
+                   "            ' desligado")],
+         filtro="FullyQualifiedName~Lista_de_provedores_VAZIA_e_incoerente",
+         esperados={"Lista_de_provedores_VAZIA_e_incoerente"},
+         porque="vazio voltaria a querer dizer 'qualquer provedor'"),
+
+    dict(nome="o adaptador recusa ativacao de outro provedor",
+         edicoes=[(ORP,
+                   """            If Not Atende(ativacao) Then
+                Throw New ArgumentException(
+                    "esta ativação não é para o OpenRouter", NameOf(ativacao))
+            End If""",
+                   "            ' desligado")],
+         filtro="FullyQualifiedName~Ativacao_de_OUTRO_provedor_nao_vira_adaptador",
+         esperados={"Ativacao_de_OUTRO_provedor_nao_vira_adaptador"},
+         porque="o protocolo e a credencial do OpenRouter iriam para outro endereco"),
+
+    dict(nome="colecoes da autorizacao sao imutaveis",
+         edicoes=[(ATIV,
+                   "            Return Array.AsReadOnly(o.ToArray())",
+                   "            Return o.ToList()")],
+         filtro="FullyQualifiedName~As_colecoes_da_autorizacao_NAO_dao_para_mexer",
+         esperados={"As_colecoes_da_autorizacao_NAO_dao_para_mexer"},
+         porque="IReadOnlyList sobre List devolve a lista viva num TryCast"),
 
     dict(nome="selecao sempre B (a corrida nao acontece)",
          edicoes=[(ADV,

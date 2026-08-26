@@ -388,6 +388,102 @@ Namespace Global.Iris.Tests
         End Sub
 
         ''' <summary>
+        ''' <b>Sem <c>provedoresPermitidos</c>, não há ativação.</b>
+        '''
+        ''' O campo era opcional e a lista vazia queria dizer "qualquer
+        ''' provedor" — então <b>esquecer o campo</b> ampliava a autorização em
+        ''' silêncio. Com gateway, "qualquer um" é a lista inteira de hospedeiros
+        ''' do modelo, e nenhum deles foi aprovado por ninguém.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Sem_provedoresPermitidos_nao_ha_ativacao()
+            Dim r = Carregar(Trocando("""provedoresPermitidos"": [""anthropic""],", ""))
+
+            Assert.AreEqual(ActivationLoadFailure.CampoFaltando, r.Falha)
+            Assert.AreEqual("provedoresPermitidos", r.Campo)
+        End Sub
+
+        ''' <summary>
+        ''' <b>Lista de provedores vazia é incoerente.</b>
+        '''
+        ''' Declarar o campo e deixá-lo vazio é a mesma ampliação, escrita de
+        ''' outro jeito. "Qualquer provedor" deixou de ser expressável de
+        ''' propósito: quem quiser isso lista os que aceita.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Lista_de_provedores_VAZIA_e_incoerente()
+            Dim r = Carregar(Trocando("""provedoresPermitidos"": [""anthropic""]",
+                                      """provedoresPermitidos"": []"))
+
+            Assert.AreEqual(ActivationLoadFailure.Incoerente, r.Falha)
+        End Sub
+
+        ''' <summary>
+        ''' <b>O verificador de plataforma recusa, e o motivo é o dele.</b>
+        '''
+        ''' A conferência de dono e permissão vive fora deste assembly, e entra
+        ''' por parâmetro. Sem esta prova, o parâmetro poderia ser ignorado e
+        ''' ninguém notaria — a proteção existiria no <c>Iris.App</c> e não
+        ''' estaria ligada a nada.
+        ''' </summary>
+        <TestMethod>
+        Public Sub O_verificador_de_plataforma_RECUSA()
+            Dim caminho = Arquivo(Boa())
+            Dim chamou = False
+
+            Dim r = ActivationLoader.Carregar(caminho, Agora,
+                                              Function(fs)
+                                                  chamou = True
+                                                  Return False
+                                              End Function)
+
+            Assert.IsTrue(chamou, "o carregador nem chamou o verificador")
+            Assert.AreEqual(ActivationLoadFailure.PermissaoRuim, r.Falha)
+            Assert.IsNull(r.Record)
+        End Sub
+
+        ''' <summary>
+        ''' Controle: verificador que aprova deixa carregar.
+        '''
+        ''' Sem ele, um carregador que recusasse sempre que houvesse verificador
+        ''' passaria no teste de cima.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Controle_verificador_que_APROVA_deixa_carregar()
+            Dim r = ActivationLoader.Carregar(Arquivo(Boa()), Agora, Function(fs) True)
+
+            Assert.IsTrue(r.Carregou, $"{r.Falha} {r.Campo}")
+        End Sub
+
+        ''' <summary>
+        ''' <b>As coleções da autorização não dão para mexer depois.</b>
+        '''
+        ''' <c>Congelar</c> devolvia <c>o.ToList()</c> tipado como
+        ''' <c>IReadOnlyList</c> — e <c>IReadOnlyList</c> não é imutável. Um
+        ''' <c>TryCast</c> de volta para <c>List(Of T)</c> devolvia a lista viva,
+        ''' e dava para acrescentar uma pasta a uma autorização <b>já lida e
+        ''' conferida</b>.
+        ''' </summary>
+        <TestMethod>
+        Public Sub As_colecoes_da_autorizacao_NAO_dao_para_mexer()
+            Dim a = Carregar(Boa()).Record
+            Assert.IsNotNull(a)
+
+            Assert.IsNull(TryCast(a.Pastas, List(Of FolderKey)),
+                          "se isto casa, da para acrescentar pasta a autorizacao pronta")
+            Assert.IsNull(TryCast(a.Operacoes, List(Of AssistOperation)))
+            Assert.IsNull(TryCast(a.ProvedoresPermitidos, List(Of String)))
+
+            ' E pela interface mutavel tambem nao: IList existe sobre array
+            ' embrulhado, e tem de dizer que e somente leitura.
+            Dim comoLista = TryCast(a.Pastas, IList(Of FolderKey))
+            Assert.IsNotNull(comoLista)
+            Assert.IsTrue(comoLista.IsReadOnly)
+            Assert.ThrowsException(Of NotSupportedException)(
+                Sub() comoLista.Add(New FolderKey("E-x", "S-x")))
+        End Sub
+
+        ''' <summary>
         ''' <b>Sem pasta nenhuma, a ativação é incompleta.</b>
         '''
         ''' Lista vazia é o que sai de um erro de digitação no nome do campo, e

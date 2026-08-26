@@ -91,9 +91,21 @@ $perigosos = [System.Security.AccessControl.FileSystemRights]::WriteData -bor
 
 Write-Host ""
 Write-Host "Arquivo: $Caminho"
-Write-Host "Dono:    $($acl.Owner)"
-if ($acl.Owner -ne [System.Security.Principal.WindowsIdentity]::GetCurrent().Name) {
-    Write-Host "  ATENCAO: o dono nao e voce. O Iris vai recusar." -ForegroundColor Red
+
+# O DONO ENTRA NA DECISAO, e comparado por SID.
+#
+# A primeira versao avisava sobre dono errado e depois decidia so pelas ACEs
+# excedentes: com dono errado e nenhuma ACE sobrando, ela imprimia "O Iris
+# aceita" e saia com 0 -- dizendo o contrario do que o Iris faria. E comparar
+# por NOME quebra com conta renomeada, dominio, ou idioma do Windows.
+$donoSid = try {
+    $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
+} catch { $null }
+
+$donoOk = ($donoSid -ne $null) -and ($donoSid.Value -eq $eu.Value)
+Write-Host ("Dono:    {0}" -f $acl.Owner)
+if (-not $donoOk) {
+    Write-Host "  SOBRA: o dono nao e voce. O Iris vai RECUSAR." -ForegroundColor Red
 }
 Write-Host ""
 
@@ -120,12 +132,20 @@ foreach ($regra in $acl.Access) {
 }
 
 Write-Host ""
-if ($intrusos.Count -eq 0) {
-    Write-Host "Ninguem a mais pode escrever. O Iris aceita." -ForegroundColor Green
+if ($intrusos.Count -eq 0 -and $donoOk) {
+    Write-Host "Ninguem a mais pode escrever, e o dono e voce. O Iris aceita." -ForegroundColor Green
     exit 0
 }
 
-Write-Host "$($intrusos.Count) identidade(s) a mais podem escrever. O Iris vai RECUSAR." -ForegroundColor Red
+if ($intrusos.Count -gt 0) {
+    Write-Host "$($intrusos.Count) identidade(s) a mais podem escrever. O Iris vai RECUSAR." -ForegroundColor Red
+}
+if (-not $donoOk) {
+    Write-Host "O dono do arquivo nao e voce. O Iris vai RECUSAR." -ForegroundColor Red
+    Write-Host "Para retomar a posse:" -ForegroundColor Cyan
+    Write-Host ("  takeown /f " + [char]34 + $Caminho + [char]34) -ForegroundColor Green
+    Write-Host ""
+}
 Write-Host ""
 Write-Host "Para consertar, rode:" -ForegroundColor Cyan
 Write-Host ""

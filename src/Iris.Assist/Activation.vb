@@ -115,13 +115,17 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property ExigirRetencaoZero As Boolean
 
         ''' <summary>
-        ''' Os provedores subjacentes que o pedido autoriza — vazio quer dizer
-        ''' <b>qualquer um</b> que satisfaça as outras restrições.
+        ''' Os provedores subjacentes que o pedido autoriza. <b>Nunca vazio</b>.
         '''
         ''' Existe porque gateway roteia: o endpoint autorizado é o do gateway, e
         ''' quem de fato processa o conteúdo pode ser outro, com região e
         ''' retenção próprias. Listar aqui é o único jeito de a autorização
         ''' falar sobre quem realmente vê a mensagem.
+        '''
+        ''' Vazio <b>já quis dizer</b> "qualquer um", e isso fazia a ausência do
+        ''' campo ampliar a autorização em silêncio. <c>Coerente()</c> recusa
+        ''' lista vazia, e o carregador exige o campo: "qualquer provedor" não é
+        ''' expressável, de propósito.
         ''' </summary>
         Public ReadOnly Property ProvedoresPermitidos As IReadOnlyList(Of String)
 

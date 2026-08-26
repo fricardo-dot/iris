@@ -34,16 +34,24 @@ Namespace Global.Iris.Tests
     Public Class PermissaoDoArquivoTests
 
         Private ReadOnly _arquivos As New List(Of String)()
+        Private ReadOnly _pastas As New List(Of String)()
 
         <TestCleanup>
         Public Sub Limpar()
-            For Each f In _arquivos
+            For Each caminho In _arquivos
                 Try
-                    If File.Exists(f) Then File.Delete(f)
+                    If File.Exists(caminho) Then File.Delete(caminho)
+                Catch
+                End Try
+            Next
+            For Each caminho In _pastas
+                Try
+                    If Directory.Exists(caminho) Then Directory.Delete(caminho, True)
                 Catch
                 End Try
             Next
             _arquivos.Clear()
+            _pastas.Clear()
         End Sub
 
         Private Shared ReadOnly Property Eu As SecurityIdentifier
@@ -162,6 +170,134 @@ Namespace Global.Iris.Tests
             fi.SetAccessControl(acl)
 
             Assert.IsTrue(Passa(caminho))
+        End Sub
+
+        ''' <summary>
+        ''' <b>ACE de escrita HERDADA do diretório reprova.</b>
+        '''
+        ''' É o caso real, e o que os outros testes deste arquivo não alcançam:
+        ''' todos eles cortam a herança para construir a ACL que medem, e a
+        ''' herança é justamente de onde veio o problema na máquina do usuário.
+        '''
+        ''' Aqui o diretório recebe uma ACE <b>herdável</b> e o arquivo nasce
+        ''' dentro dele. Ninguém escreveu nada na ACL do arquivo — e mesmo assim
+        ''' há mais gente podendo escrever.
+        ''' </summary>
+        <TestMethod>
+        Public Sub ACE_HERDADA_do_diretorio_reprova()
+            Dim pasta = Path.Combine(Path.GetTempPath(),
+                                     "iris-perm-dir-" & Guid.NewGuid().ToString("N"))
+            Directory.CreateDirectory(pasta)
+            _pastas.Add(pasta)
+
+            Dim di As New DirectoryInfo(pasta)
+            Dim aclDir = di.GetAccessControl()
+            aclDir.AddAccessRule(New FileSystemAccessRule(
+                New SecurityIdentifier(WellKnownSidType.WorldSid, Nothing),
+                FileSystemRights.Modify,
+                InheritanceFlags.ObjectInherit Or InheritanceFlags.ContainerInherit,
+                PropagationFlags.None,
+                AccessControlType.Allow))
+            di.SetAccessControl(aclDir)
+
+            Dim caminho = Path.Combine(pasta, "ativacao.json")
+            File.WriteAllText(caminho, "{}")
+
+            Assert.IsFalse(Passa(caminho),
+                           "a ACE veio da heranca, e heranca conta igual")
+        End Sub
+
+        ''' <summary>
+        ''' Controle da herança: diretório <b>sem</b> a ACE extra, arquivo passa.
+        '''
+        ''' Sem ele, o teste de cima passaria por qualquer motivo — inclusive
+        ''' porque arquivo em <c>%TEMP%</c> nunca passa.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Controle_diretorio_LIMPO_o_arquivo_passa()
+            Dim pasta = Path.Combine(Path.GetTempPath(),
+                                     "iris-perm-dir-" & Guid.NewGuid().ToString("N"))
+            Directory.CreateDirectory(pasta)
+            _pastas.Add(pasta)
+
+            Dim di As New DirectoryInfo(pasta)
+            Dim aclDir = di.GetAccessControl()
+            aclDir.SetAccessRuleProtection(True, False)
+            For Each regra In aclDir.GetAccessRules(True, False, GetType(SecurityIdentifier)).
+                              Cast(Of FileSystemAccessRule)().ToList()
+                aclDir.RemoveAccessRule(regra)
+            Next
+            aclDir.AddAccessRule(New FileSystemAccessRule(
+                Eu, FileSystemRights.FullControl,
+                InheritanceFlags.ObjectInherit Or InheritanceFlags.ContainerInherit,
+                PropagationFlags.None, AccessControlType.Allow))
+            di.SetAccessControl(aclDir)
+
+            Dim caminho = Path.Combine(pasta, "ativacao.json")
+            File.WriteAllText(caminho, "{}")
+
+            Assert.IsTrue(Passa(caminho))
+        End Sub
+
+        ''' <summary>
+        ''' <b>Cada direito de escrita reprova sozinho.</b>
+        '''
+        ''' Os outros testes davam <c>FullControl</c> ao intruso, e isso os
+        ''' deixava passar mesmo se <c>Escreve()</c> esquecesse um direito — bastaria
+        ''' reconhecer <b>um</b> deles. Aqui cada um aparece isolado, e um
+        ''' esquecimento vira uma linha vermelha com nome.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Cada_direito_de_escrita_reprova_SOZINHO()
+            For Each direito In {FileSystemRights.WriteData,
+                                 FileSystemRights.AppendData,
+                                 FileSystemRights.Delete,
+                                 FileSystemRights.ChangePermissions,
+                                 FileSystemRights.TakeOwnership}
+                Dim caminho = Arquivo()
+                Dim fi As New FileInfo(caminho)
+                Dim acl = fi.GetAccessControl()
+                acl.AddAccessRule(New FileSystemAccessRule(
+                    New SecurityIdentifier(WellKnownSidType.WorldSid, Nothing),
+                    direito, AccessControlType.Allow))
+                fi.SetAccessControl(acl)
+
+                Assert.IsFalse(Passa(caminho), $"{direito} sozinho tinha de reprovar")
+            Next
+        End Sub
+
+        ''' <summary>
+        ''' <b>Dono diferente reprova, mesmo sem ACE sobrando.</b>
+        '''
+        ''' Quem é dono pode mudar a ACL a qualquer momento, então conferir só as
+        ''' ACEs deixaria a proteção valendo até o dono decidir o contrário.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE UM ARQUIVO DO SISTEMA, E NÃO UM QUE O TESTE CRIA</b>
+        '''
+        ''' A primeira versão trocava o dono de um arquivo próprio e caía em
+        ''' <c>Inconclusive</c> quando não conseguia — que é <b>sempre</b>, numa
+        ''' sessão não elevada: o SID de Administradores entra no token como
+        ''' "deny only" e <c>SetOwner</c> falha. Um teste que se desliga sozinho e
+        ''' reporta verde é pior que teste nenhum.
+        '''
+        ''' O <c>hosts</c> é legível por qualquer usuário e pertence ao sistema.
+        ''' Não precisa de privilégio nenhum, e o dono é de verdade outro.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Dono_DIFERENTE_reprova()
+            Const doSistema = "C:\Windows\System32\drivers\etc\hosts"
+            If Not File.Exists(doSistema) Then
+                Assert.Inconclusive("esta maquina nao tem o arquivo hosts no lugar de sempre")
+            End If
+
+            Dim dono = TryCast(New FileInfo(doSistema).GetAccessControl().
+                               GetOwner(GetType(SecurityIdentifier)), SecurityIdentifier)
+            Assert.IsNotNull(dono)
+            Assert.AreNotEqual(Eu, dono,
+                               "o teste so mede alguma coisa se o dono for outro mesmo")
+
+            Assert.IsFalse(Passa(doSistema))
         End Sub
 
         ''' <summary><b>Sem fluxo, não passa.</b> Falha fechada.</summary>

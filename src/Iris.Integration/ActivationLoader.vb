@@ -117,18 +117,22 @@ Namespace Global.Iris.Integration
     ''' a diferença entre negar e nem chegar a perguntar.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>O QUE ESTE CARREGADOR NÃO CONFERE</b>
+    ''' <b>DONO E PERMISSÕES: CONFERIDOS, MAS NÃO AQUI</b>
     '''
-    ''' <b>Dono e permissões do arquivo.</b> Conferir isso exige as APIs de ACL
-    ''' do Windows, que não existem no alvo <c>net10.0</c> deste assembly sem
-    ''' arrastar uma dependência de plataforma para dentro de uma camada que hoje
-    ''' não tem nenhuma.
+    ''' Este assembly é <c>net10.0</c> e não tem — nem quer ter — dependência de
+    ''' plataforma. Por isso a conferência entra pelo parâmetro
+    ''' <c>verificador</c>, e quem monta em produção passa a de verdade
+    ''' (<c>PermissaoDoArquivo.SoMinha</c>, no <c>Iris.App</c>).
     '''
-    ''' O que se confere no lugar: que é <b>arquivo comum</b>, que <b>não é
-    ''' link</b>, e que cabe no teto. O caminho padrão fica sob
-    ''' <c>%LOCALAPPDATA%</c>, que o Windows já protege por usuário; numa máquina
-    ''' onde isso não vale, um arquivo de ativação é o menor dos problemas.
-    ''' Fica <b>declarado</b> em vez de omitido.
+    ''' <b>Ela existe porque a alternativa era falsa.</b> A primeira versão disto
+    ''' dizia que conferir não era preciso, porque <c>%LOCALAPPDATA%</c> "já é
+    ''' protegido por usuário". Numa máquina real, o arquivo de ativação tinha
+    ''' controle total herdado por um SID de <i>capability</i> e por um SID de
+    ''' outro computador, órfão de um perfil antigo. A premissa não era
+    ''' conservadora: era não verificada.
+    '''
+    ''' Sem <c>verificador</c>, o que se confere é só a forma: <b>arquivo
+    ''' comum</b>, <b>não é link</b>, e cabe no teto.
     ''' </summary>
     Public NotInheritable Class ActivationLoader
 

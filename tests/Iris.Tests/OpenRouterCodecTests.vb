@@ -164,8 +164,11 @@ Namespace Global.Iris.Tests
         ''' </summary>
         <TestMethod>
         Public Sub Allow_fallbacks_e_SEMPRE_falso()
+            ' Lista vazia saiu do laco: ela deixou de ser construivel, e o
+            ' teste ao lado prova que o adaptador a recusa.
             For Each zero In {True, False}
-                For Each slugs In {New String() {"google"}, Array.Empty(Of String)()}
+                For Each slugs In {New String() {"google"},
+                                   New String() {"google", "google-vertex"}}
                     Using doc = Corpo(Provedor(zero, slugs))
                         Assert.IsFalse(doc.RootElement.GetProperty("provider").
                                        GetProperty("allow_fallbacks").GetBoolean(),
@@ -224,20 +227,54 @@ Namespace Global.Iris.Tests
         End Sub
 
         ''' <summary>
-        ''' Controle: lista vazia não vira <c>only</c> vazio.
+        ''' <b>Ativação sem provedor subjacente não vira adaptador.</b>
         '''
-        ''' <c>"only": []</c> poderia ser lido como "nenhum provedor serve", e o
-        ''' pedido falharia por um motivo que ninguém escreveu. Ausência do
-        ''' campo é o que quer dizer "qualquer um que passe nas outras
-        ''' restrições".
+        ''' Este teste dizia o contrário: que lista vazia apenas omitia
+        ''' <c>only</c>, e que omitir era o jeito de dizer "qualquer um". Isso
+        ''' era a falha aberta — a ausência do campo ampliava a autorização.
+        '''
+        ''' O carregador passou a exigir o campo e a recusar lista vazia, e o
+        ''' adaptador recusa também: barreira que só existe a montante some
+        ''' quando alguém constrói o registro por outro caminho, e dentro deste
+        ''' assembly isso é uma linha de código.
         ''' </summary>
         <TestMethod>
-        Public Sub Controle_lista_VAZIA_nao_vira_only_vazio()
-            Using doc = Corpo(Provedor(slugs:=Array.Empty(Of String)()))
-                Dim ignorado As JsonElement = Nothing
-                Assert.IsFalse(doc.RootElement.GetProperty("provider").
-                               TryGetProperty("only", ignorado))
-            End Using
+        Public Sub Ativacao_SEM_provedor_subjacente_nao_vira_adaptador()
+            Assert.ThrowsException(Of ArgumentException)(
+                Function() Provedor(slugs:=Array.Empty(Of String)()))
+        End Sub
+
+        ''' <summary>
+        ''' <b>Ativação de outro provedor não vira adaptador do OpenRouter.</b>
+        '''
+        ''' Sem isto, um arquivo declarando outro provedor — com outro endereço —
+        ''' receberia o protocolo do OpenRouter <b>e a credencial guardada sob o
+        ''' nome dele</b>. Conteúdo da caixa indo para um endereço que alguém
+        ''' escreveu num arquivo.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Ativacao_de_OUTRO_provedor_nao_vira_adaptador()
+            Dim outra = New ActivationRecord(
+                "ativacao-1", 1, "quem", Agora.AddDays(-1),
+                "provedor-qualquer", "https://outro.invalido/v1", "modelo",
+                "local", "sem retenção",
+                {AssistOperation.Resumir}, {Pasta}, Array.Empty(Of String)(),
+                {LabelReadingKind.Absent}, {0},
+                ate:=Agora.AddDays(30), provedoresPermitidos:={"google"})
+
+            Assert.IsFalse(OpenRouterAssistantProvider.Atende(outra))
+            Assert.ThrowsException(Of ArgumentException)(
+                Function() New OpenRouterAssistantProvider(outra, Function() "chave"))
+        End Sub
+
+        ''' <summary>
+        ''' Controle: a ativação do OpenRouter <b>é</b> aceita, e a comparação
+        ''' não é sensível a maiúsculas.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Controle_a_ativacao_do_OPENROUTER_e_aceita()
+            Assert.IsTrue(OpenRouterAssistantProvider.Atende(Ativacao()))
+            Assert.IsNotNull(Provedor())
         End Sub
 
         ''' <summary><b>Temperatura zero: o mesmo e-mail dá o mesmo resumo.</b></summary>

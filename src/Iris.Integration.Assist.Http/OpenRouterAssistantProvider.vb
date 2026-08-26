@@ -115,6 +115,16 @@ Namespace Global.Iris.Integration.Assist.Http
                     "esta ativação não é para o OpenRouter", NameOf(ativacao))
             End If
 
+            ' LISTA VAZIA NAO CHEGA AQUI pelo carregador, que a recusa. Mas o
+            ' ActivationRecord e construivel dentro do assembly, e um adaptador
+            ' que aceitasse a lista vazia omitiria `only` e deixaria o gateway
+            ' rotear para qualquer hospedeiro. Barreira que so existe a montante
+            ' e barreira que some quando alguem constroi por outro caminho.
+            If ativacao.ProvedoresPermitidos.Count = 0 Then
+                Throw New ArgumentException(
+                    "a ativação não lista provedor subjacente nenhum", NameOf(ativacao))
+            End If
+
             _modelo = ativacao.Modelo
             _exigirRetencaoZero = ativacao.ExigirRetencaoZero
             _provedoresPermitidos = ativacao.ProvedoresPermitidos

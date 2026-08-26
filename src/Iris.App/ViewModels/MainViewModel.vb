@@ -442,7 +442,7 @@ Namespace Global.Iris.App.ViewModels
         ''' adaptador genérico, vira <see cref="AssistenteIndisponivel"/>. Não há
         ''' caso <c>Else</c> que "tenta assim mesmo".
         ''' </summary>
-        Private Shared Function ProvedorPara(ativacao As ActivationLoadResult) As IAssistantProvider
+        Friend Shared Function ProvedorPara(ativacao As ActivationLoadResult) As IAssistantProvider
             If Not ativacao.Carregou Then Return New AssistenteIndisponivel()
 
             If OpenRouterAssistantProvider.Atende(ativacao.Record) Then

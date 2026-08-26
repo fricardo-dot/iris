@@ -4,6 +4,8 @@ Imports System.Linq
 Imports Iris.App.ViewModels
 Imports Iris.Assist
 Imports Iris.Core
+Imports Iris.Integration
+Imports Iris.Integration.Assist.Http
 Imports Iris.Model
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
 
@@ -186,6 +188,71 @@ Namespace Global.Iris.Tests
                 "ContextoIndisponivel na producao faz o caminho central ate o " &
                 "Outlook faltar mesmo depois da cerimonia de ativacao")
         End Sub
+
+        ''' <summary>
+        ''' <b>A fábrica de provedor é fechada: o que não reconhece, recusa.</b>
+        '''
+        ''' Era um <c>If</c> que instanciava o OpenRouter para <b>qualquer</b>
+        ''' ativação carregada. Uma que declarasse outro provedor, com outro
+        ''' endereço, receberia o protocolo do OpenRouter e a credencial guardada
+        ''' sob o nome dele.
+        '''
+        ''' O que se cobra: que provedor desconhecido vire
+        ''' <c>AssistenteIndisponivel</c> — e não um adaptador genérico que
+        ''' "tenta assim mesmo".
+        ''' </summary>
+        <TestMethod>
+        Public Sub A_fabrica_de_provedor_e_FECHADA()
+            Dim desconhecido = Ativacao("provedor-que-ninguem-implementou")
+            Dim p = MainViewModel.ProvedorPara(ActivationLoadResult.Ok(desconhecido))
+
+            Assert.IsInstanceOfType(p, GetType(AssistenteIndisponivel),
+                                    "provedor desconhecido nao pode virar adaptador")
+            ' O destino existe e e VAZIO -- nao Nothing. E o vazio que faz o
+            ' portao recusar: endpoint em branco nao e HTTPS e nao casa com
+            ' autorizacao nenhuma.
+            Assert.AreEqual("", p.Destino.Endpoint,
+                            "endpoint em branco e o que faz o portao recusar antes de ler")
+            Assert.AreEqual("", p.Destino.Provedor)
+        End Sub
+
+        ''' <summary>
+        ''' Controle: o provedor <b>reconhecido</b> vira o adaptador dele.
+        '''
+        ''' Sem ele, uma fábrica que devolvesse <c>AssistenteIndisponivel</c>
+        ''' sempre passaria no teste de cima — e a IA nunca funcionaria, pelo
+        ''' motivo errado.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Controle_o_provedor_RECONHECIDO_vira_adaptador()
+            Dim p = MainViewModel.ProvedorPara(ActivationLoadResult.Ok(Ativacao("openrouter")))
+
+            Assert.IsInstanceOfType(p, GetType(OpenRouterAssistantProvider))
+        End Sub
+
+        ''' <summary>
+        ''' <b>Sem ativação carregada, não há provedor.</b> O caso de produção
+        ''' enquanto ninguém escreveu a cerimônia.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Sem_ativacao_carregada_nao_ha_provedor()
+            Dim p = MainViewModel.ProvedorPara(
+                ActivationLoadResult.Nao(ActivationLoadFailure.Ausente))
+
+            Assert.IsInstanceOfType(p, GetType(AssistenteIndisponivel))
+        End Sub
+
+        ''' <summary>Uma ativação válida que declara o provedor pedido.</summary>
+        Private Shared Function Ativacao(provedor As String) As ActivationRecord
+            Return New ActivationRecord(
+                "ativacao-1", 1, "quem", DateTimeOffset.UnixEpoch,
+                provedor, "https://exemplo.invalido/v1", "modelo-x",
+                "local", "sem retenção",
+                {AssistOperation.Resumir}, {Pasta}, Array.Empty(Of String)(),
+                {LabelReadingKind.Absent}, {0},
+                ate:=DateTimeOffset.UnixEpoch.AddDays(30),
+                provedoresPermitidos:={"algum"})
+        End Function
 
         ''' <summary>
         ''' Controle: a busca no fonte REALMENTE acusa.

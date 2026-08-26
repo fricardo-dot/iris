@@ -141,6 +141,100 @@ Public Class PontaAPontaAssistTests
     End Function
 
     ' ==================================================================
+    ' O provedor que trai depois de ter sido conferido
+
+    ''' <summary>
+    ''' <b>Um provedor que guarda o que preparou e adultera depois.</b>
+    '''
+    ''' Não é paranoia: <c>Preparar</c> devolve um arranjo que <b>ele</b> criou,
+    ''' e nada o impede de manter a referência. <c>Pronto()</c> roda <b>depois</b>
+    ''' do consumo da capability, e é ali que a adulteração passaria despercebida
+    ''' — o hash já teria sido conferido sobre o conteúdo antigo.
+    '''
+    ''' O transmissor fecha isso <b>clonando</b> o que recebe. Este duplo existe
+    ''' para provar que fecha.
+    ''' </summary>
+    Private NotInheritable Class ProvedorQueAdultera
+        Implements IAssistantProvider
+
+        Friend ReadOnly Recebidos As New List(Of Byte())()
+        ''' <summary>O arranjo que ele devolveu, guardado de propósito.</summary>
+        Friend Guardado As Byte()
+        Friend Adulterou As Boolean
+
+        Private ReadOnly _destino As AssistDestination
+
+        Friend Sub New(destino As AssistDestination)
+            _destino = destino
+        End Sub
+
+        Public ReadOnly Property Destino As AssistDestination _
+                                 Implements IAssistantProvider.Destino
+            Get
+                Return _destino
+            End Get
+        End Property
+
+        Public Function Preparar(envelope As Byte()) As Byte() _
+                                 Implements IAssistantProvider.Preparar
+            ' Prepara honestamente — e guarda a referencia.
+            Guardado = CType(envelope.Clone(), Byte())
+            Return Guardado
+        End Function
+
+        Public Function Pronto() As Boolean Implements IAssistantProvider.Pronto
+            ' AQUI. Depois do consumo da capability, antes do envio.
+            If Guardado IsNot Nothing AndAlso Guardado.Length > 0 Then
+                Guardado(0) = CByte((CInt(Guardado(0)) + 1) Mod 256)
+                Adulterou = True
+            End If
+            Return True
+        End Function
+
+        Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _
+                               Implements IAssistantProvider.Enviar
+            Recebidos.Add(CType(bytes.Clone(), Byte()))
+            Return New ProviderOutcome(ProviderStatus.Respondeu, "resumo", 200)
+        End Function
+    End Class
+
+    ''' <summary>
+    ''' <b>Adulterar o corpo depois de conferido não muda o que sai.</b>
+    '''
+    ''' O provedor guarda o arranjo que devolveu em <c>Preparar</c> e o modifica
+    ''' em <c>Pronto()</c> — que roda depois de a capability ter sido consumida.
+    ''' Sem a cópia do transmissor, os bytes adulterados sairiam com uma
+    ''' autorização perfeitamente válida, porque o hash foi conferido antes.
+    '''
+    ''' O que se cobra: que o que chegou ao <c>Enviar</c> seja o corpo
+    ''' <b>íntegro</b>, e não o que o provedor deixou no arranjo dele.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Corpo_ADULTERADO_depois_de_conferido_nao_sai()
+        Using db = Abrir()
+            Dim p As New ProvedorQueAdultera(Destino(Endereco))
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            Dim r = Executar(m.T, Endereco)
+
+            Assert.IsTrue(p.Adulterou, "o duplo tinha de ter adulterado — senao o teste nao mede nada")
+            Assert.AreEqual(AssistOutcomeKind.Respondeu, r.Kind)
+            Assert.AreEqual(1, p.Recebidos.Count)
+
+            ' O QUE SAIU E O INTEGRO. O arranjo do provedor esta um byte
+            ' diferente; o que atravessou o fio, nao.
+            Assert.AreNotEqual(p.Guardado(0), p.Recebidos(0)(0),
+                               "o que saiu e o arranjo do provedor: a copia nao aconteceu")
+
+            ' E o resto e igual, byte a byte — a diferenca e so a que ele
+            ' introduziu.
+            For i = 1 To p.Guardado.Length - 1
+                Assert.AreEqual(p.Guardado(i), p.Recebidos(0)(i), $"byte {i}")
+            Next
+        End Using
+    End Sub
+
+    ' ==================================================================
     ' O provedor falso
 
     ''' <summary>
