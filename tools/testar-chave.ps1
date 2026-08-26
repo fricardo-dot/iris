@@ -78,7 +78,7 @@ try {
                            -Headers @{ Authorization = "Bearer $chave" } `
                            -Method Get -UseBasicParsing -TimeoutSec 30
     Write-Host ""
-    Write-Host ("HTTP {0} — a chave VALE." -f [int]$r.StatusCode) -ForegroundColor Green
+    Write-Host ("HTTP {0} -- a chave VALE." -f [int]$r.StatusCode) -ForegroundColor Green
     Write-Host ""
     Write-Host "O que o OpenRouter diz dela (util para o limite que o Codex pediu):"
     Write-Host $r.Content
