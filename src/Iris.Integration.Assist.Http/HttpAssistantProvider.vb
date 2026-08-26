@@ -52,6 +52,8 @@ Namespace Global.Iris.Integration.Assist.Http
         Private ReadOnly _destino As AssistDestination
         Private ReadOnly _credencial As Func(Of String)
         Private ReadOnly _cabecalho As String
+        ''' <summary>O esquema do Authorization. "Bearer" no OpenRouter.</summary>
+        Private ReadOnly _esquema As String
         Private ReadOnly _permitirLoopbackSemTls As Boolean
 
         ''' <param name="credencial">
@@ -61,8 +63,9 @@ Namespace Global.Iris.Integration.Assist.Http
         ''' </param>
         Public Sub New(destino As AssistDestination, credencial As Func(Of String),
                        Optional cabecalho As String = "Authorization",
-                       Optional tempoLimite As TimeSpan = Nothing)
-            Me.New(destino, credencial, cabecalho, tempoLimite, False)
+                       Optional tempoLimite As TimeSpan = Nothing,
+                       Optional esquema As String = "Bearer")
+            Me.New(destino, credencial, cabecalho, tempoLimite, False, esquema)
         End Sub
 
         ''' <summary>
@@ -78,10 +81,12 @@ Namespace Global.Iris.Integration.Assist.Http
         ''' </summary>
         Friend Sub New(destino As AssistDestination, credencial As Func(Of String),
                        cabecalho As String, tempoLimite As TimeSpan,
-                       permitirLoopbackSemTls As Boolean)
+                       permitirLoopbackSemTls As Boolean,
+                       Optional esquema As String = "Bearer")
             _destino = destino
             _credencial = credencial
             _cabecalho = cabecalho
+            _esquema = esquema
             _permitirLoopbackSemTls = permitirLoopbackSemTls
 
             Dim h As New HttpClientHandler With {
@@ -163,7 +168,23 @@ Namespace Global.Iris.Integration.Assist.Http
                     pedido.Content.Headers.ContentType =
                         New Headers.MediaTypeHeaderValue("application/json") With {
                             .CharSet = "utf-8"}
-                    pedido.Headers.TryAddWithoutValidation(_cabecalho, chave)
+                    ' AUTHORIZATION VAI PELA API TIPADA, e nao por
+                    ' TryAddWithoutValidation.
+                    '
+                    ' "Sem validacao" quer dizer exatamente isso: uma chave com
+                    ' quebra de linha dentro viraria cabecalho a mais na
+                    ' requisicao. O AuthenticationHeaderValue recusa.
+                    '
+                    ' E o esquema fica em codigo, e nao embutido no segredo:
+                    ' credencial que carrega "Bearer " dentro e credencial que
+                    ' alguem um dia cola sem o prefixo e nao entende por que
+                    ' parou de funcionar.
+                    If String.Equals(_cabecalho, "Authorization", StringComparison.Ordinal) Then
+                        pedido.Headers.Authorization =
+                            New Headers.AuthenticationHeaderValue(_esquema, chave)
+                    Else
+                        pedido.Headers.TryAddWithoutValidation(_cabecalho, chave)
+                    End If
 
                     ' UMA chamada. Sem laco, sem politica de retry, sem
                     ' HttpClient com handler que repete: comecou, acabou.

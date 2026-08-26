@@ -314,7 +314,11 @@ Public Class TransporteTests
             Using p = Provedor(s, chave:="segredo-abc")
                 p.Enviar(Bytes("carga"), CancellationToken.None)
 
-                Assert.AreEqual("segredo-abc", s.Ultimo.Cabecalhos("Authorization"))
+                ' COM O ESQUEMA, e exatamente uma vez. A chave crua no
+                ' cabecalho obrigaria quem configura a colar "Bearer " dentro
+                ' do segredo — e o dia em que alguem esquecesse, o Iris mandaria
+                ' um Authorization malformado sem ninguem notar.
+                Assert.AreEqual("Bearer segredo-abc", s.Ultimo.Cabecalhos("Authorization"))
                 Assert.IsFalse(s.Ultimo.Caminho.Contains("segredo"),
                                "credencial em query string vaza em log e proxy")
             End Using
@@ -339,8 +343,8 @@ Public Class TransporteTests
                 atual = "segunda"
                 p.Enviar(Bytes("b"), CancellationToken.None)
 
-                Assert.AreEqual("primeira", s.Recebidos(0).Cabecalhos("Authorization"))
-                Assert.AreEqual("segunda", s.Recebidos(1).Cabecalhos("Authorization"))
+                Assert.AreEqual("Bearer primeira", s.Recebidos(0).Cabecalhos("Authorization"))
+                Assert.AreEqual("Bearer segunda", s.Recebidos(1).Cabecalhos("Authorization"))
             End Using
         End Using
     End Sub
