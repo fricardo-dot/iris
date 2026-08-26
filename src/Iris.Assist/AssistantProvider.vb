@@ -31,6 +31,18 @@ Namespace Global.Iris.Assist
         ''' resumo cortado no meio parece um resumo.
         ''' </summary>
         RespostaGrandeDemais
+
+        ''' <summary>
+        ''' Respondeu, e <b>não deu para ler</b> a resposta.
+        '''
+        ''' Estado próprio, e não <see cref="Respondeu"/> com texto vazio: as
+        ''' duas coisas são diferentes para quem lê a tela depois. "O provedor
+        ''' não tinha o que dizer" e "o provedor disse algo que o Iris não
+        ''' entendeu" levam a investigações diferentes.
+        '''
+        ''' E não é <see cref="NaoComecou"/>: o conteúdo <b>saiu</b>.
+        ''' </summary>
+        RespostaIlegivel
     End Enum
 
     ''' <summary>
@@ -104,6 +116,36 @@ Namespace Global.Iris.Assist
         ''' egress é mutação do mundo, e repetir depois de começar pode mandar
         ''' o mesmo conteúdo duas vezes.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Traduz o envelope no corpo que este provedor aceita.</b> Local,
+        ''' puro, e <b>sem rede</b>.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE ISTO EXISTE, E POR QUE ACONTECE ANTES DA CAPABILITY</b>
+        '''
+        ''' O envelope é o formato do Iris; nenhum provedor real aceita ele. A
+        ''' primeira versão deste desenho deixava o adaptador reescrever os bytes
+        ''' na hora de enviar — e aí <b>o que ia no fio não era o que a
+        ''' capability tinha coberto</b>. A autorização falava de um artefato e a
+        ''' rede transportava outro.
+        '''
+        ''' Agora a tradução acontece <b>antes</b> da emissão, e a capability
+        ''' cobre os dois: o envelope, pela proveniência, e o corpo, porque é ele
+        ''' que sai. <see cref="Enviar"/> volta a valer ao pé da letra: manda
+        ''' exatamente estes bytes.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE UMA IMPLEMENTAÇÃO PODE E NÃO PODE FAZER</b>
+        '''
+        ''' Pode <b>embrulhar</b> o envelope e acrescentar o que vem da
+        ''' <b>autorização</b> — modelo, restrição de roteamento. Não pode
+        ''' acrescentar conteúdo que a autorização não cobre, não pode ler nada
+        ''' de fora, e não pode tocar na rede.
+        '''
+        ''' <c>Nothing</c> quer dizer que não deu para preparar, e nada sai.
+        ''' </summary>
+        Function Preparar(envelope As Byte()) As Byte()
+
         Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome
 
         ''' <summary>Para onde este provedor manda. Fixo, e nunca vindo do prompt.</summary>
@@ -157,6 +199,12 @@ Namespace Global.Iris.Assist
 
         Public Function Pronto() As Boolean Implements IAssistantProvider.Pronto
             Return False
+        End Function
+
+        ''' <summary>Não prepara nada: não há para onde mandar.</summary>
+        Public Function Preparar(envelope As Byte()) As Byte() _
+                                 Implements IAssistantProvider.Preparar
+            Return Nothing
         End Function
 
         Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _

@@ -153,6 +153,12 @@ Namespace Global.Iris.Tests
                 End Get
             End Property
 
+            ''' <summary>Identidade: o duplo manda o envelope como ele e.</summary>
+            Public Function Preparar(envelope As Byte()) As Byte() _
+                                     Implements IAssistantProvider.Preparar
+                Return envelope
+            End Function
+
             Public Function Pronto() As Boolean Implements IAssistantProvider.Pronto
                 Return True
             End Function

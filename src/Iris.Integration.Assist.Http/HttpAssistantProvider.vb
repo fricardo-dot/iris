@@ -117,6 +117,23 @@ Namespace Global.Iris.Integration.Assist.Http
             Return Not String.IsNullOrEmpty(If(_credencial Is Nothing, Nothing, _credencial()))
         End Function
 
+        ''' <summary>
+        ''' <b>Identidade</b>: este transporte manda o envelope como ele é.
+        '''
+        ''' Existe para o provedor que aceita o formato do Iris — hoje, o servidor
+        ''' de teste. Provedor real tem formato próprio, e quem traduz é a
+        ''' implementação dele (ver <c>OpenRouterAssistantProvider</c>).
+        '''
+        ''' Devolver uma <b>cópia</b> e não o mesmo arranjo: quem chamou continua
+        ''' dono do envelope, e um adaptador que escrevesse no lugar mudaria os
+        ''' bytes que a capability cobre.
+        ''' </summary>
+        Public Function Preparar(envelope As Byte()) As Byte() _
+                                 Implements IAssistantProvider.Preparar
+            If envelope Is Nothing Then Return Nothing
+            Return CType(envelope.Clone(), Byte())
+        End Function
+
         Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _
                                Implements IAssistantProvider.Enviar
 

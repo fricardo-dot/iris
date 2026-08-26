@@ -175,6 +175,12 @@ Public Class PontaAPontaAssistTests
         Friend Property ExplodirNoPronto As Boolean
         Friend Property ExplodirNoEnviar As Boolean
 
+        ''' <summary>Identidade: o duplo manda o envelope como ele e.</summary>
+        Public Function Preparar(envelope As Byte()) As Byte() _
+                                 Implements IAssistantProvider.Preparar
+            Return envelope
+        End Function
+
         Public Function Pronto() As Boolean Implements IAssistantProvider.Pronto
             If ExplodirNoPronto Then
                 Throw New InvalidOperationException("SEGREDO-DA-EXCECAO-DO-PRONTO")
@@ -344,7 +350,21 @@ Public Class PontaAPontaAssistTests
             Dim r = Executar(m.T, Endereco)
 
             Assert.AreEqual(AssistOutcomeKind.Recusado, r.Kind)
-            Assert.AreEqual(DisclosureStage.NaoEnviada, m.J.Ler(1)(0).Estagio)
+            Assert.AreEqual(DisclosureNote.CorpoNaoPreparado, r.Nota)
+
+            ' E NAO HA LINHA DE DIARIO, e isto mudou de proposito.
+            '
+            ' Antes o provedor da producao recusava no Pronto(), DEPOIS de a
+            ' intencao ter sido registrada, e sobrava uma linha "NaoEnviada".
+            ' Agora ele recusa em Preparar(), antes de existir capability — e
+            ' sem capability nao ha RequestId sob o qual escrever.
+            '
+            ' O diario registra DIVULGACAO, e aqui nao houve nem autorizacao:
+            ' e a mesma classe de "o portao negou" e "o envelope foi recusado",
+            ' que tambem nao deixam linha. Inventar uma diria que algo foi
+            ' tentado sob uma autorizacao que ninguem emitiu.
+            Assert.AreEqual(0, m.J.Ler(10).Count,
+                            "nao houve autorizacao: nao ha divulgacao a registrar")
         End Using
     End Sub
 

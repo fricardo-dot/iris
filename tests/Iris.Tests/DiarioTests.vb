@@ -104,7 +104,7 @@ Public Class DiarioTests
         Assert.IsTrue(env.Ok, $"{env.Recusa}")
 
         Dim cofre As New CapabilityLedger()
-        Dim c = cofre.Emitir(d, env.Envelope, Agora)
+        Dim c = cofre.Emitir(d, env.Envelope, env.Envelope.Bytes(), Agora)
         Assert.IsNotNull(c)
         Return (c, cofre)
     End Function

@@ -73,6 +73,16 @@ Namespace Global.Iris.Assist
         CapabilityRecusada
         ''' <summary>O envelope não pôde ser montado.</summary>
         EnvelopeRecusado
+        ''' <summary>
+        ''' O provedor não conseguiu traduzir o envelope no corpo dele. Nada
+        ''' saiu, e isso se sabe: a tradução é local e não toca na rede.
+        ''' </summary>
+        CorpoNaoPreparado
+        ''' <summary>
+        ''' O provedor respondeu e a resposta não deu para ler. <b>O conteúdo
+        ''' saiu</b> — é falha depois do voo, e não recusa.
+        ''' </summary>
+        RespostaIlegivel
         ''' <summary>O conteúdo não pôde ser preparado.</summary>
         ConteudoRecusado
         ''' <summary>
@@ -143,7 +153,8 @@ Namespace Global.Iris.Assist
             Select Case n
                 Case DisclosureNote.Timeout, DisclosureNote.Cancelado,
                      DisclosureNote.ConexaoCaiu, DisclosureNote.ProvedorRecusou,
-                     DisclosureNote.ProcessoMorreuEmVoo
+                     DisclosureNote.ProcessoMorreuEmVoo,
+                     DisclosureNote.RespostaIlegivel
                     Return True
                 Case Else
                     Return False
@@ -158,6 +169,7 @@ Namespace Global.Iris.Assist
             Select Case n
                 Case DisclosureNote.PortaoNegou, DisclosureNote.CapabilityRecusada,
                      DisclosureNote.EnvelopeRecusado, DisclosureNote.ConteudoRecusado,
+                     DisclosureNote.CorpoNaoPreparado,
                      DisclosureNote.ProvedorIndisponivel,
                      DisclosureNote.ProcessoMorreuAntesDeTransmitir
                     Return True

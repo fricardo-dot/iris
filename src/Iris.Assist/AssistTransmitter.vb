@@ -138,9 +138,25 @@ Namespace Global.Iris.Assist
                 Return Parar(AssistOutcomeKind.Recusado, DisclosureNote.EnvelopeRecusado)
             End If
 
-            ' 2. a capability, sobre AQUELES bytes.
+            ' 2. O CORPO, traduzido para o formato do provedor — local, puro,
+            '    sem rede, e ANTES da capability.
+            '
+            '    A ordem e o ponto. Traduzir depois de autorizar faria a
+            '    capability cobrir o envelope e a rede transportar outra coisa:
+            '    a autorizacao falaria de um artefato e o fio levaria outro.
+            Dim corpo As Byte()
+            Try
+                corpo = _provedor.Preparar(env.Envelope.Bytes())
+            Catch
+                corpo = Nothing
+            End Try
+            If corpo Is Nothing OrElse corpo.Length = 0 Then
+                Return Parar(AssistOutcomeKind.Recusado, DisclosureNote.CorpoNaoPreparado)
+            End If
+
+            ' 3. a capability, sobre AQUELES bytes — o envelope e o corpo.
             Dim agora = _relogio()
-            Dim cap = _cofre.Emitir(decisao, env.Envelope, agora)
+            Dim cap = _cofre.Emitir(decisao, env.Envelope, corpo, agora)
             If cap Is Nothing Then
                 Return Parar(AssistOutcomeKind.Recusado, DisclosureNote.CapabilityRecusada)
             End If
@@ -158,7 +174,7 @@ Namespace Global.Iris.Assist
 
             ' 4. o consumo — e ele confere bytes, itens, versoes, destino e
             '    operacao contra o que foi autorizado.
-            Dim uso = _cofre.Consumir(cap, env.Envelope, _provedor.Destino,
+            Dim uso = _cofre.Consumir(cap, env.Envelope, corpo, _provedor.Destino,
                                       pedido.Operacao, _relogio())
             If Not uso.Autorizado Then
                 ' Nada saiu — mas se o diario nao registrar isso, o registro
@@ -214,7 +230,7 @@ Namespace Global.Iris.Assist
             '    pedaco do que foi enviado — atravessa a fronteira.
             Dim r As ProviderOutcome
             Try
-                r = _provedor.Enviar(env.Envelope.Bytes(), ct)
+                r = _provedor.Enviar(corpo, ct)
             Catch
                 r = New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
             End Try
@@ -312,6 +328,8 @@ Namespace Global.Iris.Assist
                 Case ProviderStatus.Cancelado : Return DisclosureNote.Cancelado
                 Case ProviderStatus.Recusou, ProviderStatus.RespostaGrandeDemais
                     Return DisclosureNote.ProvedorRecusou
+                Case ProviderStatus.RespostaIlegivel
+                    Return DisclosureNote.RespostaIlegivel
                 Case Else : Return DisclosureNote.ConexaoCaiu
             End Select
         End Function

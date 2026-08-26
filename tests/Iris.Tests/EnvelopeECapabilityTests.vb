@@ -75,6 +75,18 @@ Public Class EnvelopeECapabilityTests
     End Function
 
     ''' <summary>Monta e exige sucesso — o caso comum dos testes.</summary>
+    ''' <summary>
+    ''' Emite cobrindo o envelope E o corpo dele.
+    '''
+    ''' O corpo do transporte de identidade e o proprio envelope; escrever
+    ''' `e.Bytes()` em cada chamada so faria ruido.
+    ''' </summary>
+    Private Shared Function Emitir(cofre As CapabilityLedger, d As DisclosureDecision,
+                                   e As AssistEnvelope,
+                                   agora As DateTimeOffset) As DisclosureCapability
+        Return cofre.Emitir(d, e, If(e Is Nothing, Nothing, e.Bytes()), agora)
+    End Function
+
     Private Shared Function Env(b As EnvelopeBuilder, operacao As AssistOperation,
                                 instrucao As String,
                                 partes As IReadOnlyList(Of MessagePart)) As AssistEnvelope
@@ -284,14 +296,14 @@ Public Class EnvelopeECapabilityTests
     Public Sub Capability_emitida_e_consumida_uma_vez_AUTORIZA()
         Dim cofre As New CapabilityLedger()
         Dim e = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
-        Dim c = cofre.Emitir(Permitida(), e, Agora)
+        Dim c = Emitir(cofre, Permitida(), e, Agora)
 
         Assert.IsNotNull(c)
         Assert.AreEqual(e.Hash, c.Hash)
         Assert.AreEqual("ativacao-1", c.AtivacaoId)
         Assert.AreEqual(3, c.AtivacaoVersao, "a VERSAO da ativacao tambem")
 
-        Dim uso = cofre.Consumir(c, e, Destino(), AssistOperation.Resumir, Agora)
+        Dim uso = cofre.Consumir(c, e, e.Bytes(), Destino(), AssistOperation.Resumir, Agora)
         Assert.IsTrue(uso.Autorizado, $"recusou por {uso.Recusa}")
     End Sub
 
@@ -305,8 +317,8 @@ Public Class EnvelopeECapabilityTests
             New DisclosureRequest(Voo(), {Mensagem(1)}), Agora)
         Assert.IsFalse(negada.Permitido, "controle")
 
-        Dim c = New CapabilityLedger().Emitir(
-            negada, Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)}), Agora)
+        Dim eNegado = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
+        Dim c = New CapabilityLedger().Emitir(negada, eNegado, eNegado.Bytes(), Agora)
 
         Assert.IsNull(c)
     End Sub
@@ -316,11 +328,11 @@ Public Class EnvelopeECapabilityTests
     Public Sub Consumo_e_UNICO()
         Dim cofre As New CapabilityLedger()
         Dim e = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
-        Dim c = cofre.Emitir(Permitida(), e, Agora)
+        Dim c = Emitir(cofre, Permitida(), e, Agora)
 
-        Assert.IsTrue(cofre.Consumir(c, e, Destino(), AssistOperation.Resumir, Agora).Autorizado)
+        Assert.IsTrue(cofre.Consumir(c, e, e.Bytes(), Destino(), AssistOperation.Resumir, Agora).Autorizado)
 
-        Dim segundo = cofre.Consumir(c, e, Destino(), AssistOperation.Resumir, Agora)
+        Dim segundo = cofre.Consumir(c, e, e.Bytes(), Destino(), AssistOperation.Resumir, Agora)
         Assert.IsFalse(segundo.Autorizado)
         Assert.AreEqual(CapabilityRefusal.JaConsumida, segundo.Recusa)
     End Sub
@@ -339,10 +351,10 @@ Public Class EnvelopeECapabilityTests
         Dim autorizado = Env(b, AssistOperation.Resumir, "x", {Parte(1)})
         Dim outro = Env(b, AssistOperation.Resumir, "x", {Parte(1), Parte(2)})
 
-        Dim c = cofre.Emitir(Permitida(), autorizado, Agora)
+        Dim c = Emitir(cofre, Permitida(), autorizado, Agora)
         Assert.IsNotNull(c, "controle: o envelope aprovado emite")
 
-        Dim uso = cofre.Consumir(c, outro, Destino(), AssistOperation.Resumir, Agora)
+        Dim uso = cofre.Consumir(c, outro, outro.Bytes(), Destino(), AssistOperation.Resumir, Agora)
         Assert.IsFalse(uso.Autorizado)
         Assert.AreEqual(CapabilityRefusal.BytesDiferentes, uso.Recusa)
     End Sub
@@ -364,13 +376,14 @@ Public Class EnvelopeECapabilityTests
         Dim cofre As New CapabilityLedger()
         Dim b As New EnvelopeBuilder()
         Dim autorizado = Env(b, AssistOperation.Resumir, "x", {Parte(1)})
-        Dim c = cofre.Emitir(Permitida(), autorizado, Agora)
+        Dim c = Emitir(cofre, Permitida(), autorizado, Agora)
 
-        Dim errada = cofre.Consumir(c, Env(b, AssistOperation.Resumir, "x", {Parte(2)}),
+        Dim outroEnv = Env(b, AssistOperation.Resumir, "x", {Parte(2)})
+        Dim errada = cofre.Consumir(c, outroEnv, outroEnv.Bytes(),
                                     Destino(), AssistOperation.Resumir, Agora)
         Assert.IsFalse(errada.Autorizado, "controle")
 
-        Dim segunda = cofre.Consumir(c, autorizado, Destino(), AssistOperation.Resumir, Agora)
+        Dim segunda = cofre.Consumir(c, autorizado, autorizado.Bytes(), Destino(), AssistOperation.Resumir, Agora)
         Assert.IsTrue(segunda.Autorizado,
             "uma conferencia local errada NAO pode destruir a autorizacao: " &
             "qualquer codigo com a referencia queimaria a capability de terceiro")
@@ -380,9 +393,9 @@ Public Class EnvelopeECapabilityTests
     Public Sub Capability_EXPIRADA_e_recusada()
         Dim cofre As New CapabilityLedger()
         Dim e = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
-        Dim c = cofre.Emitir(Permitida(), e, Agora)
+        Dim c = Emitir(cofre, Permitida(), e, Agora)
 
-        Dim uso = cofre.Consumir(c, e, Destino(), AssistOperation.Resumir,
+        Dim uso = cofre.Consumir(c, e, e.Bytes(), Destino(), AssistOperation.Resumir,
                                  Agora + CapabilityLedger.Validade + TimeSpan.FromSeconds(1))
 
         Assert.AreEqual(CapabilityRefusal.Expirada, uso.Recusa)
@@ -393,9 +406,9 @@ Public Class EnvelopeECapabilityTests
     Public Sub Destino_TROCADO_e_recusado()
         Dim cofre As New CapabilityLedger()
         Dim e = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
-        Dim c = cofre.Emitir(Permitida(), e, Agora)
+        Dim c = Emitir(cofre, Permitida(), e, Agora)
 
-        Dim uso = cofre.Consumir(c, e,
+        Dim uso = cofre.Consumir(c, e, e.Bytes(),
             New AssistDestination("provedor-de-teste", "https://outro.invalido/v1",
                                   "modelo-de-teste"),
             AssistOperation.Resumir, Agora)
@@ -408,9 +421,9 @@ Public Class EnvelopeECapabilityTests
     Public Sub Modelo_TROCADO_e_recusado()
         Dim cofre As New CapabilityLedger()
         Dim e = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
-        Dim c = cofre.Emitir(Permitida(), e, Agora)
+        Dim c = Emitir(cofre, Permitida(), e, Agora)
 
-        Dim uso = cofre.Consumir(c, e, Destino("outro-modelo"), AssistOperation.Resumir, Agora)
+        Dim uso = cofre.Consumir(c, e, e.Bytes(), Destino("outro-modelo"), AssistOperation.Resumir, Agora)
 
         Assert.AreEqual(CapabilityRefusal.DestinoDiferente, uso.Recusa)
     End Sub
@@ -419,9 +432,9 @@ Public Class EnvelopeECapabilityTests
     Public Sub Operacao_TROCADA_e_recusada()
         Dim cofre As New CapabilityLedger()
         Dim e = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
-        Dim c = cofre.Emitir(Permitida(), e, Agora)
+        Dim c = Emitir(cofre, Permitida(), e, Agora)
 
-        Dim uso = cofre.Consumir(c, e, Destino(), AssistOperation.Redigir, Agora)
+        Dim uso = cofre.Consumir(c, e, e.Bytes(), Destino(), AssistOperation.Redigir, Agora)
 
         Assert.AreEqual(CapabilityRefusal.OperacaoDiferente, uso.Recusa)
     End Sub
@@ -435,9 +448,9 @@ Public Class EnvelopeECapabilityTests
     <TestMethod>
     Public Sub Capability_de_OUTRO_cofre_e_desconhecida()
         Dim e = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
-        Dim estranha = New CapabilityLedger().Emitir(Permitida(), e, Agora)
+        Dim estranha = New CapabilityLedger().Emitir(Permitida(), e, e.Bytes(), Agora)
 
-        Dim uso = New CapabilityLedger().Consumir(estranha, e, Destino(),
+        Dim uso = New CapabilityLedger().Consumir(estranha, e, e.Bytes(), Destino(),
                                                   AssistOperation.Resumir, Agora)
 
         Assert.AreEqual(CapabilityRefusal.Desconhecida, uso.Recusa)
@@ -445,8 +458,9 @@ Public Class EnvelopeECapabilityTests
 
     <TestMethod>
     Public Sub Capability_NULA_e_recusada()
+        Dim envQualquer = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
         Dim uso = New CapabilityLedger().Consumir(
-            Nothing, Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)}),
+            Nothing, envQualquer, envQualquer.Bytes(),
             Destino(), AssistOperation.Resumir, Agora)
 
         Assert.AreEqual(CapabilityRefusal.Desconhecida, uso.Recusa)
@@ -465,7 +479,7 @@ Public Class EnvelopeECapabilityTests
         Dim cofre As New CapabilityLedger()
         Dim e = Env(New EnvelopeBuilder(), AssistOperation.Resumir, isca,
                                              {Parte(1, isca)})
-        Dim c = cofre.Emitir(Permitida(), e, Agora)
+        Dim c = Emitir(cofre, Permitida(), e, Agora)
 
         Dim tudo = String.Join("|", {c.Id.ToString(), c.AtivacaoId, c.Hash,
                                      c.Comprimento.ToString(), c.Operacao.ToString(),
@@ -494,20 +508,20 @@ Public Class EnvelopeECapabilityTests
 
         Dim aprovado = Permitida(1, 2)
         Assert.IsTrue(aprovado.Permitido, "controle")
-        Assert.IsNotNull(cofre.Emitir(aprovado, Env(b, AssistOperation.Resumir, "x",
+        Assert.IsNotNull(Emitir(cofre, aprovado, Env(b, AssistOperation.Resumir, "x",
                                                     {Parte(1), Parte(2)}), Agora),
                          "controle: os itens aprovados emitem")
 
-        Assert.IsNull(cofre.Emitir(aprovado, Env(b, AssistOperation.Resumir, "x",
+        Assert.IsNull(Emitir(cofre, aprovado, Env(b, AssistOperation.Resumir, "x",
                                                  {Parte(1), Parte(3)}), Agora),
                       "item TROCADO nao foi aprovado")
-        Assert.IsNull(cofre.Emitir(aprovado, Env(b, AssistOperation.Resumir, "x",
+        Assert.IsNull(Emitir(cofre, aprovado, Env(b, AssistOperation.Resumir, "x",
                                                  {Parte(1)}), Agora),
                       "item A MENOS nao foi aprovado")
-        Assert.IsNull(cofre.Emitir(aprovado, Env(b, AssistOperation.Resumir, "x",
+        Assert.IsNull(Emitir(cofre, aprovado, Env(b, AssistOperation.Resumir, "x",
                                                  {Parte(1), Parte(2), Parte(3)}), Agora),
                       "item A MAIS nao foi aprovado")
-        Assert.IsNull(cofre.Emitir(aprovado, Env(b, AssistOperation.Resumir, "x",
+        Assert.IsNull(Emitir(cofre, aprovado, Env(b, AssistOperation.Resumir, "x",
                                                  {Parte(2), Parte(1)}), Agora),
                       "ordem TROCADA nao foi aprovada")
     End Sub
@@ -518,9 +532,9 @@ Public Class EnvelopeECapabilityTests
     ''' </summary>
     <TestMethod>
     Public Sub A_capability_se_serve_do_GRANT()
-        Dim c = New CapabilityLedger().Emitir(
-            Permitida(1, 2), Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x",
-                                 {Parte(1), Parte(2)}), Agora)
+        Dim eDois = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x",
+                        {Parte(1), Parte(2)})
+        Dim c = Emitir(New CapabilityLedger(), Permitida(1, 2), eDois, Agora)
 
         Assert.AreEqual("ativacao-1", c.AtivacaoId)
         Assert.AreEqual(3, c.AtivacaoVersao)
@@ -543,7 +557,7 @@ Public Class EnvelopeECapabilityTests
         Dim e = Env(New EnvelopeBuilder(teto:=4000), AssistOperation.Resumir, "x", gordas)
         Assert.IsTrue(e.Truncado, "controle: tinha de truncar")
 
-        Assert.IsNull(New CapabilityLedger().Emitir(Permitida(1, 2), e, Agora))
+        Assert.IsNull(New CapabilityLedger().Emitir(Permitida(1, 2), e, e.Bytes(), Agora))
     End Sub
 
     ''' <summary>E corpo pela metade também não.</summary>
@@ -553,7 +567,7 @@ Public Class EnvelopeECapabilityTests
                     {Parte(1, "meio corpo", completo:=False)})
         Assert.IsTrue(e.CorpoIncompleto, "controle")
 
-        Assert.IsNull(New CapabilityLedger().Emitir(Permitida(), e, Agora))
+        Assert.IsNull(New CapabilityLedger().Emitir(Permitida(), e, e.Bytes(), Agora))
     End Sub
 
     ''' <summary>
@@ -572,10 +586,10 @@ Public Class EnvelopeECapabilityTests
         Assert.AreEqual(um.Hash, outro.Hash, "e por isso que o hash nao basta")
 
         Dim cofre As New CapabilityLedger()
-        Dim c = cofre.Emitir(Permitida(1), um, Agora)
+        Dim c = Emitir(cofre, Permitida(1), um, Agora)
         Assert.IsNotNull(c, "controle")
 
-        Dim uso = cofre.Consumir(c, outro, Destino(), AssistOperation.Resumir, Agora)
+        Dim uso = cofre.Consumir(c, outro, outro.Bytes(), Destino(), AssistOperation.Resumir, Agora)
         Assert.AreEqual(CapabilityRefusal.ProveniencaDiferente, uso.Recusa)
     End Sub
 
@@ -610,8 +624,8 @@ Public Class EnvelopeECapabilityTests
 
         Dim d = New DisclosurePolicy(curta).Decidir(
             New DisclosureRequest(Voo(), {Mensagem(1)}), Agora)
-        Dim c = New CapabilityLedger().Emitir(
-            d, Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)}), Agora)
+        Dim eUm = Env(New EnvelopeBuilder(), AssistOperation.Resumir, "x", {Parte(1)})
+        Dim c = Emitir(New CapabilityLedger(), d, eUm, Agora)
 
         Assert.AreEqual(vence, c.Expira,
             "a ativacao vence antes da validade de dois minutos")
@@ -684,11 +698,11 @@ Public Class EnvelopeECapabilityTests
         Dim b As New EnvelopeBuilder()
         Dim aprovado = Permitida(1)
 
-        Assert.IsNotNull(cofre.Emitir(aprovado,
+        Assert.IsNotNull(Emitir(cofre, aprovado,
             Env(b, AssistOperation.Resumir, "x", {Parte(1, changeKey:="CK-1")}), Agora),
             "controle: a versao aprovada emite")
 
-        Assert.IsNull(cofre.Emitir(aprovado,
+        Assert.IsNull(Emitir(cofre, aprovado,
             Env(b, AssistOperation.Resumir, "x", {Parte(1, changeKey:="CK-2")}), Agora),
             "o item e o mesmo, a VERSAO nao — e foi a versao que passou pelo portao")
     End Sub
@@ -698,10 +712,11 @@ Public Class EnvelopeECapabilityTests
     Public Sub Versao_trocada_no_consumo_e_ProveniencaDiferente()
         Dim cofre As New CapabilityLedger()
         Dim b As New EnvelopeBuilder()
-        Dim c = cofre.Emitir(Permitida(1),
+        Dim c = Emitir(cofre, Permitida(1),
                              Env(b, AssistOperation.Resumir, "x", {Gemea(1, "CK-1")}), Agora)
 
-        Dim uso = cofre.Consumir(c, Env(b, AssistOperation.Resumir, "x", {Gemea(1, "CK-9")}),
+        Dim envGemeo = Env(b, AssistOperation.Resumir, "x", {Gemea(1, "CK-9")})
+        Dim uso = cofre.Consumir(c, envGemeo, envGemeo.Bytes(),
                                  Destino(), AssistOperation.Resumir, Agora)
 
         Assert.AreEqual(CapabilityRefusal.ProveniencaDiferente, uso.Recusa)
@@ -724,19 +739,20 @@ Public Class EnvelopeECapabilityTests
         Dim cofre As New CapabilityLedger()
         Dim b As New EnvelopeBuilder()
         Dim e = Env(b, AssistOperation.Resumir, "x", {Parte(1)})
-        Dim boa = cofre.Emitir(Permitida(1), e, Agora)
+        Dim boa = Emitir(cofre, Permitida(1), e, Agora)
 
         ' Um sosia: mesmo Id, hash de outro envelope.
         Dim outroEnvelope = Env(b, AssistOperation.Resumir, "y", {Parte(1)})
         Dim sosia As New DisclosureCapability(boa.Id, Guid.NewGuid(), Permitida(1).Grant,
                                               outroEnvelope.Hash, outroEnvelope.Comprimento,
+                                              "hash-de-outro-corpo", outroEnvelope.Comprimento,
                                               Agora, Agora.AddMinutes(1))
 
-        Dim uso = cofre.Consumir(sosia, outroEnvelope, Destino(), AssistOperation.Resumir, Agora)
+        Dim uso = cofre.Consumir(sosia, outroEnvelope, outroEnvelope.Bytes(), Destino(), AssistOperation.Resumir, Agora)
 
         Assert.IsFalse(uso.Autorizado)
         Assert.AreEqual(CapabilityRefusal.Desconhecida, uso.Recusa)
-        Assert.IsTrue(cofre.Consumir(boa, e, Destino(), AssistOperation.Resumir, Agora).Autorizado,
+        Assert.IsTrue(cofre.Consumir(boa, e, e.Bytes(), Destino(), AssistOperation.Resumir, Agora).Autorizado,
                       "e a de verdade continua valendo — o sosia nao a queimou")
     End Sub
 
@@ -791,10 +807,10 @@ Public Class EnvelopeECapabilityTests
         Dim b As New EnvelopeBuilder()
         Dim aprovado = Permitida(1)
 
-        Assert.IsNotNull(cofre.Emitir(aprovado,
+        Assert.IsNotNull(Emitir(cofre, aprovado,
             Env(b, AssistOperation.Resumir, "x", {Parte(1)}), Agora), "controle")
 
-        Assert.IsNull(cofre.Emitir(aprovado,
+        Assert.IsNull(Emitir(cofre, aprovado,
             Env(b, AssistOperation.Redigir, "x", {Parte(1)}), Agora),
             "os bytes dizem Redigir e o grant aprovou Resumir")
     End Sub

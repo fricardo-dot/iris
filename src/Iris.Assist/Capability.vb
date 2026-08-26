@@ -36,8 +36,20 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Operacao As AssistOperation
         Public ReadOnly Property Destino As AssistDestination
         ''' <summary>SHA-256 dos bytes autorizados, em hex minúsculo.</summary>
+        ''' <summary>O hash do <b>envelope</b> — proveniência.</summary>
         Public ReadOnly Property Hash As String
         Public ReadOnly Property Comprimento As Integer
+
+        ''' <summary>
+        ''' O hash do <b>corpo preparado</b> — o que de fato sai no fio.
+        '''
+        ''' Os dois existem porque são coisas diferentes. O envelope é o
+        ''' artefato que a política julgou; o corpo é o que o provedor recebe.
+        ''' Cobrir só o primeiro deixaria a tradução entre eles fora da
+        ''' autorização — e é justamente ali que alguém acrescentaria um campo.
+        ''' </summary>
+        Public ReadOnly Property HashDoCorpo As String
+        Public ReadOnly Property ComprimentoDoCorpo As Integer
         Public ReadOnly Property Itens As IReadOnlyList(Of ItemKey)
         ''' <summary>
         ''' A versão de cada item, na mesma ordem — a versão que passou pelo
@@ -60,6 +72,7 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Friend Sub New(id As Guid, requestId As Guid, grant As DisclosureGrant,
                        hash As String, comprimento As Integer,
+                       hashDoCorpo As String, comprimentoDoCorpo As Integer,
                        emitida As DateTimeOffset, expira As DateTimeOffset)
             Me.Id = id
             Me.RequestId = requestId
@@ -72,6 +85,8 @@ Namespace Global.Iris.Assist
             Versoes = grant.Versoes
             Me.Hash = hash
             Me.Comprimento = comprimento
+            Me.HashDoCorpo = hashDoCorpo
+            Me.ComprimentoDoCorpo = comprimentoDoCorpo
             Me.Emitida = emitida
             Me.Expira = expira
         End Sub
@@ -87,6 +102,15 @@ Namespace Global.Iris.Assist
         JaConsumida
         ''' <summary>O prazo passou.</summary>
         Expirada
+        ''' <summary>
+        ''' O <b>corpo preparado</b> não é o que ela autorizou.
+        '''
+        ''' Distinta de <see cref="BytesDiferentes"/>: aqui o envelope confere e
+        ''' a tradução dele é que mudou — o caso em que alguém acrescentou um
+        ''' campo entre autorizar e transmitir.
+        ''' </summary>
+        CorpoDiferente
+
         ''' <summary>Os bytes não são os que ela autorizou.</summary>
         BytesDiferentes
         ''' <summary>O destino do envio não é o que ela autorizou.</summary>
@@ -177,12 +201,22 @@ Namespace Global.Iris.Assist
         ''' O envelope continua sabendo dizer que truncou — é o que a UI usa
         ''' para explicar. Ele só não vira autorização.
         ''' </summary>
+        ''' <param name="corpo">
+        ''' Os bytes que <b>vão sair</b>, já traduzidos para o formato do
+        ''' provedor. A capability passa a cobri-los, e não só o envelope: sem
+        ''' isso a tradução ficaria fora da autorização.
+        ''' </param>
         Public Function Emitir(decisao As DisclosureDecision, envelope As AssistEnvelope,
+                               corpo As Byte(),
                                agora As DateTimeOffset) As DisclosureCapability
 
             If decisao Is Nothing OrElse Not decisao.Permitido Then Return Nothing
             Dim g = decisao.Grant
             If g Is Nothing OrElse envelope Is Nothing Then Return Nothing
+
+            ' Corpo vazio nao e corpo. Emitir sobre ele autorizaria um envio
+            ' que nao leva nada — e o desfecho seria um sucesso sem conteudo.
+            If corpo Is Nothing OrElse corpo.Length = 0 Then Return Nothing
 
             ' Envelope que nao confere consigo mesmo nao vira autorizacao.
             If Not envelope.Integro() Then Return Nothing
@@ -209,6 +243,7 @@ Namespace Global.Iris.Assist
 
             Dim c As New DisclosureCapability(Guid.NewGuid(), Guid.NewGuid(), g,
                                               envelope.Hash, envelope.Comprimento,
+                                              Resumo(corpo), corpo.Length,
                                               agora, expira)
             _emitidas(c.Id) = c
             Return c
@@ -235,6 +270,7 @@ Namespace Global.Iris.Assist
         ''' autorização.
         ''' </summary>
         Public Function Consumir(c As DisclosureCapability, envelope As AssistEnvelope,
+                                 corpo As Byte(),
                                  destino As AssistDestination, operacao As AssistOperation,
                                  agora As DateTimeOffset) As CapabilityUse
 
@@ -262,6 +298,14 @@ Namespace Global.Iris.Assist
             If Not String.Equals(envelope.Hash, c.Hash, StringComparison.Ordinal) OrElse
                envelope.Comprimento <> c.Comprimento Then
                 Return Recusar(CapabilityRefusal.BytesDiferentes)
+            End If
+
+            ' E O CORPO, que e o que sai. Conferido aqui e nao so na emissao:
+            ' entre um momento e outro ele passa por codigo que pode mudar, e a
+            ' conferencia que importa e a mais perto do fio.
+            If corpo Is Nothing OrElse corpo.Length <> c.ComprimentoDoCorpo OrElse
+               Not String.Equals(Resumo(corpo), c.HashDoCorpo, StringComparison.Ordinal) Then
+                Return Recusar(CapabilityRefusal.CorpoDiferente)
             End If
 
             ' O hash NAO cobre a proveniencia: o EntryID nao entra nos bytes,
@@ -295,6 +339,14 @@ Namespace Global.Iris.Assist
             End If
 
             Return New CapabilityUse(True, CapabilityRefusal.Nenhuma)
+        End Function
+
+        ''' <summary>
+        ''' O mesmo resumo que o envelope usa: SHA-256 em hex minúsculo.
+        ''' </summary>
+        Private Shared Function Resumo(bytes As Byte()) As String
+            Return Convert.ToHexString(
+                Security.Cryptography.SHA256.HashData(bytes)).ToLowerInvariant()
         End Function
 
         Private Shared Function MesmasVersoes(a As IReadOnlyList(Of String),

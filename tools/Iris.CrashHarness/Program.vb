@@ -210,7 +210,7 @@ Namespace Global.Iris.CrashHarness
             Dim d = New DisclosurePolicy(ativacao).
                     Decidir(New DisclosureRequest(voo, mensagens), agora)
             Dim env = New EnvelopeBuilder().Montar(AssistOperation.Resumir, "resuma", partes)
-            Return New CapabilityLedger().Emitir(d, env.Envelope, agora)
+            Return New CapabilityLedger().Emitir(d, env.Envelope, env.Envelope.Bytes(), agora)
         End Function
 
         Public Const TotalDePaginas As Integer = 3
