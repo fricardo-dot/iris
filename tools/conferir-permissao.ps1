@@ -74,7 +74,7 @@ if (-not (Test-Path -LiteralPath $Caminho)) {
 }
 
 $eu = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-$acl = Get-Acl $Caminho
+$pasta = Split-Path -Parent $Caminho
 
 $permitidos = @(
     $eu.Value
@@ -82,54 +82,66 @@ $permitidos = @(
     (New-Object System.Security.Principal.SecurityIdentifier ([System.Security.Principal.WellKnownSidType]::BuiltinAdministratorsSid), $null).Value
 )
 
-# Os mesmos direitos que o Iris considera escrita.
-$perigosos = [System.Security.AccessControl.FileSystemRights]::WriteData -bor
+# Os mesmos direitos que o Iris considera perigosos, e sao DOIS conjuntos.
+$doArquivo = [System.Security.AccessControl.FileSystemRights]::WriteData -bor
              [System.Security.AccessControl.FileSystemRights]::AppendData -bor
              [System.Security.AccessControl.FileSystemRights]::Delete -bor
              [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
              [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
-Write-Host ""
-Write-Host "Arquivo: $Caminho"
+# NA PASTA o perigo e outro: quem pode CRIAR e APAGAR ali dentro troca o
+# ativacao.json sem ter direito nenhum sobre o arquivo.
+$daPasta = [System.Security.AccessControl.FileSystemRights]::CreateFiles -bor
+           [System.Security.AccessControl.FileSystemRights]::CreateDirectories -bor
+           [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+           [System.Security.AccessControl.FileSystemRights]::Delete -bor
+           [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+           [System.Security.AccessControl.FileSystemRights]::TakeOwnership
 
-# O DONO ENTRA NA DECISAO, e comparado por SID.
-#
-# A primeira versao avisava sobre dono errado e depois decidia so pelas ACEs
-# excedentes: com dono errado e nenhuma ACE sobrando, ela imprimia "O Iris
-# aceita" e saia com 0 -- dizendo o contrario do que o Iris faria. E comparar
-# por NOME quebra com conta renomeada, dominio, ou idioma do Windows.
-$donoSid = try {
-    $acl.GetOwner([System.Security.Principal.SecurityIdentifier])
-} catch { $null }
+function Conferir($alvo, $perigosos, $rotulo) {
+    $acl = Get-Acl $alvo
+    $donoSid = try { $acl.GetOwner([System.Security.Principal.SecurityIdentifier]) } catch { $null }
+    $donoOk = ($null -ne $donoSid) -and ($donoSid.Value -eq $eu.Value)
 
-$donoOk = ($donoSid -ne $null) -and ($donoSid.Value -eq $eu.Value)
-Write-Host ("Dono:    {0}" -f $acl.Owner)
-if (-not $donoOk) {
-    Write-Host "  SOBRA: o dono nao e voce. O Iris vai RECUSAR." -ForegroundColor Red
-}
-Write-Host ""
-
-$intrusos = @()
-foreach ($regra in $acl.Access) {
-    if ($regra.AccessControlType -ne 'Allow') { continue }
-    if (($regra.FileSystemRights -band $perigosos) -eq 0) { continue }
-
-    $sid = try {
-        $regra.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
-    } catch { $regra.IdentityReference.Value }
-
-    $nome = try {
-        ([System.Security.Principal.SecurityIdentifier]$sid).Translate(
-            [System.Security.Principal.NTAccount]).Value
-    } catch { "(nao resolve nesta maquina)" }
-
-    if ($permitidos -contains $sid) {
-        Write-Host ("  OK      {0}  {1}" -f $nome, $sid) -ForegroundColor Green
-    } else {
-        Write-Host ("  SOBRA   {0}  {1}" -f $nome, $sid) -ForegroundColor Red
-        $intrusos += $sid
+    Write-Host ""
+    Write-Host ("{0}: {1}" -f $rotulo, $alvo)
+    Write-Host ("  dono: {0}" -f $acl.Owner)
+    if (-not $donoOk) {
+        Write-Host "  SOBRA: o dono nao e voce. O Iris vai RECUSAR." -ForegroundColor Red
     }
+
+    $sobrando = @()
+    foreach ($regra in $acl.Access) {
+        if ($regra.AccessControlType -ne 'Allow') { continue }
+        # ACE so-de-heranca e molde para o que nascer dentro, e nao vale para
+        # o proprio objeto. O Iris a ignora, e aqui tem de ignorar tambem.
+        if (($regra.PropagationFlags -band [System.Security.AccessControl.PropagationFlags]::InheritOnly) -ne 0) { continue }
+        if (($regra.FileSystemRights -band $perigosos) -eq 0) { continue }
+
+        $sid = try {
+            $regra.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value
+        } catch { $regra.IdentityReference.Value }
+
+        $nome = try {
+            ([System.Security.Principal.SecurityIdentifier]$sid).Translate(
+                [System.Security.Principal.NTAccount]).Value
+        } catch { "(nao resolve nesta maquina)" }
+
+        if ($permitidos -contains $sid) {
+            Write-Host ("  OK      {0}  {1}" -f $nome, $sid) -ForegroundColor Green
+        } else {
+            Write-Host ("  SOBRA   {0}  {1}" -f $nome, $sid) -ForegroundColor Red
+            $sobrando += $sid
+        }
+    }
+    return [pscustomobject]@{ DonoOk = $donoOk; Sobrando = $sobrando }
 }
+
+$rArquivo = Conferir $Caminho $doArquivo "Arquivo"
+$rPasta   = Conferir $pasta   $daPasta   "Pasta  "
+
+$intrusos = @($rArquivo.Sobrando) + @($rPasta.Sobrando)
+$donoOk = $rArquivo.DonoOk -and $rPasta.DonoOk
 
 Write-Host ""
 if ($intrusos.Count -eq 0 -and $donoOk) {
@@ -150,26 +162,40 @@ Write-Host ""
 Write-Host "Para consertar, rode:" -ForegroundColor Cyan
 Write-Host ""
 $aspas = [char]34
-# UM COMANDO SO, E A ORDEM IMPORTA.
+
+# DOIS COMANDOS, E A PASTA VEM PRIMEIRO.
 #
-# A primeira versao mandava /inheritance:r primeiro e as concessoes depois,
-# em chamadas separadas. Entre uma e outra o arquivo fica SEM ACE nenhuma:
-# quem parasse no meio -- ou tivesse o comando falhando -- perdia o acesso
-# ao proprio arquivo. Concede primeiro, corta a heranca depois, numa
-# invocacao so.
+# A pasta primeiro porque /inheritance:r nela pode mexer no que os filhos
+# herdam; com o arquivo ja tendo ACE explicita, ele sobrevive. Ao contrario,
+# arrumar o arquivo e depois a pasta deixaria uma janela em que a pasta ainda
+# permite substituicao.
 #
-# (M) e nao (R,W) para voce: sem Delete nao da para substituir a ativacao
-# depois, e o erro apareceria como uma falha de permissao sem explicacao.
-$cmd = "icacls " + $aspas + $Caminho + $aspas +
-       " /grant:r " + $aspas + "*" + $eu.Value + ":(M)" + $aspas +
-       " " + $aspas + "*S-1-5-18:(F)" + $aspas +
-       " " + $aspas + "*S-1-5-32-544:(F)" + $aspas +
-       " /inheritance:r"
-Write-Host $cmd -ForegroundColor Green
+# (OI)(CI) na pasta para o que nascer la dentro herdar a ACL certa -- senao o
+# proximo ativacao.json volta a ter o problema.
+#
+# Em cada um: concede primeiro, corta a heranca depois, numa invocacao so.
+# Comecar por /inheritance:r deixaria o objeto sem ACE nenhuma entre os dois
+# passos.
+$cmdPasta = "icacls " + $aspas + $pasta + $aspas +
+            " /grant:r " + $aspas + "*" + $eu.Value + ":(OI)(CI)(M)" + $aspas +
+            " " + $aspas + "*S-1-5-18:(OI)(CI)(F)" + $aspas +
+            " " + $aspas + "*S-1-5-32-544:(OI)(CI)(F)" + $aspas +
+            " /inheritance:r"
+
+$cmdArquivo = "icacls " + $aspas + $Caminho + $aspas +
+              " /grant:r " + $aspas + "*" + $eu.Value + ":(M)" + $aspas +
+              " " + $aspas + "*S-1-5-18:(F)" + $aspas +
+              " " + $aspas + "*S-1-5-32-544:(F)" + $aspas +
+              " /inheritance:r"
+
+Write-Host $cmdPasta -ForegroundColor Green
 Write-Host ""
-Write-Host "Concede primeiro e corta a heranca depois, numa chamada so: entre" -ForegroundColor Yellow
-Write-Host "os dois passos o arquivo ficaria sem permissao nenhuma." -ForegroundColor Yellow
+Write-Host $cmdArquivo -ForegroundColor Green
 Write-Host ""
+Write-Host "A pasta PRIMEIRO: quem pode criar e apagar la dentro troca o" -ForegroundColor Yellow
+Write-Host "ativacao.json sem ter direito nenhum sobre o arquivo." -ForegroundColor Yellow
+Write-Host ""
+
 Write-Host "Depois, confira de novo:" -ForegroundColor Cyan
 Write-Host "  dotnet run --project tools\Iris.CrashHarness -- ativacao"
 Write-Host ""

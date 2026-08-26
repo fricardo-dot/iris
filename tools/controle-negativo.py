@@ -67,6 +67,7 @@ VM = "src/Iris.App/ViewModels/AssistenteViewModel.vb"
 TRANS = "src/Iris.Assist/AssistTransmitter.vb"
 ATIV = "src/Iris.Assist/Activation.vb"
 ORP = "src/Iris.Integration.Assist.Http/OpenRouterAssistantProvider.vb"
+PERM = "src/Iris.App/PermissaoDoArquivo.vb"
 ADV = "tests/Iris.Tests/AdversarioPontaAPontaTests.vb"
 
 ADVF = "FullyQualifiedName~AdversarioPontaAPontaTests"
@@ -132,6 +133,14 @@ CENARIOS = [
          filtro="FullyQualifiedName~Corpo_ADULTERADO_depois_de_conferido_nao_sai",
          esperados={"Corpo_ADULTERADO_depois_de_conferido_nao_sai"},
          porque="sem a copia, o provedor adultera depois de o hash ter sido conferido"),
+
+    dict(nome="conferencia do DIRETORIO da ativacao",
+         edicoes=[(PERM,
+                   "                Return Limpo(di.GetAccessControl(), meuSid, DaPasta)",
+                   "                Return True")],
+         filtro="FullyQualifiedName~PermissaoDoArquivoTests",
+         esperados={"ACE_perigosa_SO_no_diretorio_reprova"},
+         porque="quem cria e apaga na pasta troca o arquivo sem tocar nele"),
 
     dict(nome="lista de provedores nao pode ser vazia",
          edicoes=[(ATIV,

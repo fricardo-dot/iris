@@ -64,9 +64,37 @@ Namespace Global.Iris.Tests
         ''' Um arquivo com ACL <b>construída aqui</b>: herança cortada, e só
         ''' quem o teste mandar.
         ''' </summary>
+        ''' <summary>
+        ''' Uma pasta com ACL construída aqui: herança cortada, dono eu, e só eu.
+        '''
+        ''' Precisa existir porque a conferência passou a olhar o <b>diretório</b>
+        ''' também — e o <c>%TEMP%</c> tem exatamente as entradas a mais que o
+        ''' resto deste arquivo existe para detectar.
+        ''' </summary>
+        Private Function PastaLimpa() As String
+            Dim pasta = Path.Combine(Path.GetTempPath(),
+                                     "iris-perm-" & Guid.NewGuid().ToString("N"))
+            Directory.CreateDirectory(pasta)
+            _pastas.Add(pasta)
+
+            Dim di As New DirectoryInfo(pasta)
+            Dim acl = di.GetAccessControl()
+            acl.SetAccessRuleProtection(True, False)
+            For Each regra In acl.GetAccessRules(True, False, GetType(SecurityIdentifier)).
+                              Cast(Of FileSystemAccessRule)().ToList()
+                acl.RemoveAccessRule(regra)
+            Next
+            acl.SetOwner(Eu)
+            acl.AddAccessRule(New FileSystemAccessRule(
+                Eu, FileSystemRights.FullControl,
+                InheritanceFlags.ObjectInherit Or InheritanceFlags.ContainerInherit,
+                PropagationFlags.None, AccessControlType.Allow))
+            di.SetAccessControl(acl)
+            Return pasta
+        End Function
+
         Private Function Arquivo(ParamArray extras As SecurityIdentifier()) As String
-            Dim caminho = Path.Combine(Path.GetTempPath(),
-                                       "iris-perm-" & Guid.NewGuid().ToString("N") & ".json")
+            Dim caminho = Path.Combine(PastaLimpa(), "ativacao.json")
             File.WriteAllText(caminho, "{}")
             _arquivos.Add(caminho)
 
@@ -171,6 +199,70 @@ Namespace Global.Iris.Tests
 
             Assert.IsTrue(Passa(caminho))
         End Sub
+
+        ''' <summary>
+        ''' <b>ACE perigosa SÓ no diretório reprova — mesmo com o arquivo
+        ''' impecável.</b>
+        '''
+        ''' É o furo que a conferência do arquivo não fecha, e que os outros
+        ''' testes deste arquivo não alcançavam. Quem tem <c>CreateFiles</c> e
+        ''' <c>DeleteSubdirectoriesAndFiles</c> na pasta <b>apaga o
+        ''' <c>ativacao.json</c> e põe outro no lugar</b>, sem precisar de
+        ''' direito nenhum sobre o arquivo.
+        '''
+        ''' A ACE aqui é <b>sem herança</b> de propósito: a DACL do arquivo fica
+        ''' limpa, e é justamente por isso que olhar só o arquivo não bastava. O
+        ''' handle protege a carga que já foi lida; ele não protege o <b>nome</b>
+        ''' entre uma execução e a seguinte.
+        ''' </summary>
+        <TestMethod>
+        Public Sub ACE_perigosa_SO_no_diretorio_reprova()
+            Dim caminho = Arquivo()
+            Dim di As New DirectoryInfo(Path.GetDirectoryName(caminho))
+
+            Dim acl = di.GetAccessControl()
+            acl.AddAccessRule(New FileSystemAccessRule(
+                New SecurityIdentifier(WellKnownSidType.WorldSid, Nothing),
+                FileSystemRights.CreateFiles Or
+                FileSystemRights.DeleteSubdirectoriesAndFiles,
+                InheritanceFlags.None,          ' NAO herda: o arquivo continua limpo
+                PropagationFlags.None,
+                AccessControlType.Allow))
+            di.SetAccessControl(acl)
+
+            ' O arquivo continua com a ACL de antes — o teste so mede alguma
+            ' coisa se isso for verdade.
+            Dim doArquivo = New FileInfo(caminho).GetAccessControl().
+                            GetAccessRules(True, True, GetType(SecurityIdentifier)).
+                            Cast(Of FileSystemAccessRule)().
+                            Any(Function(r) r.IdentityReference.Value =
+                                            New SecurityIdentifier(WellKnownSidType.WorldSid,
+                                                                   Nothing).Value)
+            Assert.IsFalse(doArquivo, "a ACE nao devia ter herdado para o arquivo")
+
+            Assert.IsFalse(Passa(caminho),
+                           "quem pode trocar o arquivo na pasta escolhe a autorizacao")
+        End Sub
+
+        ''' <summary>
+        ''' <b>Por que não há teste separado para o dono do diretório.</b>
+        '''
+        ''' Escrevi um, e ele não provava nada: usava o <c>hosts</c>, cujo
+        ''' <b>arquivo</b> também pertence a Administradores — então a
+        ''' conferência do arquivo já reprovava antes de a do diretório ser
+        ''' consultada. O controle negativo pegou: desligando a conferência do
+        ''' diretório, ele continuava vermelho.
+        '''
+        ''' Isolar o caso exigiria um diretório pertencente a outro principal e
+        ''' com DACL limpa no resto, e trocar dono de diretório precisa de
+        ''' privilégio que uma sessão comum não tem.
+        '''
+        ''' O que sustenta essa metade: <c>Limpo()</c> é <b>uma função só</b>,
+        ''' usada para o arquivo e para a pasta, e o ramo do dono é literalmente
+        ''' o mesmo código — coberto por <see cref="Dono_DIFERENTE_reprova"/>. O
+        ''' que é específico do diretório é o <b>conjunto de direitos</b>, e isso
+        ''' tem prova própria logo acima.
+        ''' </summary>
 
         ''' <summary>
         ''' <b>ACE de escrita HERDADA do diretório reprova.</b>

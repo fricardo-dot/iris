@@ -45,42 +45,34 @@ Namespace Global.Iris.App
         ''' <summary>
         ''' A conferência que o <c>ActivationLoader</c> recebe. <c>False</c> faz
         ''' a ativação ser recusada com <c>PermissaoRuim</c>.
+        '''
+        ''' Confere <b>duas</b> coisas: o arquivo, pelo handle já aberto, e o
+        ''' <b>diretório</b> que o contém.
         ''' </summary>
         Public Shared Function SoMinha(fs As FileStream) As Boolean
             If fs Is Nothing Then Return False
 
             Try
-                Dim eu = WindowsIdentity.GetCurrent()
-                Dim meuSid = eu.User
+                Dim meuSid = WindowsIdentity.GetCurrent().User
                 If meuSid Is Nothing Then Return False
 
-                Dim seguranca = fs.GetAccessControl()
+                ' O ARQUIVO, pelo HANDLE. Conferir por caminho e ler depois
+                ' deixaria a janela em que os dois sao objetos diferentes.
+                If Not Limpo(fs.GetAccessControl(), meuSid, DoArquivo) Then Return False
 
-                ' O DONO. Dono diferente quer dizer que o arquivo foi posto ali
-                ' por outra conta — e uma autorizacao que outra conta escreveu
-                ' nao e a sua autorizacao.
-                Dim dono = TryCast(seguranca.GetOwner(GetType(SecurityIdentifier)),
-                                   SecurityIdentifier)
-                If dono Is Nothing OrElse Not dono.Equals(meuSid) Then Return False
+                ' E O DIRETORIO, que e o furo que a conferencia do arquivo NAO
+                ' fecha.
+                '
+                ' Quem tem CreateFiles e DeleteSubdirectoriesAndFiles na pasta
+                ' apaga o ativacao.json e poe outro no lugar, mesmo que a ACL do
+                ' arquivo esteja impecavel. O handle protege a carga que ja foi
+                ' lida; ele nao protege o NOME entre uma execucao e a seguinte.
+                Dim pasta = Path.GetDirectoryName(fs.Name)
+                If String.IsNullOrEmpty(pasta) Then Return False
 
-                ' QUEM PODE ESCREVER. Nao basta o dono estar certo: uma ACL
-                ' herdada pode dar escrita a mais gente, e foi exatamente isso
-                ' que apareceu nesta maquina.
-                Dim permitidos As New HashSet(Of SecurityIdentifier) From {meuSid}
-                permitidos.Add(New SecurityIdentifier(WellKnownSidType.LocalSystemSid, Nothing))
-                permitidos.Add(New SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,
-                                                      Nothing))
-
-                Dim regras = seguranca.GetAccessRules(True, True, GetType(SecurityIdentifier))
-                For Each regra As FileSystemAccessRule In regras
-                    If regra.AccessControlType <> AccessControlType.Allow Then Continue For
-                    If Not Escreve(regra.FileSystemRights) Then Continue For
-
-                    Dim quem = TryCast(regra.IdentityReference, SecurityIdentifier)
-                    If quem Is Nothing OrElse Not permitidos.Contains(quem) Then Return False
-                Next
-
-                Return True
+                Dim di As New DirectoryInfo(pasta)
+                If Not di.Exists Then Return False
+                Return Limpo(di.GetAccessControl(), meuSid, DaPasta)
 
             Catch
                 ' Falha fechada: nao consegui conferir e nao vou supor.
@@ -89,22 +81,72 @@ Namespace Global.Iris.App
         End Function
 
         ''' <summary>
-        ''' Este direito permite mudar o conteúdo?
-        '''
-        ''' <c>WriteData</c> e <c>AppendData</c> mudam o arquivo;
-        ''' <c>WriteAttributes</c> e <c>ReadPermissions</c> não. Tratar tudo
-        ''' como escrita reprovaria ACL normal e o usuário desligaria a
-        ''' conferência — uma barreira que ninguém consegue satisfazer vira uma
-        ''' barreira desligada.
+        ''' Dono é o usuário, e ninguém a mais tem direito perigoso.
         ''' </summary>
-        Private Shared Function Escreve(d As FileSystemRights) As Boolean
-            Dim perigosos = FileSystemRights.WriteData Or
-                            FileSystemRights.AppendData Or
-                            FileSystemRights.Delete Or
-                            FileSystemRights.ChangePermissions Or
-                            FileSystemRights.TakeOwnership
-            Return (d And perigosos) <> 0
+        Private Shared Function Limpo(seguranca As FileSystemSecurity,
+                                      meuSid As SecurityIdentifier,
+                                      perigosos As FileSystemRights) As Boolean
+
+            Dim dono = TryCast(seguranca.GetOwner(GetType(SecurityIdentifier)),
+                               SecurityIdentifier)
+            If dono Is Nothing OrElse Not dono.Equals(meuSid) Then Return False
+
+            Dim permitidos As New HashSet(Of SecurityIdentifier) From {meuSid}
+            permitidos.Add(New SecurityIdentifier(WellKnownSidType.LocalSystemSid, Nothing))
+            permitidos.Add(New SecurityIdentifier(WellKnownSidType.BuiltinAdministratorsSid,
+                                                  Nothing))
+
+            For Each regra As FileSystemAccessRule In
+                seguranca.GetAccessRules(True, True, GetType(SecurityIdentifier))
+
+                If regra.AccessControlType <> AccessControlType.Allow Then Continue For
+
+                ' ACE so-de-heranca nao vale para o proprio objeto: ela e um
+                ' molde para o que nascer dentro. CREATOR OWNER quase sempre
+                ' aparece assim, e conta-la reprovaria pasta normal — e uma
+                ' barreira que ninguem consegue satisfazer vira uma barreira
+                ' desligada.
+                If (regra.PropagationFlags And PropagationFlags.InheritOnly) <> 0 Then Continue For
+
+                If (regra.FileSystemRights And perigosos) = 0 Then Continue For
+
+                Dim quem = TryCast(regra.IdentityReference, SecurityIdentifier)
+                If quem Is Nothing OrElse Not permitidos.Contains(quem) Then Return False
+            Next
+
+            Return True
         End Function
+
+        ''' <summary>
+        ''' Os direitos que mudam o <b>conteúdo</b> do arquivo.
+        '''
+        ''' <c>WriteAttributes</c> e <c>ReadPermissions</c> ficam de fora: tratar
+        ''' tudo como escrita reprovaria ACL normal.
+        ''' </summary>
+        Private Shared ReadOnly DoArquivo As FileSystemRights =
+            FileSystemRights.WriteData Or
+            FileSystemRights.AppendData Or
+            FileSystemRights.Delete Or
+            FileSystemRights.ChangePermissions Or
+            FileSystemRights.TakeOwnership
+
+        ''' <summary>
+        ''' Os direitos que permitem <b>trocar o arquivo</b> sem tocar nele.
+        '''
+        ''' <c>CreateFiles</c> tem o mesmo valor de <c>WriteData</c> e
+        ''' <c>CreateDirectories</c> o mesmo de <c>AppendData</c> — num diretório
+        ''' eles querem dizer "pode pôr coisa aqui dentro".
+        ''' <c>DeleteSubdirectoriesAndFiles</c> é o que faltava: ele permite
+        ''' apagar o <c>ativacao.json</c> <b>sem</b> ter direito nenhum sobre o
+        ''' arquivo.
+        ''' </summary>
+        Private Shared ReadOnly DaPasta As FileSystemRights =
+            FileSystemRights.CreateFiles Or
+            FileSystemRights.CreateDirectories Or
+            FileSystemRights.DeleteSubdirectoriesAndFiles Or
+            FileSystemRights.Delete Or
+            FileSystemRights.ChangePermissions Or
+            FileSystemRights.TakeOwnership
 
     End Class
 
