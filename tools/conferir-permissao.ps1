@@ -26,8 +26,33 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+$eu0 = [System.Security.Principal.WindowsIdentity]::GetCurrent()
+$elevado = (New-Object System.Security.Principal.WindowsPrincipal $eu0).IsInRole(
+    [System.Security.Principal.WindowsBuiltInRole]::Administrator)
+
 if (-not (Test-Path $Caminho)) {
-    Write-Host "Nao existe ativacao em: $Caminho" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Nao achei ativacao em: $Caminho" -ForegroundColor Yellow
+    Write-Host ""
+    # DIZER QUEM ESTA OLHANDO, e nao so que nao achou.
+    #
+    # %LOCALAPPDATA% depende da conta. Num PowerShell ELEVADO o Windows pode
+    # entregar o perfil de outra conta, e ai o roteiro procura num lugar que
+    # nao e o seu -- e "nao existe" manda a pessoa recriar um arquivo que ja
+    # existe, no lugar errado.
+    Write-Host "Quem esta olhando: $($eu0.Name)"
+    Write-Host "LOCALAPPDATA:      $env:LOCALAPPDATA"
+    Write-Host "Elevado:           $elevado"
+    Write-Host ""
+    if ($elevado) {
+        Write-Host "Voce esta num PowerShell ELEVADO. Tente de novo num prompt" -ForegroundColor Yellow
+        Write-Host "comum, ou passe o caminho na mao:" -ForegroundColor Yellow
+    } else {
+        Write-Host "Se o arquivo estiver em outro lugar, passe o caminho:" -ForegroundColor Yellow
+    }
+    Write-Host ""
+    Write-Host "  ... conferir-permissao.ps1 -Caminho `"C:\caminho\do\ativacao.json`"" -ForegroundColor Green
+    Write-Host ""
     exit 1
 }
 
