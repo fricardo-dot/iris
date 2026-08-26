@@ -46,7 +46,19 @@ param(
 
     # Voce verificou a politica corporativa aplicavel? O padrao e a resposta
     # honesta para quem nao verificou.
-    [switch] $PoliticaVerificada
+    [switch] $PoliticaVerificada,
+
+    # Grava direto no lugar certo, em vez de so imprimir.
+    #
+    # A primeira versao so imprimia, para o ato ser deliberado. Na pratica o
+    # deliberado ficou intacto -- quem escolhe pasta, modelo e prazo e voce,
+    # nestes parametros -- e o que sobrou foi transcricao: o texto de
+    # orientacao acabou colado dentro do JSON, e o arquivo foi parar no
+    # diretorio do repositorio. Copiar a mao nunca foi a cerimonia; era so
+    # uma chance a mais de errar.
+    #
+    # Continua opt-in: sem esta chave, nada e gravado.
+    [switch] $Salvar
 )
 
 $ErrorActionPreference = 'Stop'
@@ -129,11 +141,26 @@ $json = [ordered]@{
 
 $destino = Join-Path $env:LOCALAPPDATA "Iris\ativacao.json"
 
-Write-Host "----- confira, e salve em: $destino -----" -ForegroundColor Cyan
-Write-Host ""
+Write-Host "----- inicio do JSON -----" -ForegroundColor Cyan
 Write-Host $json
+Write-Host "----- fim do JSON --------" -ForegroundColor Cyan
 Write-Host ""
-Write-Host "----------------------------------------------------------------" -ForegroundColor Cyan
+
+if ($Salvar) {
+    if (Test-Path $destino) {
+        Write-Host "JA EXISTE uma ativacao em $destino." -ForegroundColor Red
+        Write-Host "Nao vou sobrescrever: apague a antiga se for essa a intencao." -ForegroundColor Red
+        exit 1
+    }
+    New-Item -ItemType Directory -Force (Split-Path $destino) | Out-Null
+    [IO.File]::WriteAllText($destino, $json, (New-Object Text.UTF8Encoding $false))
+    Write-Host "GRAVADO em: $destino" -ForegroundColor Green
+    Write-Host "Confira com:  dotnet run --project tools\Iris.CrashHarness -- ativacao" -ForegroundColor Green
+} else {
+    Write-Host "NAO gravei nada." -ForegroundColor Yellow
+    Write-Host "Para gravar em $destino, repita o comando com -Salvar." -ForegroundColor Yellow
+    Write-Host "Se for copiar a mao, copie SO o que esta entre as duas marcas." -ForegroundColor Yellow
+}
 Write-Host ""
 Write-Host "Antes de salvar, leia:" -ForegroundColor Yellow
 Write-Host "  * 'operacoes' autoriza resumir E redigir. Tire um se quiser menos."
