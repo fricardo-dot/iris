@@ -172,7 +172,9 @@ foreach ($d in @($pasta, $mae)) {
 
 Write-Host ""
 if ($intrusos.Count -eq 0 -and $donoOk) {
-    Write-Host "Ninguem a mais pode escrever, e o dono e voce. O Iris aceita." -ForegroundColor Green
+    # "o dono e voce" era impreciso: na ANCORA o dono pode ser o SYSTEM, e e
+    # o caso do %ProgramData%. A frase dizia mais do que a conferencia exige.
+    Write-Host "Ninguem a mais pode substituir a ativacao. O Iris aceita." -ForegroundColor Green
     exit 0
 }
 
