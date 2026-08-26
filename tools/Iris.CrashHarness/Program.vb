@@ -44,6 +44,16 @@ Namespace Global.Iris.CrashHarness
                 Return Diario(args(0), args(2))
             End If
 
+            ' Modo ATIVACAO: le a cerimonia pelo caminho de PRODUCAO e conta o
+            ' que aconteceu. Existe porque "salvei o arquivo, deu certo?" nao
+            ' tem resposta na interface antes de abrir o Outlook — e porque
+            ' conferir com um roteiro paralelo provaria o roteiro, e nao o
+            ' carregador que o Iris usa de verdade.
+            If args.Length >= 1 AndAlso String.Equals(args(0), "ativacao",
+                                                      StringComparison.Ordinal) Then
+                Return Ativacao(If(args.Length > 1, args(1), Nothing))
+            End If
+
             If args.Length < 4 Then
                 Console.Error.WriteLine("uso: <db> <folderKey> <ponto> <kill|throw> [attemptKeyParaRetomar]")
                 Console.Error.WriteLine("     <db> diario <apos-intencao|em-voo|nenhum>")
@@ -141,6 +151,56 @@ Namespace Global.Iris.CrashHarness
         ''' disco, a reabertura não acha nada — e o diário estaria afirmando, por
         ''' omissão, que nada saiu.
         ''' </summary>
+        ''' <summary>
+        ''' Le a ativacao e diz o que o Iris vai fazer com ela.
+        '''
+        ''' Nao imprime identificador de pasta nem endpoint por extenso: a saida
+        ''' costuma ir para um chat ou um bilhete, e o arquivo descreve a caixa
+        ''' corporativa de alguem.
+        ''' </summary>
+        Private Function Ativacao(caminho As String) As Integer
+            Dim alvo = If(String.IsNullOrWhiteSpace(caminho),
+                          ActivationLoader.CaminhoPadrao(), caminho)
+            Dim agora = DateTimeOffset.Now
+
+            Console.WriteLine($"arquivo: {alvo}")
+            Console.WriteLine($"existe:  {IO.File.Exists(alvo)}")
+            Console.WriteLine()
+
+            Dim r = ActivationLoader.Carregar(alvo, agora)
+
+            If Not r.Carregou Then
+                Console.WriteLine($"NAO CARREGOU: {r.Falha}" &
+                                  If(r.Campo.Length > 0, $"  (campo ""{r.Campo}"")", ""))
+                Return 1
+            End If
+
+            Dim a = r.Record
+            Console.WriteLine("CARREGOU.")
+            Console.WriteLine($"  id .................. {a.Id} (versao {a.Versao})")
+            Console.WriteLine($"  autoridade .......... {a.Autoridade}")
+            Console.WriteLine($"  politica verificada . {a.PoliticaCorporativaVerificada}")
+            Console.WriteLine($"  modelo .............. {a.Modelo}")
+            Console.WriteLine($"  retencao zero ....... {a.ExigirRetencaoZero}")
+            Console.WriteLine($"  provedores .......... {String.Join(", ", a.ProvedoresPermitidos)}")
+            Console.WriteLine($"  operacoes ........... {String.Join(", ", a.Operacoes)}")
+            Console.WriteLine($"  pastas .............. {a.Pastas.Count}")
+            Console.WriteLine($"  leituras aceitas .... {String.Join(", ", a.Leituras)}")
+            Console.WriteLine($"  vence em ............ {a.Ate.Value.ToLocalTime():dd/MM/yyyy HH:mm}")
+            Console.WriteLine($"  VIGENTE agora ....... {a.Vigente(agora)}")
+            Console.WriteLine()
+
+            ' O PORTAO, com a mesma politica que a producao usa. Carregar nao e
+            ' o mesmo que autorizar: um registro valido ainda pode ser negado.
+            Dim politica As New DisclosurePolicy(a)
+            Dim destino As New AssistDestination(a.Provedor, a.Endpoint, a.Modelo)
+            For Each op In {AssistOperation.Resumir, AssistOperation.Redigir}
+                Dim d = politica.Preflight(New PreflightRequest(op, a.Pastas(0), destino), agora)
+                Console.WriteLine($"  preflight {op,-8} ... {If(d.Permitido, "PASSA", "NEGA: " & d.Explicacao)}")
+            Next
+            Return 0
+        End Function
+
         Private Function Diario(caminho As String, ponto As String) As Integer
             Dim falha As OpenFailure = Nothing
             Using db = CacheDatabase.Open(caminho, CacheSchema.Intended(), falha)

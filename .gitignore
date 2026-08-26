@@ -16,3 +16,9 @@ medicoes/
 
 # Saida de execucao de teste — ruido, nao fonte.
 TestResults/
+
+# A ativacao da IA NUNCA entra no repositorio. Ela nao tem a chave, mas tem
+# endpoint e identificador de pasta da caixa corporativa -- e o lugar dela e
+# %LOCALAPPDATA%\Iris\, nao aqui. Esta linha existe porque o arquivo ja foi
+# parar aqui uma vez.
+ativacao.json
