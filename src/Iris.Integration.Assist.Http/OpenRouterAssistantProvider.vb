@@ -74,6 +74,30 @@ Namespace Global.Iris.Integration.Assist.Http
         Private ReadOnly _exigirRetencaoZero As Boolean
         Private ReadOnly _provedoresPermitidos As IReadOnlyList(Of String)
 
+        ''' <summary>
+        ''' O nome que a ativação tem de declarar para este adaptador servir.
+        ''' </summary>
+        Public Const Provedor As String = "openrouter"
+
+        ''' <summary>
+        ''' <b>Esta ativação é para este adaptador?</b>
+        '''
+        ''' Existe porque a composição instanciava o OpenRouter para
+        ''' <b>qualquer</b> ativação válida, mesmo uma que declarasse outro
+        ''' provedor. O resultado seria mandar o protocolo do OpenRouter — e a
+        ''' credencial guardada sob o nome dele — para um endereço arbitrário
+        ''' que alguém escreveu no arquivo.
+        '''
+        ''' A conferência mora <b>aqui</b> e não só em quem monta: um adaptador
+        ''' que aceita ativação de outro provedor é um adaptador que confia em
+        ''' quem o construiu.
+        ''' </summary>
+        Public Shared Function Atende(ativacao As ActivationRecord) As Boolean
+            If ativacao Is Nothing Then Return False
+            Return String.Equals(ativacao.Provedor.Trim(), Provedor,
+                                 StringComparison.OrdinalIgnoreCase)
+        End Function
+
         ''' <param name="ativacao">
         ''' <b>Tudo o que este adaptador decide vem daqui.</b> Modelo, retenção e
         ''' provedores permitidos são campos da autorização, e não configuração
@@ -86,6 +110,10 @@ Namespace Global.Iris.Integration.Assist.Http
         Public Sub New(ativacao As ActivationRecord, credencial As Func(Of String),
                        Optional tempoLimite As TimeSpan = Nothing)
             If ativacao Is Nothing Then Throw New ArgumentNullException(NameOf(ativacao))
+            If Not Atende(ativacao) Then
+                Throw New ArgumentException(
+                    "esta ativação não é para o OpenRouter", NameOf(ativacao))
+            End If
 
             _modelo = ativacao.Modelo
             _exigirRetencaoZero = ativacao.ExigirRetencaoZero

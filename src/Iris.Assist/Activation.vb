@@ -182,9 +182,21 @@ Namespace Global.Iris.Assist
             Me.ProvedoresPermitidos = Congelar(provedoresPermitidos)
         End Sub
 
+        ''' <summary>
+        ''' Congela <b>de verdade</b>.
+        '''
+        ''' Devolvia <c>o.ToList()</c> tipado como <c>IReadOnlyList</c>, e
+        ''' <c>IReadOnlyList</c> não é imutável: um <c>DirectCast</c> de volta
+        ''' para <c>List(Of T)</c> devolve a lista viva. Qualquer código dentro
+        ''' do assembly podia acrescentar uma pasta à autorização <b>depois</b>
+        ''' de ela ter sido lida e conferida.
+        '''
+        ''' <c>Array.AsReadOnly</c> sobre uma cópia fecha isso: o embrulho não
+        ''' expõe o arranjo, e o arranjo é nosso.
+        ''' </summary>
         Private Shared Function Congelar(Of T)(o As IEnumerable(Of T)) As IReadOnlyList(Of T)
             If o Is Nothing Then Return Array.Empty(Of T)()
-            Return o.ToList()
+            Return Array.AsReadOnly(o.ToArray())
         End Function
 
         ''' <summary>
@@ -260,8 +272,19 @@ Namespace Global.Iris.Assist
             If Leituras.Any(Function(k) Not LabelPolicy.Elegivel(k)) Then Return False
             If Rotulos.Any(Function(r) r Is Nothing) Then Return False
 
-            ' Provedor subjacente em branco na lista casaria com nada e pareceria
-            ' uma restricao. Restricao que nao restringe e pior que nenhuma.
+            ' A LISTA DE PROVEDORES NAO PODE SER VAZIA.
+            '
+            ' Vazio queria dizer "qualquer um", e isso fazia a AUSENCIA do campo
+            ' ampliar a autorizacao em silencio — a falha aberta na sua forma
+            ' mais comum. Com gateway, "qualquer um" e a lista inteira de
+            ' hospedeiros do modelo, e nenhum deles foi aprovado por ninguem.
+            '
+            ' "Qualquer provedor" deixou de ser expressavel de proposito. Quem
+            ' quiser isso lista os que aceita.
+            If ProvedoresPermitidos.Count = 0 Then Return False
+
+            ' Entrada em branco casaria com nada e pareceria uma restricao.
+            ' Restricao que nao restringe e pior que nenhuma.
             If ProvedoresPermitidos.Any(Function(p) String.IsNullOrWhiteSpace(p)) Then Return False
 
             Return True

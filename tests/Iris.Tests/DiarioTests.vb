@@ -68,7 +68,7 @@ Public Class DiarioTests
                                     {AssistOperation.Resumir},
                                     {New FolderKey("store-1", "pasta-1")},
                                     Array.Empty(Of String)(),
-                                    {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
+                                    {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30), provedoresPermitidos:={"provedor-subjacente"})
     End Function
 
     Private Shared Function Voo() As PreflightRequest

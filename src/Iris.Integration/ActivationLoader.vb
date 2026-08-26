@@ -14,6 +14,11 @@ Namespace Global.Iris.Integration
         ''' <summary>Não há arquivo de ativação. O caso normal: a IA nasce desligada.</summary>
         Ausente
         ''' <summary>
+        ''' O arquivo existe e <b>não passou na conferência de plataforma</b> —
+        ''' dono errado, ou permissão de escrita para quem não devia.
+        ''' </summary>
+        PermissaoRuim
+        ''' <summary>
         ''' O caminho existe e <b>não é um arquivo comum</b> — diretório, link,
         ''' ponto de nova análise. Um link faz o conteúdo vir de outro lugar que
         ''' ninguém conferiu.
@@ -151,7 +156,7 @@ Namespace Global.Iris.Integration
         Private Shared ReadOnly Obrigatorios As String() = {
             "id", "versao", "autoridade", "politicaCorporativaVerificada",
             "quando", "ate", "provedor", "endpoint", "modelo", "regiao",
-            "retencaoAceita", "exigirRetencaoZero",
+            "retencaoAceita", "exigirRetencaoZero", "provedoresPermitidos",
             "operacoes", "pastas", "leituras", "contentBits"}
 
         ''' <summary><c>%LOCALAPPDATA%\Iris\ativacao.json</c>.</summary>
@@ -161,13 +166,26 @@ Namespace Global.Iris.Integration
                 "Iris", "ativacao.json")
         End Function
 
-        Public Shared Function Carregar(agora As DateTimeOffset) As ActivationLoadResult
-            Return Carregar(CaminhoPadrao(), agora)
+        ''' <param name="verificador">
+        ''' A conferência que <b>depende da plataforma</b> — dono do arquivo e
+        ''' quem pode escrever nele. Recebe o <c>FileStream</c> já aberto, e não
+        ''' o caminho: conferir por caminho e ler depois deixaria a janela em que
+        ''' alguém troca o arquivo entre uma coisa e outra.
+        '''
+        ''' <c>Nothing</c> quer dizer <b>sem conferência</b>, e é o padrão porque
+        ''' este assembly não tem — nem quer ter — dependência de plataforma. Quem
+        ''' monta em produção passa a de verdade.
+        ''' </param>
+        Public Shared Function Carregar(agora As DateTimeOffset,
+                                        Optional verificador As Func(Of FileStream, Boolean) = Nothing) _
+                                        As ActivationLoadResult
+            Return Carregar(CaminhoPadrao(), agora, verificador)
         End Function
 
-        Public Shared Function Carregar(caminho As String,
-                                        agora As DateTimeOffset) As ActivationLoadResult
-            Dim bruto = LerArquivo(caminho)
+        Public Shared Function Carregar(caminho As String, agora As DateTimeOffset,
+                                        Optional verificador As Func(Of FileStream, Boolean) = Nothing) _
+                                        As ActivationLoadResult
+            Dim bruto = LerArquivo(caminho, verificador)
             If bruto.Falha <> ActivationLoadFailure.Nenhuma Then
                 Return ActivationLoadResult.Nao(bruto.Falha)
             End If
@@ -196,7 +214,19 @@ Namespace Global.Iris.Integration
             Public Falha As ActivationLoadFailure
         End Structure
 
-        Private Shared Function LerArquivo(caminho As String) As Arquivo
+        ''' <summary>
+        ''' Abre <b>uma vez</b> e faz tudo sobre o arquivo aberto.
+        '''
+        ''' A versão anterior media com <c>FileInfo</c> e depois chamava
+        ''' <c>ReadAllBytes</c> pelo <b>caminho</b> — duas aberturas, e entre
+        ''' elas a janela para trocar o arquivo por um link, ou por um maior. O
+        ''' que foi conferido não era necessariamente o que foi lido.
+        '''
+        ''' Agora: abre, e daí em diante tamanho, permissão e conteúdo saem todos
+        ''' do mesmo <c>FileStream</c>.
+        ''' </summary>
+        Private Shared Function LerArquivo(caminho As String,
+                                           verificador As Func(Of FileStream, Boolean)) As Arquivo
             Dim r As Arquivo
             Try
                 Dim fi As New FileInfo(caminho)
@@ -205,26 +235,33 @@ Namespace Global.Iris.Integration
                     Return r
                 End If
 
-                ' LINK NAO. O caminho conferido e o conteudo lido seriam de
-                ' lugares diferentes, e o segundo ninguem escolheu.
+                ' LINK NAO, e a conferencia e ANTES de abrir porque abrir um
+                ' link ja teria seguido o link. Sobra uma janela minuscula, e e
+                ' o verificador — que le pelo HANDLE — quem a fecha.
                 If fi.LinkTarget IsNot Nothing OrElse
-                   (fi.Attributes And FileAttributes.ReparsePoint) <> 0 Then
+                   (fi.Attributes And FileAttributes.ReparsePoint) <> 0 OrElse
+                   (fi.Attributes And FileAttributes.Directory) <> 0 Then
                     r.Falha = ActivationLoadFailure.NaoEhArquivoComum
                     Return r
                 End If
 
-                If (fi.Attributes And FileAttributes.Directory) <> 0 Then
-                    r.Falha = ActivationLoadFailure.NaoEhArquivoComum
-                    Return r
-                End If
+                Using fs As New FileStream(caminho, FileMode.Open, FileAccess.Read,
+                                           FileShare.Read)
+                    If fs.Length > TetoDeBytes Then
+                        r.Falha = ActivationLoadFailure.GrandeDemais
+                        Return r
+                    End If
 
-                If fi.Length > TetoDeBytes Then
-                    r.Falha = ActivationLoadFailure.GrandeDemais
-                    Return r
-                End If
+                    If verificador IsNot Nothing AndAlso Not verificador(fs) Then
+                        r.Falha = ActivationLoadFailure.PermissaoRuim
+                        Return r
+                    End If
 
-                r.Bytes = File.ReadAllBytes(caminho)
-                Return r
+                    Dim bytes(CInt(fs.Length) - 1) As Byte
+                    fs.ReadExactly(bytes)
+                    r.Bytes = bytes
+                    Return r
+                End Using
 
             Catch ex As Exception
                 r.Falha = ActivationLoadFailure.NaoLeu
@@ -276,7 +313,7 @@ Namespace Global.Iris.Integration
             Dim historico = If(vistos.Contains("ignorarHistorico"),
                                Booleano(raiz, "ignorarHistorico", falha, campo), False)
 
-            Dim slugs = Textos(raiz, "provedoresPermitidos", falha, campo, obrigatorio:=False)
+            Dim slugs = Textos(raiz, "provedoresPermitidos", falha, campo, obrigatorio:=True)
             Dim rotulos = Textos(raiz, "rotulos", falha, campo, obrigatorio:=False)
             Dim operacoes = Enums(Of AssistOperation)(raiz, "operacoes", falha, campo)
             Dim leituras = Enums(Of LabelReadingKind)(raiz, "leituras", falha, campo)

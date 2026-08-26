@@ -430,6 +430,30 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         ''' <summary>
+        ''' <b>O adaptador do provedor que a ativação declara — e só ele.</b>
+        '''
+        ''' Era um <c>If</c> que instanciava o OpenRouter para qualquer ativação
+        ''' carregada. Uma ativação que declarasse outro provedor, com outro
+        ''' endereço, receberia o protocolo do OpenRouter e a credencial
+        ''' guardada sob o nome dele — conteúdo da caixa indo para um endereço
+        ''' arbitrário escrito num arquivo.
+        '''
+        ''' A lista é <b>fechada</b>: provedor não reconhecido não vira
+        ''' adaptador genérico, vira <see cref="AssistenteIndisponivel"/>. Não há
+        ''' caso <c>Else</c> que "tenta assim mesmo".
+        ''' </summary>
+        Private Shared Function ProvedorPara(ativacao As ActivationLoadResult) As IAssistantProvider
+            If Not ativacao.Carregou Then Return New AssistenteIndisponivel()
+
+            If OpenRouterAssistantProvider.Atende(ativacao.Record) Then
+                Return New OpenRouterAssistantProvider(ativacao.Record,
+                                                       CredencialDoWindows.Leitor())
+            End If
+
+            Return New AssistenteIndisponivel()
+        End Function
+
+        ''' <summary>
         ''' O que a cerimônia tem a dizer, em português — e o que fica dito
         ''' mesmo quando ela dá certo.
         '''
@@ -485,6 +509,11 @@ Namespace Global.Iris.App.ViewModels
                     Return "A ativação não foi aceita: o prazo passa de 90 dias."
                 Case ActivationLoadFailure.NaoEhArquivoComum
                     Return "A ativação não foi aceita: o caminho não é um arquivo comum."
+                Case ActivationLoadFailure.PermissaoRuim
+                    Return "A ativação não foi aceita: mais alguém pode escrever no " &
+                           "arquivo, e quem pode escrever nele escolhe para onde o seu " &
+                           "e-mail vai. Rode tools\conferir-permissao.ps1 para ver quem é " &
+                           "e como tirar."
                 Case ActivationLoadFailure.GrandeDemais
                     Return "A ativação não foi aceita: o arquivo é grande demais."
                 Case Else
@@ -499,7 +528,11 @@ Namespace Global.Iris.App.ViewModels
             ' A CERIMONIA, lida do arquivo. Sem arquivo — o caso normal — a
             ' ativacao e Nothing e a politica nega tudo, exatamente como antes.
             ' Com arquivo invalido, tambem nega, e o motivo aparece na faixa.
-            Dim ativacao = ActivationLoader.Carregar(relogio())
+            ' A conferencia de permissao vem DAQUI, e nao de dentro do
+            ' carregador: ela e do Windows, e o Iris.Integration nao tem
+            ' dependencia de plataforma. Aqui e onde ela pode existir.
+            Dim ativacao = ActivationLoader.Carregar(
+                relogio(), AddressOf PermissaoDoArquivo.SoMinha)
             Dim politica As New DisclosurePolicy(ativacao.Record)
 
             Dim diario As IDisclosureJournal = Acervo?.Diario
@@ -517,12 +550,7 @@ Namespace Global.Iris.App.ViewModels
             '
             ' Sem ativacao valida continua sendo o AssistenteIndisponivel, que
             ' nao tem destino: o portao recusa antes de qualquer leitura.
-            Dim provedor As IAssistantProvider =
-                If(ativacao.Carregou,
-                   CType(New OpenRouterAssistantProvider(
-                             ativacao.Record,
-                             CredencialDoWindows.Leitor()), IAssistantProvider),
-                   New AssistenteIndisponivel())
+            Dim provedor = ProvedorPara(ativacao)
 
             Dim transmissor As New AssistTransmitter(
                 politica, New CapabilityLedger(),

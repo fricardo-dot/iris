@@ -65,7 +65,7 @@ Public Class EnvelopeECapabilityTests
                                     {AssistOperation.Resumir},
                                     {New FolderKey("store-1", "pasta-1")},
                                     Array.Empty(Of String)(),
-                                    {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
+                                    {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30), provedoresPermitidos:={"provedor-subjacente"})
     End Function
 
     Private Shared Function Voo(Optional operacao As AssistOperation = AssistOperation.Resumir,
@@ -620,7 +620,8 @@ Public Class EnvelopeECapabilityTests
                                           {AssistOperation.Resumir},
                                           {New FolderKey("store-1", "pasta-1")},
                                           Array.Empty(Of String)(),
-                                          {LabelReadingKind.Absent}, {0}, ate:=vence)
+                                          {LabelReadingKind.Absent}, {0}, ate:=vence,
+                                          provedoresPermitidos:={"provedor-subjacente"})
 
         Dim d = New DisclosurePolicy(curta).Decidir(
             New DisclosureRequest(Voo(), {Mensagem(1)}), Agora)

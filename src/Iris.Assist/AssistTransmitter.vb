@@ -146,7 +146,18 @@ Namespace Global.Iris.Assist
             '    a autorizacao falaria de um artefato e o fio levaria outro.
             Dim corpo As Byte()
             Try
-                corpo = _provedor.Preparar(env.Envelope.Bytes())
+                Dim devolvido = _provedor.Preparar(env.Envelope.Bytes())
+                ' COPIA, E A COPIA E NOSSA.
+                '
+                ' O arranjo devolvido foi criado pelo provedor, e nada impede
+                ' que ele guarde a referencia e mexa depois — em Pronto(), que
+                ' roda DEPOIS do consumo da capability, ou de outra thread. O
+                ' hash seria de um conteudo e o fio levaria outro, que e
+                ' exatamente o furo que a capability sobre o corpo existe para
+                ' fechar.
+                '
+                ' A partir daqui so a copia e usada: hash, consumo e envio.
+                corpo = If(devolvido Is Nothing, Nothing, CType(devolvido.Clone(), Byte()))
             Catch
                 corpo = Nothing
             End Try

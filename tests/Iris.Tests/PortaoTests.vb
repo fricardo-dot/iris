@@ -80,6 +80,7 @@ Public Class PortaoTests
             leituras:=If(leituras, {LabelReadingKind.Absent, LabelReadingKind.Present}),
             contentBits:=If(bits, {0}),
             ate:=Agora.AddDays(30),
+            provedoresPermitidos:={"provedor-subjacente"},
             ignorarHistorico:=ignorarHistorico)
     End Function
 
@@ -222,7 +223,8 @@ Public Class PortaoTests
         Dim a As New ActivationRecord("id", 1, "quem", Agora.AddDays(-1), "provedor-de-teste",
                                       Endereco, "modelo-de-teste", "local", "sem retenção",
                                       {AssistOperation.Resumir}, {Pasta()}, {RotuloOk},
-                                      {LabelReadingKind.Absent}, {0}, ate:=vence)
+                                      {LabelReadingKind.Absent}, {0}, ate:=vence,
+                                      provedoresPermitidos:={"provedor-subjacente"})
 
         Dim leituras = 0
         Dim portao As New DisclosureGate(New DisclosurePolicy(a),
@@ -395,7 +397,7 @@ Public Class PortaoTests
         Dim a As New ActivationRecord("id", 1, "quem", Agora.AddDays(-1), "provedor-de-teste",
                                       Endereco, "modelo-de-teste", "local", "sem retenção",
                                       {AssistOperation.Nenhuma, AssistOperation.Resumir},
-                                      {Pasta()}, {RotuloOk}, {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
+                                      {Pasta()}, {RotuloOk}, {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30), provedoresPermitidos:={"provedor-subjacente"})
 
         Assert.AreEqual(DisclosureReason.AtivacaoInvalida,
                         Decidir(a, Pedido(Mensagem(Leitura(LabelReadingKind.Absent)))).Motivo)
@@ -434,7 +436,7 @@ Public Class PortaoTests
         Dim a As New ActivationRecord("id", 1, "quem", Agora.AddDays(-1), "provedor-de-teste",
                                       inseguro, "modelo-de-teste", "local", "sem retenção",
                                       {AssistOperation.Resumir}, {Pasta()}, {RotuloOk},
-                                      {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
+                                      {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30), provedoresPermitidos:={"provedor-subjacente"})
         Dim p As New DisclosureRequest(Voo(aonde:=Destino(inseguro)),
                                        {Mensagem(Leitura(LabelReadingKind.Absent))})
 
@@ -630,7 +632,7 @@ Public Class PortaoTests
         Dim a As New ActivationRecord("id", 1, "", Agora.AddDays(-1), "provedor-de-teste",
                                       Endereco, "modelo-de-teste", "local", "sem retenção",
                                       {AssistOperation.Resumir}, {Pasta()}, {RotuloOk},
-                                      {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
+                                      {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30), provedoresPermitidos:={"provedor-subjacente"})
 
         Assert.AreEqual(DisclosureReason.AtivacaoIncompleta,
                         Decidir(a, Pedido(Mensagem(Leitura(LabelReadingKind.Absent)))).Motivo)
@@ -642,7 +644,7 @@ Public Class PortaoTests
         Dim a As New ActivationRecord("id", 1, "quem", Agora.AddDays(-1), "provedor-de-teste",
                                       Endereco, "modelo-de-teste", "", "sem retenção",
                                       {AssistOperation.Resumir}, {Pasta()}, {RotuloOk},
-                                      {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
+                                      {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30), provedoresPermitidos:={"provedor-subjacente"})
 
         Assert.AreEqual(DisclosureReason.AtivacaoIncompleta,
                         Decidir(a, Pedido(Mensagem(Leitura(LabelReadingKind.Absent)))).Motivo)
@@ -654,7 +656,7 @@ Public Class PortaoTests
                                       Endereco, "modelo-de-teste", "local", "sem retenção",
                                       {AssistOperation.Resumir}, {Pasta()}, {RotuloOk},
                                       {LabelReadingKind.Absent}, {0},
-                                      ate:=Agora.AddDays(-1))
+                                      ate:=Agora.AddDays(-1), provedoresPermitidos:={"provedor-subjacente"})
 
         Assert.AreEqual(DisclosureReason.AtivacaoForaDeVigencia,
                         Decidir(a, Pedido(Mensagem(Leitura(LabelReadingKind.Absent)))).Motivo)
@@ -671,7 +673,7 @@ Public Class PortaoTests
                                       Endereco, "modelo-de-teste", "local", "sem retenção",
                                       {AssistOperation.Resumir}, {Pasta()}, {RotuloOk},
                                       {LabelReadingKind.Absent}, {0},
-                                      ate:=Agora.AddDays(-5))
+                                      ate:=Agora.AddDays(-5), provedoresPermitidos:={"provedor-subjacente"})
 
         Assert.AreEqual(DisclosureReason.AtivacaoInvalida,
                         Decidir(a, Pedido(Mensagem(Leitura(LabelReadingKind.Absent)))).Motivo)
@@ -688,7 +690,7 @@ Public Class PortaoTests
         Dim a As New ActivationRecord("id", 1, "quem", Agora.AddDays(-1), "provedor-de-teste",
                                       Endereco, "modelo-de-teste", "local", "sem retenção",
                                       {AssistOperation.Resumir}, {Pasta()}, {"nao-sou-guid"},
-                                      {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30))
+                                      {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30), provedoresPermitidos:={"provedor-subjacente"})
 
         Assert.AreEqual(DisclosureReason.AtivacaoInvalida,
                         Decidir(a, Pedido(Mensagem(Leitura(LabelReadingKind.Absent)))).Motivo)

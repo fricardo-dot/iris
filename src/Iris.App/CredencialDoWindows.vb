@@ -65,6 +65,44 @@ Namespace Global.Iris.App
         End Sub
 
         ''' <summary>
+        ''' <b>Os caracteres lidos do cofre viram chave — ou nada.</b>
+        '''
+        ''' Separada da leitura nativa para poder ser <b>testada</b>: a parte
+        ''' que fala com o Windows depende da máquina, e esta não depende de
+        ''' nada. Sem a separação, as regras abaixo eram promessas de
+        ''' comentário — e uma delas era falsa.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O NUL, E O QUE ESTAVA ERRADO</b>
+        '''
+        ''' Havia um <c>TrimEnd(ChrW(0))</c> <b>antes</b> da verificação, então
+        ''' NUL no fim era aceito — o comentário prometia rejeitar todo NUL e o
+        ''' código rejeitava só os do meio.
+        '''
+        ''' Agora: um único NUL <b>final</b> é terminador e sai; qualquer NUL
+        ''' que sobre depois disso reprova a chave inteira.
+        ''' </summary>
+        Friend Shared Function Interpretar(bruto As Char()) As String
+            If bruto Is Nothing OrElse bruto.Length = 0 Then Return ""
+
+            Dim fim = bruto.Length
+            If bruto(fim - 1) = ChrW(0) Then fim -= 1
+            If fim = 0 Then Return ""
+
+            Dim chave = New String(bruto, 0, fim)
+
+            ' QUEBRA DE LINHA NAO. E assim que se injeta cabecalho HTTP, e uma
+            ' chave com CR ou LF dentro nao e uma chave. NUL tambem nao: depois
+            ' de tirar o terminador, o que sobrou tem de ser texto.
+            For Each ch In chave
+                If ch = ChrW(13) OrElse ch = ChrW(10) OrElse ch = ChrW(0) Then Return ""
+            Next
+
+            ' Espaco em volta e erro de colagem, e nao parte do segredo.
+            Return chave.Trim()
+        End Function
+
+        ''' <summary>
         ''' A função que o provedor chama <b>na hora</b> de montar o cabeçalho.
         '''
         ''' Devolve uma <c>Func</c> e não a chave: guardar a chave numa variável
@@ -108,16 +146,7 @@ Namespace Global.Iris.App
                 Dim buffer(caracteres - 1) As Char
                 Try
                     Marshal.Copy(c.CredentialBlob, buffer, 0, caracteres)
-                    Dim chave = New String(buffer).TrimEnd(ChrW(0))
-
-                    ' QUEBRA DE LINHA NAO. E assim que se injeta cabecalho HTTP,
-                    ' e uma chave com \r\n dentro nao e uma chave.
-                    If chave.Length = 0 OrElse
-                       chave.Any(Function(ch) ch = ChrW(13) OrElse ch = ChrW(10) OrElse
-                                              ch = ChrW(0)) Then
-                        Return ""
-                    End If
-                    Return chave
+                    Return Interpretar(buffer)
                 Finally
                     Array.Clear(buffer, 0, buffer.Length)
                 End Try
