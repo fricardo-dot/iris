@@ -38,7 +38,8 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
-                               nota As DisclosureNote, podeTerChegado As Boolean) As Boolean _
+                               nota As DisclosureNote, podeTerChegado As Boolean,
+                               Optional codigoHttp As Integer? = Nothing) As Boolean _
                                Implements IDisclosureJournal.Falhar
             Return False
         End Function

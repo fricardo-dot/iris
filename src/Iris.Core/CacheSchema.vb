@@ -387,6 +387,15 @@ Namespace Global.Iris.Core
             ' E os motivos sao ENUM, gravados pelo nome: nao ha campo por onde
             ' texto de terceiro entre. Corpo de erro de provedor ECOA o que foi
             ' enviado.
+            '
+            ' http_status e a excecao que confirma a regra: um inteiro de tres
+            ' digitos nao ECOA nada, e sem ele "ProvedorRecusou" nao distingue
+            ' "a chave nao vale" de "nenhum provedor atende a esta politica de
+            ' dados" -- duas causas com acoes opostas. E NULO quando nao houve
+            ' resposta, e tambem quando o envio deu certo. O CHECK guarda a
+            ' faixa para um escritor futuro que nao passe pelo caminho de hoje;
+            ' o caminho de hoje ja converte fora-da-faixa em nulo, em
+            ' DisclosureNotes.CodigoDeDiario.
             t.Add(New SchemaTable("disclosure_log", {
                 Col("request_id", "TEXT", pk:=True, obrigatoria:=True),
                 Col("seq", "INTEGER", obrigatoria:=True),
@@ -407,7 +416,10 @@ Namespace Global.Iris.Core
                 Col("started_at", "TEXT"),
                 Col("finished_at", "TEXT"),
                 Col("note", "TEXT", obrigatoria:=True),
-                Col("gate_reason", "TEXT", obrigatoria:=True)
+                Col("gate_reason", "TEXT", obrigatoria:=True),
+                Col("http_status", "INTEGER",
+                    check:="http_status IS NULL OR " &
+                           "(http_status >= 100 AND http_status <= 599)")
             }, {Unico("seq")}))
 
             Return New CacheSchema(t)

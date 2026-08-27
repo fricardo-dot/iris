@@ -619,10 +619,14 @@ Public Class PontaAPontaAssistTests
         End Function
 
         Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
-                               nota As DisclosureNote, podeTerChegado As Boolean) As Boolean _
+                               nota As DisclosureNote, podeTerChegado As Boolean,
+                               Optional codigoHttp As Integer? = Nothing) As Boolean _
                                Implements IDisclosureJournal.Falhar
             If RecusarFalhar Then Return False
-            Return _dentro.Falhar(requestId, quando, nota, podeTerChegado)
+            ' REPASSA o codigo. Um espiao que o engolisse faria o teste de
+            ' ponta a ponta passar sobre um caminho que perde justamente o
+            ' campo que ele deveria estar provando.
+            Return _dentro.Falhar(requestId, quando, nota, podeTerChegado, codigoHttp)
         End Function
 
         Public Function NaoEnviou(requestId As Guid, quando As DateTimeOffset,
@@ -830,6 +834,64 @@ Public Class PontaAPontaAssistTests
 
             Assert.AreEqual(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario, r.Kind)
             Assert.AreEqual(1, p.Recebidos.Count, "e o conteudo saiu mesmo")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>O código HTTP do provedor atravessa o transmissor até o diário.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' O canário de 26/08/2026 falhou com <c>ProvedorRecusou</c> e nada mais.
+    ''' A causa era um <c>only: ["google"]</c> que não casa com endpoint nenhum
+    ''' — os slugs de verdade são <c>google-vertex</c> e <c>google-ai-studio</c>
+    ''' — e o OpenRouter respondeu <b>404</b>. O número estava em
+    ''' <c>ProviderOutcome.Codigo</c> desde sempre; o transmissor o descartava
+    ''' ao chamar <c>Falhar</c>.
+    '''
+    ''' O custo do descarte foi três ferramentas de linha de comando escritas
+    ''' para perguntar, por fora, o que esta linha devia ter contado.
+    '''
+    ''' Os testes de unidade do <c>SqliteDisclosureJournal</c> não pegariam
+    ''' isto: eles passam o código na mão. O buraco era <b>a ligação</b>.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_codigo_do_provedor_chega_ao_diario()
+        Using db = Abrir()
+            ' 404: exatamente o que o roteamento devolve quando a restricao de
+            ' provedor nao casa com endpoint nenhum.
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {
+                .Desfecho = New ProviderOutcome(ProviderStatus.Recusou, "", 404)}
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            Dim r = Executar(m.T, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.Ambiguo, r.Kind)
+            Assert.AreEqual(DisclosureNote.ProvedorRecusou, r.Nota)
+
+            Dim e = m.J.Ler(1)(0)
+            Assert.AreEqual(404, e.CodigoHttp,
+                "o transmissor tem o numero na mao; jogar fora e o defeito")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>E o contraponto: sem resposta, não há código.</b>
+    '''
+    ''' Sem isto, o teste acima passaria com um transmissor que carimbasse um
+    ''' número qualquer — e um diário que inventa código é pior que um diário
+    ''' sem código, porque ele <i>parece</i> resposta.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Sem_resposta_o_diario_NAO_inventa_codigo()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {
+                .Desfecho = New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")}
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            Dim r = Executar(m.T, Endereco)
+
+            Assert.AreEqual(DisclosureNote.ConexaoCaiu, r.Nota)
+            Assert.IsFalse(m.J.Ler(1)(0).CodigoHttp.HasValue)
         End Using
     End Sub
 

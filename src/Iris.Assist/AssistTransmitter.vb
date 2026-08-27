@@ -49,13 +49,25 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Nota As DisclosureNote
         Public ReadOnly Property MotivoDoPortao As DisclosureReason
 
+        ''' <summary>
+        ''' <b>O código HTTP, quando o provedor chegou a responder.</b>
+        '''
+        ''' Vai para a tela junto com o aviso. Sem ele, "não dá para saber se o
+        ''' conteúdo chegou" é tudo o que o usuário vê — e descobrir se o caso
+        ''' era credencial ou roteamento exigiu, uma vez, três ferramentas de
+        ''' linha de comando e o banco aberto na mão.
+        ''' </summary>
+        Public ReadOnly Property CodigoHttp As Integer?
+
         Friend Sub New(kind As AssistOutcomeKind, texto As String, requestId As Guid,
-                       nota As DisclosureNote, motivoDoPortao As DisclosureReason)
+                       nota As DisclosureNote, motivoDoPortao As DisclosureReason,
+                       Optional codigoHttp As Integer? = Nothing)
             Me.Kind = kind
             Me.Texto = If(texto, "")
             Me.RequestId = requestId
             Me.Nota = nota
             Me.MotivoDoPortao = motivoDoPortao
+            Me.CodigoHttp = DisclosureNotes.CodigoDeDiario(codigoHttp)
         End Sub
     End Class
 
@@ -273,15 +285,25 @@ Namespace Global.Iris.Assist
                                          DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
             End If
 
+            ' O CODIGO HTTP VAI PARA O DIARIO.
+            '
+            ' Sem ele, "ProvedorRecusou" nao distingue "a chave nao vale" de
+            ' "nenhum provedor atende a esta politica de dados" -- e as duas
+            ' levam a acoes opostas. Ja custou tres ferramentas de linha de
+            ' comando para descobrir, por fora, o que esta linha devia ter
+            ' contado. O provedor ja devolvia o numero; quem o jogava fora era
+            ' este ponto aqui.
             Dim nota = NotaDe(r.Status)
             If Not Duravel(Function() _diario.Falhar(cap.RequestId, _relogio(), nota,
-                                                     podeTerChegado:=True)) Then
+                                                     podeTerChegado:=True,
+                                                     codigoHttp:=r.Codigo)) Then
                 Return New AssistOutcome(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
-                                         "", cap.RequestId, nota, DisclosureReason.NaoDecidido)
+                                         "", cap.RequestId, nota, DisclosureReason.NaoDecidido,
+                                         r.Codigo)
             End If
 
             Return New AssistOutcome(AssistOutcomeKind.Ambiguo, "", cap.RequestId,
-                                     nota, DisclosureReason.NaoDecidido)
+                                     nota, DisclosureReason.NaoDecidido, r.Codigo)
         End Function
 
         ' ==============================================================

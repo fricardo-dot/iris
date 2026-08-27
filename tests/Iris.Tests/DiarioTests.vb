@@ -745,4 +745,108 @@ Public Class DiarioTests
         End Using
     End Sub
 
+    ' ==================================================================
+    ' O CODIGO HTTP
+    '
+    ' O canario de 26/08/2026 morreu com "ProvedorRecusou" e mais nada. Essa
+    ' nota sozinha nao distingue "a chave nao vale" (401) de "nenhum provedor
+    ' atende a esta politica de dados" (404 do roteamento) -- e as duas levam
+    ' a acoes opostas: recadastrar a credencial, ou afrouxar a restricao.
+    '
+    ' Descobrir qual era exigiu escrever tres ferramentas de linha de comando
+    ' para perguntar por fora o que a linha do diario devia ter contado. O
+    ' provedor JA devolvia o numero em ProviderOutcome.Codigo; quem o jogava
+    ' fora era o transmissor.
+
+    ''' <summary>
+    ''' <b>O código do provedor chega ao diário.</b>
+    '''
+    ''' É o teste que teria poupado as três ferramentas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Falhar_GUARDA_o_codigo_HTTP()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
+
+            Assert.IsTrue(j.Falhar(a.Cap.RequestId, Agora.AddSeconds(2),
+                                   DisclosureNote.ProvedorRecusou,
+                                   podeTerChegado:=True, codigoHttp:=404))
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(DisclosureStage.Ambigua, e.Estagio)
+            Assert.AreEqual(404, e.CodigoHttp,
+                "sem o codigo, ProvedorRecusou nao diz o que fazer a seguir")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Envio que deu certo não carrega código.</b>
+    '''
+    ''' Não é economia: o campo existe para separar as causas de uma recusa, e
+    ''' preenchê-lo no sucesso faria "tem código" deixar de ser o sinal de que
+    ''' houve alguma coisa a diagnosticar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Concluir_NAO_guarda_codigo()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
+            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(2))
+
+            Assert.IsFalse(j.Ler(1)(0).CodigoHttp.HasValue)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Código fora da faixa vira nada — e a transição acontece assim mesmo.</b>
+    '''
+    ''' Este é o teste que guarda a decisão, e não o comportamento: a tentação
+    ''' era recusar o <c>Falhar</c> quando o número não descreve resposta
+    ''' nenhuma. Recusar deixaria o registro <b>em voo</b>, a reconciliação da
+    ''' abertura seguinte o marcaria ambíguo por conta própria, e o diário
+    ''' passaria a dizer "pode ter saído conteúdo e ninguém sabe" — sobre um
+    ''' envio cuja sorte se sabia.
+    '''
+    ''' Um campo de diagnóstico não pode piorar o registro que ele anota.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Codigo_fora_da_faixa_nao_derruba_a_transicao()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
+
+            Assert.IsTrue(j.Falhar(a.Cap.RequestId, Agora.AddSeconds(2),
+                                   DisclosureNote.ConexaoCaiu,
+                                   podeTerChegado:=True, codigoHttp:=99999),
+                          "a transicao vale; o numero estranho e que nao")
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(DisclosureStage.Ambigua, e.Estagio)
+            Assert.IsFalse(e.CodigoHttp.HasValue)
+        End Using
+    End Sub
+
+    ''' <summary>A faixa é a do próprio HTTP, e as bordas contam.</summary>
+    <TestMethod>
+    Public Sub A_faixa_do_codigo_e_a_do_HTTP()
+        Assert.AreEqual(CType(100, Integer?), DisclosureNotes.CodigoDeDiario(100))
+        Assert.AreEqual(CType(599, Integer?), DisclosureNotes.CodigoDeDiario(599))
+        Assert.AreEqual(CType(402, Integer?), DisclosureNotes.CodigoDeDiario(402))
+
+        For Each fora In {99, 600, 0, -1, 200000}
+            Assert.IsFalse(DisclosureNotes.CodigoDeDiario(fora).HasValue,
+                           $"{fora} nao descreve resposta HTTP nenhuma")
+        Next
+
+        Assert.IsFalse(DisclosureNotes.CodigoDeDiario(Nothing).HasValue,
+                       "sem resposta nao ha codigo, e isso nao e erro")
+    End Sub
+
 End Class

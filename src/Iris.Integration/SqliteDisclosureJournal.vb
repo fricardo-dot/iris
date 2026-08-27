@@ -105,7 +105,8 @@ Namespace Global.Iris.Integration
         End Function
 
         Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
-                               nota As DisclosureNote, podeTerChegado As Boolean) As Boolean _
+                               nota As DisclosureNote, podeTerChegado As Boolean,
+                               Optional codigoHttp As Integer? = Nothing) As Boolean _
                                Implements IDisclosureJournal.Falhar
             ' Uma vez EM VOO, falhar e SEMPRE ambiguo — mesmo que o chamador
             ' jure que nao chegou. Ele nao pode saber: entre "a conexao caiu" e
@@ -118,19 +119,22 @@ Namespace Global.Iris.Integration
             If podeTerChegado Then
                 Return Terminar(requestId, DisclosureStage.Ambigua, quando, nota,
                                 DisclosureReason.NaoDecidido,
-                                {DisclosureStage.Intencionada, DisclosureStage.EmVoo})
+                                {DisclosureStage.Intencionada, DisclosureStage.EmVoo},
+                                codigoHttp)
             End If
 
             ' NaoEnviada so vale a partir de Intencionada, onde a transmissao
             ' comprovadamente nao tinha comecado.
             If Terminar(requestId, DisclosureStage.NaoEnviada, quando, nota,
-                        DisclosureReason.NaoDecidido, {DisclosureStage.Intencionada}) Then
+                        DisclosureReason.NaoDecidido, {DisclosureStage.Intencionada},
+                        codigoHttp) Then
                 Return True
             End If
 
             ' Estava EM VOO: o desfecho honesto e ambiguo, nao "nao enviou".
             Return Terminar(requestId, DisclosureStage.Ambigua, quando, nota,
-                            DisclosureReason.NaoDecidido, {DisclosureStage.EmVoo})
+                            DisclosureReason.NaoDecidido, {DisclosureStage.EmVoo},
+                            codigoHttp)
         End Function
 
         Public Function NaoEnviou(requestId As Guid, quando As DateTimeOffset,
@@ -194,7 +198,8 @@ Namespace Global.Iris.Integration
                     "SELECT seq, request_id, capability_id, stage, activation_id, " &
                     "       activation_version, operation, provider, endpoint, model, " &
                     "       payload_hash, payload_bytes, message_count, " &
-                    "       intended_at, started_at, finished_at, note, gate_reason " &
+                    "       intended_at, started_at, finished_at, note, gate_reason, " &
+                    "       http_status " &
                     "FROM disclosure_log ORDER BY intended_at DESC, seq DESC LIMIT $n"
                 cmd.Parameters.AddWithValue("$n", quantas)
                 Using r = cmd.ExecuteReader()
@@ -211,7 +216,8 @@ Namespace Global.Iris.Integration
                             If(r.IsDBNull(14), CType(Nothing, DateTimeOffset?), Momento(r.GetString(14))),
                             If(r.IsDBNull(15), CType(Nothing, DateTimeOffset?), Momento(r.GetString(15))),
                             Ler(Of DisclosureNote)(r.GetString(16)),
-                            Ler(Of DisclosureReason)(r.GetString(17))))
+                            Ler(Of DisclosureReason)(r.GetString(17)),
+                            If(r.IsDBNull(18), CType(Nothing, Integer?), r.GetInt32(18))))
                     End While
                 End Using
             End Using
@@ -227,21 +233,28 @@ Namespace Global.Iris.Integration
         Private Function Terminar(requestId As Guid, destino As DisclosureStage,
                                   quando As DateTimeOffset, nota As DisclosureNote,
                                   portao As DisclosureReason,
-                                  de As DisclosureStage()) As Boolean
+                                  de As DisclosureStage(),
+                                  Optional codigoHttp As Integer? = Nothing) As Boolean
             ' Valor inventado - CType(999, DisclosureNote) compila - e dupla
             ' incoerente nao entram. Um registro incoerente e pior que um
             ' registro ausente: ele PARECE resposta.
             If Not DisclosureNotes.Coerente(nota, portao) Then Return False
 
+            ' Codigo fora da faixa vira NULO em vez de abortar a transicao: um
+            ' campo de diagnostico nao pode piorar o registro que ele anota.
+            ' Ver DisclosureNotes.CodigoDeDiario.
+            Dim codigo = DisclosureNotes.CodigoDeDiario(codigoHttp)
+
             Dim aceitos = String.Join(",", de.Select(Function(e) "'" & e.ToString() & "'"))
             Return Executar(
                 "UPDATE disclosure_log SET stage = $s, finished_at = $t, " &
-                "  note = $nota, gate_reason = $gr " &
+                "  note = $nota, gate_reason = $gr, http_status = $http " &
                 "WHERE request_id = $r AND stage IN (" & aceitos & ")",
                 ("$s", CObj(destino.ToString())),
                 ("$t", CObj(Instante(quando))),
                 ("$nota", CObj(nota.ToString())),
                 ("$gr", CObj(portao.ToString())),
+                ("$http", If(codigo.HasValue, CObj(codigo.Value), CObj(DBNull.Value))),
                 ("$r", CObj(requestId.ToString("D")))) = 1
         End Function
 

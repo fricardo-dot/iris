@@ -75,6 +75,13 @@ Public Class AssistenteViewModelTests
         Friend Property Texto As String = "resumo"
         Friend Chamadas As Integer
 
+        ''' <summary>
+        ''' Quando tem valor, o provedor <b>recusa</b> com este código HTTP —
+        ''' como o OpenRouter fez no canário de 26/08/2026, com 404, por causa
+        ''' de uma restrição de provedor que não casava com endpoint nenhum.
+        ''' </summary>
+        Friend Property RecusarCom As Integer?
+
         Public ReadOnly Property Destino As AssistDestination _
                                  Implements IAssistantProvider.Destino
             Get
@@ -99,6 +106,9 @@ Public Class AssistenteViewModelTests
             If ct.IsCancellationRequested Then
                 Return New ProviderOutcome(ProviderStatus.Cancelado, "")
             End If
+            If RecusarCom.HasValue Then
+                Return New ProviderOutcome(ProviderStatus.Recusou, "", RecusarCom.Value)
+            End If
             Return New ProviderOutcome(ProviderStatus.Respondeu, Texto, 200)
         End Function
     End Class
@@ -122,7 +132,8 @@ Public Class AssistenteViewModelTests
             Return True
         End Function
         Public Function Falhar(r As Guid, q As DateTimeOffset, n As DisclosureNote,
-                               podeTerChegado As Boolean) As Boolean _
+                               podeTerChegado As Boolean,
+                               Optional codigoHttp As Integer? = Nothing) As Boolean _
                                Implements IDisclosureJournal.Falhar
             Return True
         End Function
@@ -1119,5 +1130,77 @@ Public Class AssistenteViewModelTests
 
         Assert.IsFalse(vm.TemAlgoADizer)
     End Sub
+
+    ' ==================================================================
+    ' O QUE A FAIXA DIZ QUANDO O PROVEDOR RECUSA
+
+    ''' <summary>
+    ''' <b>O código HTTP aparece na tela.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' No canário de 26/08/2026 a faixa disse só "não dá para saber se o
+    ''' conteúdo chegou" — verdade, e inútil. A causa era <c>404</c>: a
+    ''' restrição de provedor da ativação não casava com endpoint nenhum.
+    ''' Descobrir isso exigiu três ferramentas de linha de comando.
+    '''
+    ''' <c>401</c> manda recadastrar a chave; <c>404</c> manda rever a
+    ''' restrição. São ações opostas, e o número é o que as separa.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function A_faixa_MOSTRA_o_codigo_HTTP() As Task
+        Dim p As New ProvedorControlado() With {.RecusarCom = 404}
+        Dim vm = Montar(Ativacao(), p, Pronta())
+
+        Await Pedir(vm)
+
+        StringAssert.Contains(vm.Aviso, "404",
+            "sem o numero a frase e verdadeira e nao diz o que fazer a seguir")
+        StringAssert.Contains(vm.Aviso, "não dá para saber",
+            "e continua sendo ambiguo: o conteudo pode ter chegado")
+    End Function
+
+    ''' <summary>
+    ''' <b>E sem resposta, a faixa não inventa número.</b>
+    '''
+    ''' O controle negativo do teste acima: sem ele, um "HTTP 0" carimbado em
+    ''' toda falha passaria — e um número inventado é pior que nenhum, porque
+    ''' manda investigar uma resposta que nunca houve.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Sem_resposta_a_faixa_NAO_inventa_numero() As Task
+        Dim vm = Montar(Ativacao(), New ProvedorQueNaoResponde(), Pronta())
+
+        Await Pedir(vm)
+
+        StringAssert.Contains(vm.Aviso, "não dá para saber")
+        Assert.IsFalse(vm.Aviso.Contains("HTTP"),
+            "nao houve resposta, entao nao ha codigo a mostrar")
+    End Function
+
+    ''' <summary>A conexão cai antes de qualquer resposta.</summary>
+    Private NotInheritable Class ProvedorQueNaoResponde
+        Implements IAssistantProvider
+
+        Public ReadOnly Property Destino As AssistDestination _
+                                 Implements IAssistantProvider.Destino
+            Get
+                Return New AssistDestination("provedor-de-teste", Endereco, "modelo-de-teste")
+            End Get
+        End Property
+
+        Public Function Preparar(envelope As Byte()) As Byte() _
+                                 Implements IAssistantProvider.Preparar
+            Return envelope
+        End Function
+
+        Public Function Pronto() As Boolean Implements IAssistantProvider.Pronto
+            Return True
+        End Function
+
+        Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _
+                               Implements IAssistantProvider.Enviar
+            Return New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
+        End Function
+    End Class
 
 End Class

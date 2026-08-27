@@ -20,7 +20,15 @@ Namespace Global.Iris.Cache
         ''' Versão do schema gravada em <c>PRAGMA user_version</c>. Abrir um
         ''' banco de versão diferente FALHA FECHADO.
         ''' </summary>
-        Public Const SchemaVersion As Integer = 1
+        ' 2: disclosure_log ganhou http_status.
+        '
+        ' NAO HA MIGRACAO, DE PROPOSITO (ver CacheDatabase.Open): um banco na
+        ' versao 1 falha fechado. O cache e reconstruivel a partir do Outlook;
+        ' o DIARIO nao e, e por isso trocar de versao pede ler o diario velho
+        ' antes de apagar o arquivo:
+        '
+        '   dotnet run --project tools\Iris.CrashHarness -- historico
+        Public Const SchemaVersion As Integer = 2
 
         Public Shared Function Generate(schema As CacheSchema) As IReadOnlyList(Of String)
             Dim comandos As New List(Of String)()

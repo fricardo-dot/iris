@@ -616,8 +616,18 @@ Namespace Global.Iris.App.ViewModels
                     Resultado = ""
                     ' Sem asterisco: num TextBlock ele aparece literalmente, e
                     ' "**nao da para saber**" na tela e desleixo visivel.
+                    '
+                    ' O CODIGO HTTP VAI JUNTO quando houve um. So o numero:
+                    ' corpo de erro de provedor ECOA o que foi enviado, e a
+                    ' faixa da IA nao e lugar para o e-mail do usuario voltar.
+                    ' Mas sem numero nenhum a frase nao diz o que fazer a
+                    ' seguir -- 401 manda recadastrar a chave, 404 manda rever
+                    ' a restricao de provedor -- e da primeira vez descobrir
+                    ' isso custou tres ferramentas de linha de comando.
                     Aviso = "A operação não terminou, e não dá para saber se o " &
-                            "conteúdo chegou ao provedor. Isso ficou registrado."
+                            "conteúdo chegou ao provedor. Isso ficou registrado." &
+                            If(r.CodigoHttp.HasValue,
+                               $" O provedor respondeu HTTP {r.CodigoHttp.Value}.", "")
                 Case Else
                     Resultado = ""
                     Aviso = "A operação não foi feita, e nada saiu deste computador."

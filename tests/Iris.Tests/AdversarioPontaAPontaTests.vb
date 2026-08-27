@@ -1058,7 +1058,9 @@ Namespace Global.Iris.Tests
             End Function
 
             Public Function Falhar(r As Guid, q As DateTimeOffset, n As DisclosureNote,
-                                   a As Boolean) As Boolean Implements IDisclosureJournal.Falhar
+                                   a As Boolean,
+                                   Optional codigoHttp As Integer? = Nothing) As Boolean _
+                                   Implements IDisclosureJournal.Falhar
                 Return True
             End Function
 

@@ -162,6 +162,34 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
+        ''' <b>O código HTTP que vale a pena guardar.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE UM NÚMERO PODE ENTRAR ONDE TEXTO NÃO PODE</b>
+        '''
+        ''' O diário recusa texto de terceiro porque corpo de erro <b>ecoa o que
+        ''' foi enviado</b>. Um status HTTP não ecoa nada: é um inteiro de três
+        ''' dígitos, de um conjunto que o provedor não escolhe livremente. Ele
+        ''' cabe aqui pelo mesmo motivo que o corpo do erro não cabe.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>FORA DA FAIXA VIRA NADA, E NÃO RECUSA</b>
+        '''
+        ''' A tentação é recusar o <c>Falhar</c> quando o código não faz sentido.
+        ''' Seria pior: o registro ficaria <b>em voo</b>, a reconciliação da
+        ''' abertura seguinte o marcaria ambíguo, e o diário passaria a dizer
+        ''' "pode ter saído conteúdo e ninguém sabe" — quando se sabe, e o único
+        ''' defeito era um número estranho num campo de diagnóstico.
+        '''
+        ''' Um campo de diagnóstico não pode piorar o registro que ele anota.
+        ''' </summary>
+        Public Function CodigoDeDiario(codigo As Integer?) As Integer?
+            If Not codigo.HasValue Then Return Nothing
+            If codigo.Value < 100 OrElse codigo.Value > 599 Then Return Nothing
+            Return codigo
+        End Function
+
+        ''' <summary>
         ''' Notas de coisa que impediu o envio <b>antes</b> dele — as únicas que
         ''' <c>NaoEnviou</c> aceita.
         ''' </summary>
@@ -228,6 +256,17 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Public ReadOnly Property MotivoDoPortao As DisclosureReason
 
+        ''' <summary>
+        ''' <b>O código HTTP, quando houve um.</b> <c>Nothing</c> quando não
+        ''' chegou a haver resposta — e também quando o envio deu certo.
+        '''
+        ''' Existe porque <c>ProvedorRecusou</c> sozinho não distingue "a chave
+        ''' não vale" de "nenhum provedor atende a esta política de dados", e as
+        ''' duas levam a ações opostas. Sem o código foi preciso escrever três
+        ''' ferramentas para descobrir o que esta linha devia ter contado.
+        ''' </summary>
+        Public ReadOnly Property CodigoHttp As Integer?
+
         Public Sub New(sequencia As Long, requestId As Guid, capabilityId As Guid,
                        estagio As DisclosureStage, ativacaoId As String,
                        ativacaoVersao As Integer, operacao As AssistOperation,
@@ -235,7 +274,7 @@ Namespace Global.Iris.Assist
                        hash As String, bytes As Integer, mensagens As Integer,
                        intencionada As DateTimeOffset, iniciada As DateTimeOffset?,
                        terminada As DateTimeOffset?, nota As DisclosureNote,
-                       motivoDoPortao As DisclosureReason)
+                       motivoDoPortao As DisclosureReason, codigoHttp As Integer?)
             Me.Sequencia = sequencia
             Me.RequestId = requestId
             Me.CapabilityId = capabilityId
@@ -254,6 +293,7 @@ Namespace Global.Iris.Assist
             Me.Terminada = terminada
             Me.Nota = nota
             Me.MotivoDoPortao = motivoDoPortao
+            Me.CodigoHttp = DisclosureNotes.CodigoDeDiario(codigoHttp)
         End Sub
 
     End Class
@@ -333,13 +373,18 @@ Namespace Global.Iris.Assist
         ''' de começar, conexão caindo. Vira <see cref="DisclosureStage.Ambigua"/>,
         ''' e <b>nunca</b> volta a ser "não enviou".
         ''' </param>
+        ''' <param name="codigoHttp">
+        ''' O status da resposta, quando houve resposta. <b>Só o número</b>: o
+        ''' corpo do erro não entra, porque corpo de erro ecoa o que foi enviado.
+        ''' </param>
         ''' <remarks>
         ''' Só aceita nota de <b>transporte</b>
         ''' (<see cref="DisclosureNotes.DeTransporte"/>). "O portão negou" não é
         ''' um jeito de a transmissão falhar: ela nem teria começado.
         ''' </remarks>
         Function Falhar(requestId As Guid, quando As DateTimeOffset,
-                        nota As DisclosureNote, podeTerChegado As Boolean) As Boolean
+                        nota As DisclosureNote, podeTerChegado As Boolean,
+                        Optional codigoHttp As Integer? = Nothing) As Boolean
 
         ''' <summary>
         ''' Registra uma divulgação que <b>não aconteceu</b> — o portão negou, a

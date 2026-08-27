@@ -213,7 +213,9 @@ Namespace Global.Iris.CrashHarness
                     Console.WriteLine($"    operacao ... {e.Operacao}   mensagens: {e.Mensagens}")
                     Console.WriteLine($"    provedor ... {e.Provedor} / {e.Modelo}")
                     Console.WriteLine($"    bytes ...... {e.Bytes}   hash: {e.Hash}")
-                    Console.WriteLine($"    nota ....... {e.Nota}")
+                    Console.WriteLine($"    nota ....... {e.Nota}" &
+                                      If(e.CodigoHttp.HasValue,
+                                         $"   HTTP {e.CodigoHttp.Value}", ""))
                     Console.WriteLine()
                 Next
             End Using
