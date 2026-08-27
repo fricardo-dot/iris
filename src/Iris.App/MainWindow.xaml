@@ -173,10 +173,24 @@
 
     <Border x:Name="RootBorder">
         <Grid>
+            <!-- QUATRO LINHAS, E A QUARTA NASCEU DE UM DEFEITO.
+
+                 A faixa do acervo e a faixa da IA moravam as duas na linha 2.
+                 Num Grid isso significa EMPILHADAS, e a da IA - declarada
+                 depois, e com fundo proprio - pintava por cima. A do acervo
+                 nunca foi vista na tela, e a pendencia da Fase 2 que dizia
+                 isso nao era falta de dado: era esta linha faltando.
+
+                 Ninguem notou por anos porque a faixa do acervo so aparecia
+                 quando havia ressalva, e a da IA cobria justamente quando
+                 aparecia. Duas visibilidades condicionais escondendo uma
+                 sobreposicao. -->
             <Grid.RowDefinitions>
                 <RowDefinition Height="48" />
                 <RowDefinition Height="*" />
-                <!-- A faixa do acervo. Auto: some quando nao ha o que dizer. -->
+                <!-- O acervo. -->
+                <RowDefinition Height="Auto" />
+                <!-- A IA. -->
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
@@ -1154,7 +1168,7 @@
 
                  O UserControl nao precisa de broker nem de Outlook: ele so
                  tem bindings. -->
-            <local:FaixaDaIa Grid.Row="2" DataContext="{Binding Assistente}" />
+            <local:FaixaDaIa Grid.Row="3" DataContext="{Binding Assistente}" />
 
         </Grid>
     </Border>

@@ -119,6 +119,53 @@ Public Class BindingsDaJanelaTests
     End Sub
 
     ''' <summary>
+    ''' <b>A faixa do acervo e a da IA não moram na mesma linha da grade.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O DEFEITO QUE ESTE TESTE FECHA</b>
+    '''
+    ''' As duas ficavam em <c>Grid.Row="2"</c>. Num <c>Grid</c> isso significa
+    ''' <b>empilhadas</b>, e a da IA — declarada depois, e com fundo próprio —
+    ''' pintava por cima. <b>A faixa do acervo nunca foi vista na tela</b>, e a
+    ''' pendência da Fase 2 que dizia exatamente isso não era falta de dado: era
+    ''' uma linha de grade faltando.
+    '''
+    ''' Ninguém notou porque as duas tinham visibilidade condicional: a do
+    ''' acervo só aparecia havendo ressalva, e a da IA cobria justamente quando
+    ''' aparecia. Duas condições escondendo uma sobreposição.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE ESTE TESTE LÊ TEXTO, E NÃO PIXEL</b>
+    '''
+    ''' O jeito honesto seria instanciar a <c>MainWindow</c> e medir os
+    ''' retângulos, como o <c>Aviso_e_resultado_NAO_se_cobrem</c> faz dentro da
+    ''' faixa da IA. A janela exige broker, cache e sessão, e montar tudo isso
+    ''' para conferir um número de linha custaria mais do que vale.
+    '''
+    ''' Então ele lê o XAML e cobra a propriedade que causou o defeito: as duas
+    ''' faixas, que aparecem <b>ao mesmo tempo</b>, declaram linhas diferentes.
+    ''' Não prova ausência de sobreposição em geral — prova que esta não voltou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_acervo_e_a_IA_nao_dividem_a_LINHA_da_grade()
+        Dim xaml = LerXaml()
+
+        Dim daIa = Text.RegularExpressions.Regex.Match(
+            xaml, "<local:FaixaDaIa\s+Grid\.Row=""(\d+)""")
+        Assert.IsTrue(daIa.Success, "nao achei a faixa da IA na janela")
+
+        Dim doAcervo = Text.RegularExpressions.Regex.Match(
+            xaml, "<Border Grid\.Row=""(\d+)""\s*?
+\s*Visibility=""\{Binding Acervo,")
+        Assert.IsTrue(doAcervo.Success, "nao achei a faixa do acervo na janela")
+
+        Assert.AreNotEqual(doAcervo.Groups(1).Value, daIa.Groups(1).Value,
+            "as duas faixas voltaram para a mesma linha da grade, e a de baixo " &
+            "cobre a de cima -- foi assim que a faixa do acervo passou a fase " &
+            "inteira sem nunca ter sido vista")
+    End Sub
+
+    ''' <summary>
     ''' <b>A janela hospeda a faixa da IA, com o contexto certo.</b>
     '''
     ''' A faixa é um <c>UserControl</c> próprio — foi extraída para que o teste
