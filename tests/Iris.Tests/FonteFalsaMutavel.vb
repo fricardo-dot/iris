@@ -219,13 +219,23 @@ Friend Class DestinoFalso
         Paginas.Add((pagina, linhas.Select(Function(l) l.Key).ToList(), cursorDepois))
     End Sub
 
+    ''' <summary>
+    ''' Quantas linhas o modelo declarou ter descartado na ultima publicacao.
+    ''' Guardado para a suite poder COBRAR o repasse: um duble que engolisse
+    ''' o numero deixaria o teste do descarte verde sobre um caminho que o
+    ''' perde.
+    ''' </summary>
+    Friend DescartadasPublicadas As Integer = -1
+
     Public Function Publicar(tentativa As Long, cobertura As FolderCoverage,
-                             antes As Integer, depois As Integer) As SinkPublishResult _
+                             antes As Integer, depois As Integer,
+                             descartadas As Integer) As SinkPublishResult _
                              Implements ISweepSink.Publicar
         If LancarAoPublicar Then Throw New InvalidOperationException("destino falhou ao publicar")
         If RespostaAoPublicar <> SinkPublishResult.Publicada Then Return RespostaAoPublicar
         Publicadas += 1
         CoberturaPublicada = cobertura
+        DescartadasPublicadas = descartadas
         Return SinkPublishResult.Publicada
     End Function
 

@@ -329,6 +329,25 @@ Public Class CacheDatabaseTests
         End Using
     End Sub
 
+    ''' <summary>
+    ''' <b>Devolve um banco de hoje ao formato da versao 1.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Fingir versao antiga por SUBTRACAO tem um custo: cada migracao nova
+    ''' precisa ser desfeita aqui tambem. Quando a 2 -> 3 entrou, os tres
+    ''' testes de migracao quebraram com "duplicate column name: discarded" --
+    ''' eles criavam um banco v3, tiravam so a coluna da migracao 1 -> 2, e
+    ''' mandavam a escada subir por cima do que ja existia.
+    '''
+    ''' Por isso mora num lugar so. A alternativa seria guardar um arquivo
+    ''' .db de verdade na versao 1, que prova mais e envelhece pior.
+    ''' </summary>
+    Private Shared Sub FingirVersao1(db As CacheDatabase)
+        Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
+        Executar(db, "ALTER TABLE generation DROP COLUMN discarded")
+        Executar(db, "PRAGMA user_version = 1")
+    End Sub
+
     Private Shared Sub Executar(db As CacheDatabase, sql As String)
         Using cmd = db.Connection.CreateCommand()
             cmd.CommandText = sql
@@ -362,8 +381,7 @@ Public Class CacheDatabaseTests
 
         Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
             Assert.IsNotNull(db, $"{falha}")
-            ' Volta ao formato da versao 1: DROP COLUMN e o user_version.
-            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
+            FingirVersao1(db)
             Executar(db, "INSERT INTO disclosure_log (request_id, seq, capability_id, " &
                          " stage, activation_id, activation_version, operation, provider, " &
                          " endpoint, model, payload_hash, payload_bytes, message_count, " &
@@ -372,7 +390,6 @@ Public Class CacheDatabaseTests
                          " 'openrouter', 'https://x.invalido/v1', 'modelo-1', 'hash-1', " &
                          " 3856, 1, '2026-08-26T00:00:00.0000000+00:00', " &
                          " 'ProvedorRecusou', 'NaoDecidido')")
-            Executar(db, "PRAGMA user_version = 1")
         End Using
         SqliteConnection.ClearAllPools()
 
@@ -404,8 +421,7 @@ Public Class CacheDatabaseTests
     Public Sub O_banco_MIGRADO_fica_com_a_mesma_guarda_do_novo()
         Dim falha As OpenFailure = Nothing
         Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
-            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
-            Executar(db, "PRAGMA user_version = 1")
+            FingirVersao1(db)
         End Using
         SqliteConnection.ClearAllPools()
 
@@ -503,8 +519,7 @@ Public Class CacheDatabaseTests
         Dim falha As OpenFailure = Nothing
         Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
             Assert.IsNotNull(db, $"{falha}")
-            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
-            Executar(db, "PRAGMA user_version = 1")
+            FingirVersao1(db)
         End Using
         SqliteConnection.ClearAllPools()
 
@@ -539,10 +554,9 @@ Public Class CacheDatabaseTests
         Dim falha As OpenFailure = Nothing
         Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
             Assert.IsNotNull(db, $"{falha}")
-            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
+            FingirVersao1(db)
             ' E ALGO MAIS quebrado, que a migracao 1 -> 2 nao conserta.
             Executar(db, "ALTER TABLE disclosure_log DROP COLUMN gate_reason")
-            Executar(db, "PRAGMA user_version = 1")
         End Using
         SqliteConnection.ClearAllPools()
 

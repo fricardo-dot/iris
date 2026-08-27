@@ -185,6 +185,7 @@ Namespace Global.Iris.Cache
         Public Function Publicar(attemptKey As Long, folderKey As Long,
                                  tipoDeVarredura As String,
                                  contagemAntes As Long, contagemDepois As Long,
+                                 Optional descartadas As Long? = Nothing,
                                  Optional ByRef geracao As Long = 0,
                                  Optional alcance As String = "desconhecida",
                                  Optional environmentKey As Long = 1) As PublishOutcome
@@ -265,12 +266,15 @@ Namespace Global.Iris.Cache
                 Dim g = Convert.ToInt64(Escalar(tx,
                     "INSERT INTO generation (folder_key, attempt_key, coverage_kind, " &
                     "coverage_key, universe_fingerprint, rows_read, count_before, count_after, " &
-                    "distinct_keys, reconcile_epoch, published_at) " &
-                    "VALUES ($f,$a,$k,$cov,$u,$r,$b,$d,$q,$p,$t); SELECT last_insert_rowid()",
+                    "discarded, distinct_keys, reconcile_epoch, published_at) " &
+                    "VALUES ($f,$a,$k,$cov,$u,$r,$b,$d,$desc,$q,$p,$t); SELECT last_insert_rowid()",
                     ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)), ("$k", CObj(tipoDeVarredura)),
                     ("$cov", CObj(cov)),
                     ("$u", CObj(universo)), ("$r", CObj(lidas)), ("$b", CObj(contagemAntes)),
-                    ("$d", CObj(contagemDepois)), ("$q", CObj(distintas)),
+                    ("$d", CObj(contagemDepois)),
+                    ("$desc", If(descartadas.HasValue,
+                                 CObj(descartadas.Value), CObj(DBNull.Value))),
+                    ("$q", CObj(distintas)),
                     ("$p", CObj(epocaPasta)), ("$t", CObj(Agora()))))
 
                 Executar(tx, "UPDATE folder SET published_generation_key = $g WHERE folder_key = $f",

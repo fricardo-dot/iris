@@ -142,8 +142,18 @@ Namespace Global.Iris.Sync
         ''' resultado — a persistência tem o seu próprio fencing, e ele pode
         ''' recusar depois de o modelo ter aprovado.
         ''' </summary>
+        ''' <param name="descartadas">
+        ''' Quantas linhas a fonte viu e <b>recusou</b> por não serem mensagem.
+        '''
+        ''' Vai junto porque a guarda S6 usa este número para decidir se publica
+        ''' — <c>lidas + descartadas = contagem</c> — e depois ele era jogado
+        ''' fora. Quem olhasse o acervo veria "1123 guardados" contra uma pasta
+        ''' de 1135 e não teria como saber por quê: o número tinha sido
+        ''' verificado e perdido no mesmo instante.
+        ''' </param>
         Function Publicar(tentativa As Long, cobertura As FolderCoverage,
-                          antes As Integer, depois As Integer) As SinkPublishResult
+                          antes As Integer, depois As Integer,
+                          descartadas As Integer) As SinkPublishResult
 
         Sub Descartar(tentativa As Long, motivo As String)
 
@@ -365,7 +375,8 @@ Namespace Global.Iris.Sync
 
                 If proposto.Commands.Contains(SweepCommand.PublicarGeracao) Then
                     Dim res = _destino.Publicar(tentativa, proposto.Cobertura,
-                                                a.CountBefore.Value, a.CountAfter.Value)
+                                                a.CountBefore.Value, a.CountAfter.Value,
+                                                a.Discarded)
                     If res <> SinkPublishResult.Publicada Then
                         ' A persistencia tem fencing proprio e pode recusar
                         ' depois de o modelo aprovar. Nao instala o estado.

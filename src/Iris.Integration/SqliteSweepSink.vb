@@ -53,14 +53,15 @@ Namespace Global.Iris.Integration
         End Sub
 
         Public Function Publicar(tentativa As Long, cobertura As FolderCoverage,
-                                 antes As Integer, depois As Integer) As SinkPublishResult _
+                                 antes As Integer, depois As Integer,
+                                 descartadas As Integer) As SinkPublishResult _
                                  Implements ISweepSink.Publicar
             Dim g As Long = 0
             ' Tipo de varredura e ALCANCE sao eixos diferentes: esta varredura e
             ' sempre de tipo COMPLETO (percorreu a pasta inteira), e o quanto
             ' dela se alcancou vai na observacao de cobertura.
             Dim r = _writer.Publicar(tentativa, _folderKey, "completa",
-                                     antes, depois, g,
+                                     antes, depois, CLng(descartadas), g,
                                      alcance:=TextoDoAlcance(cobertura),
                                      environmentKey:=_environmentKey)
             Select Case r

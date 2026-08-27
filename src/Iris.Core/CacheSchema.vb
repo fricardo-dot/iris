@@ -338,6 +338,7 @@ Namespace Global.Iris.Core
                 Col("rows_read", "INTEGER", obrigatoria:=True),
                 Col("count_before", "INTEGER", obrigatoria:=True),
                 Col("count_after", "INTEGER", obrigatoria:=True),
+                Col("discarded", "INTEGER", check:="discarded IS NULL OR discarded >= 0"),
                 Col("distinct_keys", "INTEGER", obrigatoria:=True),
                 Col("reconcile_epoch", "INTEGER", obrigatoria:=True),
                 Col("published_at", "TEXT", obrigatoria:=True)

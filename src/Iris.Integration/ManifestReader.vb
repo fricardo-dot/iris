@@ -68,15 +68,37 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Public ReadOnly Property Contracao As ContractionReport
 
+        ''' <summary>
+        ''' <b>Quantas linhas a varredura viu e recusou por não serem mensagem.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <c>Nothing</c> em geração anterior à coluna — e <c>Nothing</c>
+        ''' <b>não é zero</b>. Zero afirma que nada foi descartado; nulo diz que
+        ''' aquela varredura não contou.
+        '''
+        ''' Existe porque o número era calculado, usado pela guarda S6 para
+        ''' decidir se publicava (<c>lidas + descartadas = contagem</c>), e
+        ''' <b>jogado fora no mesmo instante</b>. O usuário via "1123 guardados"
+        ''' contra uma Caixa de Entrada de 1135 e não tinha onde procurar os 12.
+        '''
+        ''' O projeto já tinha tomado esta decisão do outro lado: a lista de
+        ''' mensagens mostra o <c>SkippedCount</c>, com o comentário dizendo que
+        ''' sem ele <i>"28 de 30 viraria mistério"</i>. A varredura fazia o mesmo
+        ''' e não contava.
+        ''' </summary>
+        Public ReadOnly Property Descartadas As Integer?
+
         Friend Sub New(folderKey As Long, generationKey As Long?, cobertura As FolderCoverage,
                        publishedAt As String, items As IEnumerable(Of ManifestItem),
-                       Optional contracao As ContractionReport = Nothing)
+                       Optional contracao As ContractionReport = Nothing,
+                       Optional descartadas As Integer? = Nothing)
             Me.FolderKey = folderKey
             Me.GenerationKey = generationKey
             Me.Cobertura = cobertura
             Me.PublishedAt = publishedAt
             Me.Items = If(items, Enumerable.Empty(Of ManifestItem)()).ToList()
             Me.Contracao = contracao
+            Me.Descartadas = descartadas
         End Sub
 
         ''' <summary>
@@ -116,8 +138,28 @@ Namespace Global.Iris.Integration
                 ' A contração vem PRIMEIRO quando existe: é a informação mais
                 ' recente e a mais acionável — alguma coisa mudou agora.
                 Dim aviso = Contracao?.Aviso
-                If aviso Is Nothing Then Return base
-                Return If(base Is Nothing, aviso, aviso & " " & base)
+                Dim texto = If(aviso Is Nothing, base,
+                               If(base Is Nothing, aviso, aviso & " " & base))
+
+                ' O DESCARTE ENTRA POR ULTIMO, e so quando houve.
+                '
+                ' Ele explica uma diferenca ARITMETICA que o usuario ve na tela:
+                ' o acervo diz um numero e a pasta do Outlook diz outro. Sem
+                ' isso a diferenca fica sem dono -- e ela nao e falha, e o
+                ' contrario: a guarda S6 so publicou porque lidas + descartadas
+                ' bateu com a contagem.
+                '
+                ' Zero nao aparece: "0 recusadas" e ruido, e nulo nao aparece
+                ' porque nulo quer dizer "esta varredura nao contou".
+                If Descartadas.HasValue AndAlso Descartadas.Value > 0 Then
+                    Dim quantas = Descartadas.Value
+                    Dim frase = If(quantas = 1,
+                        "1 linha desta pasta foi vista e recusada por não ser mensagem.",
+                        $"{quantas} linhas desta pasta foram vistas e recusadas por não serem mensagem.")
+                    texto = If(texto Is Nothing, frase, texto & " " & frase)
+                End If
+
+                Return texto
             End Get
         End Property
     End Class
@@ -154,10 +196,11 @@ Namespace Global.Iris.Integration
             Dim geracao As Long? = Nothing
             Dim cobertura = FolderCoverage.Desconhecida
             Dim publicadaEm As String = Nothing
+            Dim descartadas As Integer? = Nothing
 
             Using cmd = _conn.CreateCommand()
                 cmd.CommandText =
-                    "SELECT g.generation_key, g.published_at, c.coverage " &
+                    "SELECT g.generation_key, g.published_at, c.coverage, g.discarded " &
                     "FROM folder f " &
                     "JOIN generation g ON g.generation_key = f.published_generation_key " &
                     "LEFT JOIN coverage_observation c ON c.coverage_key = g.coverage_key " &
@@ -168,6 +211,7 @@ Namespace Global.Iris.Integration
                         geracao = rd.GetInt64(0)
                         publicadaEm = rd.GetString(1)
                         cobertura = DaCobertura(If(rd.IsDBNull(2), Nothing, rd.GetString(2)))
+                        descartadas = If(rd.IsDBNull(3), CType(Nothing, Integer?), rd.GetInt32(3))
                     End If
                 End Using
             End Using
@@ -207,7 +251,8 @@ Namespace Global.Iris.Integration
                 End Using
             End Using
 
-            Return New FolderManifest(folderKey, geracao, cobertura, publicadaEm, itens, contracao)
+            Return New FolderManifest(folderKey, geracao, cobertura, publicadaEm, itens,
+                                      contracao, descartadas)
         End Function
 
         Private Shared Function DaCobertura(s As String) As FolderCoverage

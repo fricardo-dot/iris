@@ -47,9 +47,20 @@ Namespace Global.Iris.Integration.Outlook
             Me.Pasta = pasta
         End Sub
 
+        ''' <summary>
+        ''' <b>A varredura PUBLICOU.</b>
+        '''
+        ''' Nao basta "chegou a varrer": o SweepRunner devolve resultado tambem
+        ''' quando a tentativa e descartada -- fonte que recusou, conta do S6
+        ''' que nao fechou, epoca vencida. Enquanto isto dizia so
+        ''' "Varredura IsNot Nothing", um teste meu afirmava sucesso sobre uma
+        ''' varredura que nao tinha gravado nada.
+        ''' </summary>
         Public ReadOnly Property Ok As Boolean
             Get
-                Return Recusa = RecusaDeVarredura.Nenhuma AndAlso Varredura IsNot Nothing
+                Return Recusa = RecusaDeVarredura.Nenhuma AndAlso
+                       Varredura IsNot Nothing AndAlso
+                       Varredura.Conclusion = SweepConclusion.Publicada
             End Get
         End Property
     End Class

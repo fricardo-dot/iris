@@ -3,6 +3,7 @@ Imports System.IO
 Imports System.Threading
 Imports Iris.Cache
 Imports Iris.Core
+Imports Iris.Integration
 Imports Iris.Integration.Outlook
 Imports Iris.Model
 Imports Iris.Sync
@@ -75,6 +76,7 @@ Public Class VarreduraDaPastaTests
                         .Key = New ItemKey("E-1", "store-1"), .Subject = "um"},
                     New MailSummary() With {
                         .Key = New ItemKey("E-2", "store-1"), .Subject = "dois"}},
+                .TotalAtStart = 2,
                 .NextCursor = Nothing})
         Return b
     End Function
@@ -136,6 +138,10 @@ Public Class VarreduraDaPastaTests
             Assert.IsTrue(r.Pasta > 0, "a pasta tinha de ter sido resolvida")
             Assert.AreEqual(1, Contar(db, "folder"))
             Assert.AreEqual(1, Contar(db, "scan_attempt"))
+            ' PUBLICOU, e nao so "chegou a varrer". Sem esta linha o teste
+            ' passava com o fixture base, que nao declarava TotalAtStart: sem
+            ' total nao ha S6, nada publica, e "Ok" continuava verdadeiro.
+            Assert.AreEqual(1, Contar(db, "generation"))
         End Using
     End Sub
 
@@ -266,5 +272,133 @@ Public Class VarreduraDaPastaTests
             Return Convert.ToInt64(cmd.ExecuteScalar())
         End Using
     End Function
+
+    ' ==================================================================
+    ' O DESCARTE DECLARADO
+    '
+    ' A varredura da Caixa de Entrada leu 1123 e a pasta declarava 1135. A
+    ' diferenca -- 12 linhas vistas e recusadas por nao serem mensagem -- era
+    ' CALCULADA, usada pela guarda S6 para decidir se publicava, e jogada fora
+    ' no mesmo instante. Quem olhasse o acervo depois via dois numeros e nao
+    ' tinha onde procurar o terceiro.
+
+    ''' <summary>
+    ''' <b>O descarte declarado sobrevive à varredura.</b>
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_descarte_declarado_e_GUARDADO()
+        Using db = Abrir()
+            Dim b = Broker()
+            ' Tres na pasta, uma delas recusada pela fonte: o Iris guarda duas
+            ' e a contagem continua tres.
+            b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                New MessagePage() With {
+                    .Items = New List(Of MailSummary) From {
+                        New MailSummary() With {.Key = New ItemKey("E-1", "store-1")},
+                        New MailSummary() With {.Key = New ItemKey("E-2", "store-1")}},
+                    .SkippedCount = 1,
+                    .TotalAtStart = 3,
+                    .NextCursor = Nothing})
+
+            Dim v As New VarreduraDaPasta(b, db)
+            Autorizar(db, v.Executar(Alvo, "Caixa", Store(), CancellationToken.None).ChaveDoAmbiente)
+            Dim r = v.Executar(Alvo, "Caixa", Store(), CancellationToken.None)
+
+            Assert.IsTrue(r.Ok, "a conta 2 + 1 = 3 tinha de fechar e publicar")
+            Assert.AreEqual(1L, Numero(db, "SELECT discarded FROM generation ORDER BY generation_key DESC LIMIT 1"))
+            Assert.AreEqual(2L, Numero(db, "SELECT rows_read FROM generation ORDER BY generation_key DESC LIMIT 1"))
+            Assert.AreEqual(3L, Numero(db, "SELECT count_before FROM generation ORDER BY generation_key DESC LIMIT 1"))
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>E o número aparece na ressalva, com as palavras certas.</b>
+    '''
+    ''' O projeto já tinha tomado esta decisão do outro lado: a lista de
+    ''' mensagens mostra o <c>SkippedCount</c>, com o comentário dizendo que sem
+    ''' ele <i>"28 de 30 viraria mistério"</i>. A varredura fazia o mesmo e não
+    ''' contava.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_descarte_APARECE_na_ressalva()
+        Using db = Abrir()
+            Dim b = Broker()
+            b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                New MessagePage() With {
+                    .Items = New List(Of MailSummary) From {
+                        New MailSummary() With {.Key = New ItemKey("E-1", "store-1")},
+                        New MailSummary() With {.Key = New ItemKey("E-2", "store-1")}},
+                    .SkippedCount = 1,
+                    .TotalAtStart = 3,
+                    .NextCursor = Nothing})
+
+            Dim v As New VarreduraDaPasta(b, db)
+            Autorizar(db, v.Executar(Alvo, "Caixa", Store(), CancellationToken.None).ChaveDoAmbiente)
+            Dim r = v.Executar(Alvo, "Caixa", Store(), CancellationToken.None)
+
+            Dim m = New ManifestReader(db).Ler(r.Pasta)
+
+            Assert.AreEqual(CType(1, Integer?), m.Descartadas)
+            StringAssert.Contains(m.Ressalva, "recusada por não ser mensagem")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Zero não vira frase.</b>
+    '''
+    ''' "0 recusadas" é ruído numa faixa que já carrega a ressalva da §23.
+    ''' E é o controle negativo do teste acima: sem ele, uma ressalva que
+    ''' acrescentasse a frase sempre passaria.
+    ''' </summary>
+    <TestMethod>
+    Public Sub ZERO_descartes_nao_vira_frase()
+        Using db = Abrir()
+            Dim v As New VarreduraDaPasta(Broker(), db)
+            Autorizar(db, v.Executar(Alvo, "Caixa", Store(), CancellationToken.None).ChaveDoAmbiente)
+            Dim r = v.Executar(Alvo, "Caixa", Store(), CancellationToken.None)
+
+            Dim m = New ManifestReader(db).Ler(r.Pasta)
+
+            Assert.AreEqual(CType(0, Integer?), m.Descartadas, "contou zero, e zero e um numero")
+            Assert.IsFalse(m.Ressalva.Contains("recusad"), m.Ressalva)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>A guarda S6 continua mandando: descarte que não fecha a conta NÃO
+    ''' publica.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' É o que dá sentido ao número guardado. O S6 exige que tudo o que a
+    ''' pasta declarava tenha sido <b>lido ou explicitamente recusado</b> —
+    ''' recusa declarada é mais forte que recusa silenciosa, porque obriga a
+    ''' fonte a contar o que jogou fora.
+    '''
+    ''' Aqui a fonte diz que a pasta tinha 5, entrega 2 e declara 1 descarte:
+    ''' faltam 2 que ninguém sabe onde estão. Publicar seria gravar um acervo
+    ''' que perdeu mensagem sem dizer.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Conta_que_NAO_fecha_nao_publica()
+        Using db = Abrir()
+            Dim b = Broker()
+            b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                New MessagePage() With {
+                    .Items = New List(Of MailSummary) From {
+                        New MailSummary() With {.Key = New ItemKey("E-1", "store-1")},
+                        New MailSummary() With {.Key = New ItemKey("E-2", "store-1")}},
+                    .SkippedCount = 1,
+                    .TotalAtStart = 5,
+                    .NextCursor = Nothing})
+
+            Dim v As New VarreduraDaPasta(b, db)
+            Autorizar(db, v.Executar(Alvo, "Caixa", Store(), CancellationToken.None).ChaveDoAmbiente)
+            Dim r = v.Executar(Alvo, "Caixa", Store(), CancellationToken.None)
+
+            Assert.AreNotEqual(SweepConclusion.Publicada, r.Varredura.Conclusion,
+                "2 lidas + 1 descartada = 3, e a pasta declarava 5")
+            Assert.AreEqual(0, Contar(db, "generation"))
+        End Using
+    End Sub
 
 End Class

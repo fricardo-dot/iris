@@ -21,7 +21,8 @@ Namespace Global.Iris.Cache
         ''' banco de versão diferente FALHA FECHADO.
         ''' </summary>
         ' 2: disclosure_log ganhou http_status.
-        Public Const SchemaVersion As Integer = 2
+        ' 3: generation ganhou discarded.
+        Public Const SchemaVersion As Integer = 3
 
         ''' <summary>
         ''' <b>Os passos de migração conhecidos, e só eles.</b>
@@ -68,9 +69,15 @@ Namespace Global.Iris.Cache
             End Get
         End Property
 
-        ' 1 -> 2: aditiva e nula, entao nenhuma linha ja gravada muda de
-        ' sentido. O CHECK acompanha a coluna, para o banco migrado ficar com
-        ' a mesma guarda do banco criado do zero.
+        ' 1 -> 2 e 2 -> 3: aditivas e nulas, entao nenhuma linha ja gravada
+        ' muda de sentido. O CHECK acompanha a coluna, para o banco migrado
+        ' ficar com a mesma guarda do banco criado do zero.
+        '
+        ' E NULO NAO E ZERO. Numa geracao anterior a coluna, nulo quer dizer
+        ' "esta varredura nao contou o que descartou". Zero seria a afirmacao
+        ' de que nada foi descartado, e nenhuma geracao velha tem como
+        ' sustenta-la -- inclusive a que varreu a Caixa de Entrada e jogou
+        ' fora a contagem de 12.
         '
         ' (Comentario AQUI, e nao dentro do inicializador: em VB a continuacao
         ' implicita de { } nao aceita uma linha so de comentario, e o erro sai
@@ -93,6 +100,10 @@ Namespace Global.Iris.Cache
                         "ALTER TABLE disclosure_log ADD COLUMN http_status INTEGER " &
                         "CHECK (http_status IS NULL OR " &
                         "(http_status >= 100 AND http_status <= 599))"
+                    })},
+                    {2, Array.AsReadOnly(New String() {
+                        "ALTER TABLE generation ADD COLUMN discarded INTEGER " &
+                        "CHECK (discarded IS NULL OR discarded >= 0)"
                     })}
                 })
 
