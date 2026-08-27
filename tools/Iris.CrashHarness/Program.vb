@@ -54,6 +54,18 @@ Namespace Global.Iris.CrashHarness
                 Return Ativacao(If(args.Length > 1, args(1), Nothing))
             End If
 
+            ' Modo AMBIENTE: a cerimonia do ambiente.
+            '
+            ' Nao e roteiro PowerShell -- eu escrevi um e ele nao roda: o
+            ' PowerShell 5.1 vive no .NET Framework e nao carrega o
+            ' Microsoft.Data.Sqlite do .NET 10. E melhor assim: aqui a leitura
+            ' passa pelo MESMO CacheDatabase.Open do Iris, entao a cerimonia
+            ' confere o banco que o programa abre, e nao um que so ela abre.
+            If args.Length >= 1 AndAlso String.Equals(args(0), "ambiente",
+                                                      StringComparison.Ordinal) Then
+                Return Ambiente(args)
+            End If
+
             ' Modo HISTORICO: le o diario de divulgacao do cache de producao.
             ' Existe para conferir o canario -- uma linha, um RequestId, um
             ' desfecho -- sem abrir o banco na mao.
@@ -167,6 +179,188 @@ Namespace Global.Iris.CrashHarness
         ''' corporativa de alguem.
         ''' </summary>
         ''' <summary>
+        ''' <b>A cerimônia do ambiente: mostra o que o Iris mediu, e grava a
+        ''' decisão de quem responde pela caixa.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE ISTO É UMA CERIMÔNIA E NÃO UMA DETECÇÃO</b>
+        '''
+        ''' O gate D2 diz que a allowlist do ambiente é <b>dado</b>, e não
+        ''' constante no código, justamente para que "ambiente não medido"
+        ''' possa recusar operar. Se o Iris marcasse <c>allowed = 1</c> no que
+        ''' ele mesmo detectou, estaria medindo e aprovando a própria medição, e
+        ''' o D2 viraria decoração.
+        '''
+        ''' Então o programa grava o perfil com <c>allowed = 0</c> e para. Aqui
+        ''' é onde o zero vira um.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE ESTA AUTORIZAÇÃO NÃO DESTRAVA</b>
+        '''
+        ''' Em Exchange em cache a janela de sincronização <b>não é legível</b>
+        ''' — a §22.3 mediu que <c>Store</c> não a expõe e a §22.4 mediu que o
+        ''' registro do perfil também não. O Iris nunca vai saber que ela mudou,
+        ''' então continua sem poder afirmar cobertura completa nem concluir
+        ''' ausência. Autorizar destrava <b>varrer e contar</b>. A degradação é
+        ''' permanente, e de propósito.
+        ''' </summary>
+        ''' <summary>
+        ''' Onde o cache do usuario mora. Um lugar so decide isso: dois modos
+        ''' com o caminho montado na mao divergiriam no dia em que ele mudasse,
+        ''' e um deles passaria a conferir um arquivo que nao e o do programa.
+        ''' </summary>
+        Private Function CacheDoUsuario() As String
+            Return IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Iris", "cache.db")
+        End Function
+
+        Private Function Ambiente(args As String()) As Integer
+            Dim autorizar As Long = 0
+            Dim revogar = False
+            Dim caminho As String = Nothing
+
+            For i = 1 To args.Length - 1
+                Select Case args(i)
+                    Case "--autorizar"
+                        If i + 1 < args.Length Then
+                            i += 1
+                            If Not Long.TryParse(args(i), autorizar) Then
+                                Console.Error.WriteLine("chave invalida: " & args(i))
+                                Return 2
+                            End If
+                        End If
+                    Case "--revogar"
+                        revogar = True
+                    Case Else
+                        caminho = args(i)
+                End Select
+            Next
+
+            Dim alvo = If(String.IsNullOrWhiteSpace(caminho), CacheDoUsuario(), caminho)
+            Console.WriteLine($"cache:  {alvo}")
+            Console.WriteLine()
+
+            If Not IO.File.Exists(alvo) Then
+                Console.WriteLine("Nao existe cache. Ele nasce na primeira abertura do Iris.")
+                Return 1
+            End If
+
+            Dim falha As OpenFailure = Nothing
+            Using db = CacheDatabase.Open(alvo, CacheSchema.Intended(), falha)
+                If db Is Nothing Then
+                    Console.WriteLine($"o cache nao abriu: {falha}")
+                    Return 1
+                End If
+
+                If autorizar > 0 Then Return Decidir(db, autorizar, Not revogar)
+                Return Listar(db)
+            End Using
+        End Function
+
+        Private Function Listar(db As CacheDatabase) As Integer
+            Dim quantos = 0
+            Using cmd = db.Connection.CreateCommand()
+                cmd.CommandText =
+                    "SELECT environment_key, fingerprint, provider, cached_mode, " &
+                    "       sync_window, allowed " &
+                    "FROM environment_profile ORDER BY environment_key"
+                Using r = cmd.ExecuteReader()
+                    While r.Read()
+                        quantos += 1
+                        Console.WriteLine(New String("-"c, 66))
+                        Console.WriteLine($"  chave ....... {r.GetInt64(0)}")
+                        Console.WriteLine($"  ambiente .... {r.GetString(1)}")
+                        Console.WriteLine($"  provedor .... {r.GetString(2)}")
+                        Console.WriteLine($"  cache ....... {If(r.GetInt32(3) = 1, "sim", "nao")}")
+                        Console.WriteLine($"  janela ...... " &
+                            If(r.IsDBNull(4), "NAO LEGIVEL (medido: 22.3 e 22.4)", r.GetString(4)))
+                        If r.GetInt32(5) = 1 Then
+                            Console.WriteLine("  AUTORIZADO por voce.")
+                        Else
+                            Console.WriteLine("  nao autorizado -- o Iris NAO varre neste ambiente.")
+                            Console.WriteLine($"  Para autorizar:  -- ambiente --autorizar {r.GetInt64(0)}")
+                        End If
+                    End While
+                End Using
+            End Using
+            Console.WriteLine(New String("-"c, 66))
+
+            If quantos = 0 Then
+                Console.WriteLine()
+                Console.WriteLine("Nenhum ambiente medido ainda.")
+                Console.WriteLine("Abra o Iris com o Outlook aberto: ele mede na primeira leitura.")
+            End If
+
+            Console.WriteLine()
+            Console.WriteLine("O QUE VOCE AUTORIZA: que o Iris trate o que consegue ler nesta")
+            Console.WriteLine("caixa como base para contar itens e varrer pastas.")
+            Console.WriteLine()
+            Console.WriteLine("O QUE NAO DESTRAVA: em Exchange em cache a janela de sincronizacao")
+            Console.WriteLine("nao e legivel, entao o Iris nunca sabe que ela mudou. Ele continua")
+            Console.WriteLine("sem afirmar cobertura completa e sem concluir ausencia.")
+            Return 0
+        End Function
+
+        Private Function Decidir(db As CacheDatabase, chave As Long,
+                                 permitir As Boolean) As Integer
+            Dim impressao As String = Nothing
+            Dim antes = -1
+
+            Using cmd = db.Connection.CreateCommand()
+                cmd.CommandText =
+                    "SELECT fingerprint, allowed FROM environment_profile " &
+                    "WHERE environment_key = $k"
+                cmd.Parameters.AddWithValue("$k", chave)
+                Using r = cmd.ExecuteReader()
+                    If r.Read() Then
+                        impressao = r.GetString(0)
+                        antes = r.GetInt32(1)
+                    End If
+                End Using
+            End Using
+
+            If impressao Is Nothing Then
+                Console.WriteLine($"Nao existe perfil com a chave {chave}.")
+                Console.WriteLine("Rode sem --autorizar para ver a lista.")
+                Return 1
+            End If
+
+            Dim novo = If(permitir, 1, 0)
+            If antes = novo Then
+                Console.WriteLine($"Nada a fazer: o perfil {chave} ja esta " &
+                                  If(permitir, "AUTORIZADO", "nao autorizado") & ".")
+                Return 0
+            End If
+
+            Console.WriteLine($"Perfil ...... {chave}")
+            Console.WriteLine($"Ambiente .... {impressao}")
+            Console.WriteLine($"Passa de .... {If(antes = 1, "AUTORIZADO", "nao autorizado")} " &
+                              $"para {If(permitir, "AUTORIZADO", "nao autorizado")}")
+            Console.WriteLine()
+
+            Using cmd = db.Connection.CreateCommand()
+                cmd.CommandText =
+                    "UPDATE environment_profile SET allowed = $a WHERE environment_key = $k"
+                cmd.Parameters.AddWithValue("$a", novo)
+                cmd.Parameters.AddWithValue("$k", chave)
+                If cmd.ExecuteNonQuery() <> 1 Then
+                    Console.WriteLine("a gravacao nao pegou.")
+                    Return 1
+                End If
+            End Using
+
+            Console.WriteLine("GRAVADO.")
+            If permitir Then
+                Console.WriteLine()
+                Console.WriteLine("Lembre do que isto NAO destrava: a janela de sincronizacao")
+                Console.WriteLine("continua ilegivel, entao nada de cobertura completa nem de")
+                Console.WriteLine("concluir ausencia. A degradacao e permanente, e de proposito.")
+            End If
+            Return 0
+        End Function
+
+        ''' <summary>
         ''' O diário de divulgação, do mais recente para o mais antigo.
         '''
         ''' <b>Não mostra conteúdo</b>, porque não há: o diário registra o que
@@ -174,12 +368,7 @@ Namespace Global.Iris.CrashHarness
         ''' aparecer texto aqui, é defeito, e é grave.
         ''' </summary>
         Private Function Historico(caminho As String) As Integer
-            Dim alvo = If(String.IsNullOrWhiteSpace(caminho),
-                          IO.Path.Combine(
-                              Environment.GetFolderPath(
-                                  Environment.SpecialFolder.LocalApplicationData),
-                              "Iris", "cache.db"),
-                          caminho)
+            Dim alvo = If(String.IsNullOrWhiteSpace(caminho), CacheDoUsuario(), caminho)
 
             Console.WriteLine($"cache:  {alvo}")
             Console.WriteLine($"existe: {IO.File.Exists(alvo)}")

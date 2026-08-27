@@ -40,7 +40,16 @@ Namespace Global.Iris.Integration
         Implements IPublicationConsumer
 
         Private ReadOnly _db As CacheDatabase
-        Private ReadOnly _folderKey As Long
+        ''' <summary>
+        ''' A pasta que este serviço está mostrando. <b>Muda</b>: era
+        ''' <c>ReadOnly</c>, e por isso o acervo ficava preso à pasta escolhida
+        ''' na construção — que em produção era a constante 1, e não a que o
+        ''' usuário estava olhando.
+        '''
+        ''' Guardada sob a mesma trava do manifesto: quem lê o manifesto tem de
+        ''' ver a pasta a que ele pertence, e não a de meio segundo atrás.
+        ''' </summary>
+        Private _folderKey As Long
         Private ReadOnly _trava As New Object()
         Private _atual As FolderManifest
         Private _recebidas As Integer
@@ -81,12 +90,55 @@ Namespace Global.Iris.Integration
         End Sub
 
         ''' <summary>
+        ''' <b>Passa a mostrar OUTRA pasta.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' Chamado quando o usuário troca de pasta na árvore. Sem isto o acervo
+        ''' ficava na pasta de chave 1 — a que uma importação manual tinha
+        ''' criado — enquanto a lista ao lado mostrava outra coisa. Dois painéis
+        ''' falando de pastas diferentes, sem nada dizendo isso.
+        '''
+        ''' Trocar para a mesma pasta não é trabalho perdido: relê. O manifesto
+        ''' pode ter mudado por uma varredura que rodou no meio.
+        ''' </summary>
+        Public Sub Apontar(folderKey As Long)
+            SyncLock _trava
+                _folderKey = folderKey
+            End SyncLock
+            Recarregar()
+            RaiseEvent Mudou(Me, EventArgs.Empty)
+        End Sub
+
+        ''' <summary>A pasta que este serviço está mostrando.</summary>
+        Public ReadOnly Property Alvo As Long
+            Get
+                SyncLock _trava
+                    Return _folderKey
+                End SyncLock
+            End Get
+        End Property
+
+        ''' <summary>
         ''' Relê o manifesto inteiro. É a idempotência: substituir, nunca
         ''' acumular.
         ''' </summary>
         Public Sub Recarregar()
-            Dim novo = New ManifestReader(_db).Ler(_folderKey)
+            ' A chave e lida SOB A TRAVA e usada fora: ler direto no argumento
+            ' deixaria a leitura do manifesto correr com uma chave que pode
+            ' mudar no meio, e o manifesto resultante seria atribuido como se
+            ' fosse da pasta nova.
+            Dim qual As Long
             SyncLock _trava
+                qual = _folderKey
+            End SyncLock
+
+            Dim novo = New ManifestReader(_db).Ler(qual)
+
+            SyncLock _trava
+                ' Se a pasta mudou enquanto lia, este manifesto e de uma pasta
+                ' que ja nao e a mostrada. Descartar e o certo: quem trocou
+                ' chamou Recarregar de novo.
+                If qual <> _folderKey Then Return
                 _atual = novo
             End SyncLock
         End Sub
