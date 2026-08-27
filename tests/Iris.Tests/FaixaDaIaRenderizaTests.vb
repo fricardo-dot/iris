@@ -47,6 +47,31 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 Public Class FaixaDaIaRenderizaTests
 
     ''' <summary>
+    ''' <b>Veste a faixa com os dicionarios de tema de verdade.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE PRECISA, E POR QUE DEPOIS DO CONSTRUTOR</b>
+    '''
+    ''' Em produção os estilos moram em <c>Application.Resources</c>. No
+    ''' processo de teste não existe <c>Application</c>, então nada disso é
+    ''' alcançável — e sem vestir, a faixa renderiza com o visual padrão do
+    ''' WPF, que <b>não é o que o usuário vê</b>. Um teste de renderização
+    ''' sobre um visual que não existe em lugar nenhum não é teste de nada.
+    '''
+    ''' Funciona depois do construtor porque a faixa usa <c>DynamicResource</c>:
+    ''' ele resolve quando o dicionário aparece. Com <c>StaticResource</c> a
+    ''' faixa nem carregaria aqui — e foi por isso que ela passou a usar
+    ''' <c>DynamicResource</c> em tudo.
+    ''' </summary>
+    Private Shared Sub Vestir(faixa As FrameworkElement)
+        ' O MESMO arquivo que o Application.xaml carrega. Uma lista propria
+        ' aqui podia divergir da do programa, e o teste passaria a provar uma
+        ' aparencia que nao existe em lugar nenhum.
+        faixa.Resources.MergedDictionaries.Add(New ResourceDictionary() With {
+            .Source = New Uri("pack://application:,,,/Iris;component/Themes/Tema.xaml")})
+    End Sub
+
+    ''' <summary>
     ''' A faixa real, com um contexto de dados que imita o ViewModel.
     '''
     ''' <b>Duas passadas</b> de layout: a primeira mede antes de os bindings de
@@ -57,6 +82,7 @@ Public Class FaixaDaIaRenderizaTests
                                    resultado As String,
                                    Optional podePedir As Boolean = False) As FrameworkElement
         Dim faixa As New Iris.App.Views.FaixaDaIa()
+        Vestir(faixa)
         faixa.DataContext = New FaixaFalsa(aviso, temAlgoADizer, resultado, podePedir)
 
         For passada = 1 To 2
@@ -410,6 +436,98 @@ Public Class FaixaDaIaRenderizaTests
             Dim canto = fe.TranslatePoint(New Point(0, 0), raiz)
             Yield New Rect(canto, New Size(fe.ActualWidth, fe.ActualHeight))
         Next
+    End Function
+
+    ' ==================================================================
+    ' LEGIBILIDADE
+    '
+    ' O primeiro resumo de verdade chegou certo e ILEGIVEL: a faixa nao
+    ' consumia token nenhum, entao herdava preto sobre fundo escuro. O texto
+    ' estava la, na arvore visual, e os testes todos verdes -- porque nenhum
+    ' deles olhava para a COR.
+
+    ''' <summary>
+    ''' <b>A resposta da IA é legível sobre o fundo da faixa.</b>
+    '''
+    ''' Não confere igualdade com um token: confere <b>contraste</b>. Amarrar
+    ''' o teste ao brush deixaria trocar a paleta por uma ilegível sem nada
+    ''' falhar — e o que importa aqui não é qual cor é, é dar para ler.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub A_resposta_da_IA_e_LEGIVEL()
+        Dim faixa = Montar("", False, "resumo do modelo")
+
+        Dim alvo = Descendentes(faixa).OfType(Of TextBlock)().
+                   FirstOrDefault(Function(t) t.Text = "resumo do modelo")
+        Assert.IsNotNull(alvo, "nao achei o texto da resposta")
+
+        Dim frente = CorDe(alvo.Foreground)
+        Dim fundo = CorDe(FundoAtras(alvo))
+
+        Dim razao = Contraste(frente, fundo)
+        Assert.IsTrue(razao >= 4.5,
+            $"contraste {razao:F2}:1 entre {frente} e {fundo} -- abaixo de 4.5:1 " &
+            "isto e o que o usuario chamou de 'ilegivel nesta cor preta'")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Controle negativo: o teste acima reprova mesmo.</b>
+    '''
+    ''' Sem ele, um <c>Contraste</c> que devolvesse sempre 21 faria o principal
+    ''' passar para qualquer paleta — inclusive a que quebrou.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Controle_preto_sobre_o_fundo_escuro_REPROVA()
+        Dim escuro = Color.FromRgb(&H17, &H1A, &H21)
+        Dim preto = Color.FromRgb(0, 0, 0)
+
+        Assert.IsTrue(Contraste(preto, escuro) < 4.5,
+                      "preto sobre #171A21 tinha de reprovar")
+        Assert.IsTrue(Contraste(Color.FromRgb(&HE6, &HEA, &HF0), escuro) >= 4.5,
+                      "e o texto claro dos tokens tinha de passar")
+    End Sub
+
+    ''' <summary>A primeira cor de fundo opaca subindo a árvore.</summary>
+    Private Shared Function FundoAtras(qual As DependencyObject) As Brush
+        Dim atual = qual
+        While atual IsNot Nothing
+            Dim b = TryCast(atual, Border)
+            If b IsNot Nothing AndAlso TypeOf b.Background Is SolidColorBrush Then
+                Return b.Background
+            End If
+            Dim p = TryCast(atual, Panel)
+            If p IsNot Nothing AndAlso TypeOf p.Background Is SolidColorBrush Then
+                Return p.Background
+            End If
+            atual = Media.VisualTreeHelper.GetParent(atual)
+        End While
+        Return Nothing
+    End Function
+
+    Private Shared Function CorDe(b As Brush) As Color
+        Dim s = TryCast(b, SolidColorBrush)
+        ' Sem brush, o WPF pinta texto preto e nao pinta fundo nenhum. Devolver
+        ' preto nos dois casos e o pior caso HONESTO: e exatamente o que estava
+        ' acontecendo na tela quando o defeito apareceu.
+        If s Is Nothing Then Return Color.FromRgb(0, 0, 0)
+        Return s.Color
+    End Function
+
+    ''' <summary>Razão de contraste da WCAG 2.1.</summary>
+    Private Shared Function Contraste(a As Color, b As Color) As Double
+        Dim la = Luminancia(a), lb = Luminancia(b)
+        Dim claro = Math.Max(la, lb), escuro = Math.Min(la, lb)
+        Return (claro + 0.05) / (escuro + 0.05)
+    End Function
+
+    Private Shared Function Luminancia(c As Color) As Double
+        Return 0.2126 * Canal(c.R) + 0.7152 * Canal(c.G) + 0.0722 * Canal(c.B)
+    End Function
+
+    Private Shared Function Canal(v As Byte) As Double
+        Dim x = v / 255.0
+        If x <= 0.03928 Then Return x / 12.92
+        Return Math.Pow((x + 0.055) / 1.055, 2.4)
     End Function
 
 End Class

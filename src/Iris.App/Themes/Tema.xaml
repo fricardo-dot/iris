@@ -1,0 +1,38 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+
+    <!--
+        O tema INTEIRO, num arquivo só.
+
+        ==================================================================
+        POR QUE ISTO EXISTE
+
+        A ordem importa: Composer.xaml faz BasedOn="{StaticResource
+        Button.Base}", e Button.Base mora em Controls.xaml. Carregado
+        avulso — `New ResourceDictionary With {.Source = ...}` — o Composer
+        é parseado ANTES de entrar em qualquer coleção, e não enxerga o
+        irmão. O erro é "Cannot find resource named 'Button.Base'".
+
+        Parseado como uma unidade, aqui dentro, a busca resolve.
+
+        ==================================================================
+        E POR QUE O TESTE USA O MESMO ARQUIVO
+
+        Os testes de renderização instanciam a faixa sem Application, então
+        precisam vestir o controle na mão. Enquanto vestiam com uma lista
+        própria, eles podiam divergir do que o programa carrega — e um teste
+        de aparência sobre uma aparência que não existe em lugar nenhum é
+        pior que nenhum teste, porque parece cobertura.
+
+        Um arquivo só, consumido pelos dois. Acrescentar dicionário aqui
+        chega ao programa e ao teste na mesma linha.
+    -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Tokens.xaml" />
+        <ResourceDictionary Source="Controls.xaml" />
+        <ResourceDictionary Source="Tree.xaml" />
+        <ResourceDictionary Source="MessageList.xaml" />
+        <ResourceDictionary Source="Composer.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+</ResourceDictionary>

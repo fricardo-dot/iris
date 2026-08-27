@@ -3,12 +3,12 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
     <Application.Resources>
         <ResourceDictionary>
+            <!-- Um arquivo so, o mesmo que os testes de renderizacao vestem.
+                 Enquanto a lista morava aqui e outra copia morava no teste,
+                 as duas podiam divergir - e o teste passaria a provar uma
+                 aparencia que o programa nao tem. -->
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Themes/Tokens.xaml" />
-                <ResourceDictionary Source="Themes/Controls.xaml" />
-                <ResourceDictionary Source="Themes/Tree.xaml" />
-                <ResourceDictionary Source="Themes/MessageList.xaml" />
-                <ResourceDictionary Source="Themes/Composer.xaml" />
+                <ResourceDictionary Source="Themes/Tema.xaml" />
             </ResourceDictionary.MergedDictionaries>
         </ResourceDictionary>
     </Application.Resources>

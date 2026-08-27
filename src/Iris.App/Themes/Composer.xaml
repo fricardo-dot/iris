@@ -2,6 +2,29 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
+        ESTE ARQUIVO PRECISA DO Controls.xaml, E DIZ ISSO.
+
+        Os estilos daqui fazem BasedOn="{StaticResource Button.Base}", e
+        Button.Base mora la. BasedOn resolve NA HORA DO PARSE e so enxerga o
+        proprio dicionario e os que ele mesmo mescla : diferente de
+        Setter.Value, que e adiado e acha o irmao pela pilha de recursos
+        ambiente. Por isso Font.Ui funcionava e Button.Base nao.
+
+        Enquanto a dependencia era implicita, este arquivo so carregava
+        dentro de Application.Resources, com Controls.xaml mesclado antes.
+        Carregado avulso : que e como os testes de renderizacao vestem um
+        controle, sem Application : ele lancava "Cannot find resource named
+        'Button.Base'", e o sintoma aparecia longe: a faixa da IA inteira
+        deixava de carregar.
+
+        O WPF cacheia dicionario por URI, entao mesclar de novo nao duplica
+        os brushes.
+    -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Controls.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+    <!--
         Campos de entrada.
 
         O Iris tem identidade própria e escura, então o TextBox padrão do

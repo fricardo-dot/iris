@@ -2,6 +2,26 @@
                     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
 
     <!--
+        DEPENDENCIA EXPLICITA.
+
+        Este arquivo consome chaves de Tokens.xaml dentro de ControlTemplate
+        e BasedOn, e esses dois resolvem NA HORA DO PARSE : so enxergam o
+        proprio dicionario e os que ele mesmo mescla. Setter.Value e adiado e
+        acha o irmao pela pilha de recursos ambiente, e foi por isso que
+        Font.Ui funcionava e Radius.Control nao.
+
+        Enquanto a dependencia era implicita, este arquivo so carregava dentro
+        de Application.Resources. Avulso : que e como um teste veste um
+        controle, sem Application : ele lancava, e o sintoma aparecia longe.
+
+        O WPF cacheia dicionario por URI, entao mesclar de novo nao duplica.
+    -->
+    <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="Tokens.xaml" />
+    </ResourceDictionary.MergedDictionaries>
+
+
+    <!--
         Só os controles que o marco 1.1 realmente usa: janela, textos,
         botões e o distintivo de estado. TreeView, lista e leitor são
         estilizados nos marcos em que aparecem — estilizar tudo agora
