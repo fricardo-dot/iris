@@ -105,6 +105,22 @@ Public Class FaixaDaIaRenderizaTests
     Private NotInheritable Class FaixaFalsa
         Public ReadOnly Property Aviso As String
         Public ReadOnly Property TemAlgoADizer As Boolean
+        ''' <summary>
+        ''' A linha do aviso comum passou a ter predicado PROPRIO: TemAlgoADizer
+        ''' conta tambem o rodape da cerimonia, que agora tem linha so dele.
+        ''' Enquanto o duble nao tinha estes, os bindings caiam no
+        ''' FallbackValue=Collapsed e o aviso nao aparecia em teste nenhum --
+        ''' o que faria a faixa "provar" que nao mostra o que ela mostra.
+        ''' </summary>
+        Public ReadOnly Property TemAvisoDeOperacao As Boolean
+        Public ReadOnly Property TemAviso As Boolean
+        Public ReadOnly Property TemAvisoDaReconciliacao As Boolean
+        Public ReadOnly Property CopiarCommand As Input.ICommand
+        Public ReadOnly Property Ocupado As Boolean
+        Public ReadOnly Property Decorrido As String = ""
+        Public ReadOnly Property Ficha As String = ""
+        Public ReadOnly Property AvisoDaAtivacao As String = ""
+        Public ReadOnly Property TemAvisoDaAtivacao As Boolean
         Public ReadOnly Property Resultado As String
         Public ReadOnly Property TemResultado As Boolean
         Public ReadOnly Property ResumirCommand As Input.ICommand
@@ -117,6 +133,10 @@ Public Class FaixaDaIaRenderizaTests
                        podePedir As Boolean)
             Me.Aviso = aviso
             Me.TemAlgoADizer = temAlgoADizer
+            TemAviso = aviso.Length > 0
+            TemAvisoDeOperacao = temAlgoADizer
+            TemAvisoDaReconciliacao = False
+            CopiarCommand = New ComandoFalso(False)
             Me.Resultado = resultado
             TemResultado = resultado.Length > 0
             ResumirCommand = New ComandoFalso(podePedir)
@@ -462,7 +482,11 @@ Public Class FaixaDaIaRenderizaTests
         Assert.IsNotNull(alvo, "nao achei o texto da resposta")
 
         Dim frente = CorDe(alvo.Foreground)
-        Dim fundo = CorDe(FundoAtras(alvo))
+        Dim atras = FundoAtras(alvo)
+        Assert.IsNotNull(atras,
+            "nao achei fundo OPACO atras da resposta -- sem ele o contraste " &
+            "medido seria sobre uma cor que ninguem ve")
+        Dim fundo = CorDe(atras)
 
         Dim razao = Contraste(frente, fundo)
         Assert.IsTrue(razao >= 4.5,
@@ -487,18 +511,47 @@ Public Class FaixaDaIaRenderizaTests
                       "e o texto claro dos tokens tinha de passar")
     End Sub
 
-    ''' <summary>A primeira cor de fundo opaca subindo a árvore.</summary>
+    ''' <summary>
+    ''' <b>A primeira cor de fundo OPACA subindo a árvore.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>OPACA É A PALAVRA QUE FALTAVA</b>
+    '''
+    ''' A primeira versão aceitava qualquer <c>SolidColorBrush</c>, inclusive
+    ''' transparente ou semitransparente — e aí ela devolvia uma cor que o
+    ''' usuário <b>não vê</b>, porque o que aparece é a composição dela com o
+    ''' que está atrás. O teste de contraste passaria medindo um fundo
+    ''' imaginário.
+    '''
+    ''' Este ajudante não compõe alfa, não entende gradiente, imagem nem
+    ''' <c>Opacity</c>. Em vez de fingir que entende, ele <b>pula</b> o que não
+    ''' sabe ler e continua subindo; se nada opaco aparecer, devolve
+    ''' <c>Nothing</c> e quem chama falha explicitamente.
+    '''
+    ''' Recusar o que não se sabe medir é o que separa este teste de um que
+    ''' inventa um número.
+    ''' </summary>
     Private Shared Function FundoAtras(qual As DependencyObject) As Brush
         Dim atual = qual
         While atual IsNot Nothing
+            Dim fe = TryCast(atual, FrameworkElement)
+            If fe IsNot Nothing AndAlso fe.Opacity < 1.0 Then
+                ' Opacidade parcial muda a cor final e este ajudante nao
+                ' compoe. Parar aqui e mais honesto que devolver a cor crua.
+                Return Nothing
+            End If
+
+            Dim pincel As Brush = Nothing
             Dim b = TryCast(atual, Border)
-            If b IsNot Nothing AndAlso TypeOf b.Background Is SolidColorBrush Then
-                Return b.Background
+            If b IsNot Nothing Then pincel = b.Background
+            Dim pn = TryCast(atual, Panel)
+            If pn IsNot Nothing Then pincel = pn.Background
+
+            Dim solido = TryCast(pincel, SolidColorBrush)
+            If solido IsNot Nothing AndAlso solido.Color.A = 255 Then
+                Return solido
             End If
-            Dim p = TryCast(atual, Panel)
-            If p IsNot Nothing AndAlso TypeOf p.Background Is SolidColorBrush Then
-                Return p.Background
-            End If
+
             atual = Media.VisualTreeHelper.GetParent(atual)
         End While
         Return Nothing
@@ -506,12 +559,41 @@ Public Class FaixaDaIaRenderizaTests
 
     Private Shared Function CorDe(b As Brush) As Color
         Dim s = TryCast(b, SolidColorBrush)
-        ' Sem brush, o WPF pinta texto preto e nao pinta fundo nenhum. Devolver
-        ' preto nos dois casos e o pior caso HONESTO: e exatamente o que estava
-        ' acontecendo na tela quando o defeito apareceu.
+        ' Sem brush, o WPF pinta texto preto. Devolver preto e o pior caso
+        ' HONESTO: e exatamente o que estava acontecendo na tela quando o
+        ' defeito apareceu.
         If s Is Nothing Then Return Color.FromRgb(0, 0, 0)
         Return s.Color
     End Function
+
+    ''' <summary>
+    ''' <b>Controle estrutural: o ajudante recusa fundo que não sabe ler.</b>
+    '''
+    ''' O controle negativo do teste de contraste era só sobre a <i>aritmética</i>
+    ''' — provava que preto sobre escuro reprova, e nada sobre
+    ''' <see cref="FundoAtras"/> escolher o fundo certo. Este monta a situação
+    ''' que enganava a versão antiga: uma borda <b>transparente</b> na frente
+    ''' de uma opaca.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Controle_fundo_TRANSPARENTE_nao_conta_como_fundo()
+        Dim dentro As New TextBlock() With {.Text = "x"}
+        Dim vidro As New Border() With {
+            .Background = New SolidColorBrush(Color.FromArgb(0, 255, 255, 255)),
+            .Child = dentro}
+        Dim solido As New Border() With {
+            .Background = New SolidColorBrush(Color.FromRgb(&H17, &H1A, &H21)),
+            .Child = vidro}
+        solido.Measure(New Size(100, 100))
+        solido.Arrange(New Rect(0, 0, 100, 100))
+
+        Dim achado = TryCast(FundoAtras(dentro), SolidColorBrush)
+
+        Assert.IsNotNull(achado, "devia ter continuado subindo ate o opaco")
+        Assert.AreEqual(CByte(255), achado.Color.A, "achou um fundo que nao e opaco")
+        Assert.AreEqual(Color.FromRgb(&H17, &H1A, &H21), achado.Color,
+            "o fundo que o usuario ve e o de tras do vidro")
+    End Sub
 
     ''' <summary>Razão de contraste da WCAG 2.1.</summary>
     Private Shared Function Contraste(a As Color, b As Color) As Double
@@ -528,6 +610,198 @@ Public Class FaixaDaIaRenderizaTests
         Dim x = v / 255.0
         If x <= 0.03928 Then Return x / 12.92
         Return Math.Pow((x + 0.055) / 1.055, 2.4)
+    End Function
+
+    ' ==================================================================
+    ' O BOTAO COPIAR, E O VAO QUE NAO SE EXPLICAVA
+
+    ''' <summary>
+    ''' <b>O botão "Copiar" real acorda quando a resposta chega.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O TESTE QUE EU TINHA ESCRITO MENTIA</b>
+    '''
+    ''' Ele perguntava <c>vm.PodeCopiar</c> — a <b>propriedade</b> — e passava
+    ''' verde enquanto o botão ficava cinza na tela do usuário. <c>Avisar()</c>
+    ''' não chamava <c>CopiarCommand.NotifyCanExecuteChanged()</c>, e
+    ''' <c>RelayCommand</c> não se reconsulta sozinho.
+    '''
+    ''' O mais constrangedor: este mesmo arquivo já documenta a armadilha, duas
+    ''' telas acima, no <c>Desfazer</c> — <i>"perguntar CanExecute não pegaria
+    ''' isso: a resposta estaria certa e o botão errado"</i>. Escrevi o mesmo
+    ''' defeito abaixo do aviso sobre ele.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_botao_COPIAR_real_acorda_com_a_resposta()
+        NaSTA(Async Function() As Global.System.Threading.Tasks.Task
+        Dim provedor As New AssistenteViewModelTests.ProvedorControlado() With {
+            .Texto = "o resumo do modelo"}
+        Dim vm = AssistenteViewModelTests.Montar(
+            AssistenteViewModelTests.Ativacao(), provedor,
+            AssistenteViewModelTests.Pronta())
+
+        Dim faixa = Vestida(vm)
+
+        Dim copiar = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Copiar")
+        Assert.IsFalse(copiar.IsEnabled, "sem resposta nao ha o que copiar")
+
+        Await vm.ResumirCommand.ExecuteAsync(Nothing)
+        faixa.UpdateLayout()
+
+        Assert.IsTrue(copiar.IsEnabled,
+            "o botao ficou cinza com a resposta na tela: ninguem avisou o RelayCommand")
+                  End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>E o botão cai de novo quando o usuário troca de mensagem.</b>
+    '''
+    ''' O controle negativo: sem ele, um botão habilitado para sempre passaria
+    ''' no teste de cima — e ofereceria copiar o resumo da mensagem anterior.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_botao_COPIAR_real_cai_ao_TROCAR_de_mensagem()
+        NaSTA(Async Function() As Global.System.Threading.Tasks.Task
+        Dim provedor As New AssistenteViewModelTests.ProvedorControlado() With {
+            .Texto = "o resumo do modelo"}
+        Dim vm = AssistenteViewModelTests.Montar(
+            AssistenteViewModelTests.Ativacao(), provedor,
+            AssistenteViewModelTests.Pronta())
+
+        Dim faixa = Vestida(vm)
+        Await vm.ResumirCommand.ExecuteAsync(Nothing)
+        faixa.UpdateLayout()
+        Dim copiar = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Copiar")
+        Assert.IsTrue(copiar.IsEnabled, "controle: estava de pe")
+
+        vm.Trocou()
+        faixa.UpdateLayout()
+
+        Assert.IsFalse(copiar.IsEnabled,
+            "o resumo era de outra mensagem, e copiar ofereceria o texto errado")
+                  End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Sem aviso de operação, não há faixa de aviso ocupando altura.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' O aviso da cerimônia ganhou linha própria no rodapé, e a linha do aviso
+    ''' comum continuou governada por <c>TemAlgoADizer</c> — que conta o rodapé.
+    ''' Ela ficava <b>visível</b> com os dois <c>TextBlock</c> dela vazios.
+    '''
+    ''' O sintoma era um vão entre os botões e a resposta que não dava para
+    ''' explicar olhando o XAML: o espaço era de um elemento presente, e não de
+    ''' margem. Este teste mede a distância, que é a única forma de provar
+    ''' ausência de espaço.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Sem_aviso_nao_ha_VAO_entre_os_botoes_e_a_resposta()
+        NaSTA(Async Function() As Global.System.Threading.Tasks.Task
+        Dim provedor As New AssistenteViewModelTests.ProvedorControlado() With {
+            .Texto = "o resumo do modelo"}
+        ' COM O AVISO DA CERIMONIA, que e a situacao do usuario: e ele que
+        ' fazia TemAlgoADizer ficar verdadeiro e manter a linha do aviso comum
+        ' VISIVEL, com os dois TextBlock dela vazios.
+        '
+        ' Sem isto o teste nao provava nada: sem o rodape, TemAlgoADizer
+        ' tambem e falso, e a linha some dos dois jeitos. O controle negativo
+        ' foi quem acusou -- ele passava com o defeito de volta.
+        Dim vm = AssistenteViewModelTests.Montar(
+            AssistenteViewModelTests.Ativacao(), provedor,
+            AssistenteViewModelTests.Pronta(), Nothing, Nothing,
+            "A politica corporativa NAO foi verificada.")
+
+        Dim faixa = Vestida(vm)
+        Await vm.ResumirCommand.ExecuteAsync(Nothing)
+        For passada = 1 To 2
+            faixa.Measure(New Size(900, 600))
+            faixa.Arrange(New Rect(0, 0, 900, faixa.DesiredSize.Height))
+            faixa.UpdateLayout()
+        Next
+
+        Assert.AreEqual("", vm.Aviso, "controle: nao ha aviso de operacao")
+        Assert.IsTrue(vm.TemAlgoADizer,
+            "controle: o rodape da cerimonia esta la, e e ele que enganava")
+
+        ' CONTAR AS FAIXAS, e nao medir a distancia.
+        '
+        ' A primeira versao deste teste media resposta.Top - acoes.Bottom e
+        ' passava com o defeito de volta -- porque a faixa de aviso VAZIA
+        ' encosta nos botoes, e o que eu chamava de "resposta" era ela. O
+        ' controle negativo acusou.
+        '
+        ' O que ha de errado nao e distancia: e um ELEMENTO PRESENTE sem nada
+        ' dentro. Entao a assercao e sobre existencia.
+        Dim caixas = Visiveis(faixa).ToList()
+        Assert.AreEqual(3, caixas.Count,
+            "sao acoes, resposta e rodape. Uma quarta faixa visivel sem aviso " &
+            "de operacao e a borda VAZIA que abria o vao: " &
+            String.Join(" | ", caixas.Select(Function(c) c.ToString())))
+
+        ' E nenhuma delas pode ser uma tira vazia: altura de faixa sem texto
+        ' fica na casa do padding.
+        For Each c In caixas
+            Assert.IsTrue(c.Height > 12,
+                $"faixa de {c.Height:F0} px de altura -- e uma borda sem conteudo")
+        Next
+                  End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>O aviso da cerimônia é o RODAPÉ: fica por último, sempre.</b>
+    '''
+    ''' Ele não fala de um pedido — fala do estado em que a IA foi ligada, e
+    ''' isso vale enquanto o programa estiver aberto. No meio da pilha era
+    ''' empurrado pela resposta e virava uma linha perdida entre duas coisas
+    ''' que mudam a cada clique.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_aviso_da_CERIMONIA_fica_por_ultimo()
+        NaSTA(Async Function() As Global.System.Threading.Tasks.Task
+        Dim provedor As New AssistenteViewModelTests.ProvedorControlado() With {
+            .Texto = "o resumo do modelo"}
+        Dim vm = AssistenteViewModelTests.Montar(
+            AssistenteViewModelTests.Ativacao(), provedor,
+            AssistenteViewModelTests.Pronta(), Nothing, Nothing,
+            "A politica corporativa NAO foi verificada.")
+
+        Dim faixa = Vestida(vm)
+        Await vm.ResumirCommand.ExecuteAsync(Nothing)
+        For passada = 1 To 2
+            faixa.Measure(New Size(900, 600))
+            faixa.Arrange(New Rect(0, 0, 900, faixa.DesiredSize.Height))
+            faixa.UpdateLayout()
+        Next
+
+        Dim caixas = Visiveis(faixa).ToList()
+        Assert.AreEqual(3, caixas.Count, "acoes, resposta e o rodape da cerimonia")
+
+        ' Os retangulos saem na ordem dos filhos da grade, entao a ordem
+        ' VISUAL tem de ser conferida pelo Top, e nao pela posicao na lista.
+        Dim rodape = caixas.OrderByDescending(Function(c) c.Top).First()
+        Dim textoDoRodape = TextoVisivel(faixa)
+        StringAssert.Contains(textoDoRodape, "politica corporativa")
+
+        For Each outra In caixas
+            If outra = rodape Then Continue For
+            Assert.IsTrue(outra.Bottom <= rodape.Top + 0.5,
+                "alguma faixa ficou ABAIXO do rodape da cerimonia")
+        Next
+                  End Function)
+    End Sub
+
+    ''' <summary>A faixa real, vestida e arranjada — igual ao <c>Montar</c>.</summary>
+    Private Shared Function Vestida(contexto As Object) As FrameworkElement
+        Dim faixa As New Iris.App.Views.FaixaDaIa()
+        Vestir(faixa)
+        faixa.DataContext = contexto
+        For passada = 1 To 2
+            faixa.Measure(New Size(900, 600))
+            faixa.Arrange(New Rect(0, 0, 900, faixa.DesiredSize.Height))
+            faixa.UpdateLayout()
+        Next
+        Return faixa
     End Function
 
 End Class

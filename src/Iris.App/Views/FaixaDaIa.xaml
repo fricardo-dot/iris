@@ -57,7 +57,7 @@
                  funcionalidade E o motivo dela estar desligada - e o motivo e
                  exatamente o que o usuario precisa ler, no lugar onde ele
                  procuraria a acao. -->
-            <Border Grid.Row="0" Padding="16,10,16,8">
+            <Border Grid.Row="0" Padding="16,10,16,10">
                 <StackPanel>
                     <TextBlock Text="PAINEL DA IA"
                                Style="{DynamicResource Text.Muted}"
@@ -125,18 +125,34 @@
 
             <!-- O AVISO: o motivo de a IA estar desligada, e o que ficou sem
                  desfecho conhecido numa execucao anterior. -->
+            <!-- TemAvisoDeOperacao, e NAO TemAlgoADizer.
+
+                 TemAlgoADizer conta tambem o aviso da cerimonia, que agora tem
+                 linha propria no rodape - entao esta borda ficava VISIVEL com
+                 os dois TextBlock dela vazios, ocupando altura. O sintoma era
+                 um vao entre os botoes e a resposta que nao dava para explicar
+                 olhando o XAML: o espaco era de um elemento presente, e nao de
+                 margem.
+
+                 E cada TextBlock some sozinho quando nao tem texto: com um so
+                 dos dois preenchido, o outro deixava uma linha em branco. -->
             <Border Grid.Row="1"
-                    Visibility="{Binding TemAlgoADizer, Converter={StaticResource BoolToVis},
+                    Visibility="{Binding TemAvisoDeOperacao, Converter={StaticResource BoolToVis},
                                          FallbackValue=Collapsed}"
                     Padding="16,0,16,8">
                 <StackPanel>
                     <TextBlock Text="{Binding Aviso}"
                                Style="{DynamicResource Text.Secondary}"
                                TextWrapping="Wrap"
+                               Visibility="{Binding TemAviso, Converter={StaticResource BoolToVis},
+                                                    FallbackValue=Collapsed}"
                                AutomationProperties.Name="Situacao da IA" />
                     <TextBlock Text="{Binding Reconciliacao.Aviso}"
                                Style="{DynamicResource Text.Secondary}"
                                TextWrapping="Wrap" Margin="0,4,0,0"
+                               Visibility="{Binding TemAvisoDaReconciliacao,
+                                                    Converter={StaticResource BoolToVis},
+                                                    FallbackValue=Collapsed}"
                                AutomationProperties.Name="Envios sem desfecho conhecido" />
                 </StackPanel>
             </Border>

@@ -79,6 +79,24 @@ Namespace Global.Iris.App.ViewModels
         Private _inicioDoVoo As DateTimeOffset?
 
         ''' <summary>
+        ''' Quanto o último voo demorou. <c>Nothing</c> enquanto ele corre.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O CRONÔMETRO TEM DE PARAR DE ANDAR</b>
+        '''
+        ''' Sem isto, <see cref="Decorrido"/> continuava calculando
+        ''' <c>relógio − início</c> <b>depois</b> do voo: parar o
+        ''' <c>DispatcherTimer</c> só faz a tela deixar de reperguntar, e não
+        ''' congela o valor. Uma chamada de 2,5 s passava a dizer 30 s, 5 min,
+        ''' uma hora — e a propriedade que se documenta como "há quanto tempo o
+        ''' pedido corrente está rodando" virava um relógio de parede.
+        '''
+        ''' A ficha escapava por acidente, porque materializa a string antes do
+        ''' <c>Finally</c>. Escapar por acidente não é escapar.
+        ''' </summary>
+        Private _duracaoDoVoo As TimeSpan?
+
+        ''' <summary>
         ''' Só reavisa que <see cref="Decorrido"/> mudou. Não mede nada — quem
         ''' mede é o relógio, e o cálculo é feito na leitura.
         ''' </summary>
@@ -221,6 +239,9 @@ Namespace Global.Iris.App.ViewModels
             Private Set(value As String)
                 SetProperty(_resultado, value)
                 OnPropertyChanged(NameOf(TemResultado))
+                ' O Copiar depende DISTO, e so disto. Sem avisar aqui, o botao
+                ' so acordaria quando outra coisa qualquer chamasse Avisar().
+                Avisar()
             End Set
         End Property
 
@@ -251,6 +272,7 @@ Namespace Global.Iris.App.ViewModels
                 SetProperty(_aviso, value)
                 OnPropertyChanged(NameOf(TemAviso))
                 OnPropertyChanged(NameOf(TemAlgoADizer))
+                OnPropertyChanged(NameOf(TemAvisoDeOperacao))
             End Set
         End Property
 
@@ -272,6 +294,34 @@ Namespace Global.Iris.App.ViewModels
             Get
                 Return TemAviso OrElse Reconciliacao.Aviso.Length > 0 OrElse
                        TemAvisoDaAtivacao
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>Há aviso de operação?</b> — sem contar o da cerimônia.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' Existe porque o aviso da cerimônia ganhou <b>linha própria</b>, no
+        ''' rodapé. Enquanto a linha do aviso comum era governada por
+        ''' <see cref="TemAlgoADizer"/>, ela ficava visível por causa do rodapé
+        ''' — com os dois <c>TextBlock</c> dela <b>vazios</b>, ocupando altura.
+        '''
+        ''' O sintoma era um vão de dedo entre os botões e a resposta, que
+        ''' ninguém conseguia explicar olhando o XAML: o espaço era de um
+        ''' elemento presente, e não de margem.
+        '''
+        ''' <see cref="TemAlgoADizer"/> continua significando "a faixa tem algo
+        ''' a dizer", que é outra pergunta e tem outros usos.
+        ''' </summary>
+        Public ReadOnly Property TemAvisoDeOperacao As Boolean
+            Get
+                Return TemAviso OrElse Reconciliacao.Aviso.Length > 0
+            End Get
+        End Property
+
+        Public ReadOnly Property TemAvisoDaReconciliacao As Boolean
+            Get
+                Return Reconciliacao.Aviso.Length > 0
             End Get
         End Property
 
@@ -341,8 +391,16 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property Decorrido As String
             Get
-                If Not _inicioDoVoo.HasValue Then Return ""
-                Dim s = (_relogio() - _inicioDoVoo.Value).TotalSeconds
+                Dim quanto As TimeSpan
+                If _duracaoDoVoo.HasValue Then
+                    quanto = _duracaoDoVoo.Value
+                ElseIf _inicioDoVoo.HasValue Then
+                    quanto = _relogio() - _inicioDoVoo.Value
+                Else
+                    Return ""
+                End If
+
+                Dim s = quanto.TotalSeconds
                 If s < 0 Then s = 0
                 Return s.ToString("0.0", Daqui) & " s"
             End Get
@@ -410,7 +468,11 @@ Namespace Global.Iris.App.ViewModels
                 If destino.Modelo.Length > 0 Then partes.Add(destino.Modelo)
             End If
             If r.Tokens.HasValue Then partes.Add(r.Tokens.Value.ToString("N0", Daqui) & " tokens")
-            If r.Custo.HasValue Then partes.Add("US$ " & r.Custo.Value.ToString("N4", Daqui))
+            ' "informado", e nao o valor seco: o numero e a palavra do
+            ' provedor, e nao um fato conferido. Ver ProviderOutcome.Custo.
+            If r.Custo.HasValue Then
+                partes.Add("US$ " & r.Custo.Value.ToString("N4", Daqui) & " informado")
+            End If
             If _inicioDoVoo.HasValue Then partes.Add(Decorrido)
             Return String.Join("  ·  ", partes)
         End Function
@@ -493,6 +555,17 @@ Namespace Global.Iris.App.ViewModels
             ' e fechar o compositor tem de apaga-lo da tela.
             DesfazerCommand.NotifyCanExecuteChanged()
             OnPropertyChanged(NameOf(PodeDesfazer))
+            ' E O COPIAR. Ele nasceu sem esta linha, e o botao ficava
+            ' desabilitado para sempre: PodeCopiar virava True quando a
+            ' resposta chegava, e ninguem avisava o RelayCommand.
+            '
+            ' O teste que eu tinha escrito perguntava vm.PodeCopiar -- a
+            ' PROPRIEDADE -- e passava. E o proprio arquivo ja documenta essa
+            ' armadilha, no Desfazer: "perguntar CanExecute nao pegaria isso:
+            ' a resposta estaria certa e o botao errado". Escrevi o mesmo
+            ' defeito duas telas abaixo do aviso sobre ele.
+            CopiarCommand.NotifyCanExecuteChanged()
+            OnPropertyChanged(NameOf(PodeCopiar))
         End Sub
 
         ''' <summary>
@@ -712,6 +785,7 @@ Namespace Global.Iris.App.ViewModels
             ' correndo -- dois numeros de coisas diferentes, com cara de serem
             ' do mesmo pedido.
             _inicioDoVoo = _relogio()
+            _duracaoDoVoo = Nothing
             Ficha = ""
             OnPropertyChanged(NameOf(Decorrido))
             If _pulso IsNot Nothing Then _pulso.Start()
@@ -751,9 +825,12 @@ Namespace Global.Iris.App.ViewModels
                     _cancelamento = Nothing
                     Ocupado = False
                     If _pulso IsNot Nothing Then _pulso.Stop()
-                    ' _inicioDoVoo FICA. A ficha usa o Decorrido para dizer
-                    ' quanto a chamada demorou, e zerar aqui apagaria justamente
-                    ' o numero que o usuario acabou de esperar para ver.
+                    ' CONGELA. Parar o pulso so faz a tela deixar de
+                    ' reperguntar; sem fixar a duracao, Decorrido continuaria
+                    ' contando para sempre.
+                    If _inicioDoVoo.HasValue Then
+                        _duracaoDoVoo = _relogio() - _inicioDoVoo.Value
+                    End If
                     OnPropertyChanged(NameOf(Decorrido))
                 End If
             End Try
@@ -779,7 +856,12 @@ Namespace Global.Iris.App.ViewModels
         Private Sub Publicar(r As AssistOutcome)
             Select Case r.Kind
                 Case AssistOutcomeKind.Respondeu
-                    Resultado = r.Texto
+                    ' LIMPO, e nao renderizado. Ver TextoDoModelo: aqui so se
+                    ' APAGA marcador. Interpretar Markdown transformaria texto
+                    ' de terceiro em arvore visual, e o proximo passo obvio --
+                    ' "ja que fazemos negrito, faz link tambem" -- daria ao
+                    ' e-mail um jeito de fazer o Iris buscar coisa na rede.
+                    Resultado = TextoDoModelo.Limpar(r.Texto)
                     ' RESPOSTA VAZIA TEM DE APARECER COMO ALGUMA COISA.
                     '
                     ' "Respondeu" com texto vazio fechava o diario como sucesso

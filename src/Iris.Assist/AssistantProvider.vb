@@ -94,18 +94,32 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Codigo As Integer?
 
         ''' <summary>
-        ''' <b>O que a chamada custou</b>, em dólares, quando o provedor conta.
+        ''' <b>O custo que o provedor INFORMOU</b>, em dólares. Não é fato
+        ''' conferido: é a palavra dele.
         '''
         ''' ------------------------------------------------------------------
-        ''' <b>NÚMERO, PELO MESMO MOTIVO DO CÓDIGO HTTP</b>
+        ''' <b>"NÚMERO NÃO ECOA CONTEÚDO" NÃO É O MOTIVO — ERA A DESCULPA</b>
         '''
-        ''' O adaptador do OpenRouter diz por escrito que <b>não lê</b> nada
-        ''' além de <c>choices[0].message.content</c>, porque o resto da
-        ''' resposta é dado de fora. A regra continua: o que entrou aqui foram
-        ''' os <b>números</b> de <c>usage</c>, que não ecoam conteúdo nenhum.
-        ''' O <c>provider</c> devolvido, que é texto escolhido pelo outro lado,
-        ''' continua de fora — quem diz o agente e o modelo na tela é a
-        ''' <b>ativação</b>, que o usuário assinou.
+        ''' A primeira versão deste comentário dizia que custo e tokens entram
+        ''' "pelo mesmo motivo que o código HTTP", porque número não ecoa nada.
+        ''' <b>Está errado</b>, e a revisão pegou: um servidor hostil escolhe
+        ''' esses números exatamente como escolheria texto. Confiabilidade não
+        ''' vem do tipo.
+        '''
+        ''' O motivo verdadeiro é outro, e é mais modesto: são dados
+        ''' <b>opcionais e passivos</b>, e o pior caso é um número mentiroso na
+        ''' ficha. Não há execução, não há injeção, e o tamanho é limitado por
+        ''' <c>Decimal</c> e <c>Int32</c>. O usuário fica com uma ideia errada
+        ''' do gasto — e é por isso que a tela diz <b>informado</b>, e não
+        ''' "custou".
+        '''
+        ''' <b>Daqui não sai orçamento, bloqueio nem auditoria.</b> Para isso a
+        ''' fonte é o painel do provedor, que é de quem cobra. O limite de gasto
+        ''' da chave existe justamente porque este número não serve de freio.
+        '''
+        ''' O que continua de fora é o <c>provider</c> devolvido, que é texto:
+        ''' quem diz o agente e o modelo na tela é a <b>ativação</b>, que o
+        ''' usuário assinou.
         ''' </summary>
         Public ReadOnly Property Custo As Decimal?
 

