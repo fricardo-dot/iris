@@ -22,6 +22,12 @@ Namespace Global.Iris.App.ViewModels
 
         Private ReadOnly _watcher As FolderWatcher
         Private ReadOnly _broker As IOutlookBroker
+
+        ''' <summary>
+        ''' Os stores da sessão. <c>Nothing</c> até a primeira leitura, e depois
+        ''' de uma que falhou.
+        ''' </summary>
+        Private _stores As IReadOnlyList(Of Model.StoreInfo)
         Private ReadOnly _ui As Global.System.Windows.Threading.Dispatcher
 
         ''' <summary>
@@ -38,12 +44,17 @@ Namespace Global.Iris.App.ViewModels
         ''' <summary>
         ''' A pasta cujo acervo a tela mostra.
         '''
-        ''' Fixa em 1 por enquanto, e isso e limitacao declarada: mapear pasta
-        ''' do Outlook para chave do cache e trabalho da fase seguinte, junto
-        ''' com a varredura disparada pelo app. Hoje o cache so tem o que uma
-        ''' importacao manual colocou nele.
+        ''' ------------------------------------------------------------------
+        ''' <b>1 ERA A LIMITACAO, E ELA ACABOU</b>
+        '''
+        ''' Este valor era uma constante: a pasta que uma importacao manual de
+        ''' teste tinha criado. A lista ao lado mostrava a pasta selecionada e o
+        ''' acervo mostrava aquela, sem nada dizendo isso.
+        '''
+        ''' Continua sendo o ponto de partida — antes de o usuario escolher
+        ''' pasta nao ha pasta nenhuma —, e <c>Apontar</c> troca assim que ha.
         ''' </summary>
-        Private Const folderKeyDoAcervo As Long = 1
+        Private Const acervoSemPasta As Long = 0
 
         Public ReadOnly Property Acervo As AcervoViewModel
         Public ReadOnly Property AcervoIndisponivel As String
@@ -83,7 +94,7 @@ Namespace Global.Iris.App.ViewModels
             ' silencio vira tela vazia, e tela vazia e indistinguivel de "nao
             ' ha nada guardado".
             Dim motivo As String = Nothing
-            Acervo = AcervoViewModel.Abrir(ui, folderKeyDoAcervo, motivo)
+            Acervo = AcervoViewModel.Abrir(ui, acervoSemPasta, motivo, broker)
             AcervoIndisponivel = motivo
 
             Assistente = MontarAssistente(ui)
@@ -275,6 +286,8 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private Async Function RecarregarERestaurarAsync(anterior As List(Of FolderKey)) As Task
             Await Folders.ReloadAsync()
+            ' A sessao foi SUBSTITUIDA: a lista de stores da anterior nao vale.
+            Await RecarregarStoresAsync()
 
             If anterior Is Nothing OrElse anterior.Count = 0 Then Return
             If Await Folders.TrySelectAsync(anterior) Then Return
@@ -314,6 +327,10 @@ Namespace Global.Iris.App.ViewModels
             If conectado Then
                 _epocaVista = _broker.SessionEpoch
                 Connection.Observe(Folders.ReloadAsync(), "folders.reload")
+                ' Os stores tambem: StoreId pertence a uma EPOCA, e uma lista
+                ' de epoca vencida apontaria para stores que ja nao existem --
+                ' e a medicao do ambiente sairia de um deles.
+                Connection.Observe(RecarregarStoresAsync(), "stores.reload")
             Else
                 Folders.Clear()
                 Messages.Clear()
@@ -345,8 +362,17 @@ Namespace Global.Iris.App.ViewModels
             If pasta Is Nothing Then
                 Messages.Clear()
                 Detail.Clear()
+                Acervo?.Apontar(Nothing, Nothing, Nothing)
                 Return
             End If
+
+            ' O ACERVO SEGUE A PASTA.
+            '
+            ' Sem isto ele ficava na chave 1 para sempre, e dois paineis
+            ' falavam de pastas diferentes. O store vem do cache local de
+            ' stores: e dele que sai a medicao do ambiente, e enumerar os
+            ' stores a cada clique seria ida ao COM por nada.
+            Acervo?.Apontar(pasta.Key, pasta.Name, StoreDe(pasta.Key))
 
             ' Trocar de pasta esvazia o leitor: manter a mensagem anterior
             ' aberta enquanto a lista mostra outra pasta seria mentir sobre
@@ -363,6 +389,49 @@ Namespace Global.Iris.App.ViewModels
         ''' Selecionar uma mensagem alimenta o leitor. O leitor decide
         ''' sozinho quando pedir o conteudo — ele tem debounce proprio.
         ''' </summary>
+        ''' <summary>
+        ''' O <c>StoreInfo</c> da conta a que a pasta pertence.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' De onde sai a <b>medicao do ambiente</b>: <c>IsCachedExchange</c> e
+        ''' <c>ExchangeStoreType</c> vivem aqui, e nao na pasta.
+        '''
+        ''' Vem de uma lista guardada, e nao de uma ida ao COM por clique: a
+        ''' enumeracao de stores nao muda entre duas selecoes de pasta, e paga-la
+        ''' toda vez seria custo sem informacao. <c>Nothing</c> quando o store
+        ''' nao esta na lista — e ai a varredura recusa por
+        ''' <c>StoreDesconhecido</c>, que e o desfecho honesto.
+        ''' </summary>
+        Private Function StoreDe(pasta As Model.FolderKey) As Model.StoreInfo
+            If pasta Is Nothing Then Return Nothing
+            Dim lista = _stores
+            If lista Is Nothing Then Return Nothing
+            Return lista.FirstOrDefault(
+                Function(x) String.Equals(x.StoreId, pasta.StoreId, StringComparison.Ordinal))
+        End Function
+
+        ''' <summary>
+        ''' Relê a lista de stores. Chamada na conexão e na troca de sessão:
+        ''' <c>StoreId</c> pertence a uma época, e uma lista de época vencida
+        ''' apontaria para stores que já não existem.
+        ''' </summary>
+        Private Async Function RecarregarStoresAsync() As Task
+            Try
+                Dim r = Await _broker.GetStoresAsync(Threading.CancellationToken.None)
+                _stores = If(r IsNot Nothing AndAlso r.Succeeded, r.Value, Nothing)
+            Catch ex As Exception
+                ' Sem stores a varredura recusa por StoreDesconhecido, que diz
+                ' a verdade. Derrubar a abertura por causa disso seria pior.
+                _stores = Nothing
+            End Try
+
+            ' A pasta ja podia estar selecionada quando a lista chegou.
+            Dim pasta = Folders.Selected
+            If pasta IsNot Nothing Then
+                Acervo?.Apontar(pasta.Key, pasta.Name, StoreDe(pasta.Key))
+            End If
+        End Function
+
         Private Sub OnMessagesChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
             If e.PropertyName <> NameOf(MessageListViewModel.Selected) Then Return
 

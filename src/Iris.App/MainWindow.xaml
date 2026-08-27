@@ -1065,18 +1065,56 @@
                  A faixa some quando nao ha ressalva nem falha - o que hoje
                  nunca acontece em modo cached, e e proposital que nao
                  aconteca. -->
+            <!-- VISIVEL SEMPRE QUE HA ACERVO, e nao so quando ha ressalva.
+
+                 A visibilidade era TemAlgoADizer, e com ela o BOTAO de varrer
+                 sumiria justamente quando nao ha nada a ressalvar - que e
+                 quando alguem quer varrer. E o mesmo defeito que a faixa da IA
+                 teve: botao que some esconde a funcionalidade E o motivo dela
+                 estar indisponivel.
+
+                 Acervo nulo (cache que nao abriu) colapsa pelo conversor, e a
+                 outra borda desta mesma linha assume. -->
             <Border Grid.Row="2"
-                    Visibility="{Binding Acervo.TemAlgoADizer, Converter={StaticResource BoolToVis},
+                    Visibility="{Binding Acervo, Converter={StaticResource NullToVis},
                                          FallbackValue=Collapsed}"
                     Background="{DynamicResource Brush.Surface.1}"
                     BorderBrush="{DynamicResource Brush.Border.Subtle}"
                     BorderThickness="0,1,0,0"
                     Padding="16,8">
                 <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="ACERVO"
+                                   Style="{DynamicResource Text.Muted}"
+                                   VerticalAlignment="Center" />
+                        <Button Content="Varrer esta pasta"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Acervo.VarrerCommand}"
+                                Margin="12,0,0,0"
+                                ToolTip="Le a pasta inteira e guarda o que viu no cache"
+                                AutomationProperties.Name="Varrer esta pasta" />
+                        <TextBlock Text="{Binding Acervo.Itens, StringFormat={}{0} itens guardados}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   Margin="12,0,0,0" VerticalAlignment="Center" />
+                        <!-- Varrer bloqueia e demora: sem sinal na tela, "esta
+                             lendo" e "travou" sao a mesma coisa para quem olha. -->
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="90" Height="3" Margin="12,0,0,0"
+                                     BorderThickness="0"
+                                     Background="{DynamicResource Brush.Surface.3}"
+                                     Foreground="{DynamicResource Brush.Accent}"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding Acervo.Varrendo,
+                                                  Converter={StaticResource BoolToVis},
+                                                  FallbackValue=Collapsed}"
+                                     AutomationProperties.Name="Varrendo" />
+                    </StackPanel>
                     <TextBlock Text="{Binding Acervo.Ressalva}"
                                TextWrapping="Wrap"
                                FontSize="12"
                                Foreground="{DynamicResource Brush.Text.Secondary}"
+                               Visibility="{Binding Acervo.Ressalva, Converter={StaticResource NullToVis},
+                                                    FallbackValue=Collapsed}"
                                AutomationProperties.Name="Ressalva do acervo" />
                     <TextBlock Text="{Binding Acervo.Travado}"
                                TextWrapping="Wrap"

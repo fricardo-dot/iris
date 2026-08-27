@@ -93,6 +93,32 @@ Public Class BindingsDaJanelaTests
     End Sub
 
     ''' <summary>
+    ''' <b>A varredura tem botao na janela, e ele nao some.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' A faixa do acervo era visivel so quando havia ressalva
+    ''' (<c>TemAlgoADizer</c>). Com o botao dentro dela, ele sumiria justamente
+    ''' quando nao ha nada a ressalvar — que e quando alguem quer varrer.
+    '''
+    ''' E o mesmo defeito que a faixa da IA ja teve, com o mesmo custo: botao
+    ''' que some esconde a funcionalidade E o motivo de ela estar
+    ''' indisponivel. A visibilidade passou a ser "existe acervo".
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_varredura_tem_BOTAO_na_janela()
+        Dim xaml = LerXaml()
+
+        StringAssert.Contains(xaml, "Acervo.VarrerCommand",
+            "sem botao, o SweepRunner continua sendo codigo que ninguem chama")
+        StringAssert.Contains(xaml, "Acervo.Varrendo",
+            "varrer bloqueia e demora: sem sinal, 'lendo' e 'travou' sao iguais")
+
+        Assert.IsFalse(xaml.Contains("Acervo.TemAlgoADizer"),
+            "a faixa do acervo voltou a sumir quando nao ha ressalva, e leva o " &
+            "botao de varrer junto")
+    End Sub
+
+    ''' <summary>
     ''' <b>A janela hospeda a faixa da IA, com o contexto certo.</b>
     '''
     ''' A faixa é um <c>UserControl</c> próprio — foi extraída para que o teste
