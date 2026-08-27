@@ -611,21 +611,31 @@ Public Class PontaAPontaAssistTests
             Return _dentro.Iniciando(requestId, quando)
         End Function
 
-        Public Function Concluir(requestId As Guid, quando As DateTimeOffset) As Boolean _
+        Public Function Concluir(requestId As Guid, quando As DateTimeOffset,
+                                 codigoHttp As Integer?) As Boolean _
                                  Implements IDisclosureJournal.Concluir
             If ExplodirNoConcluir Then Throw New IO.IOException("disco cheio")
             If RecusarConcluir Then Return False
-            Return _dentro.Concluir(requestId, quando)
+            Return _dentro.Concluir(requestId, quando, codigoHttp)
         End Function
+
+        ''' <summary>
+        ''' O último código que passou por aqui — para a suíte poder <b>cobrar</b>
+        ''' o repasse em vez de acreditar no comentário abaixo.
+        ''' </summary>
+        Friend Property UltimoCodigo As Integer?
 
         Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
                                nota As DisclosureNote, podeTerChegado As Boolean,
-                               Optional codigoHttp As Integer? = Nothing) As Boolean _
+                               codigoHttp As Integer?) As Boolean _
                                Implements IDisclosureJournal.Falhar
+            UltimoCodigo = codigoHttp
             If RecusarFalhar Then Return False
             ' REPASSA o codigo. Um espiao que o engolisse faria o teste de
             ' ponta a ponta passar sobre um caminho que perde justamente o
-            ' campo que ele deveria estar provando.
+            ' campo que ele deveria estar provando -- e o comentario ficaria
+            ' afirmando uma garantia que nenhum teste cobra. Por isso
+            ' UltimoCodigo existe, e por isso ha teste em cima dele.
             Return _dentro.Falhar(requestId, quando, nota, podeTerChegado, codigoHttp)
         End Function
 
@@ -892,6 +902,137 @@ Public Class PontaAPontaAssistTests
 
             Assert.AreEqual(DisclosureNote.ConexaoCaiu, r.Nota)
             Assert.IsFalse(m.J.Ler(1)(0).CodigoHttp.HasValue)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>A matriz: todo estado pós-resposta leva o código aos DOIS lugares.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE UMA MATRIZ, E NÃO UM CASO</b>
+    '''
+    ''' <c>Recusou</c> estava coberto e as irmãs não: <c>RespostaGrandeDemais</c>
+    ''' e <c>RespostaIlegivel</c> passam pelo <b>mesmo</b> <c>Falhar</c> e
+    ''' carregam código igual, e os testes que existiam delas conferiam só o
+    ''' <c>Kind</c>. Continuariam verdes se o código sumisse por aquele caminho.
+    '''
+    ''' É a regra do CLAUDE.md: ao corrigir uma corrida, procurar as irmãs dela
+    ''' antes de declarar a família coberta.
+    '''
+    ''' E confere <b>os dois</b> observadores de uma vez — o desfecho que vai
+    ''' para a tela e a linha que fica no disco. Conferir só um deixaria passar
+    ''' um transmissor que registrasse certo e mostrasse errado, ou o contrário.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Todo_estado_POS_RESPOSTA_leva_o_codigo()
+        Dim casos = {
+            (ProviderStatus.Recusou, 404, DisclosureNote.ProvedorRecusou),
+            (ProviderStatus.RespostaGrandeDemais, 200, DisclosureNote.ProvedorRecusou),
+            (ProviderStatus.RespostaIlegivel, 200, DisclosureNote.RespostaIlegivel)
+        }
+
+        For Each caso In casos
+            Using db = Abrir()
+                Dim p As New ProvedorFalso(Destino(Endereco)) With {
+                    .Desfecho = New ProviderOutcome(caso.Item1, "", caso.Item2)}
+                Dim m = Montar(db, Ativacao(Endereco), p)
+
+                Dim r = Executar(m.T, Endereco)
+
+                Assert.AreEqual(caso.Item3, r.Nota, $"{caso.Item1}")
+                Assert.AreEqual(caso.Item2, r.CodigoHttp, $"{caso.Item1}: na tela")
+                Assert.AreEqual(caso.Item2, m.J.Ler(1)(0).CodigoHttp,
+                                $"{caso.Item1}: no diario")
+            End Using
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>E os estados que NÃO leram resposta não levam código nenhum.</b>
+    '''
+    ''' O controle negativo da matriz acima. Sem ele, um transmissor que
+    ''' carimbasse o número em toda falha passaria nos dois — e a faixa diria
+    ''' "o provedor respondeu HTTP 418" embaixo de uma frase dizendo que ele
+    ''' não respondeu.
+    '''
+    ''' Repare que o duplo <b>tenta</b> devolver 418 junto com um estado que
+    ''' não leu resposta: quem recusa é <see cref="ProviderOutcome.Confiavel"/>,
+    ''' na entrada, e não o transmissor.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Estado_SEM_resposta_nao_leva_codigo_nenhum()
+        For Each st In {ProviderStatus.ConexaoCaiu, ProviderStatus.Timeout,
+                        ProviderStatus.Cancelado}
+            Using db = Abrir()
+                Dim p As New ProvedorFalso(Destino(Endereco)) With {
+                    .Desfecho = New ProviderOutcome(st, "", 418)}
+                Dim m = Montar(db, Ativacao(Endereco), p)
+
+                Dim r = Executar(m.T, Endereco)
+
+                Assert.IsFalse(r.CodigoHttp.HasValue,
+                    $"{st} nao leu resposta nenhuma; 418 aqui e o adaptador se contradizendo")
+                Assert.IsFalse(m.J.Ler(1)(0).CodigoHttp.HasValue, $"{st}: no diario")
+            End Using
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>Respondeu 200, e o diário não fechou: o código sobrevive.</b>
+    '''
+    ''' Este era o buraco: o ramo <c>AmbiguoSemFechamentoDoDiario</c> do caminho
+    ''' de <b>sucesso</b> montava o desfecho sem <c>r.Codigo</c>. Ele cai na
+    ''' mesma frase da faixa que o ramo de falha — então era o único caminho
+    ''' pós-resposta em que a tela perdia o diagnóstico, e justamente naquele em
+    ''' que conteúdo <b>comprovadamente</b> saiu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Respondeu_e_o_diario_nao_fechou_o_codigo_SOBREVIVE()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco))
+            Dim teimoso As New DiarioTeimoso(New SqliteDisclosureJournal(db)) With {
+                .RecusarConcluir = True}
+            Dim t As New AssistTransmitter(New DisclosurePolicy(Ativacao(Endereco)),
+                                           New CapabilityLedger(), teimoso, p,
+                                           Function() Agora)
+
+            Dim r = Executar(t, Endereco)
+
+            Assert.AreEqual(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario, r.Kind)
+            Assert.AreEqual(200, r.CodigoHttp,
+                "o provedor respondeu, e a tela tem de poder dizer o que")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>O espião repassa o código — e agora a suíte cobra isso.</b>
+    '''
+    ''' <see cref="DiarioTeimoso"/> traz um comentário afirmando que repassa.
+    ''' Nenhum teste passava por ele com código: os testes novos montavam o
+    ''' <c>SqliteDisclosureJournal</c> direto. Se o espião engolisse o
+    ''' argumento, <b>todos</b> eles continuariam verdes, e o comentário seguiria
+    ''' afirmando uma garantia que a suíte não cobrava.
+    '''
+    ''' Um dublê que perde silenciosamente o que devia repassar é a forma mais
+    ''' barata de um teste de ponta a ponta virar teatro.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_espiao_REPASSA_o_codigo_e_isto_e_cobrado()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {
+                .Desfecho = New ProviderOutcome(ProviderStatus.Recusou, "", 402)}
+            Dim dentro As New SqliteDisclosureJournal(db)
+            Dim teimoso As New DiarioTeimoso(dentro)
+            Dim t As New AssistTransmitter(New DisclosurePolicy(Ativacao(Endereco)),
+                                           New CapabilityLedger(), teimoso, p,
+                                           Function() Agora)
+
+            Executar(t, Endereco)
+
+            Assert.AreEqual(CType(402, Integer?), teimoso.UltimoCodigo,
+                            "o transmissor entregou o numero ao diario")
+            Assert.AreEqual(402, dentro.Ler(1)(0).CodigoHttp,
+                            "e o espiao repassou ate o disco")
         End Using
     End Sub
 

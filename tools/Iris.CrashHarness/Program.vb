@@ -304,7 +304,9 @@ Namespace Global.Iris.CrashHarness
                 End If
                 If String.Equals(ponto, "em-voo", StringComparison.Ordinal) Then Morrer()
 
-                j.Concluir(c.RequestId, DateTimeOffset.UtcNow)
+                ' 200: o harness nao chega a falar HTTP, e Nothing aqui
+                ' diria "nao houve resposta" -- que e o outro sentido.
+                j.Concluir(c.RequestId, DateTimeOffset.UtcNow, 200)
                 Return 0
             End Using
         End Function

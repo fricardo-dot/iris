@@ -67,7 +67,11 @@ Namespace Global.Iris.Assist
             Me.RequestId = requestId
             Me.Nota = nota
             Me.MotivoDoPortao = motivoDoPortao
-            Me.CodigoHttp = DisclosureNotes.CodigoDeDiario(codigoHttp)
+            ' SEM normalizar de novo: o que chega aqui vem de
+            ' ProviderOutcome.Codigo, ja filtrado na entrada. Repetir o filtro
+            ' em cada camada faz parecer que cada uma tem uma regra propria --
+            ' e no dia em que uma delas mudar, elas divergem em silencio.
+            Me.CodigoHttp = codigoHttp
         End Sub
     End Class
 
@@ -269,7 +273,8 @@ Namespace Global.Iris.Assist
             ' registrar outra — e a UI e o diario nao podem discordar sobre se
             ' conteudo pode ter saido.
             If r.Status = ProviderStatus.Respondeu Then
-                If Not Duravel(Function() _diario.Concluir(cap.RequestId, _relogio())) Then
+                If Not Duravel(Function() _diario.Concluir(cap.RequestId, _relogio(),
+                                                           r.Codigo)) Then
                     ' O HTTP respondeu e o diario nao fechou. Dizer "respondeu"
                     ' deixaria o registro em voo para sempre, e a reconciliacao
                     ' da proxima abertura marcaria ambiguo — a UI teria dito
@@ -277,12 +282,21 @@ Namespace Global.Iris.Assist
                     '
                     ' E o desfecho NAO e "erro de diario": conteudo saiu. Quem
                     ' le tem de ver as duas coisas.
+                    ' O CODIGO VAI JUNTO TAMBEM AQUI.
+                    '
+                    ' Este ramo cai na MESMA frase da faixa que o ramo de
+                    ' falha -- e sem o numero ele era o unico caminho
+                    ' pos-resposta em que a tela perdia o diagnostico. Um
+                    ' desfecho que a UI trata igual nao pode carregar menos
+                    ' informacao que o irmao.
                     Return New AssistOutcome(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
                                              "", cap.RequestId,
-                                             DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
+                                             DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido,
+                                             r.Codigo)
                 End If
                 Return New AssistOutcome(AssistOutcomeKind.Respondeu, r.Texto, cap.RequestId,
-                                         DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido)
+                                         DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido,
+                                         r.Codigo)
             End If
 
             ' O CODIGO HTTP VAI PARA O DIARIO.

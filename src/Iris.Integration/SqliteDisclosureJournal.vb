@@ -97,16 +97,17 @@ Namespace Global.Iris.Integration
                 ("$de", CObj(DisclosureStage.Intencionada.ToString()))) = 1
         End Function
 
-        Public Function Concluir(requestId As Guid, quando As DateTimeOffset) As Boolean _
+        Public Function Concluir(requestId As Guid, quando As DateTimeOffset,
+                                 codigoHttp As Integer?) As Boolean _
                                  Implements IDisclosureJournal.Concluir
             Return Terminar(requestId, DisclosureStage.Concluida, quando,
                             DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido,
-                            {DisclosureStage.EmVoo})
+                            {DisclosureStage.EmVoo}, codigoHttp)
         End Function
 
         Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
                                nota As DisclosureNote, podeTerChegado As Boolean,
-                               Optional codigoHttp As Integer? = Nothing) As Boolean _
+                               codigoHttp As Integer?) As Boolean _
                                Implements IDisclosureJournal.Falhar
             ' Uma vez EM VOO, falhar e SEMPRE ambiguo — mesmo que o chamador
             ' jure que nao chegou. Ele nao pode saber: entre "a conexao caiu" e

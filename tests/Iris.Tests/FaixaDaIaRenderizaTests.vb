@@ -24,7 +24,26 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' Nada disto abre o Outlook nem mostra janela: o <c>UserControl</c> só tem
 ''' bindings, e o teste faz <c>Measure</c> e <c>Arrange</c>.
 ''' </summary>
+' NAO PARALELIZAR: esta classe carrega XAML de verdade.
+'
+' Application.LoadComponent le o baml do pacote de recursos do assembly, e
+' System.IO.Packaging.PackagePart NAO e thread-safe --
+' CleanUpRequestedStreamsList estoura NullReferenceException quando duas
+' threads STA carregam o mesmo pacote ao mesmo tempo. Com
+' Parallelize(MethodLevel) no assembly, os oito metodos daqui corriam juntos.
+'
+' O sintoma era intermitente: a mesma suite deu 5 falhas, depois 7, depois 0,
+' sem mudanca nenhuma no codigo. Teste que as vezes passa nao prova nada, e
+' pior: gasta a confianca do numero verde que ele mesmo produz.
+'
+' AdversarioPontaAPontaTests e FaixaDoAcervoRenderizaTests ja tinham o
+' atributo. Esta era a unica que carregava XAML sem ele.
+'
+' (Comentario ACIMA dos atributos: entre <Attr> e a declaracao, o VB exige
+' continuacao de linha e o compilador reclama de "attribute specifier is not
+' a complete statement".)
 <TestClass>
+<DoNotParallelize>
 Public Class FaixaDaIaRenderizaTests
 
     ''' <summary>

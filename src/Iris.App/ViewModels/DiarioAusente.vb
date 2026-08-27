@@ -32,14 +32,15 @@ Namespace Global.Iris.App.ViewModels
             Return False
         End Function
 
-        Public Function Concluir(requestId As Guid, quando As DateTimeOffset) As Boolean _
+        Public Function Concluir(requestId As Guid, quando As DateTimeOffset,
+                                 codigoHttp As Integer?) As Boolean _
                                  Implements IDisclosureJournal.Concluir
             Return False
         End Function
 
         Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
                                nota As DisclosureNote, podeTerChegado As Boolean,
-                               Optional codigoHttp As Integer? = Nothing) As Boolean _
+                               codigoHttp As Integer?) As Boolean _
                                Implements IDisclosureJournal.Falhar
             Return False
         End Function

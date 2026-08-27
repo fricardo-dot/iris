@@ -64,15 +64,68 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Status As ProviderStatus
         ''' <summary>Texto passivo. Vazio quando não houve resposta.</summary>
         Public ReadOnly Property Texto As String
-        ''' <summary>Código HTTP, quando houve. Nunca o corpo do erro.</summary>
+
+        ''' <summary>
+        ''' <b>Código HTTP, quando houve resposta.</b> Nunca o corpo do erro.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>ELE É FILTRADO AQUI, NA ENTRADA</b>
+        '''
+        ''' Este é o ponto onde a palavra do provedor entra no Iris, e é aqui
+        ''' que ela é conferida — uma vez só, e não em cada camada que a
+        ''' carrega depois.
+        '''
+        ''' Duas coisas não passam, por motivos <b>diferentes</b>:
+        '''
+        ''' <list type="bullet">
+        ''' <item>número fora de <c>100..599</c>. Um servidor hostil escolhe o
+        ''' que responde, então isto <b>não</b> é sinal de defeito de
+        ''' adaptador — é só um número que não descreve resposta nenhuma;</item>
+        ''' <item>código num estado que <b>não chegou a receber resposta</b> —
+        ''' <c>ConexaoCaiu</c> com 418, por exemplo. Isso não vem de servidor
+        ''' nenhum: é o adaptador se contradizendo. E chegaria à tela como "o
+        ''' provedor respondeu HTTP 418" logo abaixo de uma frase dizendo que
+        ''' ele não respondeu.</item>
+        ''' </list>
+        '''
+        ''' Nos dois casos o campo fica <c>Nothing</c>, e <c>Nothing</c> tem um
+        ''' sentido só: <b>não há status por que responder</b>.
+        ''' </summary>
         Public ReadOnly Property Codigo As Integer?
 
         Public Sub New(status As ProviderStatus, texto As String,
                        Optional codigo As Integer? = Nothing)
             Me.Status = status
             Me.Texto = If(texto, "")
-            Me.Codigo = codigo
+            Me.Codigo = Confiavel(status, codigo)
         End Sub
+
+        ''' <summary>
+        ''' Estados em que <b>houve resposta</b> — os únicos que podem trazer
+        ''' status. <c>Select Case</c> sem <c>Case Else</c> permissivo: estado
+        ''' novo no enum entra aqui recusando, e não aceitando por omissão.
+        ''' </summary>
+        Public Shared Function PodeTerCodigo(s As ProviderStatus) As Boolean
+            Select Case s
+                Case ProviderStatus.Respondeu, ProviderStatus.Recusou,
+                     ProviderStatus.RespostaGrandeDemais,
+                     ProviderStatus.RespostaIlegivel
+                    Return True
+                Case Else
+                    ' Desconhecido, Timeout, Cancelado, ConexaoCaiu,
+                    ' NaoComecou: nenhum deles leu uma resposta.
+                    Return False
+            End Select
+        End Function
+
+        ''' <summary>O código que se pode afirmar, ou <c>Nothing</c>.</summary>
+        Public Shared Function Confiavel(s As ProviderStatus,
+                                         codigo As Integer?) As Integer?
+            If Not codigo.HasValue Then Return Nothing
+            If Not PodeTerCodigo(s) Then Return Nothing
+            If codigo.Value < 100 OrElse codigo.Value > 599 Then Return Nothing
+            Return codigo
+        End Function
 
         ''' <summary>
         ''' Os bytes podem ter chegado ao provedor?

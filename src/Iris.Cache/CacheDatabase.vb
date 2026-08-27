@@ -81,12 +81,18 @@ Namespace Global.Iris.Cache
                 If vazio Then
                     Criar(conn, schema)
                 ElseIf versao <> SqliteDdl.SchemaVersion Then
-                    ' Versao incompativel FALHA FECHADO. Migrar sem saber de
-                    ' onde para onde e pior que recusar.
-                    falha = New OpenFailure("versao",
-                        $"banco na versao {versao}, esperado {SqliteDdl.SchemaVersion}")
-                    conn.Dispose()
-                    Return Nothing
+                    ' Versao divergente so passa por um caminho CONHECIDO.
+                    '
+                    ' Migrar sem saber de onde para onde continua sendo pior
+                    ' que recusar -- e por isso o que nao esta em
+                    ' SqliteDdl.Migracoes continua sendo recusado, com a mesma
+                    ' mensagem de antes. O que mudou foi que apagar o arquivo
+                    ' deixou de ser barato: o diario do egress mora aqui, e ele
+                    ' nao se reconstroi do Outlook como o resto.
+                    If Not Migrar(conn, versao, falha) Then
+                        conn.Dispose()
+                        Return Nothing
+                    End If
                 End If
 
                 ' 2. INTROSPECCAO: o arquivo REAL corresponde ao modelo?
@@ -136,6 +142,61 @@ Namespace Global.Iris.Cache
                 cmd.ExecuteNonQuery()
             End Using
         End Sub
+
+        ''' <summary>
+        ''' Sobe de <paramref name="de"/> até <see cref="SqliteDdl.SchemaVersion"/>
+        ''' usando <b>só</b> passos listados. Um degrau faltando recusa tudo.
+        ''' </summary>
+        ''' <remarks>
+        ''' Cada degrau é uma transação própria, com o <c>PRAGMA user_version</c>
+        ''' <b>dentro</b> dela: morrer no meio deixa o banco na versão de onde
+        ''' ele saiu, e não numa versão que ele não tem a forma de ter.
+        '''
+        ''' Não confere o resultado: quem confere é a introspecção que roda
+        ''' logo depois, em <see cref="Open"/>, igual para banco criado e para
+        ''' banco migrado.
+        ''' </remarks>
+        Private Shared Function Migrar(conn As SqliteConnection, de As Integer,
+                                       ByRef falha As OpenFailure) As Boolean
+            Dim atual = de
+
+            ' Para tras nao ha caminho: um banco mais NOVO que o programa foi
+            ' escrito por uma versao que sabia coisas que esta nao sabe.
+            If atual > SqliteDdl.SchemaVersion Then
+                falha = New OpenFailure("versao",
+                    $"banco na versao {atual}, mais nova que a esperada " &
+                    $"{SqliteDdl.SchemaVersion}")
+                Return False
+            End If
+
+            While atual < SqliteDdl.SchemaVersion
+                Dim passo As IReadOnlyList(Of String) = Nothing
+                If Not SqliteDdl.Migracoes.TryGetValue(atual, passo) Then
+                    falha = New OpenFailure("versao",
+                        $"banco na versao {atual}, esperado " &
+                        $"{SqliteDdl.SchemaVersion}, e nao ha migracao conhecida")
+                    Return False
+                End If
+
+                Try
+                    Using tx = conn.BeginTransaction()
+                        For Each cmd In passo
+                            Executar(conn, cmd, tx)
+                        Next
+                        Executar(conn, $"PRAGMA user_version = {atual + 1}", tx)
+                        tx.Commit()
+                    End Using
+                Catch ex As Exception
+                    falha = New OpenFailure("migracao",
+                        $"a migracao {atual} -> {atual + 1} falhou: {ex.Message}")
+                    Return False
+                End Try
+
+                atual += 1
+            End While
+
+            Return True
+        End Function
 
         Private Shared Function LerVersao(conn As SqliteConnection) As Integer
             Using cmd = conn.CreateCommand()

@@ -21,14 +21,68 @@ Namespace Global.Iris.Cache
         ''' banco de versão diferente FALHA FECHADO.
         ''' </summary>
         ' 2: disclosure_log ganhou http_status.
-        '
-        ' NAO HA MIGRACAO, DE PROPOSITO (ver CacheDatabase.Open): um banco na
-        ' versao 1 falha fechado. O cache e reconstruivel a partir do Outlook;
-        ' o DIARIO nao e, e por isso trocar de versao pede ler o diario velho
-        ' antes de apagar o arquivo:
-        '
-        '   dotnet run --project tools\Iris.CrashHarness -- historico
         Public Const SchemaVersion As Integer = 2
+
+        ''' <summary>
+        ''' <b>Os passos de migração conhecidos, e só eles.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE ISTO NÃO CONTRADIZ "NÃO MIGRAR"</b>
+        '''
+        ''' <see cref="CacheDatabase.Open"/> recusava toda versão divergente,
+        ''' com a razão escrita: <i>migrar sem saber de onde para onde é pior
+        ''' que recusar</i>. A razão continua valendo — e ela fala de migração
+        ''' <b>cega</b>. Um passo listado aqui sabe exatamente de onde para
+        ''' onde, e o que não está listado <b>continua falhando fechado</b>.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE O CACHE PASSOU A MERECER MIGRAÇÃO</b>
+        '''
+        ''' Enquanto o arquivo guardava só metadado do Outlook, apagá-lo não
+        ''' custava nada: ele se reconstrói. Depois que o <b>diário do egress</b>
+        ''' passou a morar dentro dele, apagar virou destruir o registro do que
+        ''' saiu desta máquina — que não se reconstrói de lugar nenhum.
+        '''
+        ''' E a saída que eu tinha indicado não existia: mandar rodar o harness
+        ''' para ler o diário velho <b>antes</b> de apagar não funciona, porque
+        ''' o harness também abre pelo <c>CacheDatabase.Open</c> da versão nova
+        ''' e leva a mesma recusa. A instrução de preservação era circular.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE UM PASSO PODE FAZER</b>
+        '''
+        ''' Só o que for <b>aditivo</b>: acrescentar coluna nula, acrescentar
+        ''' índice, acrescentar tabela. Nenhum passo aqui pode apagar, renomear
+        ''' ou reinterpretar dado já gravado — para isso a recusa continua sendo
+        ''' a resposta certa, porque aí sim ninguém sabe de onde para onde.
+        '''
+        ''' E o resultado <b>não é aceito na confiança</b>: depois de migrar, o
+        ''' <see cref="SchemaIntrospector"/> compara o arquivo real com o
+        ''' modelo, como em qualquer abertura. Migração que produza a forma
+        ''' errada é pega ali.
+        ''' </summary>
+        Public Shared ReadOnly Property Migracoes _
+                                 As IReadOnlyDictionary(Of Integer, IReadOnlyList(Of String))
+            Get
+                Return _migracoes
+            End Get
+        End Property
+
+        ' 1 -> 2: aditiva e nula, entao nenhuma linha ja gravada muda de
+        ' sentido. O CHECK acompanha a coluna, para o banco migrado ficar com
+        ' a mesma guarda do banco criado do zero.
+        '
+        ' (Comentario AQUI, e nao dentro do inicializador: em VB a continuacao
+        ' implicita de { } nao aceita uma linha so de comentario, e o erro sai
+        ' na linha ANTERIOR.)
+        Private Shared ReadOnly _migracoes As IReadOnlyDictionary(Of Integer, IReadOnlyList(Of String)) =
+            New Dictionary(Of Integer, IReadOnlyList(Of String)) From {
+                {1, New String() {
+                    "ALTER TABLE disclosure_log ADD COLUMN http_status INTEGER " &
+                    "CHECK (http_status IS NULL OR " &
+                    "(http_status >= 100 AND http_status <= 599))"
+                }}
+            }
 
         Public Shared Function Generate(schema As CacheSchema) As IReadOnlyList(Of String)
             Dim comandos As New List(Of String)()

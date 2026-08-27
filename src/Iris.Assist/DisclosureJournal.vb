@@ -162,7 +162,7 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
-        ''' <b>O código HTTP que vale a pena guardar.</b>
+        ''' <b>O último anteparo antes da escrita.</b>
         '''
         ''' ------------------------------------------------------------------
         ''' <b>POR QUE UM NÚMERO PODE ENTRAR ONDE TEXTO NÃO PODE</b>
@@ -173,9 +173,18 @@ Namespace Global.Iris.Assist
         ''' cabe aqui pelo mesmo motivo que o corpo do erro não cabe.
         '''
         ''' ------------------------------------------------------------------
+        ''' <b>NÃO É AQUI QUE A COERÊNCIA É DECIDIDA</b>
+        '''
+        ''' Quem confere se o estado do provedor <i>podia</i> ter código é
+        ''' <see cref="ProviderOutcome.Confiavel"/>, na entrada. Isto aqui é só
+        ''' a faixa, para o caso de alguém chamar o diário por fora daquele
+        ''' caminho — o <c>CHECK</c> da coluna lançaria, o <c>Duravel</c> do
+        ''' transmissor engoliria a exceção, e o registro ficaria em voo.
+        '''
+        ''' ------------------------------------------------------------------
         ''' <b>FORA DA FAIXA VIRA NADA, E NÃO RECUSA</b>
         '''
-        ''' A tentação é recusar o <c>Falhar</c> quando o código não faz sentido.
+        ''' A tentação é recusar a transição quando o código não faz sentido.
         ''' Seria pior: o registro ficaria <b>em voo</b>, a reconciliação da
         ''' abertura seguinte o marcaria ambíguo, e o diário passaria a dizer
         ''' "pode ter saído conteúdo e ninguém sabe" — quando se sabe, e o único
@@ -293,7 +302,11 @@ Namespace Global.Iris.Assist
             Me.Terminada = terminada
             Me.Nota = nota
             Me.MotivoDoPortao = motivoDoPortao
-            Me.CodigoHttp = DisclosureNotes.CodigoDeDiario(codigoHttp)
+            ' SEM normalizar na leitura. O valor ja foi conferido na entrada
+            ' (ProviderOutcome.Confiavel) e na escrita (o CHECK da coluna);
+            ' filtrar de novo aqui so serviria para ESCONDER um banco adulterado
+            ' -- e o diario existe justamente para que dado estranho apareca.
+            Me.CodigoHttp = codigoHttp
         End Sub
 
     End Class
@@ -363,7 +376,24 @@ Namespace Global.Iris.Assist
         ''' </returns>
         Function Iniciando(requestId As Guid, quando As DateTimeOffset) As Boolean
 
-        Function Concluir(requestId As Guid, quando As DateTimeOffset) As Boolean
+        ''' <summary>
+        ''' Terminou bem. <paramref name="codigoHttp"/> é o status da resposta.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>SUCESSO TAMBÉM GUARDA O NÚMERO</b>
+        '''
+        ''' A primeira versão só registrava código em <c>Falhar</c>, com o
+        ''' argumento de que "ter código" devia ser o sinal de que houve algo a
+        ''' diagnosticar. O argumento não se sustenta: quem diz isso é o
+        ''' <b>estágio</b>, e deixar o campo vazio no sucesso fazia
+        ''' <c>Nothing</c> significar duas coisas — "não houve resposta" e
+        ''' "houve, e deu certo".
+        '''
+        ''' Um campo com dois sentidos é o que alguém lê errado no dia em que
+        ''' a pergunta for o que o provedor respondeu.
+        ''' </summary>
+        Function Concluir(requestId As Guid, quando As DateTimeOffset,
+                          codigoHttp As Integer?) As Boolean
 
         ''' <summary>
         ''' Terminou sem sucesso.
@@ -382,9 +412,17 @@ Namespace Global.Iris.Assist
         ''' (<see cref="DisclosureNotes.DeTransporte"/>). "O portão negou" não é
         ''' um jeito de a transmissão falhar: ela nem teria começado.
         ''' </remarks>
+        ''' <remarks>
+        ''' <paramref name="codigoHttp"/> <b>não</b> é opcional. Valor padrão em
+        ''' membro de interface é gravado no <i>chamador</i>, e não despachado:
+        ''' um implementador pode declarar outro padrão sem que o compilador
+        ''' reclame, e aí chamar pelo tipo concreto e chamar pela interface
+        ''' passam a observar argumentos diferentes. Quem não tem código passa
+        ''' <c>Nothing</c> e diz isso por escrito.
+        ''' </remarks>
         Function Falhar(requestId As Guid, quando As DateTimeOffset,
                         nota As DisclosureNote, podeTerChegado As Boolean,
-                        Optional codigoHttp As Integer? = Nothing) As Boolean
+                        codigoHttp As Integer?) As Boolean
 
         ''' <summary>
         ''' Registra uma divulgação que <b>não aconteceu</b> — o portão negou, a

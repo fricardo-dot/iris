@@ -124,7 +124,7 @@ Public Class DiarioTests
             j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
             Assert.AreEqual(DisclosureStage.EmVoo, j.Ler(1)(0).Estagio)
 
-            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(2))
+            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(2), Nothing)
             Assert.AreEqual(DisclosureStage.Concluida, j.Ler(1)(0).Estagio)
         End Using
     End Sub
@@ -217,7 +217,7 @@ Public Class DiarioTests
             Dim a = Autorizada()
             j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
-            j.Concluir(a.Cap.RequestId, Agora)
+            j.Concluir(a.Cap.RequestId, Agora, Nothing)
 
             Assert.AreEqual(0, j.Reconciliar(Agora.AddHours(1)))
             Assert.AreEqual(DisclosureStage.Concluida, j.Ler(1)(0).Estagio)
@@ -237,10 +237,10 @@ Public Class DiarioTests
             Dim a = Autorizada()
             j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
-            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.Timeout, podeTerChegado:=True)
+            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.Timeout, podeTerChegado:=True, Nothing)
             Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio)
 
-            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.ConexaoCaiu, podeTerChegado:=False)
+            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.ConexaoCaiu, podeTerChegado:=False, Nothing)
 
             Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio,
                 "uma vez que pode ter saido, nada desfaz")
@@ -261,7 +261,7 @@ Public Class DiarioTests
             j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
 
-            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.ConexaoCaiu, podeTerChegado:=False)
+            j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.ConexaoCaiu, podeTerChegado:=False, Nothing)
 
             Assert.AreEqual(DisclosureStage.Ambigua, j.Ler(1)(0).Estagio)
         End Using
@@ -294,7 +294,7 @@ Public Class DiarioTests
             Dim a = Autorizada()
             j.Intencao(a.Cap, Agora)
 
-            j.Concluir(a.Cap.RequestId, Agora)
+            j.Concluir(a.Cap.RequestId, Agora, Nothing)
 
             Assert.AreEqual(DisclosureStage.Intencionada, j.Ler(1)(0).Estagio)
         End Using
@@ -320,7 +320,7 @@ Public Class DiarioTests
             Dim a = Autorizada(corpo:=isca)
             j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora)
-            j.Concluir(a.Cap.RequestId, Agora)
+            j.Concluir(a.Cap.RequestId, Agora, Nothing)
         End Using
 
         SqliteConnection.ClearAllPools()
@@ -539,16 +539,16 @@ Public Class DiarioTests
 
             Assert.IsFalse(j.Iniciando(a.Cap.RequestId, Agora),
                            "nao ha intencao gravada — o voo nao pode comecar")
-            Assert.IsFalse(j.Concluir(a.Cap.RequestId, Agora))
+            Assert.IsFalse(j.Concluir(a.Cap.RequestId, Agora, Nothing))
             Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou))
 
             Assert.IsTrue(j.Intencao(a.Cap, Agora), "controle: com o pedido novo, pega")
-            Assert.IsFalse(j.Concluir(a.Cap.RequestId, Agora),
+            Assert.IsFalse(j.Concluir(a.Cap.RequestId, Agora, Nothing),
                            "concluir sem iniciar nao pega")
             Assert.IsTrue(j.Iniciando(a.Cap.RequestId, Agora))
             Assert.IsFalse(j.Iniciando(a.Cap.RequestId, Agora),
                            "iniciar duas vezes reabriria uma janela que ja fechou")
-            Assert.IsTrue(j.Concluir(a.Cap.RequestId, Agora))
+            Assert.IsTrue(j.Concluir(a.Cap.RequestId, Agora, Nothing))
         End Using
     End Sub
 
@@ -584,7 +584,7 @@ Public Class DiarioTests
 
             j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(5))
-            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(9))
+            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(9), Nothing)
 
             Dim e = j.Ler(1)(0)
             Assert.AreEqual(Agora, e.Intencionada)
@@ -666,7 +666,7 @@ Public Class DiarioTests
             j.Intencao(a.Cap, Agora)
 
             Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, CType(999, DisclosureNote)))
-            Assert.IsFalse(j.Falhar(a.Cap.RequestId, Agora, CType(999, DisclosureNote), True))
+            Assert.IsFalse(j.Falhar(a.Cap.RequestId, Agora, CType(999, DisclosureNote), True, Nothing))
             Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou,
                                        CType(999, DisclosureReason)))
 
@@ -714,7 +714,7 @@ Public Class DiarioTests
             Dim a = Autorizada()
             j.Intencao(a.Cap, Agora)
 
-            Assert.IsFalse(j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou, True),
+            Assert.IsFalse(j.Falhar(a.Cap.RequestId, Agora, DisclosureNote.PortaoNegou, True, Nothing),
                            "o portao negando nao e falha de transporte")
             Assert.IsFalse(j.NaoEnviou(a.Cap.RequestId, Agora, DisclosureNote.Timeout),
                            "timeout nao e coisa que impede antes de comecar")
@@ -783,23 +783,98 @@ Public Class DiarioTests
     End Sub
 
     ''' <summary>
-    ''' <b>Envio que deu certo não carrega código.</b>
+    ''' <b>Envio que deu certo TAMBÉM guarda o código.</b>
     '''
-    ''' Não é economia: o campo existe para separar as causas de uma recusa, e
-    ''' preenchê-lo no sucesso faria "tem código" deixar de ser o sinal de que
-    ''' houve alguma coisa a diagnosticar.
+    ''' ------------------------------------------------------------------
+    ''' Este teste já afirmou o contrário. O argumento era que "ter código"
+    ''' devia ser o sinal de que houve algo a diagnosticar — e ele não se
+    ''' sustenta: quem diz isso é o <b>estágio</b>. Deixar o campo vazio no
+    ''' sucesso fazia <c>Nothing</c> significar duas coisas, "não houve
+    ''' resposta" e "houve, e deu certo".
+    '''
+    ''' Um campo com dois sentidos é o que alguém lê errado no dia em que a
+    ''' pergunta for o que o provedor respondeu.
     ''' </summary>
     <TestMethod>
-    Public Sub Concluir_NAO_guarda_codigo()
+    Public Sub Concluir_guarda_o_codigo_do_sucesso()
         Using db = Abrir()
             Dim j As New SqliteDisclosureJournal(db)
             Dim a = Autorizada()
             j.Intencao(a.Cap, Agora)
             j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
-            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(2))
+            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(2), 200)
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(DisclosureStage.Concluida, e.Estagio)
+            Assert.AreEqual(200, e.CodigoHttp)
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>E <c>Nothing</c> continua querendo dizer "não houve resposta".</b>
+    '''
+    ''' O controle negativo do teste acima: sem ele, um diário que carimbasse
+    ''' 200 em toda conclusão passaria.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Concluir_sem_codigo_nao_inventa_um()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
+            j.Concluir(a.Cap.RequestId, Agora.AddSeconds(2), Nothing)
 
             Assert.IsFalse(j.Ler(1)(0).CodigoHttp.HasValue)
         End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>A coerência entre estado e código é decidida na entrada.</b>
+    '''
+    ''' <c>ConexaoCaiu</c> com 418 não vem de servidor nenhum: é o adaptador se
+    ''' contradizendo. E chegaria à tela como "o provedor respondeu HTTP 418"
+    ''' logo abaixo de uma frase dizendo que ele não respondeu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Estado_que_nao_leu_resposta_nao_carrega_codigo()
+        For Each st In {ProviderStatus.ConexaoCaiu, ProviderStatus.Timeout,
+                        ProviderStatus.Cancelado, ProviderStatus.NaoComecou,
+                        ProviderStatus.Desconhecido}
+            Assert.IsFalse(New ProviderOutcome(st, "", 418).Codigo.HasValue, $"{st}")
+        Next
+
+        For Each st In {ProviderStatus.Respondeu, ProviderStatus.Recusou,
+                        ProviderStatus.RespostaGrandeDemais,
+                        ProviderStatus.RespostaIlegivel}
+            Assert.AreEqual(418, New ProviderOutcome(st, "", 418).Codigo, $"{st}")
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>Todo estado do enum está classificado.</b>
+    '''
+    ''' <c>PodeTerCodigo</c> tem <c>Case Else</c> recusando, então um estado
+    ''' novo entra recusando — que é o lado seguro. Este teste existe para que
+    ''' a recusa seja uma <b>decisão</b>, e não o silêncio de quem esqueceu:
+    ''' acrescentar valor ao enum faz ele falhar até alguém dizer de que lado
+    ''' o valor novo fica.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Todo_ProviderStatus_esta_classificado()
+        Dim leram = New HashSet(Of ProviderStatus) From {
+            ProviderStatus.Respondeu, ProviderStatus.Recusou,
+            ProviderStatus.RespostaGrandeDemais, ProviderStatus.RespostaIlegivel}
+        Dim naoLeram = New HashSet(Of ProviderStatus) From {
+            ProviderStatus.Desconhecido, ProviderStatus.Timeout,
+            ProviderStatus.Cancelado, ProviderStatus.ConexaoCaiu,
+            ProviderStatus.NaoComecou}
+
+        For Each v As ProviderStatus In [Enum].GetValues(GetType(ProviderStatus))
+            Assert.IsTrue(leram.Contains(v) OrElse naoLeram.Contains(v),
+                $"{v} nao foi classificado neste teste")
+            Assert.AreEqual(leram.Contains(v), ProviderOutcome.PodeTerCodigo(v), $"{v}")
+        Next
     End Sub
 
     ''' <summary>

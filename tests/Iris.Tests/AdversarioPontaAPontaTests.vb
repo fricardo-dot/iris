@@ -1052,14 +1052,14 @@ Namespace Global.Iris.Tests
                 Return True
             End Function
 
-            Public Function Concluir(r As Guid, q As DateTimeOffset) As Boolean _
+            Public Function Concluir(r As Guid, q As DateTimeOffset,
+                                     codigoHttp As Integer?) As Boolean _
                 Implements IDisclosureJournal.Concluir
                 Return True
             End Function
 
             Public Function Falhar(r As Guid, q As DateTimeOffset, n As DisclosureNote,
-                                   a As Boolean,
-                                   Optional codigoHttp As Integer? = Nothing) As Boolean _
+                                   a As Boolean, codigoHttp As Integer?) As Boolean _
                                    Implements IDisclosureJournal.Falhar
                 Return True
             End Function

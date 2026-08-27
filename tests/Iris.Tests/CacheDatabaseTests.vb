@@ -336,4 +336,144 @@ Public Class CacheDatabaseTests
         End Using
     End Sub
 
+    ' ==================================================================
+    ' A MIGRACAO
+    '
+    ' Enquanto o arquivo guardava so metadado do Outlook, apagar nao custava
+    ' nada. Depois que o DIARIO DO EGRESS passou a morar dentro dele, apagar
+    ' virou destruir o registro do que saiu desta maquina -- que nao se
+    ' reconstroi de lugar nenhum.
+
+    ''' <summary>
+    ''' <b>Um banco na versão 1 sobe para a 2 sem perder linha.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' O teste finge a versão 1 do jeito mais próximo do real que dá: cria o
+    ''' banco de hoje, <b>derruba</b> a coluna nova e volta o
+    ''' <c>user_version</c>. Depois grava uma linha no diário e reabre.
+    '''
+    ''' O que ele cobra é a linha ainda estar lá. Antes disto, a única saída
+    ''' para quem tinha um banco antigo era apagar o arquivo — e junto com ele o
+    ''' registro do que já tinha saído da máquina.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Banco_da_versao_1_MIGRA_sem_perder_o_diario()
+        Dim falha As OpenFailure = Nothing
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"{falha}")
+            ' Volta ao formato da versao 1: DROP COLUMN e o user_version.
+            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
+            Executar(db, "INSERT INTO disclosure_log (request_id, seq, capability_id, " &
+                         " stage, activation_id, activation_version, operation, provider, " &
+                         " endpoint, model, payload_hash, payload_bytes, message_count, " &
+                         " intended_at, note, gate_reason) VALUES " &
+                         "('req-1', 1, 'cap-1', 'Ambigua', 'ativacao-1', 1, 'Resumir', " &
+                         " 'openrouter', 'https://x.invalido/v1', 'modelo-1', 'hash-1', " &
+                         " 3856, 1, '2026-08-26T00:00:00.0000000+00:00', " &
+                         " 'ProvedorRecusou', 'NaoDecidido')")
+            Executar(db, "PRAGMA user_version = 1")
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"a migracao devia ter deixado abrir: {falha}")
+
+            Using cmd = db.Connection.CreateCommand()
+                cmd.CommandText = "SELECT payload_bytes, note, http_status " &
+                                  "FROM disclosure_log WHERE request_id = 'req-1'"
+                Using r = cmd.ExecuteReader()
+                    Assert.IsTrue(r.Read(), "A LINHA DO DIARIO SUMIU NA MIGRACAO")
+                    Assert.AreEqual(3856, r.GetInt32(0))
+                    Assert.AreEqual("ProvedorRecusou", r.GetString(1))
+                    Assert.IsTrue(r.IsDBNull(2), "linha velha nao tem codigo, e isso e certo")
+                End Using
+            End Using
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>E o banco migrado aceita o código, com a mesma guarda do novo.</b>
+    '''
+    ''' Sem isto, uma migração que criasse a coluna sem o <c>CHECK</c> passaria:
+    ''' o <see cref="SchemaIntrospector"/> compara nome, tipo, nulidade e chave
+    ''' — <b>não</b> compara restrição. O banco migrado ficaria com uma guarda a
+    ''' menos que o criado do zero, e ninguém saberia.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_banco_MIGRADO_fica_com_a_mesma_guarda_do_novo()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
+            Executar(db, "PRAGMA user_version = 1")
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"{falha}")
+            Executar(db, "INSERT INTO disclosure_log (request_id, seq, capability_id, " &
+                         " stage, activation_id, activation_version, operation, provider, " &
+                         " endpoint, model, payload_bytes, message_count, intended_at, " &
+                         " note, gate_reason, http_status) VALUES " &
+                         "('req-2', 2, 'cap-2', 'Ambigua', 'a', 1, 'Resumir', 'p', " &
+                         " 'https://x.invalido/v1', 'm', 1, 1, " &
+                         " '2026-08-26T00:00:00.0000000+00:00', 'ProvedorRecusou', " &
+                         " 'NaoDecidido', 404)")
+
+            Assert.ThrowsException(Of SqliteException)(
+                Sub()
+                    Executar(db, "INSERT INTO disclosure_log (request_id, seq, capability_id, " &
+                                 " stage, activation_id, activation_version, operation, provider, " &
+                                 " endpoint, model, payload_bytes, message_count, intended_at, " &
+                                 " note, gate_reason, http_status) VALUES " &
+                                 "('req-3', 3, 'cap-3', 'Ambigua', 'a', 1, 'Resumir', 'p', " &
+                                 " 'https://x.invalido/v1', 'm', 1, 1, " &
+                                 " '2026-08-26T00:00:00.0000000+00:00', 'ProvedorRecusou', " &
+                                 " 'NaoDecidido', 99999)")
+                End Sub, "o CHECK tinha de vir junto com a coluna migrada")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Versão sem passo conhecido continua falhando fechado.</b>
+    '''
+    ''' É o controle negativo da migração, e o que impede a tabela de passos de
+    ''' virar "migre o que aparecer". Migrar sem saber de onde para onde
+    ''' continua sendo pior que recusar; o que mudou foi só que os caminhos
+    ''' <b>listados</b> deixaram de ser recusados.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Versao_desconhecida_continua_RECUSANDO()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Executar(db, "PRAGMA user_version = 97")
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Dim db2 = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+        Assert.IsNull(db2, "97 nao tem passo conhecido; abrir seria adivinhar")
+        Assert.IsNotNull(falha)
+        StringAssert.Contains(falha.ToString(), "97")
+    End Sub
+
+    ''' <summary>
+    ''' <b>E banco mais novo que o programa também recusa.</b>
+    '''
+    ''' Para trás não há caminho: um arquivo na versão 3 foi escrito por uma
+    ''' versão que sabia coisas que esta não sabe. Sem esta guarda, o laço da
+    ''' migração simplesmente não daria nenhuma volta e o arquivo seguiria para
+    ''' a introspecção como se estivesse em ordem.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Banco_MAIS_NOVO_que_o_programa_recusa()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Executar(db, $"PRAGMA user_version = {SqliteDdl.SchemaVersion + 1}")
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Assert.IsNull(CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha))
+        Assert.IsNotNull(falha)
+    End Sub
+
 End Class
