@@ -20,6 +20,9 @@
     <ProjectReference Include="..\Iris.Core\Iris.Core.vbproj" />
     <ProjectReference Include="..\Iris.Sync\Iris.Sync.vbproj" />
     <ProjectReference Include="..\Iris.Outlook\Iris.Outlook.vbproj" />
+    <!-- O cache: esta camada e onde o Outlook vira acervo, e a varredura
+         escreve no SQLite. Sem ciclo: Iris.Integration nao conhece esta. -->
+    <ProjectReference Include="..\Iris.Integration\Iris.Integration.vbproj" />
   </ItemGroup>
 
 </Project>
