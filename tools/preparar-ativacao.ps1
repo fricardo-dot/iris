@@ -41,7 +41,13 @@ param(
 
     # Os provedores subjacentes que o pedido vai aceitar. Gateway roteia: sem
     # isto, quem processa o e-mail pode ser outro, com retencao propria.
-    [string[]] $Provedores = @("google"),
+    #
+    # SEM PADRAO, de proposito. O padrao era "google", que nao e slug de
+    # provedor nenhum -- e o valor errado so apareceu no primeiro pedido de
+    # verdade. Um padrao aqui e uma escolha de roteamento feita por quem
+    # escreveu o roteiro, e nao por quem assina a autorizacao.
+    [Parameter(Mandatory = $true)]
+    [string[]] $Provedores,
 
     # O Iris recusa prazo acima de 90 dias.
     [ValidateRange(1, 90)]
@@ -115,6 +121,56 @@ if ($achadas.Count -gt 1) {
 
 $alvo = $achadas[0]
 Write-Host "Achei: $($alvo.Caminho)  ($($alvo.Itens) itens)" -ForegroundColor Green
+Write-Host ""
+
+# ---------------------------------------------------------------------------
+# OS SLUGS SAO CONFERIDOS ANTES DE VIRAREM AUTORIZACAO.
+#
+# Esta conferencia existe porque o padrao era "google", e slug "google" NAO
+# EXISTE -- os de verdade sao "google-vertex" e "google-ai-studio". "Google" e
+# o nome de EXIBICAO. A ativacao passou a exigir um filtro que nao casava com
+# nada, e o primeiro pedido de verdade morreu com o OpenRouter recusando.
+#
+# A falha foi fechada, porque allow_fallbacks e falso. Mas uma restricao que
+# nao restringe coisa nenhuma nao devia chegar a ser escrita num arquivo de
+# autorizacao: o lugar de pegar isso e aqui, na cerimonia, e nao no primeiro
+# e-mail.
+#
+# O carregador do Iris NAO faz esta conferencia de proposito: ele le um arquivo
+# e nao toca na rede. Validar slug exige perguntar ao provedor.
+Write-Host "Conferindo os provedores contra os endpoints de '$Modelo'..." -ForegroundColor Cyan
+try {
+    $eps = (Invoke-RestMethod -Method Get -TimeoutSec 30 `
+        -Uri "https://openrouter.ai/api/v1/models/$Modelo/endpoints").data.endpoints
+} catch {
+    Write-Host "Nao consegui consultar os endpoints do modelo." -ForegroundColor Red
+    Write-Host $_.Exception.Message
+    exit 1
+}
+
+if (-not $eps) {
+    Write-Host "O OpenRouter nao lista endpoint nenhum para '$Modelo'." -ForegroundColor Red
+    Write-Host "Confira o nome do modelo." -ForegroundColor Yellow
+    exit 1
+}
+
+# O slug de roteamento e a PRIMEIRA parte do tag: "google-vertex/global" ->
+# "google-vertex". Slug base casa todas as variantes.
+$slugs = $eps | ForEach-Object { ($_.tag -split '/')[0] } | Select-Object -Unique | Sort-Object
+
+Write-Host "  slugs disponiveis: $($slugs -join ', ')"
+$maus = $Provedores | Where-Object { $slugs -notcontains $_ }
+if ($maus) {
+    Write-Host ""
+    Write-Host "NAO EXISTE endpoint com o(s) slug(s): $($maus -join ', ')" -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Uma lista que nao casa com nada faz o pedido ser RECUSADO -- e" -ForegroundColor Yellow
+    Write-Host "isso e o desfecho certo, mas descobrir no primeiro e-mail e caro." -ForegroundColor Yellow
+    Write-Host "Repita com, por exemplo:" -ForegroundColor Yellow
+    Write-Host ("  -Provedores " + ($slugs -join ',')) -ForegroundColor Green
+    exit 1
+}
+Write-Host "  ok: todos os slugs pedidos existem." -ForegroundColor Green
 Write-Host ""
 
 $agora = (Get-Date).ToUniversalTime()

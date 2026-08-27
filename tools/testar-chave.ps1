@@ -21,7 +21,17 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Alvo = "Iris/OpenRouter"
+    [string] $Alvo = "Iris/OpenRouter",
+
+    # Manda uma completion MINIMA com o mesmo bloco `provider` da ativacao.
+    #
+    # O conteudo e a palavra "ping": nenhum byte de e-mail. Serve para saber se
+    # a restricao de roteamento -- zdr, data_collection, only -- tem endpoint
+    # que a atenda, sem descobrir isso com uma mensagem de verdade.
+    [switch] $Sondar,
+
+    [string] $Ativacao = (Join-Path ([Environment]::GetFolderPath(
+        [Environment+SpecialFolder]::CommonApplicationData)) "Iris\ativacao.json")
 )
 
 $ErrorActionPreference = 'Stop'
@@ -103,6 +113,77 @@ try {
     } else {
         Write-Host ("Nem chegou a haver resposta HTTP: {0}" -f $_.Exception.Message) -ForegroundColor Red
         Write-Host "Isso aponta para rede, DNS ou TLS -- e nao para a chave." -ForegroundColor Yellow
+    }
+    # Sem chave que valha, sondar roteamento nao diz nada.
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+if (-not $Sondar) {
+    Write-Host ""
+    Write-Host "Para sondar tambem a restricao de roteamento (sem conteudo de" -ForegroundColor Cyan
+    Write-Host "e-mail), repita com -Sondar." -ForegroundColor Cyan
+    exit 0
+}
+
+if (-not (Test-Path -LiteralPath $Ativacao)) {
+    Write-Host ""
+    Write-Host "Nao achei a ativacao em: $Ativacao" -ForegroundColor Red
+    exit 1
+}
+
+$a = Get-Content -Raw -LiteralPath $Ativacao | ConvertFrom-Json
+
+Write-Host ""
+Write-Host "Sondando o roteamento com o MESMO bloco provider da ativacao..." -ForegroundColor Cyan
+Write-Host ("  modelo ..... {0}" -f $a.modelo)
+Write-Host ("  only ....... {0}" -f ($a.provedoresPermitidos -join ', '))
+Write-Host ("  zdr ........ {0}" -f $a.exigirRetencaoZero)
+Write-Host ""
+
+# O MESMO bloco que o OpenRouterAssistantProvider monta -- e o conteudo e
+# "ping". Se isto passar e o Iris falhar, o problema nao e o roteamento.
+$provider = @{ allow_fallbacks = $false }
+if ($a.exigirRetencaoZero) {
+    $provider.zdr = $true
+    $provider.data_collection = "deny"
+}
+if ($a.provedoresPermitidos.Count -gt 0) { $provider.only = @($a.provedoresPermitidos) }
+
+$corpo = @{
+    model       = $a.modelo
+    messages    = @(@{ role = "user"; content = "ping" })
+    temperature = 0
+    provider    = $provider
+} | ConvertTo-Json -Depth 6
+
+try {
+    $r = Invoke-WebRequest -Uri "https://openrouter.ai/api/v1/chat/completions" `
+                           -Headers @{ Authorization = "Bearer $chave" } `
+                           -Method Post -ContentType "application/json" `
+                           -Body ([Text.Encoding]::UTF8.GetBytes($corpo)) `
+                           -UseBasicParsing -TimeoutSec 60
+    Write-Host ("HTTP {0} -- o roteamento ACEITA a restricao." -f [int]$r.StatusCode) -ForegroundColor Green
+    $j = $r.Content | ConvertFrom-Json
+    Write-Host ("  atendeu .... {0}" -f $j.provider)
+    Write-Host ("  modelo ..... {0}" -f $j.model)
+    Write-Host ""
+    Write-Host "Entao a ativacao esta roteavel. Pode repetir o canario." -ForegroundColor Green
+} catch {
+    $resp = $_.Exception.Response
+    Write-Host ""
+    if ($resp) {
+        Write-Host ("HTTP {0} -- o roteamento RECUSA." -f [int]$resp.StatusCode) -ForegroundColor Red
+        try {
+            $leitor = New-Object IO.StreamReader($resp.GetResponseStream())
+            Write-Host $leitor.ReadToEnd()
+        } catch { }
+        Write-Host ""
+        Write-Host "E este e o mesmo erro que o Iris levou. A saida e afrouxar a" -ForegroundColor Yellow
+        Write-Host "restricao na cerimonia, ou trocar de modelo -- e as duas sao" -ForegroundColor Yellow
+        Write-Host "decisao sua, nao ajuste de codigo." -ForegroundColor Yellow
+    } else {
+        Write-Host ("Nem houve resposta HTTP: {0}" -f $_.Exception.Message) -ForegroundColor Red
     }
     exit 1
 }
