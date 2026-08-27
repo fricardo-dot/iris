@@ -72,6 +72,25 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+# VIRGULA SEPARA, MESMO CHAMADO COM -File.
+#
+# Com `powershell -File roteiro.ps1 -Provedores a,b` os argumentos chegam
+# LITERAIS: o PowerShell nao interpreta a virgula, e $Provedores vira um
+# arranjo de UM elemento com a string "a,b" dentro. O roteiro entao reclamava
+# que "a,b" nao existe enquanto imprimia "a" e "b" como disponiveis -- uma
+# mensagem que acusa o usuario de um erro que e do roteiro.
+#
+# Dividir aqui faz as duas formas de chamada valerem igual.
+$Provedores = @($Provedores |
+    ForEach-Object { $_ -split ',' } |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { $_ })
+
+if (-not $Provedores) {
+    Write-Host "Nenhum provedor informado." -ForegroundColor Red
+    exit 1
+}
+
 Write-Host ""
 Write-Host "Procurando a pasta '$Pasta' no Outlook (somente leitura)..." -ForegroundColor Cyan
 
