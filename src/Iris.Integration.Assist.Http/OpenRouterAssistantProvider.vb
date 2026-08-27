@@ -178,6 +178,22 @@ Namespace Global.Iris.Integration.Assist.Http
                     ' produzir resumos diferentes em execucoes diferentes.
                     w.WriteNumber("temperature", 0)
 
+                    ' PEDIR A CONTA. O OpenRouter so devolve o custo real da
+                    ' chamada se ele for pedido aqui.
+                    '
+                    ' Isto acrescenta um campo ao que SAI, e por isso esta em
+                    ' Preparar e nao em outro lugar: o corpo e montado antes de
+                    ' a capability ser emitida, entao o que a autorizacao cobre
+                    ' ja inclui esta linha. Um campo enfiado depois seria
+                    ' exatamente o defeito que a separacao Preparar/Enviar
+                    ' existe para impedir.
+                    '
+                    ' E o que ele pede de volta e um NUMERO. Nao ha aqui pedido
+                    ' de eco de conteudo nenhum.
+                    w.WriteStartObject("usage")
+                    w.WriteBoolean("include", True)
+                    w.WriteEndObject()
+
                     w.WriteStartObject("provider")
                     ' SEMPRE falso. Ver o doc da classe: cair para fora da lista
                     ' faria a autorizacao declarar o que o pedido nao impoe.
@@ -221,9 +237,81 @@ Namespace Global.Iris.Integration.Assist.Http
 
             Dim texto = Extrair(r.Texto)
             If texto Is Nothing Then
+                ' ILEGIVEL NAO CARREGA CONTA. Um custo sem resposta seria um
+                ' numero solto ao lado de "nao deu para ler", e quem lesse teria
+                ' de adivinhar a que ele se refere.
                 Return New ProviderOutcome(ProviderStatus.RespostaIlegivel, "", r.Codigo)
             End If
-            Return New ProviderOutcome(ProviderStatus.Respondeu, texto, r.Codigo)
+
+            Dim conta = Contabilidade(r.Texto)
+            Return New ProviderOutcome(ProviderStatus.Respondeu, texto, r.Codigo,
+                                       conta.Custo, conta.Tokens)
+        End Function
+
+        ''' <summary>
+        ''' <b>Os números de <c>usage</c>, e só os números.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE ISTO NÃO CONTRADIZ O <c>Extrair</c></b>
+        '''
+        ''' <see cref="Extrair"/> diz que nada mais da resposta é lido, porque o
+        ''' resto é dado de fora. A regra continua valendo <b>para texto</b>:
+        ''' <c>provider</c>, <c>id</c> e companhia seguem sem ser lidos, e quem
+        ''' diz o agente e o modelo na tela é a <b>ativação</b> — que o usuário
+        ''' assinou, e que o outro lado não escolhe.
+        '''
+        ''' O que entra é <c>usage.cost</c> e <c>usage.total_tokens</c>: números,
+        ''' pelo mesmo motivo que o código HTTP entrou no diário. Um número não
+        ''' ecoa o e-mail de volta.
+        '''
+        ''' <b>Falta de conta não é falha.</b> Nem todo provedor conta, e nenhum
+        ''' é obrigado. Ausência devolve <c>Nothing</c>, e a tela simplesmente
+        ''' não mostra o campo — em vez de acusar erro por um dado opcional.
+        ''' </summary>
+        Private Shared Function Contabilidade(bruto As String) _
+                                As (Custo As Decimal?, Tokens As Integer?)
+            If String.IsNullOrEmpty(bruto) Then Return (Nothing, Nothing)
+
+            Dim doc As JsonDocument = Nothing
+            Try
+                doc = JsonDocument.Parse(bruto, New JsonDocumentOptions With {
+                    .AllowTrailingCommas = False,
+                    .CommentHandling = JsonCommentHandling.Disallow,
+                    .MaxDepth = 32})
+            Catch ex As JsonException
+                Return (Nothing, Nothing)
+            End Try
+
+            Try
+                Dim uso As JsonElement = Nothing
+                If doc.RootElement.ValueKind <> JsonValueKind.Object OrElse
+                   Not doc.RootElement.TryGetProperty("usage", uso) OrElse
+                   uso.ValueKind <> JsonValueKind.Object Then
+                    Return (Nothing, Nothing)
+                End If
+
+                Dim custo As Decimal? = Nothing
+                Dim c As JsonElement = Nothing
+                Dim lido As Decimal
+                If uso.TryGetProperty("cost", c) AndAlso
+                   c.ValueKind = JsonValueKind.Number AndAlso
+                   c.TryGetDecimal(lido) Then
+                    custo = lido
+                End If
+
+                Dim tokens As Integer? = Nothing
+                Dim t As JsonElement = Nothing
+                Dim n As Integer
+                If uso.TryGetProperty("total_tokens", t) AndAlso
+                   t.ValueKind = JsonValueKind.Number AndAlso
+                   t.TryGetInt32(n) Then
+                    tokens = n
+                End If
+
+                Return (custo, tokens)
+            Finally
+                doc.Dispose()
+            End Try
         End Function
 
         ''' <summary>

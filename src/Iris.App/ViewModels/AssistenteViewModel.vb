@@ -1,4 +1,5 @@
 Imports System.Collections.Generic
+Imports System.Globalization
 Imports System.Threading
 Imports System.Threading.Tasks
 Imports System.Windows.Threading
@@ -60,18 +61,60 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _contexto As IAssistContext
         Private ReadOnly _rascunho As IRascunho
 
+        ''' <summary>
+        ''' Quem põe texto na área de transferência.
+        '''
+        ''' Injetado para o ViewModel não depender de <c>Clipboard</c>: a área
+        ''' de transferência exige STA e um desktop de verdade, e um teste que
+        ''' precise disso deixa de ser teste de ViewModel.
+        ''' </summary>
+        Private ReadOnly _copiador As Action(Of String)
+
+        ''' <summary>
+        ''' Quando o voo corrente começou. <c>Nothing</c> fora de voo.
+        '''
+        ''' Vem do <c>_relogio</c> injetado, e não de <c>DateTimeOffset.Now</c>:
+        ''' o tempo decorrido é conferível em teste sem esperar de verdade.
+        ''' </summary>
+        Private _inicioDoVoo As DateTimeOffset?
+
+        ''' <summary>
+        ''' Só reavisa que <see cref="Decorrido"/> mudou. Não mede nada — quem
+        ''' mede é o relógio, e o cálculo é feito na leitura.
+        ''' </summary>
+        Private ReadOnly _pulso As DispatcherTimer
+
         Public Sub New(ui As Dispatcher, transmissor As AssistTransmitter,
                        politica As DisclosurePolicy, relogio As Func(Of DateTimeOffset),
                        reconciliacao As ReconciliationResult,
                        contexto As IAssistContext, rascunho As IRascunho,
-                       Optional avisoDaAtivacao As String = "")
+                       Optional avisoDaAtivacao As String = "",
+                       Optional copiador As Action(Of String) = Nothing)
             _ui = ui
             _transmissor = transmissor
             _politica = politica
             _relogio = relogio
             _contexto = If(contexto, CType(New ContextoIndisponivel(), IAssistContext))
             _rascunho = rascunho
+            _copiador = copiador
             Me.AvisoDaAtivacao = If(avisoDaAtivacao, "")
+
+            ' SEM _ui NAO HA PULSO, E ISSO NAO E DEFEITO.
+            '
+            ' Os testes montam o ViewModel com ui = Nothing. Um DispatcherTimer
+            ' ali estouraria, e o cronometro nao e a coisa sendo testada --
+            ' Decorrido continua conferivel, porque quem mede e o relogio
+            ' injetado e a conta acontece na LEITURA. O pulso so avisa a tela.
+            If _ui IsNot Nothing Then
+                _pulso = New DispatcherTimer(TimeSpan.FromMilliseconds(100),
+                                             DispatcherPriority.Normal,
+                                             Sub(remetente As Object, arg As EventArgs)
+                                                 OnPropertyChanged(NameOf(Decorrido))
+                                             End Sub,
+                                             _ui)
+                ' O construtor de quatro argumentos JA COMECA o timer.
+                _pulso.Stop()
+            End If
 
             ' O RASCUNHO MUDOU: reconsulta os comandos.
             '
@@ -92,6 +135,7 @@ Namespace Global.Iris.App.ViewModels
             RedigirCommand = New AsyncRelayCommand(AddressOf Redigir, Function() PodeRedigir)
             CancelarCommand = New RelayCommand(AddressOf Cancelar, Function() PodeCancelar)
             DesfazerCommand = New RelayCommand(AddressOf Desfazer, Function() PodeDesfazer)
+            CopiarCommand = New RelayCommand(AddressOf Copiar, Function() PodeCopiar)
             ' Me. OBRIGATORIO: sem ele, 'reconciliacao' eclipsa 'Reconciliacao'
             ' — VB e case-insensitive, e a atribuicao vira o parametro para ele
             ' mesmo. O compilador nao avisa; o sintoma aparece longe, como uma
@@ -144,6 +188,7 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property RedigirCommand As AsyncRelayCommand
         Public ReadOnly Property CancelarCommand As RelayCommand
         Public ReadOnly Property DesfazerCommand As RelayCommand
+        Public ReadOnly Property CopiarCommand As RelayCommand
 
         Private _ocupado As Boolean
         ''' <summary>Há um pedido em andamento.</summary>
@@ -269,6 +314,128 @@ Namespace Global.Iris.App.ViewModels
                 Return Ocupado
             End Get
         End Property
+
+        ''' <summary>
+        ''' Copiar exige <b>ter o que copiar</b>, e nada além disso.
+        '''
+        ''' Não depende do portão: o texto já está na tela, e já foi pago. Amarrar
+        ''' a cópia à autorização faria a IA vencer entre o resumo aparecer e o
+        ''' usuário conseguir levá-lo embora.
+        ''' </summary>
+        Public ReadOnly Property PodeCopiar As Boolean
+            Get
+                Return TemResultado AndAlso _copiador IsNot Nothing
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>Há quanto tempo o pedido corrente está rodando.</b>
+        '''
+        ''' Existe porque uma chamada a modelo demora segundos, e sem número na
+        ''' tela "está pensando" e "travou" são a mesma coisa para quem olha. O
+        ''' botão Cancelar ao lado só é uma escolha de verdade se o usuário
+        ''' souber quanto já esperou.
+        '''
+        ''' A conta é feita na leitura, sobre o relógio injetado: o cronômetro
+        ''' não guarda estado que possa divergir do voo.
+        ''' </summary>
+        Public ReadOnly Property Decorrido As String
+            Get
+                If Not _inicioDoVoo.HasValue Then Return ""
+                Dim s = (_relogio() - _inicioDoVoo.Value).TotalSeconds
+                If s < 0 Then s = 0
+                Return s.ToString("0.0", Daqui) & " s"
+            End Get
+        End Property
+
+        Private _ficha As String = ""
+        ''' <summary>
+        ''' <b>Quem atendeu, e quanto custou.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O AGENTE E O MODELO VÊM DA ATIVAÇÃO, NÃO DA RESPOSTA</b>
+        '''
+        ''' O OpenRouter devolve um campo <c>provider</c> no corpo da resposta,
+        ''' e seria mais fácil mostrar aquilo. Mas é <b>texto escolhido pelo
+        ''' outro lado</b>, e a §29.5 diz onde o dado de fora para. O que
+        ''' aparece aqui é o que <b>o usuário assinou</b> na cerimônia — e é
+        ''' também a resposta mais útil, porque a pergunta "para onde meu e-mail
+        ''' foi" se responde com a autorização, não com a nota fiscal.
+        '''
+        ''' Da resposta entram só os <b>números</b>: custo e tokens.
+        '''
+        ''' Vazio quando não houve voo. Nada de "0 tokens, US$ 0,00" antes do
+        ''' primeiro pedido — zero é uma afirmação, e ali não há nada a afirmar.
+        ''' </summary>
+        Public Property Ficha As String
+            Get
+                Return _ficha
+            End Get
+            Private Set(valor As String)
+                SetProperty(_ficha, If(valor, ""))
+                OnPropertyChanged(NameOf(TemFicha))
+            End Set
+        End Property
+
+        Public ReadOnly Property TemFicha As Boolean
+            Get
+                Return Ficha.Length > 0
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' Monta a ficha. <c>Decimal</c> com quatro casas: uma chamada de
+        ''' modelo barato custa frações de centavo, e arredondar para dois
+        ''' transformaria todo custo real em "US$ 0,00" — que é pior que não
+        ''' mostrar, porque afirma gratuidade.
+        ''' </summary>
+        ''' <summary>
+        ''' <b>A cultura da ficha é fixa, e não a da máquina.</b>
+        '''
+        ''' Toda a interface do Iris é escrita em português; formatar número
+        ''' pela cultura ambiente faria "US$ 0.0004" aparecer no meio de frases
+        ''' em português numa máquina configurada em inglês, e o mesmo texto
+        ''' mudar de forma conforme o Windows de quem abre.
+        '''
+        ''' E torna o número conferível: um teste que dependa da cultura do
+        ''' processo está testando o host, não este código.
+        ''' </summary>
+        Private Shared ReadOnly Daqui As CultureInfo = CultureInfo.GetCultureInfo("pt-BR")
+
+        Private Function Fichar(destino As AssistDestination,
+                                r As AssistOutcome) As String
+            Dim partes As New List(Of String)()
+            If destino IsNot Nothing Then
+                If destino.Provedor.Length > 0 Then partes.Add(destino.Provedor)
+                If destino.Modelo.Length > 0 Then partes.Add(destino.Modelo)
+            End If
+            If r.Tokens.HasValue Then partes.Add(r.Tokens.Value.ToString("N0", Daqui) & " tokens")
+            If r.Custo.HasValue Then partes.Add("US$ " & r.Custo.Value.ToString("N4", Daqui))
+            If _inicioDoVoo.HasValue Then partes.Add(Decorrido)
+            Return String.Join("  ·  ", partes)
+        End Function
+
+        ''' <summary>
+        ''' <b>Leva a resposta do modelo para a área de transferência.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' Texto, e só texto — o mesmo que está na tela. Não é egress: a área
+        ''' de transferência é local, e quem pediu foi o usuário.
+        '''
+        ''' Falha da área de transferência não derruba nada: ela é disputada
+        ''' entre processos e recusa por motivos que não têm nada a ver com o
+        ''' Iris. Deixar a exceção subir mataria a janela por causa de um botão
+        ''' de conveniência.
+        ''' </summary>
+        Private Sub Copiar()
+            If Not PodeCopiar Then Return
+            Try
+                _copiador(Resultado)
+            Catch
+                Aviso = "Não consegui usar a área de transferência. " &
+                        "O texto continua aí para copiar à mão."
+            End Try
+        End Sub
 
         ' ==============================================================
 
@@ -538,6 +705,17 @@ Namespace Global.Iris.App.ViewModels
             Ocupado = True
             Aviso = ""
 
+            ' O CRONOMETRO COMECA AQUI, e a ficha velha morre junto.
+            '
+            ' Deixar a ficha do pedido anterior na tela durante o proximo
+            ' mostraria custo e tempo de OUTRA chamada ao lado de um cronometro
+            ' correndo -- dois numeros de coisas diferentes, com cara de serem
+            ' do mesmo pedido.
+            _inicioDoVoo = _relogio()
+            Ficha = ""
+            OnPropertyChanged(NameOf(Decorrido))
+            If _pulso IsNot Nothing Then _pulso.Start()
+
             Dim cts As New CancellationTokenSource()
             _cancelamento = cts
 
@@ -551,6 +729,7 @@ Namespace Global.Iris.App.ViewModels
                 If minha <> _geracao Then Return
 
                 Publicar(r)
+                Ficha = Fichar(pedido.Destino, r)
             Finally
                 ' QUEM LIMPA O `Ocupado` E O DONO DO VOO, NAO A GERACAO.
                 '
@@ -563,11 +742,19 @@ Namespace Global.Iris.App.ViewModels
                 ' A geracao decide se o RESULTADO vale. Quem decide se o estado
                 ' de "ocupado" e meu para limpar e ser eu o voo corrente, e isso
                 ' e a identidade do CancellationTokenSource.
+                ' QUEM PARA O CRONOMETRO E O DONO DO VOO, pelo mesmo motivo
+                ' que o Ocupado: parar por geracao deixaria o pulso batendo
+                ' para sempre depois de uma troca de mensagem.
                 Dim meu = ReferenceEquals(_cancelamento, cts)
                 cts.Dispose()
                 If meu Then
                     _cancelamento = Nothing
                     Ocupado = False
+                    If _pulso IsNot Nothing Then _pulso.Stop()
+                    ' _inicioDoVoo FICA. A ficha usa o Decorrido para dizer
+                    ' quanto a chamada demorou, e zerar aqui apagaria justamente
+                    ' o numero que o usuario acabou de esperar para ver.
+                    OnPropertyChanged(NameOf(Decorrido))
                 End If
             End Try
         End Function

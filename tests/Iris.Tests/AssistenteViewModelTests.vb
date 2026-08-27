@@ -81,6 +81,10 @@ Public Class AssistenteViewModelTests
         ''' de uma restrição de provedor que não casava com endpoint nenhum.
         ''' </summary>
         Friend Property RecusarCom As Integer?
+        Friend Property Custo As Decimal?
+        Friend Property Tokens As Integer?
+        ''' <summary>Roda DENTRO da chamada, com o voo em andamento.</summary>
+        Friend Property AoEnviar As Action
 
         Public ReadOnly Property Destino As AssistDestination _
                                  Implements IAssistantProvider.Destino
@@ -102,6 +106,8 @@ Public Class AssistenteViewModelTests
         Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _
                                Implements IAssistantProvider.Enviar
             Interlocked.Increment(Chamadas)
+            ' .Invoke() explicito: AoEnviar() o VB le como ACESSO a propriedade.
+            If AoEnviar IsNot Nothing Then AoEnviar.Invoke()
             If Trava IsNot Nothing Then Trava.Wait(TimeSpan.FromSeconds(10))
             If ct.IsCancellationRequested Then
                 Return New ProviderOutcome(ProviderStatus.Cancelado, "")
@@ -109,7 +115,7 @@ Public Class AssistenteViewModelTests
             If RecusarCom.HasValue Then
                 Return New ProviderOutcome(ProviderStatus.Recusou, "", RecusarCom.Value)
             End If
-            Return New ProviderOutcome(ProviderStatus.Respondeu, Texto, 200)
+            Return New ProviderOutcome(ProviderStatus.Respondeu, Texto, 200, Custo, Tokens)
         End Function
     End Class
 
@@ -241,19 +247,36 @@ Public Class AssistenteViewModelTests
         End Sub
     End Class
 
+    ''' <summary>
+    ''' Onde a última cópia foi parar. <c>Nothing</c> se ninguém copiou.
+    ''' </summary>
+    Friend Shared Property UltimaCopia As String
+
+    ''' <summary>
+    ''' O relógio dos testes, que <b>anda</b> quando alguém manda.
+    '''
+    ''' Existe para o cronômetro ser conferível sem esperar de verdade: o
+    ''' tempo decorrido é calculado na leitura, sobre este relógio.
+    ''' </summary>
+    Friend Shared Property Avanco As TimeSpan = TimeSpan.Zero
+
     Friend Shared Function Montar(ativacao As ActivationRecord,
                                    provedor As IAssistantProvider,
                                    reconciliacao As ReconciliationResult,
                                    Optional contexto As IAssistContext = Nothing,
                                    Optional rascunho As IRascunho = Nothing) _
                                    As AssistenteViewModel
-        Dim relogio As Func(Of DateTimeOffset) = Function() Agora
+        UltimaCopia = Nothing
+        Avanco = TimeSpan.Zero
+        Dim relogio As Func(Of DateTimeOffset) = Function() Agora + Avanco
         Dim politica As New DisclosurePolicy(ativacao)
         Dim t As New AssistTransmitter(politica, New CapabilityLedger(),
                                        New DiarioDeMemoria(), provedor, relogio)
         Dim vm As New AssistenteViewModel(Nothing, t, politica, relogio, reconciliacao,
                                           If(contexto, New ContextoDeTeste()),
-                                          If(rascunho, New RascunhoFalso()))
+                                          If(rascunho, New RascunhoFalso()),
+                                          "",
+                                          Sub(texto As String) UltimaCopia = texto)
         vm.Avaliar()
         Return vm
     End Function
@@ -1203,5 +1226,165 @@ Public Class AssistenteViewModelTests
             Return New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
         End Function
     End Class
+
+    ' ==================================================================
+    ' O PAINEL: COPIAR, CRONOMETRO E FICHA
+
+    ''' <summary>
+    ''' <b>Copiar leva exatamente o texto que está na tela.</b>
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Copiar_leva_o_texto_da_resposta() As Task
+        Dim vm = Montar(Ativacao(), New ProvedorControlado() With {.Texto = "o resumo"},
+                        Pronta())
+        Await Pedir(vm)
+
+        Assert.IsTrue(vm.PodeCopiar)
+        vm.CopiarCommand.Execute(Nothing)
+
+        Assert.AreEqual("o resumo", UltimaCopia)
+        Assert.AreEqual("o resumo", vm.Resultado,
+                        "copiar nao pode CONSUMIR a resposta")
+    End Function
+
+    ''' <summary>
+    ''' <b>Sem resposta não há o que copiar.</b>
+    '''
+    ''' O controle negativo: sem ele, um <c>PodeCopiar</c> que dissesse sempre
+    ''' sim passaria — e o botão ficaria de pé oferecendo copiar o nada.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Sem_resposta_NAO_da_para_copiar()
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta())
+
+        Assert.IsFalse(vm.PodeCopiar)
+        vm.CopiarCommand.Execute(Nothing)
+        Assert.IsNull(UltimaCopia, "nao havia o que copiar, e nada foi copiado")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Falha da área de transferência não derruba a janela.</b>
+    '''
+    ''' Ela é disputada entre processos e recusa por motivos que não têm nada a
+    ''' ver com o Iris. Deixar a exceção subir mataria a aplicação por causa de
+    ''' um botão de conveniência — e o texto continua na tela para copiar à mão.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Area_de_transferencia_que_RECUSA_vira_aviso() As Task
+        Dim relogio As Func(Of DateTimeOffset) = Function() Agora
+        Dim politica As New DisclosurePolicy(Ativacao())
+        Dim t As New AssistTransmitter(politica, New CapabilityLedger(),
+                                       New DiarioDeMemoria(),
+                                       New ProvedorControlado() With {.Texto = "o resumo"},
+                                       relogio)
+        Dim vm As New AssistenteViewModel(Nothing, t, politica, relogio, Pronta(),
+                                          New ContextoDeTeste(), New RascunhoFalso(),
+                                          "",
+                                          Sub(texto As String)
+                                              Throw New InvalidOperationException("ocupada")
+                                          End Sub)
+        vm.Avaliar()
+        Await Pedir(vm)
+
+        vm.CopiarCommand.Execute(Nothing)
+
+        StringAssert.Contains(vm.Aviso, "área de transferência")
+        Assert.AreEqual("o resumo", vm.Resultado, "e o texto continua ai")
+    End Function
+
+    ''' <summary>
+    ''' <b>A ficha diz o agente e o modelo da ATIVAÇÃO, e os números da chamada.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' O agente e o modelo <b>não</b> vêm do corpo da resposta. O OpenRouter
+    ''' devolve um campo <c>provider</c>, e seria mais fácil mostrar aquilo —
+    ''' mas é texto escolhido pelo outro lado. O que aparece é o que o usuário
+    ''' assinou na cerimônia.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function A_ficha_traz_agente_modelo_e_conta() As Task
+        Dim vm = Montar(Ativacao(),
+                        New ProvedorControlado() With {.Custo = 0.0004D, .Tokens = 1234},
+                        Pronta())
+        Await Pedir(vm)
+
+        Assert.IsTrue(vm.TemFicha, vm.Ficha)
+        StringAssert.Contains(vm.Ficha, "provedor-de-teste")
+        StringAssert.Contains(vm.Ficha, "modelo-de-teste")
+        StringAssert.Contains(vm.Ficha, "1.234")
+        StringAssert.Contains(vm.Ficha, "0,0004",
+            "quatro casas: arredondar para duas faria todo custo real virar zero")
+    End Function
+
+    ''' <summary>
+    ''' <b>Provedor que não conta não vira "US$ 0,00".</b>
+    '''
+    ''' Zero é uma afirmação. Nem todo provedor devolve <c>usage</c>, e dizer
+    ''' que custou nada quando ninguém contou é inventar a conta.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Sem_conta_a_ficha_NAO_inventa_zero() As Task
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta())
+        Await Pedir(vm)
+
+        Assert.IsTrue(vm.TemFicha, "agente e modelo aparecem de qualquer jeito")
+        Assert.IsFalse(vm.Ficha.Contains("US$"), vm.Ficha)
+        Assert.IsFalse(vm.Ficha.Contains("tokens"), vm.Ficha)
+    End Function
+
+    ''' <summary>
+    ''' <b>Antes do primeiro pedido não há ficha nenhuma.</b>
+    ''' </summary>
+    <TestMethod>
+    Public Sub Antes_do_primeiro_pedido_nao_ha_ficha()
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta())
+
+        Assert.IsFalse(vm.TemFicha)
+        Assert.AreEqual("", vm.Ficha)
+        Assert.AreEqual("", vm.Decorrido, "nem cronometro parado em zero")
+    End Sub
+
+    ''' <summary>
+    ''' <b>O cronômetro conta o tempo do voo.</b>
+    '''
+    ''' Sobre o relógio injetado: o tempo é calculado na <b>leitura</b>, então
+    ''' dá para conferir sem esperar de verdade.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function O_cronometro_conta_o_tempo_do_voo() As Task
+        Dim p As New ProvedorControlado()
+        Dim vm = Montar(Ativacao(), p, Pronta())
+
+        ' O provedor adianta o relogio DENTRO da chamada: e o unico ponto em
+        ' que o voo esta correndo de verdade.
+        p.AoEnviar = Sub() Avanco = TimeSpan.FromSeconds(2.5)
+        Await Pedir(vm)
+
+        StringAssert.Contains(vm.Decorrido, "2,5")
+        StringAssert.Contains(vm.Ficha, "2,5",
+            "a ficha guarda quanto a chamada demorou")
+    End Function
+
+    ''' <summary>
+    ''' <b>Um pedido novo apaga a ficha do anterior.</b>
+    '''
+    ''' Deixá-la faria custo e tempo de <b>outra</b> chamada aparecerem ao lado
+    ''' de um cronômetro correndo — dois números de coisas diferentes, com cara
+    ''' de serem do mesmo pedido.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Pedido_novo_APAGA_a_ficha_do_anterior() As Task
+        Dim p As New ProvedorControlado() With {.Custo = 0.001D, .Tokens = 10}
+        Dim vm = Montar(Ativacao(), p, Pronta())
+        Await Pedir(vm)
+        StringAssert.Contains(vm.Ficha, "US$")
+
+        Dim visto As String = Nothing
+        p.AoEnviar = Sub() visto = vm.Ficha
+        Await Pedir(vm)
+
+        Assert.AreEqual("", visto,
+            "durante o voo novo, a conta do voo velho nao pode estar na tela")
+    End Function
 
 End Class

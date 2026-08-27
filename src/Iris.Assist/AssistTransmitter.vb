@@ -59,9 +59,16 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Public ReadOnly Property CodigoHttp As Integer?
 
+        ''' <summary>O que a chamada custou, quando o provedor contou.</summary>
+        Public ReadOnly Property Custo As Decimal?
+        ''' <summary>Tokens somados, quando o provedor contou.</summary>
+        Public ReadOnly Property Tokens As Integer?
+
         Friend Sub New(kind As AssistOutcomeKind, texto As String, requestId As Guid,
                        nota As DisclosureNote, motivoDoPortao As DisclosureReason,
-                       Optional codigoHttp As Integer? = Nothing)
+                       Optional codigoHttp As Integer? = Nothing,
+                       Optional custo As Decimal? = Nothing,
+                       Optional tokens As Integer? = Nothing)
             Me.Kind = kind
             Me.Texto = If(texto, "")
             Me.RequestId = requestId
@@ -72,6 +79,8 @@ Namespace Global.Iris.Assist
             ' em cada camada faz parecer que cada uma tem uma regra propria --
             ' e no dia em que uma delas mudar, elas divergem em silencio.
             Me.CodigoHttp = codigoHttp
+            Me.Custo = custo
+            Me.Tokens = tokens
         End Sub
     End Class
 
@@ -296,7 +305,7 @@ Namespace Global.Iris.Assist
                 End If
                 Return New AssistOutcome(AssistOutcomeKind.Respondeu, r.Texto, cap.RequestId,
                                          DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido,
-                                         r.Codigo)
+                                         r.Codigo, r.Custo, r.Tokens)
             End If
 
             ' O CODIGO HTTP VAI PARA O DIARIO.

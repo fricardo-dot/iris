@@ -15,23 +15,25 @@
          parar de testar a faixa de verdade.
 
          DynamicResource resolve depois, e a ausencia vira valor padrao em
-         vez de excecao. Em producao acha tudo; no teste, o Montar mescla os
-         dicionarios e a resolucao acontece na sequencia.
+         vez de excecao. Em producao acha tudo; no teste, o Montar mescla o
+         Tema.xaml e a resolucao acontece na sequencia.
 
          E vale a regra dos Tokens: nada de cor bruta. Foi a falta disso que
-         deixou esta faixa herdando preto sobre fundo escuro - o resumo
-         chegou certo e ilegivel. -->
+         deixou esta faixa herdando preto sobre fundo escuro - o primeiro
+         resumo de verdade chegou certo e ilegivel. -->
 
-    <!-- Tres linhas, e NAO uma.
+    <!-- QUATRO LINHAS, E NAO UMA.
 
          Os botoes moravam dentro da borda de aviso, cuja visibilidade e
          TemAlgoADizer. Com a IA funcionando - sem aviso e sem ambiguidades -
          essa borda colapsa E LEVA OS BOTOES JUNTO: eles sumiam exatamente
          quando estavam habilitados.
 
-         A barra de acoes tem visibilidade propria (sempre), o aviso tem a
-         dele, e o resultado tem a dele. Cada um na sua linha, para nenhum
-         cobrir o outro. -->
+         A ordem tambem e decidida: o aviso da cerimonia e o RODAPE, embaixo
+         de tudo, porque ele nao fala de um pedido - fala do estado em que a
+         IA foi ligada, e isso vale enquanto o programa estiver aberto. No
+         meio da pilha ele era empurrado pela resposta e virava uma linha
+         perdida entre duas coisas que mudam a cada clique. -->
     <Border Background="{DynamicResource Brush.Surface.1}"
             BorderBrush="{DynamicResource Brush.Border}"
             BorderThickness="0,1,0,0">
@@ -43,38 +45,81 @@
                 <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- OS BOTOES: visiveis SEMPRE, habilitados so quando da.
+            <!-- O PAINEL: titulo, acoes e o andamento.
 
-                 Um botao que some quando a IA esta desligada esconderia a
+                 Titulo e botoes na MESMA linha da grade, dentro de um
+                 StackPanel: as linhas da grade sao contadas por um teste que
+                 cobra que aviso e resultado nao se cubram, e o titulo nao e
+                 uma faixa - e o cabecalho desta.
+
+                 OS BOTOES SAO VISIVEIS SEMPRE, habilitados so quando da. Um
+                 botao que some quando a IA esta desligada esconderia a
                  funcionalidade E o motivo dela estar desligada - e o motivo e
                  exatamente o que o usuario precisa ler, no lugar onde ele
-                 procuraria a acao.
+                 procuraria a acao. -->
+            <Border Grid.Row="0" Padding="16,10,16,8">
+                <StackPanel>
+                    <TextBlock Text="PAINEL DA IA"
+                               Style="{DynamicResource Text.Muted}"
+                               Margin="0,0,0,8" />
 
-                 Mesmo estilo da barra de titulo, de proposito: sao acoes do
-                 mesmo peso que Responder e Encaminhar, e a faixa nao tem por
-                 que ser mais barulhenta que o resto da janela. -->
-            <Border Grid.Row="0" Padding="12,8">
-                <StackPanel Orientation="Horizontal">
-                    <Button Content="Resumir"
-                            Style="{DynamicResource Toolbar.Button}"
-                            Command="{Binding ResumirCommand}"
-                            AutomationProperties.Name="Resumir com IA" />
-                    <Button Content="Redigir resposta"
-                            Style="{DynamicResource Toolbar.Button}"
-                            Command="{Binding RedigirCommand}"
-                            AutomationProperties.Name="Redigir resposta com IA" />
+                    <StackPanel Orientation="Horizontal">
+                        <Button Content="Resumir"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding ResumirCommand}"
+                                AutomationProperties.Name="Resumir com IA" />
+                        <Button Content="Redigir resposta"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding RedigirCommand}"
+                                AutomationProperties.Name="Redigir resposta com IA" />
 
-                    <Border Width="1" Margin="8,6" VerticalAlignment="Stretch"
-                            Background="{DynamicResource Brush.Border.Subtle}" />
+                        <Border Width="1" Margin="8,6" VerticalAlignment="Stretch"
+                                Background="{DynamicResource Brush.Border.Subtle}" />
 
-                    <Button Content="Desfazer"
-                            Style="{DynamicResource Toolbar.Button}"
-                            Command="{Binding DesfazerCommand}"
-                            AutomationProperties.Name="Desfazer a redacao da IA" />
-                    <Button Content="Cancelar"
-                            Style="{DynamicResource Toolbar.Button}"
-                            Command="{Binding CancelarCommand}"
-                            AutomationProperties.Name="Cancelar o pedido a IA" />
+                        <!-- Copiar exige so TER o que copiar. O texto ja esta na
+                             tela e ja foi pago; amarrar a copia a autorizacao
+                             faria a IA vencer entre o resumo aparecer e o
+                             usuario conseguir leva-lo embora. -->
+                        <Button Content="Copiar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding CopiarCommand}"
+                                ToolTip="Copiar a resposta da IA"
+                                AutomationProperties.Name="Copiar a resposta da IA" />
+                        <Button Content="Desfazer"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding DesfazerCommand}"
+                                AutomationProperties.Name="Desfazer a redacao da IA" />
+                        <Button Content="Cancelar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding CancelarCommand}"
+                                AutomationProperties.Name="Cancelar o pedido a IA" />
+
+                        <!-- O ANDAMENTO.
+
+                             Uma chamada a modelo demora segundos, e sem nada
+                             na tela "esta pensando" e "travou" sao a mesma
+                             coisa para quem olha. A barra diz que ha algo
+                             acontecendo; o numero diz ha quanto tempo - e o
+                             Cancelar ao lado so e uma escolha de verdade para
+                             quem sabe quanto ja esperou. -->
+                        <StackPanel Orientation="Horizontal" Margin="16,0,0,0"
+                                    VerticalAlignment="Center"
+                                    Visibility="{Binding Ocupado,
+                                                 Converter={StaticResource BoolToVis},
+                                                 FallbackValue=Collapsed}">
+                            <ProgressBar IsIndeterminate="True"
+                                         Width="90" Height="3"
+                                         BorderThickness="0"
+                                         Background="{DynamicResource Brush.Surface.3}"
+                                         Foreground="{DynamicResource Brush.Accent}"
+                                         VerticalAlignment="Center"
+                                         AutomationProperties.Name="Consultando a IA" />
+                            <TextBlock Text="{Binding Decorrido}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       Margin="10,0,0,0" VerticalAlignment="Center"
+                                       AutomationProperties.Name="Tempo decorrido" />
+                        </StackPanel>
+                    </StackPanel>
                 </StackPanel>
             </Border>
 
@@ -96,29 +141,6 @@
                 </StackPanel>
             </Border>
 
-            <!-- O AVISO DA CERIMONIA: linha propria, e SEMPRE visivel quando tem
-                 o que dizer.
-
-                 Separado do aviso comum porque aquele e substituido a cada
-                 operacao. Aqui moram duas coisas que nao podem sumir: o motivo de
-                 a ativacao nao ter sido aceita, e o fato de a politica corporativa
-                 nao ter sido verificada - que some da vista justamente enquanto a
-                 IA funciona bem e ninguem tem motivo para reler nada.
-
-                 Cor de aviso, e nao de texto comum: ela diz que a IA esta
-                 ligada por decisao do usuario sobre uma politica que ninguem
-                 conferiu. Isso nao pode ter o mesmo peso visual de um rodape. -->
-            <Border Grid.Row="2"
-                    Visibility="{Binding TemAvisoDaAtivacao, Converter={StaticResource BoolToVis},
-                                         FallbackValue=Collapsed}"
-                    Padding="16,0,16,8">
-                <TextBlock Text="{Binding AvisoDaAtivacao}"
-                           Style="{DynamicResource Text.Muted}"
-                           Foreground="{DynamicResource Brush.Warning}"
-                           FontWeight="SemiBold" TextWrapping="Wrap"
-                           AutomationProperties.Name="Situacao da ativacao da IA" />
-            </Border>
-
             <!-- O RESULTADO. TextBlock e nao qualquer coisa que interprete: a
                  resposta veio de um lugar que leu o e-mail, que por sua vez veio
                  de fora. Texto passivo e a barreira, e ela e estrutural.
@@ -132,21 +154,37 @@
                  E rola: um resumo comprido corria para fora da janela, porque
                  a faixa e a ultima linha Auto do MainWindow e nada a segurava.
                  O fim do texto simplesmente nao existia na tela. -->
-            <Border Grid.Row="3"
+            <Border Grid.Row="2"
                     Visibility="{Binding TemResultado, Converter={StaticResource BoolToVis},
                                          FallbackValue=Collapsed}"
-                    Padding="16,0,16,12">
+                    Padding="16,0,16,10">
                 <Border Background="{DynamicResource Brush.Surface.2}"
                         BorderBrush="{DynamicResource Brush.Border.Subtle}"
                         BorderThickness="1"
                         CornerRadius="6"
                         Padding="14,10">
                     <StackPanel>
-                        <TextBlock Text="RESPOSTA DA IA"
-                                   Style="{DynamicResource Text.Muted}"
-                                   Margin="0,0,0,6" />
+                        <Grid Margin="0,0,0,6">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="RESPOSTA DA IA"
+                                       Style="{DynamicResource Text.Muted}" />
+                            <!-- A FICHA: quem atendeu, quanto custou, quanto
+                                 demorou. Agente e modelo vem da ATIVACAO, e nao
+                                 do corpo da resposta: aquilo e texto escolhido
+                                 pelo outro lado. Da resposta entram so os
+                                 numeros. -->
+                            <TextBlock Grid.Column="1" Text="{Binding Ficha}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       HorizontalAlignment="Right"
+                                       TextTrimming="CharacterEllipsis"
+                                       ToolTip="{Binding Ficha}"
+                                       AutomationProperties.Name="Agente, modelo, custo e tempo" />
+                        </Grid>
                         <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                      MaxHeight="260" HorizontalScrollBarVisibility="Disabled">
+                                      MaxHeight="240" HorizontalScrollBarVisibility="Disabled">
                             <TextBlock Text="{Binding Resultado}"
                                        Style="{DynamicResource Text.Body}"
                                        TextWrapping="Wrap"
@@ -154,6 +192,34 @@
                         </ScrollViewer>
                     </StackPanel>
                 </Border>
+            </Border>
+
+            <!-- O RODAPE DA CERIMONIA: por ultimo, e SEMPRE visivel quando tem
+                 o que dizer.
+
+                 Separado do aviso comum porque aquele e substituido a cada
+                 operacao. Aqui moram duas coisas que nao podem sumir: o motivo
+                 de a ativacao nao ter sido aceita, e o fato de a politica
+                 corporativa nao ter sido verificada - que some da vista
+                 justamente enquanto a IA funciona bem e ninguem tem motivo
+                 para reler nada.
+
+                 Cor de aviso, e nao de texto comum: ele diz que a IA esta
+                 ligada por decisao do usuario sobre uma politica que ninguem
+                 conferiu. Isso nao pode ter o mesmo peso visual de um rodape
+                 qualquer. -->
+            <Border Grid.Row="3"
+                    Visibility="{Binding TemAvisoDaAtivacao, Converter={StaticResource BoolToVis},
+                                         FallbackValue=Collapsed}"
+                    Background="{DynamicResource Brush.Surface.2}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16,8">
+                <TextBlock Text="{Binding AvisoDaAtivacao}"
+                           Style="{DynamicResource Text.Muted}"
+                           Foreground="{DynamicResource Brush.Warning}"
+                           FontWeight="SemiBold" TextWrapping="Wrap"
+                           AutomationProperties.Name="Situacao da ativacao da IA" />
             </Border>
         </Grid>
     </Border>

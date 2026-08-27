@@ -134,7 +134,17 @@ Namespace Global.Iris.Tests
             Using doc = Corpo()
                 Dim chaves = doc.RootElement.EnumerateObject().
                              Select(Function(p) p.Name).OrderBy(Function(n) n).ToArray()
-                CollectionAssert.AreEqual({"messages", "model", "provider", "temperature"}, chaves)
+                ' "usage" ENTROU DE PROPOSITO: sem pedir, o OpenRouter nao
+                ' devolve o custo real da chamada, e a faixa nao teria como
+                ' dizer quanto a acao custou.
+                '
+                ' Ele mora no Preparar, e nao em outro lugar, porque o corpo e
+                ' montado ANTES de a capability ser emitida -- entao o que a
+                ' autorizacao cobre ja inclui este campo. Um campo enfiado
+                ' depois seria exatamente o defeito que a separacao
+                ' Preparar/Enviar existe para impedir.
+                CollectionAssert.AreEqual(
+                    {"messages", "model", "provider", "temperature", "usage"}, chaves)
 
                 Dim m = doc.RootElement.GetProperty("messages")(0).EnumerateObject().
                         Select(Function(p) p.Name).OrderBy(Function(n) n).ToArray()
@@ -372,6 +382,110 @@ Namespace Global.Iris.Tests
                 "Extrair", Reflection.BindingFlags.NonPublic Or Reflection.BindingFlags.Static)
             Assert.IsNotNull(m, "o extrator mudou de nome")
             Return CStr(m.Invoke(Nothing, {bruto}))
+        End Function
+
+        ' ==============================================================
+        ' A CONTABILIDADE
+        '
+        ' O extrator diz por escrito que nada alem de choices[0].message.content
+        ' e lido, porque o resto e dado de fora. A regra continua valendo PARA
+        ' TEXTO. O que entrou foram os NUMEROS de usage -- pelo mesmo motivo que
+        ' o codigo HTTP entrou no diario: numero nao ecoa o e-mail de volta.
+
+        ''' <summary>
+        ''' <b>Custo e tokens atravessam.</b>
+        ''' </summary>
+        <TestMethod>
+        Public Sub A_conta_do_provedor_ATRAVESSA()
+            Dim r = Contabilidade(
+                "{""choices"":[{""message"":{""content"":""oi""}}]," &
+                """usage"":{""total_tokens"":1234,""cost"":0.00042}}")
+
+            Assert.AreEqual(1234, r.Tokens)
+            Assert.AreEqual(0.00042D, r.Custo)
+        End Sub
+
+        ''' <summary>
+        ''' <b>Resposta sem <c>usage</c> não vira zero.</b>
+        '''
+        ''' Nem todo provedor conta, e nenhum é obrigado. Zero é uma afirmação:
+        ''' dizer que custou nada quando ninguém contou é inventar a conta.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Sem_usage_a_conta_e_AUSENTE_e_nao_zero()
+            Dim r = Contabilidade("{""choices"":[{""message"":{""content"":""oi""}}]}")
+
+            Assert.IsFalse(r.Tokens.HasValue)
+            Assert.IsFalse(r.Custo.HasValue)
+        End Sub
+
+        ''' <summary>
+        ''' <b>Número disfarçado de texto não conta.</b>
+        '''
+        ''' <c>"cost": "1000"</c> é o provedor mandando uma string onde deveria
+        ''' haver número. Aceitar seria deixar o outro lado escolher o que
+        ''' aparece na ficha por um caminho que não é o dos números.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Custo_em_TEXTO_nao_conta()
+            Dim r = Contabilidade(
+                "{""usage"":{""total_tokens"":""muitos"",""cost"":""1000""}}")
+
+            Assert.IsFalse(r.Tokens.HasValue)
+            Assert.IsFalse(r.Custo.HasValue)
+        End Sub
+
+        ''' <summary>
+        ''' <b>Custo negativo não entra.</b>
+        '''
+        ''' Não descreve custo de nada, e viraria "US$ -5,0000" na tela. Mesma
+        ''' regra do código HTTP fora da faixa: número estranho num campo de
+        ''' diagnóstico não pode virar afirmação.
+        ''' </summary>
+        <TestMethod>
+        Public Sub Custo_NEGATIVO_nao_entra()
+            Dim r = New ProviderOutcome(ProviderStatus.Respondeu, "oi", 200, -5D, -3)
+
+            Assert.IsFalse(r.Custo.HasValue)
+            Assert.IsFalse(r.Tokens.HasValue)
+        End Sub
+
+        ''' <summary>
+        ''' <b>O <c>provider</c> da resposta continua NÃO sendo lido.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' É o controle que guarda a fronteira. <c>provider</c> é <b>texto
+        ''' escolhido pelo outro lado</b>, e mostrá-lo na tela seria dado de fora
+        ''' atravessando até o usuário — a §29.5 diz onde isso para.
+        '''
+        ''' Quem diz o agente e o modelo na faixa é a <b>ativação</b>, que o
+        ''' usuário assinou. Este teste falha no dia em que alguém achar mais
+        ''' fácil ler da resposta.
+        ''' </summary>
+        <TestMethod>
+        Public Sub O_provider_da_RESPOSTA_nao_e_lido()
+            Dim bruto = "{""choices"":[{""message"":{""content"":""oi""}}]," &
+                        """provider"":""AGENTE-QUE-NAO-DEVIA-APARECER""," &
+                        """model"":""MODELO-QUE-NAO-DEVIA-APARECER""," &
+                        """usage"":{""total_tokens"":7,""cost"":0.1}}"
+
+            Assert.AreEqual("oi", Extrair(bruto),
+                "so o content, e nada mais, vira texto")
+
+            Dim r = Contabilidade(bruto)
+            Assert.AreEqual(7, r.Tokens, "os numeros entram")
+            Assert.AreEqual(0.1D, r.Custo)
+            ' E nao ha por onde o texto entrar: Contabilidade devolve dois
+            ' numeros, e o tipo de retorno e a barreira.
+        End Sub
+
+        ''' <summary>Chama a contabilidade privada, pelo mesmo motivo do extrator.</summary>
+        Private Shared Function Contabilidade(bruto As String) _
+                                As (Custo As Decimal?, Tokens As Integer?)
+            Dim m = GetType(OpenRouterAssistantProvider).GetMethod(
+                "Contabilidade", Reflection.BindingFlags.NonPublic Or Reflection.BindingFlags.Static)
+            Assert.IsNotNull(m, "a contabilidade mudou de nome")
+            Return CType(m.Invoke(Nothing, {bruto}), (Custo As Decimal?, Tokens As Integer?))
         End Function
 
     End Class

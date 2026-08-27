@@ -93,11 +93,37 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Public ReadOnly Property Codigo As Integer?
 
+        ''' <summary>
+        ''' <b>O que a chamada custou</b>, em dólares, quando o provedor conta.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>NÚMERO, PELO MESMO MOTIVO DO CÓDIGO HTTP</b>
+        '''
+        ''' O adaptador do OpenRouter diz por escrito que <b>não lê</b> nada
+        ''' além de <c>choices[0].message.content</c>, porque o resto da
+        ''' resposta é dado de fora. A regra continua: o que entrou aqui foram
+        ''' os <b>números</b> de <c>usage</c>, que não ecoam conteúdo nenhum.
+        ''' O <c>provider</c> devolvido, que é texto escolhido pelo outro lado,
+        ''' continua de fora — quem diz o agente e o modelo na tela é a
+        ''' <b>ativação</b>, que o usuário assinou.
+        ''' </summary>
+        Public ReadOnly Property Custo As Decimal?
+
+        ''' <summary>Tokens somados da chamada, quando o provedor conta.</summary>
+        Public ReadOnly Property Tokens As Integer?
+
         Public Sub New(status As ProviderStatus, texto As String,
-                       Optional codigo As Integer? = Nothing)
+                       Optional codigo As Integer? = Nothing,
+                       Optional custo As Decimal? = Nothing,
+                       Optional tokens As Integer? = Nothing)
             Me.Status = status
             Me.Texto = If(texto, "")
             Me.Codigo = Confiavel(status, codigo)
+            ' Negativo nao descreve custo nem contagem de nada. Vira Nothing
+            ' pelo mesmo motivo que codigo fora da faixa vira: um numero
+            ' estranho num campo de diagnostico nao pode virar afirmacao.
+            Me.Custo = If(custo.HasValue AndAlso custo.Value >= 0D, custo, Nothing)
+            Me.Tokens = If(tokens.HasValue AndAlso tokens.Value >= 0, tokens, Nothing)
         End Sub
 
         ''' <summary>

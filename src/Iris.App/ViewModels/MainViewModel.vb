@@ -563,10 +563,17 @@ Namespace Global.Iris.App.ViewModels
             Dim contexto As New ContextoDoOutlook(
                 _broker, provedor.Destino, AddressOf SelecaoParaIa)
 
+            ' O copiador entra INJETADO. Clipboard exige STA e um desktop de
+            ' verdade; deixar o ViewModel chamar a classe estatica direto faria
+            ' qualquer teste dele depender da area de transferencia da maquina
+            ' que roda a suite -- e ela e disputada entre processos.
             Dim vm As New AssistenteViewModel(ui, transmissor, politica, relogio,
                                               reconciliacao, contexto,
                                               New RascunhoDoCompositor(Composer),
-                                              AtivacaoEmPortugues(ativacao))
+                                              AtivacaoEmPortugues(ativacao),
+                                              Sub(texto As String)
+                                                  System.Windows.Clipboard.SetText(texto)
+                                              End Sub)
 
             ' O aviso da abertura entra na tela mesmo sem ninguem pedir nada:
             ' "pode ter saido conteudo e ninguem sabe" nao espera interacao.
