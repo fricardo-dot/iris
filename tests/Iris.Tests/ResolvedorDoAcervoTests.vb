@@ -227,24 +227,73 @@ Public Class ResolvedorDoAcervoTests
     ' A medição
 
     ''' <summary>
-    ''' <b>O que o Outlook reporta vira impressão digital.</b>
+    ''' <b>O que o Outlook reporta vira impressão digital — pelo NOME.</b>
     '''
-    ''' Sem COM: o broker já devolve <c>IsCachedExchange</c> e
-    ''' <c>ExchangeStoreType</c> no <see cref="StoreInfo"/>.
+    ''' ------------------------------------------------------------------
+    ''' O broker guarda <c>store.ExchangeStoreType.ToString()</c> com ligação
+    ''' <b>antecipada</b>: o tipo é enum, e <c>ToString()</c> de enum devolve o
+    ''' <b>nome</b>. É <c>"olPrimaryExchangeMailbox"</c> que chega, e não
+    ''' <c>"0"</c> — este é o caso real, medido na caixa do usuário.
     ''' </summary>
     <TestMethod>
     Public Sub O_store_do_Outlook_vira_impressao_digital()
         Dim cached = AmbienteMedido.De(New StoreInfo() With {
-            .ExchangeStoreType = "3", .IsCachedExchange = True})
+            .ExchangeStoreType = "olPrimaryExchangeMailbox", .IsCachedExchange = True})
         Assert.AreEqual(ProviderKind.ExchangeCached, cached.Provider)
         Assert.IsTrue(cached.CachedMode)
 
         Dim online = AmbienteMedido.De(New StoreInfo() With {
-            .ExchangeStoreType = "3", .IsCachedExchange = False})
+            .ExchangeStoreType = "olExchangeMailbox", .IsCachedExchange = False})
         Assert.AreEqual(ProviderKind.ExchangeOnline, online.Provider)
 
-        Dim pst = AmbienteMedido.De(New StoreInfo() With {.ExchangeStoreType = "4"})
+        Dim pst = AmbienteMedido.De(New StoreInfo() With {
+            .ExchangeStoreType = "olNotExchange"})
         Assert.AreEqual(ProviderKind.PstLocal, pst.Provider)
+    End Sub
+
+    ''' <summary>
+    ''' <b>O número também vale, e os números são os MEDIDOS.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Ligação <b>tardia</b> perde o enum e devolve <c>Int32</c>: foi assim que
+    ''' a medição por PowerShell viu <c>0</c> onde o programa vê
+    ''' <c>olPrimaryExchangeMailbox</c>.
+    '''
+    ''' E os valores vêm de reflexão sobre o interop, e não de memória:
+    ''' <c>olNotExchange</c> é <b>3</b>, e <b>4</b> é
+    ''' <c>olAdditionalExchangeMailbox</c> — uma caixa do Exchange. A primeira
+    ''' versão desta tradução tinha 4 como "não é Exchange", o que faria uma
+    ''' segunda caixa corporativa ser tratada como arquivo local, e herdar as
+    ''' conclusões que valem para arquivo local.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_NUMERO_do_enum_tambem_vale_e_o_4_e_do_Exchange()
+        For Each doExchange In {"0", "1", "2", "4"}
+            Assert.AreEqual(ProviderKind.ExchangeCached,
+                AmbienteMedido.De(New StoreInfo() With {
+                    .ExchangeStoreType = doExchange, .IsCachedExchange = True}).Provider,
+                $"{doExchange} e caixa do Exchange")
+        Next
+
+        Assert.AreEqual(ProviderKind.PstLocal,
+            AmbienteMedido.De(New StoreInfo() With {.ExchangeStoreType = "3"}).Provider,
+            "3 e olNotExchange")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Maiúscula não muda a espécie.</b>
+    '''
+    ''' <c>Select Case</c> de <c>String</c> em VB segue o <c>Option Compare</c>
+    ''' do arquivo. Comparar o nome do enum sem normalizar faria a tradução
+    ''' depender de uma diretiva — e este projeto já tem doze bugs de
+    ''' case-insensitividade tabelados.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Maiuscula_no_nome_nao_muda_a_especie()
+        Assert.AreEqual(ProviderKind.ExchangeCached,
+            AmbienteMedido.De(New StoreInfo() With {
+                .ExchangeStoreType = "OLPRIMARYEXCHANGEMAILBOX",
+                .IsCachedExchange = True}).Provider)
     End Sub
 
     ''' <summary>

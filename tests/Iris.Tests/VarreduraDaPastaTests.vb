@@ -51,10 +51,17 @@ Public Class VarreduraDaPastaTests
     Private Shared ReadOnly Alvo As New FolderKey("entry-1", "store-1")
 
     Private Shared Function Store() As StoreInfo
+        ' O NOME, e nao o numero: o broker guarda ToString() de um enum, com
+        ' ligacao antecipada. E este e o valor REAL medido na caixa do usuario.
+        ' Enquanto este fixture dizia "3", ele carregava o meu chute -- e "3" e
+        ' olNotExchange, quer dizer, PST local.
+        '
+        ' (Comentario AQUI, e nao dentro do With: em VB a continuacao implicita
+        ' de { } nao aceita linha so de comentario, e o erro sai na anterior.)
         Return New StoreInfo() With {
             .StoreId = "store-1",
             .DisplayName = "Caixa",
-            .ExchangeStoreType = "3",
+            .ExchangeStoreType = "olPrimaryExchangeMailbox",
             .IsCachedExchange = True}
     End Function
 

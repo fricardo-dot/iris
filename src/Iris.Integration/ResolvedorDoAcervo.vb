@@ -250,21 +250,63 @@ Namespace Global.Iris.Integration
         End Function
 
         ''' <summary>
-        ''' <c>ExchangeStoreType</c> é o número que o OOM devolve, como texto.
-        ''' Valor que não se reconhece vira <see cref="ProviderKind.Desconhecido"/>
-        ''' — e desconhecido recusa, que é o lado seguro.
+        ''' <b>Que espécie de store é este.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>NOME, E TAMBÉM NÚMERO — E OS DOIS FORAM MEDIDOS</b>
+        '''
+        ''' O broker guarda <c>store.ExchangeStoreType.ToString()</c>, e ele é
+        ''' ligação <b>antecipada</b>: o tipo é o enum
+        ''' <c>OlExchangeStoreType</c>, e <c>ToString()</c> de enum devolve o
+        ''' <b>nome</b>. Chega aqui <c>"olPrimaryExchangeMailbox"</c>, e não
+        ''' <c>"0"</c>. A primeira versão desta função só olhava números e por
+        ''' isso <b>toda</b> caixa virava <c>Desconhecido</c> — o que recusava
+        ''' varrer, corretamente, pelo motivo errado.
+        '''
+        ''' O número entra junto porque ligação <b>tardia</b> perde o enum e
+        ''' devolve <c>Int32</c> — foi assim que a medição por PowerShell viu
+        ''' <c>0</c> onde o programa vê <c>olPrimaryExchangeMailbox</c>.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>E OS NÚMEROS QUE EU TINHA ESCRITO ESTAVAM ERRADOS</b>
+        '''
+        ''' Medido por reflexão sobre o interop 15.0.4797.1004:
+        '''
+        ''' <code>
+        '''   olPrimaryExchangeMailbox    = 0
+        '''   olExchangeMailbox           = 1
+        '''   olExchangePublicFolder      = 2
+        '''   olNotExchange               = 3
+        '''   olAdditionalExchangeMailbox = 4
+        ''' </code>
+        '''
+        ''' Eu tinha escrito 4 como "não é Exchange". <b>É 3.</b> O 4 é caixa
+        ''' <i>adicional</i> do Exchange — quer dizer, eu classificaria uma
+        ''' segunda caixa corporativa como PST local, e ela herdaria as
+        ''' conclusões que valem para arquivo local.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' O que não se reconhece vira <see cref="ProviderKind.Desconhecido"/>,
+        ''' e desconhecido recusa — que é o lado seguro, e foi o que segurou o
+        ''' estrago enquanto a tradução estava quebrada.
         ''' </summary>
         Public Function Especie(store As StoreInfo) As ProviderKind
             If store Is Nothing Then Return ProviderKind.Desconhecido
 
-            Select Case Trim(If(store.ExchangeStoreType, ""))
-                Case "0", "1", "2", "3"
-                    ' 0 PrimaryExchangeMailbox, 1 DelegateMailbox,
-                    ' 2 PublicFolder, 3 ExchangeMailbox.
+            ' Minusculas: Select Case de String em VB segue o Option Compare,
+            ' que e Binary por padrao. Comparar o nome do enum sem normalizar
+            ' deixaria a traducao depender de uma diretiva de arquivo.
+            Dim bruto = Trim(If(store.ExchangeStoreType, "")).ToLowerInvariant()
+            If bruto.Length = 0 Then Return ProviderKind.Desconhecido
+
+            Select Case bruto
+                Case "olprimaryexchangemailbox", "0",
+                     "olexchangemailbox", "1",
+                     "olexchangepublicfolder", "2",
+                     "oladditionalexchangemailbox", "4"
                     Return If(store.IsCachedExchange,
                               ProviderKind.ExchangeCached, ProviderKind.ExchangeOnline)
-                Case "4"
-                    ' 4 = NotExchange: PST ou outro provedor local.
+                Case "olnotexchange", "3"
                     Return ProviderKind.PstLocal
                 Case Else
                     Return ProviderKind.Desconhecido
