@@ -162,14 +162,27 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
-        ''' Notas que descrevem um desfecho em que <b>houve resposta</b> — as
-        ''' únicas que podem vir acompanhadas de status.
+        ''' Notas que, <b>no fechamento de um registro</b>, podem vir
+        ''' acompanhadas de status HTTP.
         '''
-        ''' <c>Nenhuma</c> entra porque é a nota da conclusão bem-sucedida.
+        ''' ------------------------------------------------------------------
+        ''' <b>O NOME É LONGO PORQUE O CURTO MENTIA</b>
+        '''
+        ''' Chamava-se <c>LeuResposta</c>, e isso afirma da <i>nota sozinha</i>
+        ''' uma coisa que só o par <b>(estágio, nota)</b> sabe:
+        ''' <c>Nenhuma</c> entra aqui por ser a nota da conclusão bem-sucedida,
+        ''' mas é também a nota de um registro <c>Intencionada</c> ou
+        ''' <c>EmVoo</c>, onde não houve resposta nenhuma.
+        '''
+        ''' Hoje isso não grava nada falso, porque o único caminho até aqui é o
+        ''' fechamento. O nome curto é que convidava a reusar a função sob a
+        ''' leitura literal errada — e uma função reusada fora da premissa dela
+        ''' é como este projeto ganhou metade dos defeitos que já corrigiu.
+        '''
         ''' <c>ProvedorRecusou</c> e <c>RespostaIlegivel</c> entram porque para
         ''' recusar, e para não conseguir ler, ele <b>respondeu</b>.
         ''' </summary>
-        Public Function LeuResposta(n As DisclosureNote) As Boolean
+        Public Function PermiteCodigoNoFechamento(n As DisclosureNote) As Boolean
             Select Case n
                 Case DisclosureNote.Nenhuma, DisclosureNote.ProvedorRecusou,
                      DisclosureNote.RespostaIlegivel
@@ -221,7 +234,7 @@ Namespace Global.Iris.Assist
         Public Function CodigoDeDiario(nota As DisclosureNote,
                                        codigo As Integer?) As Integer?
             If Not codigo.HasValue Then Return Nothing
-            If Not LeuResposta(nota) Then Return Nothing
+            If Not PermiteCodigoNoFechamento(nota) Then Return Nothing
             If codigo.Value < 100 OrElse codigo.Value > 599 Then Return Nothing
             Return codigo
         End Function

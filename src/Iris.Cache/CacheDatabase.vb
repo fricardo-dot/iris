@@ -226,6 +226,15 @@ Namespace Global.Iris.Cache
                     ' a transacao ainda nao publicou. Se a forma nao bate, o
                     ' Using desfaz tudo -- inclusive o user_version -- e o
                     ' arquivo do usuario continua exatamente como estava.
+                    '
+                    ' E "a forma" e o que o SchemaIntrospector compara: tabela,
+                    ' coluna, tipo, nulidade, chave primaria, indice unico e
+                    ' FK. Ele NAO compara CHECK, trigger, view, default nem
+                    ' collation -- entao um banco divergente so numa dessas
+                    ' passa aqui. Nao e buraco desta migracao: o mesmo arquivo
+                    ' ja seria aceito se estivesse marcado como versao 2. E
+                    ' dito por escrito para ninguem ler "produziu o schema
+                    ' esperado" como equivalencia de DDL.
                     Dim diferencas = SchemaIntrospector.Comparar(conn, schema)
                     If diferencas.Count > 0 Then
                         falha = New OpenFailure("migracao",

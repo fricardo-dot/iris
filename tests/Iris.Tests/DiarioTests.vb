@@ -960,18 +960,22 @@ Public Class DiarioTests
     ''' <summary>
     ''' <b>E toda <c>DisclosureNote</c> está classificada.</b>
     '''
-    ''' <c>LeuResposta</c> tem <c>Case Else</c> recusando, então nota nova entra
-    ''' recusando — o lado seguro. Este teste faz disso uma <b>decisão</b>: quem
-    ''' acrescentar valor ao enum tem de dizer de que lado ele fica.
+    ''' <c>PermiteCodigoNoFechamento</c> tem <c>Case Else</c> recusando, então
+    ''' nota nova entra recusando — o lado seguro. Este teste faz disso uma
+    ''' <b>decisão</b>: quem acrescentar valor ao enum tem de dizer de que lado
+    ''' ele fica.
     ''' </summary>
     <TestMethod>
     Public Sub Toda_DisclosureNote_esta_classificada()
-        Dim leram = New HashSet(Of DisclosureNote) From {
+        ' Nenhuma esta aqui como nota de CONCLUSAO -- e o nome da funcao diz
+        ' "no fechamento" justamente porque a nota sozinha nao provaria isso.
+        Dim permitem = New HashSet(Of DisclosureNote) From {
             DisclosureNote.Nenhuma, DisclosureNote.ProvedorRecusou,
             DisclosureNote.RespostaIlegivel}
 
         For Each v As DisclosureNote In [Enum].GetValues(GetType(DisclosureNote))
-            Assert.AreEqual(leram.Contains(v), DisclosureNotes.LeuResposta(v),
+            Assert.AreEqual(permitem.Contains(v),
+                            DisclosureNotes.PermiteCodigoNoFechamento(v),
                             $"{v} nao esta do lado que este teste diz")
         Next
     End Sub
