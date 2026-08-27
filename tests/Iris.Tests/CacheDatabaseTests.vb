@@ -476,4 +476,125 @@ Public Class CacheDatabaseTests
         Assert.IsNotNull(falha)
     End Sub
 
+    ''' <summary>
+    ''' <b>Depois de uma instância migrar, a seguinte abre o mesmo arquivo.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O QUE ESTE TESTE COBRE, E O QUE ELE NÃO COBRE</b>
+    '''
+    ''' Cobre a metade visível do defeito: uma segunda abertura <b>não</b> pode
+    ''' tentar acrescentar de novo uma coluna que já existe, nem recusar um
+    ''' banco que a primeira deixou correto.
+    '''
+    ''' <b>Não</b> cobre a corrida de verdade — duas aberturas <i>ao mesmo
+    ''' tempo</i>, com a versão lida antes da trava de escrita. Eu escrevi esse
+    ''' teste, com <c>Barrier</c> e duas <c>Task</c>, e ele <b>passou com o
+    ''' defeito presente</b>: a janela entre ler a versão e escrever é curta
+    ''' demais, e as duas aberturas quase nunca se cruzam nela. Um teste que
+    ''' passa com o defeito no lugar não é cobertura — é uma linha verde que
+    ''' faz alguém acreditar que a corrida está fechada.
+    '''
+    ''' Então ele foi removido, e fica escrito aqui: o <c>BEGIN IMMEDIATE</c>
+    ''' com releitura da versão <b>dentro</b> dele se apoia no travamento do
+    ''' SQLite e na leitura do código, e não em teste.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Depois_de_migrar_a_abertura_seguinte_NAO_tenta_de_novo()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"{falha}")
+            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
+            Executar(db, "PRAGMA user_version = 1")
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Using primeira = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(primeira, $"a primeira devia migrar: {falha}")
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Using segunda = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(segunda,
+                $"a segunda recusou um banco que a primeira deixou correto: {falha}")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Migração que não produz o schema esperado é DESFEITA.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Este é o defeito que a revisão pegou: o passo era escolhido pelo número
+    ''' declarado no <c>user_version</c>, e não pela forma real do arquivo. Um
+    ''' banco marcado como 1 mas com <b>outra</b> coisa faltando levava o
+    ''' <c>ALTER TABLE</c>, era promovido a 2, e só então era recusado pela
+    ''' introspecção — e na abertura seguinte já não havia caminho nenhum,
+    ''' porque a própria tentativa tinha apagado a versão de origem.
+    '''
+    ''' Agora a verificação mora <b>dentro</b> da transação. O que este teste
+    ''' cobra não é a recusa: é o arquivo continuar <b>na versão 1</b> depois
+    ''' dela, com o diário intacto — quer dizer, ainda recuperável.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Migracao_que_nao_bate_com_o_modelo_DESFAZ_tudo()
+        Dim falha As OpenFailure = Nothing
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"{falha}")
+            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
+            ' E ALGO MAIS quebrado, que a migracao 1 -> 2 nao conserta.
+            Executar(db, "ALTER TABLE disclosure_log DROP COLUMN gate_reason")
+            Executar(db, "PRAGMA user_version = 1")
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Assert.IsNull(CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha))
+        Assert.IsNotNull(falha)
+        SqliteConnection.ClearAllPools()
+
+        ' O ARQUIVO TEM DE ESTAR INTACTO.
+        Using conn As New SqliteConnection($"Data Source={Caminho()}")
+            conn.Open()
+            Using cmd = conn.CreateCommand()
+                cmd.CommandText = "PRAGMA user_version"
+                Assert.AreEqual(1, Convert.ToInt32(cmd.ExecuteScalar()),
+                    "a tentativa promoveu a versao e nao voltou atras")
+            End Using
+            Using cmd = conn.CreateCommand()
+                cmd.CommandText = "SELECT COUNT(*) FROM pragma_table_info('disclosure_log') " &
+                                  "WHERE name = 'http_status'"
+                Assert.AreEqual(0, Convert.ToInt32(cmd.ExecuteScalar()),
+                    "a coluna ficou de uma migracao que devia ter sido desfeita")
+            End Using
+        End Using
+        SqliteConnection.ClearAllPools()
+    End Sub
+
+    ''' <summary>
+    ''' <b>A tabela de migracoes e fechada de verdade, e nao so no tipo.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Guardar um <c>Dictionary</c> numa variavel tipada
+    ''' <c>IReadOnlyDictionary</c> nao fecha nada: um <c>DirectCast</c> de volta
+    ''' devolve a colecao <b>viva</b>, e um <c>Clear()</c> ali desliga a
+    ''' migracao inteira — quer dizer, transforma "seu banco sobe de versao" em
+    ''' "seu banco e recusado", que e o caminho que termina em apagar o diario.
+    '''
+    ''' Este projeto ja levou exatamente este golpe uma vez, em
+    ''' <c>ActivationRecord.Congelar</c>, que devolvia <c>ToList()</c> tipado
+    ''' como <c>IReadOnlyList</c> — e um <c>TryCast</c> reabria a lista de
+    ''' operacoes autorizadas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_tabela_de_migracoes_NAO_da_para_reabrir()
+        Assert.IsNull(TryCast(SqliteDdl.Migracoes,
+                              Dictionary(Of Integer, IReadOnlyList(Of String))),
+                      "da para reabrir o dicionario e esvazia-lo")
+
+        For Each par In SqliteDdl.Migracoes
+            Assert.IsNull(TryCast(par.Value, String()),
+                          $"da para reabrir a lista do passo {par.Key} e reescreve-la")
+            Assert.IsNull(TryCast(par.Value, List(Of String)),
+                          $"da para reabrir a lista do passo {par.Key}")
+        Next
+    End Sub
+
 End Class

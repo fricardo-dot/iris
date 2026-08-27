@@ -75,14 +75,26 @@ Namespace Global.Iris.Cache
         ' (Comentario AQUI, e nao dentro do inicializador: em VB a continuacao
         ' implicita de { } nao aceita uma linha so de comentario, e o erro sai
         ' na linha ANTERIOR.)
+        ' FECHADA DE VERDADE, e nao so no tipo declarado.
+        '
+        ' Guardar um Dictionary numa variavel tipada IReadOnlyDictionary nao
+        ' fecha nada: DirectCast de volta para Dictionary devolve a colecao
+        ' VIVA, e um Clear() ali desliga a migracao inteira. Array exposto como
+        ' IReadOnlyList tem o mesmo buraco.
+        '
+        ' Este projeto ja levou exatamente este golpe uma vez, em
+        ' ActivationRecord.Congelar, que devolvia ToList() tipado como
+        ' IReadOnlyList -- e um TryCast reabria a lista de operacoes
+        ' autorizadas. ReadOnlyDictionary e Array.AsReadOnly nao tem volta.
         Private Shared ReadOnly _migracoes As IReadOnlyDictionary(Of Integer, IReadOnlyList(Of String)) =
-            New Dictionary(Of Integer, IReadOnlyList(Of String)) From {
-                {1, New String() {
-                    "ALTER TABLE disclosure_log ADD COLUMN http_status INTEGER " &
-                    "CHECK (http_status IS NULL OR " &
-                    "(http_status >= 100 AND http_status <= 599))"
-                }}
-            }
+            New ObjectModel.ReadOnlyDictionary(Of Integer, IReadOnlyList(Of String))(
+                New Dictionary(Of Integer, IReadOnlyList(Of String)) From {
+                    {1, Array.AsReadOnly(New String() {
+                        "ALTER TABLE disclosure_log ADD COLUMN http_status INTEGER " &
+                        "CHECK (http_status IS NULL OR " &
+                        "(http_status >= 100 AND http_status <= 599))"
+                    })}
+                })
 
         Public Shared Function Generate(schema As CacheSchema) As IReadOnlyList(Of String)
             Dim comandos As New List(Of String)()

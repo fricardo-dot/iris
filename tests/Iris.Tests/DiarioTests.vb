@@ -911,17 +911,69 @@ Public Class DiarioTests
     ''' <summary>A faixa é a do próprio HTTP, e as bordas contam.</summary>
     <TestMethod>
     Public Sub A_faixa_do_codigo_e_a_do_HTTP()
-        Assert.AreEqual(CType(100, Integer?), DisclosureNotes.CodigoDeDiario(100))
-        Assert.AreEqual(CType(599, Integer?), DisclosureNotes.CodigoDeDiario(599))
-        Assert.AreEqual(CType(402, Integer?), DisclosureNotes.CodigoDeDiario(402))
+        Dim n = DisclosureNote.ProvedorRecusou
+        Assert.AreEqual(CType(100, Integer?), DisclosureNotes.CodigoDeDiario(n, 100))
+        Assert.AreEqual(CType(599, Integer?), DisclosureNotes.CodigoDeDiario(n, 599))
+        Assert.AreEqual(CType(402, Integer?), DisclosureNotes.CodigoDeDiario(n, 402))
 
         For Each fora In {99, 600, 0, -1, 200000}
-            Assert.IsFalse(DisclosureNotes.CodigoDeDiario(fora).HasValue,
+            Assert.IsFalse(DisclosureNotes.CodigoDeDiario(n, fora).HasValue,
                            $"{fora} nao descreve resposta HTTP nenhuma")
         Next
 
-        Assert.IsFalse(DisclosureNotes.CodigoDeDiario(Nothing).HasValue,
+        Assert.IsFalse(DisclosureNotes.CodigoDeDiario(n, Nothing).HasValue,
                        "sem resposta nao ha codigo, e isso nao e erro")
+    End Sub
+
+    ''' <summary>
+    ''' <b>O diário recusa código em nota que não leu resposta — por fora do
+    ''' transmissor também.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <see cref="ProviderOutcome.Confiavel"/> fecha o caminho do transmissor,
+    ''' e só ele. Quem chama <c>Falhar(ConexaoCaiu, 418)</c> direto não passa
+    ''' por <c>ProviderOutcome</c> nenhum — e sem esta conferência gravaria no
+    ''' registro uma resposta que a própria nota diz que não houve.
+    '''
+    ''' A transição continua acontecendo: o que cai é o número, não o registro.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Chamando_o_diario_DIRETO_a_nota_ainda_manda()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
+
+            Assert.IsTrue(j.Falhar(a.Cap.RequestId, Agora.AddSeconds(2),
+                                   DisclosureNote.ConexaoCaiu,
+                                   podeTerChegado:=True, codigoHttp:=418))
+
+            Dim e = j.Ler(1)(0)
+            Assert.AreEqual(DisclosureStage.Ambigua, e.Estagio,
+                            "a transicao vale; o que nao vale e o numero")
+            Assert.IsFalse(e.CodigoHttp.HasValue,
+                "ConexaoCaiu nao leu resposta -- 418 aqui seria evidencia falsa")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>E toda <c>DisclosureNote</c> está classificada.</b>
+    '''
+    ''' <c>LeuResposta</c> tem <c>Case Else</c> recusando, então nota nova entra
+    ''' recusando — o lado seguro. Este teste faz disso uma <b>decisão</b>: quem
+    ''' acrescentar valor ao enum tem de dizer de que lado ele fica.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Toda_DisclosureNote_esta_classificada()
+        Dim leram = New HashSet(Of DisclosureNote) From {
+            DisclosureNote.Nenhuma, DisclosureNote.ProvedorRecusou,
+            DisclosureNote.RespostaIlegivel}
+
+        For Each v As DisclosureNote In [Enum].GetValues(GetType(DisclosureNote))
+            Assert.AreEqual(leram.Contains(v), DisclosureNotes.LeuResposta(v),
+                            $"{v} nao esta do lado que este teste diz")
+        Next
     End Sub
 
 End Class

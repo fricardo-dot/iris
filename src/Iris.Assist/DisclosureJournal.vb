@@ -162,6 +162,27 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
+        ''' Notas que descrevem um desfecho em que <b>houve resposta</b> — as
+        ''' únicas que podem vir acompanhadas de status.
+        '''
+        ''' <c>Nenhuma</c> entra porque é a nota da conclusão bem-sucedida.
+        ''' <c>ProvedorRecusou</c> e <c>RespostaIlegivel</c> entram porque para
+        ''' recusar, e para não conseguir ler, ele <b>respondeu</b>.
+        ''' </summary>
+        Public Function LeuResposta(n As DisclosureNote) As Boolean
+            Select Case n
+                Case DisclosureNote.Nenhuma, DisclosureNote.ProvedorRecusou,
+                     DisclosureNote.RespostaIlegivel
+                    Return True
+                Case Else
+                    ' Timeout, Cancelado, ConexaoCaiu, os dois de processo
+                    ' morto, e todas as anteriores ao envio: nenhuma delas leu
+                    ' resposta nenhuma.
+                    Return False
+            End Select
+        End Function
+
+        ''' <summary>
         ''' <b>O último anteparo antes da escrita.</b>
         '''
         ''' ------------------------------------------------------------------
@@ -173,16 +194,21 @@ Namespace Global.Iris.Assist
         ''' cabe aqui pelo mesmo motivo que o corpo do erro não cabe.
         '''
         ''' ------------------------------------------------------------------
-        ''' <b>NÃO É AQUI QUE A COERÊNCIA É DECIDIDA</b>
+        ''' <b>A COERÊNCIA É CONFERIDA DUAS VEZES, POR MOTIVOS DIFERENTES</b>
         '''
-        ''' Quem confere se o estado do provedor <i>podia</i> ter código é
-        ''' <see cref="ProviderOutcome.Confiavel"/>, na entrada. Isto aqui é só
-        ''' a faixa, para o caso de alguém chamar o diário por fora daquele
-        ''' caminho — o <c>CHECK</c> da coluna lançaria, o <c>Duravel</c> do
-        ''' transmissor engoliria a exceção, e o registro ficaria em voo.
+        ''' <see cref="ProviderOutcome.Confiavel"/> confere contra o
+        ''' <c>ProviderStatus</c>, na entrada — e protege o caminho do
+        ''' transmissor. Aqui a conferência é contra a <see cref="DisclosureNote"/>,
+        ''' e protege o <b>contrato do diário</b>: quem chama
+        ''' <c>Falhar(ConexaoCaiu, 418)</c> direto não passa por
+        ''' <c>ProviderOutcome</c> nenhum, e sem isto gravaria no registro uma
+        ''' resposta que a própria nota diz que não houve.
+        '''
+        ''' Não é a mesma checagem em dois lugares: são dois contratos, e cada
+        ''' um é fechado onde ele é assinado.
         '''
         ''' ------------------------------------------------------------------
-        ''' <b>FORA DA FAIXA VIRA NADA, E NÃO RECUSA</b>
+        ''' <b>INCOERENTE VIRA NADA, E NÃO RECUSA</b>
         '''
         ''' A tentação é recusar a transição quando o código não faz sentido.
         ''' Seria pior: o registro ficaria <b>em voo</b>, a reconciliação da
@@ -192,8 +218,10 @@ Namespace Global.Iris.Assist
         '''
         ''' Um campo de diagnóstico não pode piorar o registro que ele anota.
         ''' </summary>
-        Public Function CodigoDeDiario(codigo As Integer?) As Integer?
+        Public Function CodigoDeDiario(nota As DisclosureNote,
+                                       codigo As Integer?) As Integer?
             If Not codigo.HasValue Then Return Nothing
+            If Not LeuResposta(nota) Then Return Nothing
             If codigo.Value < 100 OrElse codigo.Value > 599 Then Return Nothing
             Return codigo
         End Function

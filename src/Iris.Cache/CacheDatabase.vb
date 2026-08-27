@@ -89,7 +89,7 @@ Namespace Global.Iris.Cache
                     ' mensagem de antes. O que mudou foi que apagar o arquivo
                     ' deixou de ser barato: o diario do egress mora aqui, e ele
                     ' nao se reconstroi do Outlook como o resto.
-                    If Not Migrar(conn, versao, falha) Then
+                    If Not Migrar(conn, schema, falha) Then
                         conn.Dispose()
                         Return Nothing
                     End If
@@ -148,58 +148,107 @@ Namespace Global.Iris.Cache
         ''' usando <b>só</b> passos listados. Um degrau faltando recusa tudo.
         ''' </summary>
         ''' <remarks>
-        ''' Cada degrau é uma transação própria, com o <c>PRAGMA user_version</c>
-        ''' <b>dentro</b> dela: morrer no meio deixa o banco na versão de onde
-        ''' ele saiu, e não numa versão que ele não tem a forma de ter.
+        ''' ------------------------------------------------------------------
+        ''' <b>UMA TRANSAÇÃO PARA A ESCADA INTEIRA, E ELA SÓ FECHA SE O RESULTADO
+        ''' ESTIVER CERTO</b>
         '''
-        ''' Não confere o resultado: quem confere é a introspecção que roda
-        ''' logo depois, em <see cref="Open"/>, igual para banco criado e para
-        ''' banco migrado.
+        ''' A primeira versão fazia um <c>COMMIT</c> por degrau e deixava a
+        ''' conferência para a introspecção que roda <b>depois</b>, em
+        ''' <see cref="Open"/>. Isso escolhia o degrau pelo número declarado no
+        ''' <c>user_version</c> e não pela forma real do arquivo: um banco
+        ''' marcado como 1 mas com outra coluna faltando levava o
+        ''' <c>ALTER TABLE</c>, era promovido a 2, e só então era recusado — e
+        ''' na abertura seguinte já não havia caminho nenhum, porque a versão de
+        ''' origem tinha sido apagada pela própria tentativa.
+        '''
+        ''' Agora a escada inteira e a <b>verificação do resultado</b> moram na
+        ''' mesma transação. Forma errada não é diagnosticada por antecipação:
+        ''' ela é descoberta pela mesma introspecção de sempre, e o
+        ''' <c>ROLLBACK</c> devolve o arquivo <b>intacto</b>, na versão em que
+        ''' ele estava. Uma migração que não produz o schema esperado não deixa
+        ''' rastro nenhum.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O LOCK VEM ANTES DA DECISÃO</b>
+        '''
+        ''' <c>BEGIN IMMEDIATE</c>, e a versão é <b>relida dentro</b> dele. Duas
+        ''' instâncias do Iris podiam ler "versão 1" ao mesmo tempo; a primeira
+        ''' migrava, e a segunda tentava acrescentar de novo uma coluna que já
+        ''' existia e recusava abrir um banco que estava <b>correto</b>.
+        '''
+        ''' Relendo sob o lock, quem chegou depois vê a versão nova e não tem o
+        ''' que fazer.
         ''' </remarks>
-        Private Shared Function Migrar(conn As SqliteConnection, de As Integer,
+        Private Shared Function Migrar(conn As SqliteConnection, schema As CacheSchema,
                                        ByRef falha As OpenFailure) As Boolean
-            Dim atual = de
+            Try
+                ' IMMEDIATE, e nao o DEFERRED que e o padrao: a trava de
+                ' escrita e tomada AGORA, e nao na primeira escrita.
+                '
+                ' Um "SELECT 1" nao serve de substituto -- ele pega trava de
+                ' LEITURA, e duas instancias leem a mesma versao felizes. A
+                ' decisao de qual degrau subir tem de ser tomada com a escrita
+                ' ja garantida, ou a primeira instancia migra e a segunda
+                ' tenta acrescentar de novo uma coluna que ja existe, e recusa
+                ' abrir um banco que esta CORRETO.
+                Using tx = conn.BeginTransaction(deferred:=False)
+                    Dim atual = LerVersao(conn, tx)
 
-            ' Para tras nao ha caminho: um banco mais NOVO que o programa foi
-            ' escrito por uma versao que sabia coisas que esta nao sabe.
-            If atual > SqliteDdl.SchemaVersion Then
-                falha = New OpenFailure("versao",
-                    $"banco na versao {atual}, mais nova que a esperada " &
-                    $"{SqliteDdl.SchemaVersion}")
-                Return False
-            End If
+                    ' Para tras nao ha caminho: um banco mais NOVO que o
+                    ' programa foi escrito por uma versao que sabia coisas que
+                    ' esta nao sabe.
+                    If atual > SqliteDdl.SchemaVersion Then
+                        falha = New OpenFailure("versao",
+                            $"banco na versao {atual}, mais nova que a esperada " &
+                            $"{SqliteDdl.SchemaVersion}")
+                        Return False
+                    End If
 
-            While atual < SqliteDdl.SchemaVersion
-                Dim passo As IReadOnlyList(Of String) = Nothing
-                If Not SqliteDdl.Migracoes.TryGetValue(atual, passo) Then
-                    falha = New OpenFailure("versao",
-                        $"banco na versao {atual}, esperado " &
-                        $"{SqliteDdl.SchemaVersion}, e nao ha migracao conhecida")
-                    Return False
-                End If
+                    While atual < SqliteDdl.SchemaVersion
+                        Dim passo As IReadOnlyList(Of String) = Nothing
+                        If Not SqliteDdl.Migracoes.TryGetValue(atual, passo) Then
+                            falha = New OpenFailure("versao",
+                                $"banco na versao {atual}, esperado " &
+                                $"{SqliteDdl.SchemaVersion}, e nao ha migracao conhecida")
+                            Return False
+                        End If
 
-                Try
-                    Using tx = conn.BeginTransaction()
                         For Each cmd In passo
                             Executar(conn, cmd, tx)
                         Next
                         Executar(conn, $"PRAGMA user_version = {atual + 1}", tx)
-                        tx.Commit()
-                    End Using
-                Catch ex As Exception
-                    falha = New OpenFailure("migracao",
-                        $"a migracao {atual} -> {atual + 1} falhou: {ex.Message}")
-                    Return False
-                End Try
+                        atual += 1
+                    End While
 
-                atual += 1
-            End While
+                    ' A CONFERENCIA ANTES DO COMMIT.
+                    '
+                    ' A introspecao le pela MESMA conexao, entao enxerga o que
+                    ' a transacao ainda nao publicou. Se a forma nao bate, o
+                    ' Using desfaz tudo -- inclusive o user_version -- e o
+                    ' arquivo do usuario continua exatamente como estava.
+                    Dim diferencas = SchemaIntrospector.Comparar(conn, schema)
+                    If diferencas.Count > 0 Then
+                        falha = New OpenFailure("migracao",
+                            "a migracao nao produziu o schema esperado, e foi desfeita: " &
+                            String.Join(" | ", diferencas))
+                        Return False
+                    End If
+
+                    tx.Commit()
+                End Using
+            Catch ex As Exception
+                falha = New OpenFailure("migracao",
+                    $"a migracao falhou e foi desfeita: {ex.Message}")
+                Return False
+            End Try
 
             Return True
         End Function
 
-        Private Shared Function LerVersao(conn As SqliteConnection) As Integer
+        Private Shared Function LerVersao(conn As SqliteConnection,
+                                          Optional tx As SqliteTransaction = Nothing) As Integer
             Using cmd = conn.CreateCommand()
+                cmd.Transaction = tx
                 cmd.CommandText = "PRAGMA user_version"
                 Return Convert.ToInt32(cmd.ExecuteScalar())
             End Using

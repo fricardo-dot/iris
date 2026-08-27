@@ -244,7 +244,7 @@ Namespace Global.Iris.Integration
             ' Codigo fora da faixa vira NULO em vez de abortar a transicao: um
             ' campo de diagnostico nao pode piorar o registro que ele anota.
             ' Ver DisclosureNotes.CodigoDeDiario.
-            Dim codigo = DisclosureNotes.CodigoDeDiario(codigoHttp)
+            Dim codigo = DisclosureNotes.CodigoDeDiario(nota, codigoHttp)
 
             Dim aceitos = String.Join(",", de.Select(Function(e) "'" & e.ToString() & "'"))
             Return Executar(

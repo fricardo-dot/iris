@@ -304,9 +304,14 @@ Namespace Global.Iris.CrashHarness
                 End If
                 If String.Equals(ponto, "em-voo", StringComparison.Ordinal) Then Morrer()
 
-                ' 200: o harness nao chega a falar HTTP, e Nothing aqui
-                ' diria "nao houve resposta" -- que e o outro sentido.
-                j.Concluir(c.RequestId, DateTimeOffset.UtcNow, 200)
+                ' Nothing, e nao 200: ESTE CAMINHO NAO FALA HTTP.
+                '
+                ' Ele exercita o protocolo do diario contra um crash, e nao ha
+                ' provedor nenhum do outro lado. Gravar 200 aqui poria no
+                ' registro a evidencia de uma resposta externa que nunca houve
+                ' -- num arquivo cuja unica serventia e dizer o que de fato
+                ' aconteceu. Nothing e a verdade: nao houve resposta.
+                j.Concluir(c.RequestId, DateTimeOffset.UtcNow, Nothing)
                 Return 0
             End Using
         End Function
