@@ -136,6 +136,17 @@ Namespace Global.Iris.Integration.Outlook
                 Return Recusar(RecusaDeVarredura.StoreDesconhecido)
             End If
 
+            ' O STORE TEM DE SER O DA PASTA.
+            '
+            ' O ambiente e medido a partir de `store`, e a varredura acontece
+            ' sobre `pasta.StoreId`. Sem esta conferencia, a autorizacao dada a
+            ' uma conta valeria para varrer outra -- basta a lista de stores de
+            ' quem chama estar vencida, ou o chamador ser outro. A invariante
+            ' nao pode viver so na boa vontade de quem monta o par.
+            If Not String.Equals(store.StoreId, pasta.StoreId, StringComparison.Ordinal) Then
+                Return Recusar(RecusaDeVarredura.StoreDesconhecido)
+            End If
+
             Dim impressao = AmbienteMedido.De(store)
             Dim perfil = _resolvedor.Ambiente(impressao)
 

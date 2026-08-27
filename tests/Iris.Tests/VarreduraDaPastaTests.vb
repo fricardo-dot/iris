@@ -401,4 +401,35 @@ Public Class VarreduraDaPastaTests
         End Using
     End Sub
 
+    ''' <summary>
+    ''' <b>O store medido tem de ser o da pasta varrida.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' O ambiente é medido a partir do <c>StoreInfo</c> recebido, e a
+    ''' varredura acontece sobre <c>pasta.StoreId</c>. Sem conferir que são o
+    ''' mesmo, a autorização dada a uma conta valeria para varrer <b>outra</b>
+    ''' — basta a lista de stores de quem chama estar vencida.
+    '''
+    ''' A invariante não pode viver só na boa vontade de quem monta o par.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Store_de_OUTRA_conta_nao_autoriza_esta_pasta()
+        Using db = Abrir()
+            Dim v As New VarreduraDaPasta(Broker(), db)
+            Autorizar(db, v.Executar(Alvo, "Caixa", Store(), CancellationToken.None).ChaveDoAmbiente)
+
+            ' A pasta e do store-1; o StoreInfo e de outra conta.
+            Dim deOutra As New StoreInfo() With {
+                .StoreId = "store-OUTRO",
+                .ExchangeStoreType = "olPrimaryExchangeMailbox",
+                .IsCachedExchange = True}
+
+            Dim r = v.Executar(Alvo, "Caixa", deOutra, CancellationToken.None)
+
+            Assert.AreEqual(RecusaDeVarredura.StoreDesconhecido, r.Recusa,
+                "a autorizacao de uma conta nao pode varrer a pasta de outra")
+            Assert.AreEqual(0, Contar(db, "scan_attempt"))
+        End Using
+    End Sub
+
 End Class

@@ -75,7 +75,47 @@ Namespace Global.Iris.Integration
         ' ==============================================================
 
         ''' <summary>
-        ''' A chave da pasta, criando <c>store</c> e <c>folder</c> se preciso.
+        ''' <b>A chave da pasta, SEM criar nada.</b> <c>Nothing</c> se ela nunca
+        ''' foi vista.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' Existe porque <b>navegar não é autorizar</b>. A faixa do acervo
+        ''' precisa saber que pasta mostrar a cada clique, e enquanto ela
+        ''' chamava <see cref="Pasta"/> o simples ato de clicar inseria
+        ''' <c>store</c> e <c>folder</c> — antes de qualquer cerimônia.
+        '''
+        ''' Não gravava conteúdo, então a cerimônia não era teatro; mas o
+        ''' contrato "nenhuma pasta antes do gate" estava quebrado, e o teste
+        ''' que afirmava <c>folder = 0</c> só exercitava a varredura direta, e
+        ''' não o caminho da interface.
+        ''' </summary>
+        Public Function PastaExistente(storeId As String, entryId As String) As Long?
+            If String.IsNullOrWhiteSpace(storeId) OrElse
+               String.IsNullOrWhiteSpace(entryId) Then
+                Return Nothing
+            End If
+
+            Using cmd = _db.Connection.CreateCommand()
+                cmd.CommandText =
+                    "SELECT f.folder_key FROM folder f " &
+                    "JOIN store s ON s.store_key = f.store_key " &
+                    "WHERE s.provider_store_id = $s AND f.provider_entry_id = $e"
+                cmd.Parameters.AddWithValue("$s", storeId)
+                cmd.Parameters.AddWithValue("$e", entryId)
+                Dim v = cmd.ExecuteScalar()
+                If v Is Nothing OrElse v Is DBNull.Value Then Return Nothing
+                Return Convert.ToInt64(v)
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' A chave da pasta, <b>criando</b> <c>store</c> e <c>folder</c> se
+        ''' preciso.
+        '''
+        ''' Só a varredura chama isto, e só <b>depois</b> do gate do ambiente:
+        ''' criar pasta é escrita no cache, e escrita no cache é o que a
+        ''' cerimônia governa. Quem só está navegando usa
+        ''' <see cref="PastaExistente"/>.
         ''' </summary>
         ''' <remarks>
         ''' Tudo numa transação: sem ela, morrer entre o <c>store</c> e o

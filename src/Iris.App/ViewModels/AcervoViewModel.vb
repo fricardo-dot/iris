@@ -53,7 +53,11 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _db As CacheDatabase
         Private ReadOnly _servico As AcervoService
         Private ReadOnly _dreno As PublicationDrain
-        Private ReadOnly _varredura As VarreduraDaPasta
+        Private ReadOnly _broker As IOutlookBroker
+        ''' <summary>
+        ''' O voo corrente da varredura, para o descarte poder cancelá-lo.
+        ''' </summary>
+        Private _cancelamentoDaVarredura As CancellationTokenSource
         Private _alvoDoOutlook As FolderKey
         Private _nomeDoAlvo As String = ""
         Private _storeDoAlvo As StoreInfo
@@ -117,8 +121,7 @@ Namespace Global.Iris.App.ViewModels
             _db = db
             ' Sem broker nao ha varredura, e o botao fica desabilitado. E o
             ' caso dos testes que so olham o lado de leitura.
-            _varredura = If(broker Is Nothing, Nothing,
-                            New VarreduraDaPasta(broker, db))
+            _broker = broker
             _servico = New AcervoService(db, folderKey)
             _dreno = New PublicationDrain(db)
             Diario = New SqliteDisclosureJournal(db)
@@ -178,7 +181,7 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property PodeVarrer As Boolean
             Get
-                Return _varredura IsNot Nothing AndAlso
+                Return _broker IsNot Nothing AndAlso
                        _alvoDoOutlook IsNot Nothing AndAlso Not Varrendo
             End Get
         End Property
@@ -263,10 +266,19 @@ Namespace Global.Iris.App.ViewModels
         ''' criado. A lista ao lado mostrava uma pasta e o acervo mostrava
         ''' outra, sem nada dizendo isso.
         '''
-        ''' Resolver a pasta <b>cria</b> a linha no cache se ela não existir, e
-        ''' isso é de propósito: sem linha não há para onde a varredura
-        ''' publicar, e o acervo de uma pasta nunca vista tem de poder dizer
-        ''' "nada guardado" em vez de falhar.
+        ''' ------------------------------------------------------------------
+        ''' <b>NAVEGAR NÃO CRIA PASTA</b>
+        '''
+        ''' Isto usava <c>ResolvedorDoAcervo.Pasta</c>, que <b>cria</b> — então
+        ''' cada clique inseria <c>store</c> e <c>folder</c> no cache, antes de
+        ''' qualquer cerimônia de ambiente. Não gravava conteúdo, então o gate
+        ''' não era teatro; mas o contrato "nenhuma pasta antes da autorização"
+        ''' estava quebrado, e o teste que afirmava <c>folder = 0</c> só
+        ''' exercitava a varredura direta — nunca este caminho.
+        '''
+        ''' Pasta nunca vista resolve para <b>nada</b>, e o acervo diz "ainda não
+        ''' foi varrida", que é a verdade. Quem cria é a varredura, depois do
+        ''' gate.
         ''' </summary>
         Public Sub Apontar(pasta As FolderKey, nome As String, store As StoreInfo)
             _alvoDoOutlook = pasta
@@ -280,12 +292,14 @@ Namespace Global.Iris.App.ViewModels
             End If
 
             Try
-                _servico.Apontar(New ResolvedorDoAcervo(_db).Pasta(
-                    pasta.StoreId, pasta.EntryId, _nomeDoAlvo))
+                ' SemPasta = 0: nao existe folder_key 0, entao o manifesto sai
+                ' vazio e a faixa diz "ainda nao foi varrida".
+                _servico.Apontar(If(New ResolvedorDoAcervo(_db).PastaExistente(
+                    pasta.StoreId, pasta.EntryId), 0L))
             Catch ex As Exception
-                ' Resolver e escrita: disco cheio e banco travado chegam aqui.
-                ' Nao pode derrubar a troca de pasta -- a lista ao lado
-                ' continua funcionando, e o acervo e o painel secundario.
+                ' Leitura tambem falha: banco travado, arquivo sumindo. Nao
+                ' pode derrubar a troca de pasta -- a lista ao lado continua
+                ' funcionando, e o acervo e o painel secundario.
                 Travado = "Nao consegui apontar o acervo para esta pasta."
             End Try
 
@@ -294,27 +308,77 @@ Namespace Global.Iris.App.ViewModels
             Atualizar()
         End Sub
 
+        ''' <summary>
+        ''' <b>Varre, numa conexão só dela.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>CONEXÃO PRÓPRIA, E ISSO NÃO É ZELO EXCESSIVO</b>
+        '''
+        ''' A varredura roda em <c>Task.Run</c>, e enquanto ela corre a interface
+        ''' segue viva: o usuário troca de pasta (que lê o cache), o
+        ''' temporizador do dreno bate a cada 30 s (que lê e escreve). Enquanto
+        ''' tudo isso usava <c>_db.Connection</c>, três threads compartilhavam
+        ''' <b>um objeto de conexão</b> — e <c>SqliteConnection</c> não oferece
+        ''' isso como contrato.
+        '''
+        ''' Os <c>BEGIN IMMEDIATE</c> do resolvedor protegem concorrência
+        ''' <i>entre conexões</i>, no arquivo. Eles não tornam um objeto de
+        ''' conexão seguro para uso simultâneo, e eu tinha confundido as duas
+        ''' coisas.
+        '''
+        ''' Abrir a segunda conexão custa uma migração-e-introspecção por
+        ''' varredura. Varredura é rara e disparada por clique; o preço é
+        ''' pequeno perto de corrupção intermitente que ninguém reproduz.
+        ''' </summary>
         Private Async Function VarrerAsync() As Task
             If Not PodeVarrer Then Return
 
             Dim pasta = _alvoDoOutlook
             Dim nome = _nomeDoAlvo
             Dim store = _storeDoAlvo
+            ' A pasta a que ESTE voo pertence. Depois do Await o usuario pode
+            ' ter trocado, e o desfecho de A nao pode aparecer na faixa de B.
+            Dim doVoo = pasta
+
+            Dim cts As New CancellationTokenSource()
+            _cancelamentoDaVarredura = cts
 
             Varrendo = True
             Travado = Nothing
             Try
-                ' Task.Run: varrer bloqueia, e bloquear o dispatcher congelaria
-                ' a janela inteira pelo tempo da varredura.
                 Dim r = Await Task.Run(
-                    Function() _varredura.Executar(pasta, nome, store, CancellationToken.None))
+                    Function()
+                        Dim falha As OpenFailure = Nothing
+                        Using db = CacheDatabase.Open(CaminhoPadrao(),
+                                                      CacheSchema.Intended(), falha)
+                            If db Is Nothing Then Return Nothing
+                            Return New VarreduraDaPasta(_broker, db).
+                                   Executar(pasta, nome, store, cts.Token)
+                        End Using
+                    End Function)
 
-                Travado = EmPortugues(r)
+                ' TROCOU DE PASTA: o voo terminou e publicou, e isso vale. O
+                ' que nao vale e escrever o desfecho dele na faixa de outra
+                ' pasta -- seria uma recusa da pasta A aparecendo sob o nome
+                ' da B.
+                If Not ReferenceEquals(doVoo, _alvoDoOutlook) Then Return
+
+                If r Is Nothing Then
+                    Travado = "O cache nao abriu para a varredura."
+                Else
+                    Travado = EmPortugues(r)
+                End If
                 _servico.Recarregar()
                 Atualizar()
+            Catch ex As OperationCanceledException
+                ' A janela fechou no meio. Nao ha tela para avisar.
             Catch ex As Exception
                 Travado = "A varredura falhou."
             Finally
+                If ReferenceEquals(_cancelamentoDaVarredura, cts) Then
+                    _cancelamentoDaVarredura = Nothing
+                End If
+                cts.Dispose()
                 Varrendo = False
             End Try
         End Function
@@ -358,6 +422,22 @@ Namespace Global.Iris.App.ViewModels
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True
+
+            ' CANCELA A VARREDURA ANTES DE FECHAR O BANCO.
+            '
+            ' Sem isto, fechar a janela no meio de uma varredura deixava a
+            ' tarefa seguindo com o broker e com um CacheDatabase que este
+            ' Dispose ia fechar debaixo dela. O token passado era None, entao
+            ' nao havia nem como pedir para parar.
+            '
+            ' Nao ESPERA a tarefa: bloquear o dispatcher no fechamento
+            ' travaria a janela. A varredura tem conexao propria, entao o que
+            ' ela ainda escrever nao passa por _db.
+            Try
+                _cancelamentoDaVarredura?.Cancel()
+            Catch
+            End Try
+
             _relogio?.Stop()
             RemoveHandler _servico.Mudou, AddressOf AoMudar
             _db?.Dispose()

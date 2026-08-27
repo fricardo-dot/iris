@@ -359,4 +359,64 @@ Public Class ResolvedorDoAcervoTests
         End Using
     End Sub
 
+    ' ==================================================================
+    ' NAVEGAR NAO E AUTORIZAR
+
+    ''' <summary>
+    ''' <b>Procurar a pasta NÃO a cria.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' É o defeito que a revisão pegou. A faixa do acervo chamava
+    ''' <c>Pasta</c> — que cria — a cada clique na árvore, então <b>navegar
+    ''' inseria <c>store</c> e <c>folder</c> antes de qualquer cerimônia de
+    ''' ambiente</b>.
+    '''
+    ''' Não gravava conteúdo, então o gate não era teatro: <c>scan_attempt</c>,
+    ''' <c>generation</c> e as associações continuavam trancadas. Mas o
+    ''' contrato "nenhuma pasta antes da autorização" estava quebrado, e o
+    ''' teste que afirmava <c>folder = 0</c> só exercitava a varredura direta —
+    ''' nunca o caminho da interface, que é por onde o usuário passa.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Procurar_a_pasta_NAO_a_cria()
+        Using db = Abrir()
+            Dim r As New ResolvedorDoAcervo(db)
+
+            Assert.IsFalse(r.PastaExistente("store-1", "entry-1").HasValue)
+
+            Assert.AreEqual(0, Contar(db, "store"), "procurar criou store")
+            Assert.AreEqual(0, Contar(db, "folder"), "procurar criou pasta")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>E depois de criada, procurar acha a mesma.</b>
+    '''
+    ''' O controle negativo: sem ele, um <c>PastaExistente</c> que devolvesse
+    ''' sempre <c>Nothing</c> passaria no teste acima — e o acervo diria "ainda
+    ''' não foi varrida" para sempre, sobre uma pasta cheia.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Depois_de_criada_procurar_ACHA()
+        Using db = Abrir()
+            Dim r As New ResolvedorDoAcervo(db)
+            Dim k = r.Pasta("store-1", "entry-1", "Caixa de Entrada")
+
+            Assert.AreEqual(CType(k, Long?), r.PastaExistente("store-1", "entry-1"))
+            Assert.IsFalse(r.PastaExistente("store-1", "outra").HasValue)
+            Assert.IsFalse(r.PastaExistente("outro-store", "entry-1").HasValue,
+                           "o par e (store, entry), e nao o entry sozinho")
+        End Using
+    End Sub
+
+    <TestMethod>
+    Public Sub Procurar_com_identificador_vazio_devolve_NADA()
+        Using db = Abrir()
+            Dim r As New ResolvedorDoAcervo(db)
+            Assert.IsFalse(r.PastaExistente("", "e").HasValue)
+            Assert.IsFalse(r.PastaExistente("s", "  ").HasValue)
+            Assert.IsFalse(r.PastaExistente(Nothing, Nothing).HasValue)
+        End Using
+    End Sub
+
 End Class

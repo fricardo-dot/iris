@@ -411,15 +411,32 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         ''' <summary>
-        ''' Relê a lista de stores. Chamada na conexão e na troca de sessão:
-        ''' <c>StoreId</c> pertence a uma época, e uma lista de época vencida
-        ''' apontaria para stores que já não existem.
+        ''' Relê a lista de stores.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A ÉPOCA É CAPTURADA ANTES E CONFERIDA DEPOIS</b>
+        '''
+        ''' <c>StoreId</c> pertence a uma época, e reler não basta: há mais de
+        ''' um disparo desta função — a conexão e a substituição de sessão — e
+        ''' nada garante que terminem na ordem em que começaram. Uma leitura da
+        ''' sessão <b>velha</b> podia concluir depois da nova e sobrescrever
+        ''' <c>_stores</c> com DTOs vencidos.
+        '''
+        ''' O sintoma seria mudo: a varredura mediria o ambiente a partir de um
+        ''' store de outra sessão, e a autorização valeria para a coisa errada.
         ''' </summary>
         Private Async Function RecarregarStoresAsync() As Task
+            Dim minha = _broker.SessionEpoch
             Try
                 Dim r = Await _broker.GetStoresAsync(Threading.CancellationToken.None)
+
+                ' Chegou tarde: outra leitura, de uma sessao mais nova, ja
+                ' respondeu. Escrever aqui seria rebaixar a lista corrente.
+                If minha <> _broker.SessionEpoch Then Return
+
                 _stores = If(r IsNot Nothing AndAlso r.Succeeded, r.Value, Nothing)
             Catch ex As Exception
+                If minha <> _broker.SessionEpoch Then Return
                 ' Sem stores a varredura recusa por StoreDesconhecido, que diz
                 ' a verdade. Derrubar a abertura por causa disso seria pior.
                 _stores = Nothing

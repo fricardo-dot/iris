@@ -348,6 +348,19 @@ Public Class CacheDatabaseTests
         Executar(db, "PRAGMA user_version = 1")
     End Sub
 
+    ''' <summary>
+    ''' Devolve um banco de hoje ao formato da <b>versão 2</b>: só a coluna da
+    ''' migração 2→3 sai.
+    '''
+    ''' Existe para o degrau 2→3 ser exercitado <b>sozinho</b>. Subir sempre de
+    ''' 1 até 3 prova a escada inteira e esconde qual degrau quebrou — e o
+    ''' degrau novo é justamente o que ninguém rodou ainda.
+    ''' </summary>
+    Private Shared Sub FingirVersao2(db As CacheDatabase)
+        Executar(db, "ALTER TABLE generation DROP COLUMN discarded")
+        Executar(db, "PRAGMA user_version = 2")
+    End Sub
+
     Private Shared Sub Executar(db As CacheDatabase, sql As String)
         Using cmd = db.Connection.CreateCommand()
             cmd.CommandText = sql
@@ -609,6 +622,70 @@ Public Class CacheDatabaseTests
             Assert.IsNull(TryCast(par.Value, List(Of String)),
                           $"da para reabrir a lista do passo {par.Key}")
         Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>A migração 2→3, sozinha, e a linha antiga sobrevive com NULO.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Os outros testes de migração sobem de 1 até 3 e provam a escada
+    ''' inteira. Este isola o degrau novo — o único que nenhum banco de
+    ''' verdade jamais subiu — e cobra o que a coluna significa numa geração
+    ''' anterior a ela: <b>nulo, e não zero</b>.
+    '''
+    ''' Zero afirmaria que aquela varredura não descartou nada. Nulo diz que
+    ''' ela não contou. A diferença é exatamente a que existe entre as
+    ''' gerações 2 e 3 da Caixa de Entrada do usuário: mesmas 1123 linhas
+    ''' lidas, e só a segunda sabe que 12 foram recusadas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_migracao_2_para_3_preserva_a_geracao_antiga()
+        Dim falha As OpenFailure = Nothing
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"{falha}")
+            Semear(db)
+            Executar(db,
+                "INSERT INTO generation (generation_key, folder_key, attempt_key, " &
+                "  coverage_kind, universe_fingerprint, rows_read, count_before, " &
+                "  count_after, discarded, distinct_keys, reconcile_epoch, published_at) " &
+                "VALUES (7, 1, 1, 'completa', 'u', 1123, 1135, 1135, NULL, 1123, 0, " &
+                "        '2026-08-27T00:00:00.0000000+00:00')")
+            FingirVersao2(db)
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"a migracao 2 -> 3 devia ter deixado abrir: {falha}")
+
+            Using cmd = db.Connection.CreateCommand()
+                cmd.CommandText = "SELECT rows_read, count_before, discarded " &
+                                  "FROM generation WHERE generation_key = 7"
+                Using r = cmd.ExecuteReader()
+                    Assert.IsTrue(r.Read(), "A GERACAO SUMIU NA MIGRACAO")
+                    Assert.AreEqual(1123, r.GetInt32(0))
+                    Assert.AreEqual(1135, r.GetInt32(1))
+                    Assert.IsTrue(r.IsDBNull(2),
+                        "geracao anterior a coluna tem de ficar NULA -- zero " &
+                        "afirmaria que ela nao descartou nada, e ela nao contou")
+                End Using
+            End Using
+        End Using
+    End Sub
+
+    ''' <summary>Uma pasta e uma tentativa, para a geração do teste ter a que se prender.</summary>
+    Private Shared Sub Semear(db As CacheDatabase)
+        Executar(db, "INSERT INTO environment_profile (environment_key, fingerprint, " &
+                     "  provider, cached_mode, policy_version, allowed) " &
+                     "VALUES (1, 'f', 'ExchangeCached', 1, 1, 1)")
+        Executar(db, "INSERT INTO store (store_key, provider_store_id) VALUES (1, 's')")
+        Executar(db, "INSERT INTO folder (folder_key, store_key, provider_entry_id, " &
+                     "  reconcile_epoch, stability) VALUES (1, 1, 'e', 0, 'estavel')")
+        Executar(db, "INSERT INTO scan_attempt (attempt_key, folder_key, environment_key, " &
+                     "  universe_fingerprint, algorithm_version, reconcile_epoch, " &
+                     "  attempt_number, stage, rows_read, started_at) " &
+                     "VALUES (1, 1, 1, 'u', 1, 0, 1, 'publicada', 1123, " &
+                     "        '2026-08-27T00:00:00.0000000+00:00')")
     End Sub
 
 End Class
