@@ -606,3 +606,32 @@ cerimônia foi executada; nenhuma mutação na caixa dele.
 O achado que eu levo: **prova de leitura não é prova de alcance.** Entreguei a
 agenda inteira funcionando e inalcançável, com seis testes verdes contra o
 Outlook real — porque todos contornavam a árvore.
+
+### 28/08 — cobertura do calendário: a janela é do correio, não do store
+
+Dívida que nasceu de manhã e fechou à tarde.
+`tools/medir-cobertura-calendario.ps1`, somente leitura:
+
+| | correio | calendário |
+|---|---|---|
+| primeiro item | 2026-07-28 | **2024-06-07** |
+| último item | 2026-08-28 | 2026-12-15 |
+| span | ~31 dias | **921 dias** |
+
+**411 dos 434** compromissos são anteriores ao corte do correio, e a
+distribuição por ano é contínua — 53 em 2024, 229 em 2025, 152 em 2026. Sem
+penhasco.
+
+**E isso derruba uma afirmação minha da manhã.** O `medir-janela.ps1` dizia, no
+cabeçalho, que *"o corte aparece em TODAS as pastas ao mesmo tempo, porque a
+janela é do store e não da pasta"*. Era **inferência**, não medida — e está
+falsificada: o calendário é do mesmo store e não corta.
+
+A janela alcança o **correio**. Que é, aliás, como o controle deslizante do
+Outlook funciona — mas eu não sabia disso por medida, e escrevi como se
+soubesse.
+
+**O que muda na tela:** a agenda **não** mostra uma fatia de um mês, e repetir
+para ela a ressalva do acervo seria ressalva emprestada. O que continua valendo
+é o outro lado: a contagem do servidor segue inalcançável, então ausência
+continua proibida — **por falta de prova, e não por janela**.

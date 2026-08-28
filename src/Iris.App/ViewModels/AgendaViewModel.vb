@@ -35,10 +35,27 @@ Namespace Global.Iris.App.ViewModels
     ''' <b>Mas eu escrevi aqui, até a revisão de 28/08/2026, que ela por isso
     ''' "não carrega ressalva de cobertura". Era isenção que eu me dei.</b>
     ''' Ler ao vivo prova <i>frescor</i> em relação ao OOM local; não prova
-    ''' nada sobre o servidor. Em Exchange em cache, "o que o Outlook expõe
-    ''' agora" continua sendo o universo local — o mesmo que a §23 diz que não
-    ''' dá para tratar como a caixa inteira. E ninguém mediu a cobertura do
-    ''' calendário; a medição de 28/08 contou itens, não alcance.
+    ''' nada sobre o servidor.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>E AGORA HÁ MEDIÇÃO, QUE MUDA METADE DISSO</b>
+    '''
+    ''' <c>tools/medir-cobertura-calendario.ps1</c>, na tarde de 28/08/2026:
+    '''
+    ''' <code>
+    '''   correio ...... corta em 2026-07-28, ~31 dias
+    '''   calendário ... 2024-06-07 a 2026-12-15, 921 dias, sem corte
+    ''' </code>
+    '''
+    ''' <b>411 dos 434</b> compromissos são anteriores ao corte do correio, e a
+    ''' distribuição por ano é contínua. A janela de sincronização alcança o
+    ''' correio; <b>não alcança o calendário</b>.
+    '''
+    ''' Então a agenda <b>não</b> mostra uma fatia de um mês, e dizer que ela
+    ''' mostra seria repetir para o calendário a ressalva que só vale para o
+    ''' correio. O que continua verdade é o outro lado: a contagem do servidor
+    ''' segue inalcançável pelo OOM, então <b>ausência continua proibida</b> —
+    ''' por falta de prova, e não por janela.
     '''
     ''' Então a agenda diz o que ela <b>sabe</b>: quantos compromissos leu na
     ''' janela, quantos vieram de séries, quantos itens recusou, e se a

@@ -13,9 +13,26 @@
     varreu. O ESCOPO.md registrou a saida: "a saida nao e achar a configuracao;
     e medir o EFEITO dela".
 
-    O efeito e um horizonte. Se a janela for de N meses, nenhuma pasta tera
-    item local mais antigo que hoje menos N -- e o corte aparece em TODAS as
-    pastas ao mesmo tempo, porque a janela e do store e nao da pasta.
+    O efeito e um horizonte. Se a janela for de N meses, nenhuma pasta de
+    CORREIO tera item local mais antigo que hoje menos N, e o corte aparece
+    em varias delas ao mesmo tempo.
+
+    UMA CORRECAO: A JANELA NAO E DO STORE
+
+    Este cabecalho dizia "a janela e do store e nao da pasta", e isso era
+    inferencia minha, nao medida. Em 28/08/2026, a tarde, o
+    medir-cobertura-calendario.ps1 mediu o calendario do MESMO store:
+
+      correio ...... corta em 2026-07-28, ~31 dias
+      calendario ... vai de 2024-06-07 a 2026-12-15, 921 dias, sem corte
+
+    411 dos 434 compromissos sao anteriores ao corte do correio, e a
+    distribuicao por ano e continua. Entao a janela alcanca o CORREIO, e nao
+    o store inteiro -- que e, alias, como o controle deslizante do Outlook
+    funciona.
+
+    O roteiro so mede pastas de correio (DefaultItemType = 0), entao a
+    medida dele continua valendo. O que mudou foi a explicacao.
 
     O QUE UMA EXECUCAO NAO PROVA
 
@@ -26,6 +43,11 @@
 
     Duas execucoes separadas por alguns dias distinguem: se o corte anda
     junto, e deslizante; se fica parado, foi um evento.
+
+    O QUE ELE MEDE, E O QUE NAO
+
+    So pastas de CORREIO. Calendario, contatos e tarefas nao entram, e o
+    roteiro irmao -- medir-cobertura-calendario.ps1 -- cuida do calendario.
 
     O QUE DISTINGUE JANELA DE HABITO DO USUARIO
 

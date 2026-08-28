@@ -355,7 +355,12 @@ antes e depois. A guarda S6 só publicou porque a conta fechou.
 **O que a autorização do ambiente NÃO destrava:** afirmar cobertura completa e
 concluir ausência. Em Exchange em cache a janela de sincronização não é legível
 pelas superfícies examinadas (§22.3 e §22.4), então o Iris não sabe quando ela
-muda. É degradação **estrutural no suporte de hoje** — não há mecanismo
+muda.
+
+**E ela é do correio, não do store** — medido em 28/08/2026: o calendário do
+mesmo store guarda 921 dias sem corte, contra os ~31 dias das pastas de correio.
+A degradação vale para o acervo de mensagens; repeti-la para o calendário seria
+ressalva emprestada. É degradação **estrutural no suporte de hoje** — não há mecanismo
 conhecido de promoção, e a §23 deixou escritos os gatilhos que reabririam a
 decisão. Agora ela é visível na tela.
 
@@ -619,9 +624,15 @@ que este ESCOPO carregava.
   não lida `False`, anexo `False`, texto vazio. É a mesma família do
   `message_class` corrigido hoje, mas corrigir exige campos anuláveis e migração
   de esquema — decisão de tamanho.
-- **A cobertura do calendário nunca foi medida.** A agenda diz quantos leu e se
-  a leitura truncou; não diz o que existe além do que o Outlook expõe. O
-  `medir-janela.ps1` mede pastas de correio; o calendário pede o equivalente.
+- ~~A cobertura do calendário nunca foi medida.~~ **Medida em 28/08/2026, à
+  tarde**, por `tools/medir-cobertura-calendario.ps1`. O resultado corrigiu uma
+  inferência minha da manhã: o calendário do **mesmo store** vai de 2024-06-07 a
+  2026-12-15 — **921 dias, sem corte** —, com 411 dos 434 compromissos
+  anteriores ao horizonte do correio. **A janela alcança o correio, não o
+  store.** O que continua aberto é menor e está abaixo.
+- **A contagem do servidor continua inalcançável**, para correio e para
+  calendário. Isso não é dívida de trabalho: é o limite do OOM, e é por isso que
+  o Iris não conclui ausência em lugar nenhum.
 - **Uma guarda que não é observável por API pública** — a recarga de contas
   pendente durante o fechamento. Depois do `Dispose` a seleção já é `Nothing`, e
   os dois mundos são indistinguíveis de fora. Só por reflexão ou por um *seam*
