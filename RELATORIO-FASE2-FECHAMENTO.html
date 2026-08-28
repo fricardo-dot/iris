@@ -1,0 +1,870 @@
+<title>Fechamento da Fase 2</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+:root {
+  --ground:      #F5F7F9;
+  --surface:     #FFFFFF;
+  --surface-alt: #EDF1F4;
+  --ink:         #14202A;
+  --ink-soft:    #3D4C59;
+  --ink-mute:    #6B7885;
+  --rule:        #D8E0E7;
+  --rule-soft:   #E7ECF1;
+  --accent:      #14606E;
+  --accent-soft: #E0EFF1;
+
+  --medido:      #2C6647;
+  --medido-bg:   #E2EFE7;
+  --parcial:     #8A5A0E;
+  --parcial-bg:  #F5EBD9;
+  --falta:       #A03428;
+  --falta-bg:    #F6E3E0;
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --measure: 34rem;
+  --wide: 60rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0F161C;
+    --surface:     #151E26;
+    --surface-alt: #1B242D;
+    --ink:         #E3E9EE;
+    --ink-soft:    #B4C0CB;
+    --ink-mute:    #8593A0;
+    --rule:        #2A3742;
+    --rule-soft:   #212C35;
+    --accent:      #5EB6C4;
+    --accent-soft: #16323A;
+
+    --medido:      #6FBE8E;
+    --medido-bg:   #162C21;
+    --parcial:     #D8A548;
+    --parcial-bg:  #2E2415;
+    --falta:       #E0796A;
+    --falta-bg:    #331D19;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0F161C;
+  --surface:     #151E26;
+  --surface-alt: #1B242D;
+  --ink:         #E3E9EE;
+  --ink-soft:    #B4C0CB;
+  --ink-mute:    #8593A0;
+  --rule:        #2A3742;
+  --rule-soft:   #212C35;
+  --accent:      #5EB6C4;
+  --accent-soft: #16323A;
+
+  --medido:      #6FBE8E;
+  --medido-bg:   #162C21;
+  --parcial:     #D8A548;
+  --parcial-bg:  #2E2415;
+  --falta:       #E0796A;
+  --falta-bg:    #331D19;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  margin: 0;
+  padding: 0 1.25rem 6rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: var(--wide);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2.5rem;
+}
+
+.page > * { max-width: var(--measure); }
+.page > .wide { max-width: 100%; width: 100%; }
+
+header.head {
+  max-width: 100%;
+  border-bottom: 2px solid var(--ink);
+  padding: 4rem 0 1.5rem;
+  margin-bottom: .5rem;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: .75rem;
+  font-weight: 500;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1.25rem;
+}
+
+h1 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: clamp(2rem, 5.5vw, 3.1rem);
+  line-height: 1.06;
+  letter-spacing: -.025em;
+  text-wrap: balance;
+  margin: 0 0 1rem;
+}
+
+.dek {
+  font-size: 1.15rem;
+  color: var(--ink-soft);
+  max-width: 38rem;
+  margin: 0 0 2rem;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 2rem;
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+}
+.meta b { color: var(--ink-soft); font-weight: 500; }
+
+h2 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.5rem;
+  letter-spacing: -.015em;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 2rem 0 0;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--rule);
+  max-width: var(--measure);
+}
+h2 .num {
+  font-family: var(--mono);
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--accent);
+  display: block;
+  margin-bottom: .5rem;
+  letter-spacing: .08em;
+}
+
+h3 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  letter-spacing: -.005em;
+  margin: 1.5rem 0 0;
+}
+
+p { margin: 0; }
+
+strong { font-weight: 600; color: var(--ink); }
+em { font-style: italic; }
+
+code, .mono {
+  font-family: var(--mono);
+  font-size: .875em;
+  background: var(--surface-alt);
+  padding: .1em .35em;
+  border-radius: 3px;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  font-family: var(--sans);
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: .25em .6em;
+  border-radius: 3px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.chip::before {
+  content: "";
+  width: .45em; height: .45em;
+  border-radius: 50%;
+  background: currentColor;
+}
+.chip.medido  { color: var(--medido);  background: var(--medido-bg); }
+.chip.parcial { color: var(--parcial); background: var(--parcial-bg); }
+.chip.falta   { color: var(--falta);   background: var(--falta-bg); }
+
+.resumo {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.resumo h2 {
+  border: 0; padding: 0; margin: 0;
+  font-size: 1.1rem;
+}
+.resumo ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .55rem; }
+.resumo li::marker { color: var(--accent); }
+
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.numeros div {
+  background: var(--surface);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.numeros .v {
+  font-family: var(--sans);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.numeros .k {
+  font-family: var(--mono);
+  font-size: .7rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.tabela-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--sans);
+  font-size: .875rem;
+  font-variant-numeric: tabular-nums;
+}
+caption {
+  caption-side: top;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: .9rem 1rem .6rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+th, td {
+  text-align: left;
+  padding: .6rem 1rem;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+thead th {
+  font-weight: 600;
+  font-size: .72rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  white-space: nowrap;
+  background: var(--surface-alt);
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.n, th.n { text-align: right; font-family: var(--mono); }
+td.mono-c { font-family: var(--mono); font-size: .8rem; }
+td.dim { color: var(--ink-mute); }
+
+td.st { border-left: 3px solid transparent; }
+tr.s-ok  td.st { border-left-color: var(--medido); }
+tr.s-par td.st { border-left-color: var(--parcial); }
+tr.s-nao td.st { border-left-color: var(--falta); }
+
+pre {
+  margin: 0;
+  overflow-x: auto;
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1rem 1.1rem;
+  font-family: var(--mono);
+  font-size: .8rem;
+  line-height: 1.6;
+  color: var(--ink-soft);
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+.principio {
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  padding: 1rem 1.25rem;
+  border-radius: 0 4px 4px 0;
+  font-size: 1.05rem;
+}
+.principio p + p { margin-top: .6rem; }
+
+.nota {
+  font-size: .95rem;
+  color: var(--ink-mute);
+  border-top: 1px solid var(--rule-soft);
+  padding-top: .9rem;
+}
+
+.acoes { display: flex; flex-direction: column; gap: 1rem; margin: 0; padding: 0; }
+.acoes > div {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  padding: 1.1rem 1.3rem;
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+.acoes h3 { margin: 0; }
+.acoes p { font-size: .97rem; color: var(--ink-soft); }
+.tempo {
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+footer {
+  max-width: 100%;
+  border-top: 1px solid var(--rule);
+  padding-top: 1.25rem;
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--ink-mute);
+  line-height: 1.8;
+}
+
+@media (max-width: 640px) {
+  h2 { font-size: 1.3rem; }
+  .resumo, .acoes > div { padding: 1.1rem 1.15rem; }
+  body { padding-bottom: 4rem; }
+}
+</style>
+
+<div class="page">
+
+<header class="head">
+  <p class="eyebrow">Iris · Fechamento de pendências</p>
+  <h1>Fase 2 — o aplicativo passou a varrer</h1>
+  <p class="dek">
+    Quatro pendências ficaram abertas quando a Fase 2 foi declarada encerrada.
+    Elas eram, no fundo, uma só: <strong>as três peças da varredura existiam e
+    nada as ligava</strong>. Só os testes montavam a cadeia, semeando as chaves
+    na mão. Em produção ninguém chamava o varredor, e o cache só tinha o que
+    uma importação manual tivesse posto nele.
+  </p>
+  <div class="meta">
+    <span><b>28 de agosto de 2026</b></span>
+    <span>805 testes · <b>0 falhas</b> · 0 pulados</span>
+    <span>13 commits · 6 passadas de revisão</span>
+    <span><code>38e593d</code> → <code>dcf93d0</code></span>
+  </div>
+</header>
+
+<div class="resumo">
+  <h2>O que importa saber, se você ler só isto</h2>
+  <ul>
+    <li><strong>O Iris varreu a caixa de verdade, e os números fecham.</strong>
+    1.123 mensagens guardadas mais 12 linhas recusadas por não serem mensagem
+    é igual às 1.135 que a pasta declarava, antes e depois. A varredura só
+    publicou porque essa conta bateu.</li>
+
+    <li><strong>O ambiente tem cerimônia própria, e o programa não se
+    autoriza.</strong> Ele mede, grava <code>allowed = 0</code> e para. Quem
+    vira para 1 é o dono da caixa, por ferramenta separada.</li>
+
+    <li><strong>Autorizar destrava varrer e contar, e nada além disso.</strong>
+    Em Exchange em cache a janela de sincronização não é legível — medido duas
+    vezes, por caminhos diferentes. O Iris continua sem afirmar cobertura
+    completa e sem concluir ausência. É degradação permanente, e agora ela
+    aparece na tela.</li>
+
+    <li><strong>A revisão externa encontrou 20 defeitos em seis passadas</strong>,
+    três deles críticos. Um dos críticos era uma conexão SQLite compartilhada
+    por três threads. Nenhum apareceria em teste.</li>
+
+    <li><strong>Quatro guardas de ciclo de vida ficam sustentadas por leitura
+    de código, e não por teste.</strong> Estão listadas ao fim, com o motivo
+    de cada uma.</li>
+  </ul>
+</div>
+
+<div class="numeros wide">
+  <div><span class="v">805</span><span class="k">testes</span></div>
+  <div><span class="v">1.135</span><span class="k">na caixa de entrada</span></div>
+  <div><span class="v">1.123</span><span class="k">guardadas</span></div>
+  <div><span class="v">12</span><span class="k">recusadas</span></div>
+  <div><span class="v">20</span><span class="k">defeitos achados</span></div>
+  <div><span class="v">3</span><span class="k">testes meus apagados</span></div>
+</div>
+
+<h2><span class="num">§ 1</span>O que estava pendente, e o que era de verdade</h2>
+
+<p>
+  O relatório da Fase 2 listou quatro pendências: a faixa do acervo nunca foi
+  vista na tela; o aplicativo não varre; a pasta do acervo está fixa em 1; e não
+  há produtor de perfil de ambiente.
+</p>
+
+<p>
+  Tratadas uma a uma, elas pareciam quatro trabalhos. Eram um. O
+  <code>SweepRunner</code>, o <code>OutlookSweepSource</code> e o
+  <code>SqliteSweepSink</code> estavam prontos desde a Fase 2 — <strong>e nada
+  fazia a travessia entre eles</strong>. O destino pede
+  <code>folderKey</code> e <code>environmentKey</code> como inteiros; o Outlook
+  fala em <code>(StoreId, EntryId)</code>, que são cadeias de texto. Nenhum
+  código de produção traduzia.
+</p>
+
+<div class="principio">
+  <p>
+    Uma pendência descrita pelo sintoma esconde o tamanho dela. “O aplicativo
+    não varre” soa como um botão faltando. O que faltava era a tradução de
+    identidade, o perfil de ambiente, a autorização desse perfil, e a ligação
+    da faixa à pasta selecionada — quatro coisas que só existem juntas.
+  </p>
+</div>
+
+<h2><span class="num">§ 2</span>As três peças que entraram</h2>
+
+<h3>A ponte de identidade</h3>
+<p>
+  <code>ResolvedorDoAcervo</code> traduz <code>(StoreId, EntryId)</code> nas
+  chaves do cache. É <strong>idempotente</strong>, e isso não é detalhe:
+  reencontrar a pasta não toca em <code>reconcile_epoch</code>,
+  <code>published_generation_key</code> nem <code>stability</code>. Um
+  “criar ou atualizar” ingênuo reescreveria os três a cada clique, apagando o
+  trabalho da varredura anterior — com a faixa continuando a mostrar número,
+  agora errado.
+</p>
+
+<h3>A medição do ambiente</h3>
+<p>
+  <code>AmbienteMedido</code> traduz o que o broker já devolve. Não precisou de
+  COM novo: <code>IsCachedExchange</code> e <code>ExchangeStoreType</code> já
+  estavam no DTO. A janela de sincronização sai nula <em>declaradamente</em> —
+  a §22.3 mediu que <code>Store</code> não a expõe e a §22.4 mediu que o
+  registro do perfil também não.
+</p>
+
+<h3>A varredura</h3>
+<p>
+  <code>VarreduraDaPasta</code> põe a ordem inteira num lugar: mede o ambiente,
+  resolve o perfil, <strong>para se ninguém autorizou</strong>, resolve a
+  pasta, varre. A parada é o gate D2 em ação — sem ela, “a allowlist do
+  ambiente é dado, e não constante no código” seria uma frase sem consequência.
+</p>
+
+<h2><span class="num">§ 3</span>A primeira varredura real</h2>
+
+<p>
+  Três varreduras rodaram na caixa do usuário. A tabela é o que o banco
+  registrou, e não o que o programa relatou.
+</p>
+
+<div class="tabela-wrap wide">
+  <table>
+    <caption>Gerações publicadas · cache de produção</caption>
+    <thead>
+      <tr>
+        <th>Pasta</th>
+        <th class="n">Lidas</th>
+        <th class="n">Antes</th>
+        <th class="n">Depois</th>
+        <th class="n">Recusadas</th>
+        <th>Cobertura</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td>Iris-Teste</td>
+        <td class="n">4</td><td class="n">4</td><td class="n">4</td>
+        <td class="n dim">—</td>
+        <td><span class="chip parcial">parcial</span></td>
+      </tr>
+      <tr>
+        <td>Caixa de Entrada</td>
+        <td class="n">1.123</td><td class="n">1.135</td><td class="n">1.135</td>
+        <td class="n dim">—</td>
+        <td><span class="chip parcial">parcial</span></td>
+      </tr>
+      <tr>
+        <td>Caixa de Entrada <span class="dim">(2ª)</span></td>
+        <td class="n">1.123</td><td class="n">1.135</td><td class="n">1.135</td>
+        <td class="n">12</td>
+        <td><span class="chip parcial">parcial</span></td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p>
+  A guarda S6 exige que tudo o que a pasta declarava tenha sido <strong>lido ou
+  explicitamente recusado</strong>. Recusa declarada é mais forte que recusa
+  silenciosa, porque obriga a fonte a contar o que jogou fora:
+  <code>1.123 + 12 = 1.135</code>. As duas primeiras gerações trazem
+  <code>—</code> na coluna de recusadas porque o número era calculado, usado
+  para decidir se publicava, e <strong>jogado fora no mesmo instante</strong>.
+  Não existia coluna para ele.
+</p>
+
+<p>
+  Nulo ali não é zero. Zero afirmaria que aquela varredura não descartou nada;
+  nulo diz que ela não contou. As duas primeiras não tinham como sustentar a
+  afirmação.
+</p>
+
+<div class="nota">
+  A diferença de 12 é estável. O modelo da Fase 2 já registrava uma medição
+  anterior idêntica em espírito — 1.022 declaradas, 1.013 guardadas, 9
+  descartadas, estável em três execuções — e o comentário de lá diz o que ela
+  ensinou: o sintoma parecia corrida quando era defeito permanente disfarçado.
+</div>
+
+<h2><span class="num">§ 4</span>O programa não se autoriza</h2>
+
+<p>
+  O perfil de ambiente nasce com <code>allowed = 0</code>. Quem o vira para 1 é
+  uma ferramenta separada, que mostra o que foi medido e pede a decisão de quem
+  responde pela caixa — mesmo desenho da ativação da IA, pelo mesmo motivo.
+</p>
+
+<pre><code>dotnet run --project tools\Iris.CrashHarness -- ambiente
+dotnet run --project tools\Iris.CrashHarness -- ambiente --autorizar 2</code></pre>
+
+<p>
+  E reencontrar um perfil <strong>nunca rebaixa</strong>. Se a releitura
+  reescrevesse zero, a cerimônia valeria até o próximo início do programa, e o
+  usuário autorizaria o mesmo ambiente todos os dias sem entender por quê.
+</p>
+
+<div class="principio">
+  <p>
+    <strong>O que a autorização destrava:</strong> varrer e contar.
+  </p>
+  <p>
+    <strong>O que ela não destrava:</strong> afirmar cobertura completa e
+    concluir ausência. Em Exchange em cache a janela de sincronização não é
+    legível, então o Iris nunca sabe que ela mudou. A degradação é permanente e
+    de propósito — não é pendência que alguém destrava depois.
+  </p>
+</div>
+
+<h2><span class="num">§ 5</span>Seis passadas de revisão externa</h2>
+
+<p>
+  Cada rodada revisou <em>as correções</em> da anterior, e não o trabalho
+  original. É o procedimento que este projeto adotou depois de uma validação em
+  que 15 dos 24 defeitos da segunda rodada tinham nascido na correção da
+  primeira.
+</p>
+
+<div class="tabela-wrap wide">
+  <table>
+    <caption>O que cada passada encontrou</caption>
+    <thead>
+      <tr><th class="st"></th><th>Passada</th><th>Achado que mais importou</th><th class="n">Reais</th></tr>
+    </thead>
+    <tbody>
+      <tr class="s-nao">
+        <td class="st"></td>
+        <td>1ª</td>
+        <td>Uma conexão SQLite compartilhada por três threads. O gate não cobria
+            toda escrita: clicar numa pasta criava linha no cache antes de
+            qualquer cerimônia.</td>
+        <td class="n">7 de 8</td>
+      </tr>
+      <tr class="s-nao">
+        <td class="st"></td>
+        <td>2ª</td>
+        <td>Um defeito <strong>nascido da correção anterior</strong>: o descarte
+            cancela e não espera, mas o cancelamento chega por desfecho e não
+            por exceção — a continuação seguia sobre um banco fechado.</td>
+        <td class="n">4</td>
+      </tr>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>3ª</td>
+        <td>A irmã do defeito, na recarga de contas. Corrigir uma corrida e não
+            procurar as irmãs dela é o que o guia do projeto manda não fazer.</td>
+        <td class="n">3</td>
+      </tr>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>4ª</td>
+        <td>A família inteira: cinco continuações assíncronas tocando estado
+            descartado, quase todas anteriores a este trabalho.</td>
+        <td class="n">5</td>
+      </tr>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>5ª</td>
+        <td>Um defeito no teste escrito na passada anterior: ele descartava o
+            resultado da espera e, no tempo esgotado, media outro cenário.</td>
+        <td class="n">4</td>
+      </tr>
+      <tr class="s-ok">
+        <td class="st"></td>
+        <td>6ª</td>
+        <td>A seleção de pasta ainda atravessava a troca de sessão. Três
+            correções, nenhuma crítica.</td>
+        <td class="n">3</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p>
+  Uma vez a revisão errou, e a medição resolveu: ela leu um índice como único e
+  concluiu que a segunda varredura publicada seria impossível. O índice é
+  comum, e o banco de produção tem duas linhas publicadas na mesma pasta. Mas o
+  auxiliar que constrói a lista de colunas chama-se <code>Unico</code> e fica no
+  argumento de índices comuns — enganou um revisor lendo com atenção, o que diz
+  algo sobre o nome.
+</p>
+
+<h2><span class="num">§ 6</span>Os erros que eu cometi</h2>
+
+<p>
+  Estão aqui porque o padrão deles vale mais que a lista.
+</p>
+
+<h3>Diagnostiquei uma pendência pelo sintoma errado</h3>
+<p>
+  “A faixa do acervo nunca foi vista na tela” eu li como falta de dado, e
+  construí a varredura inteira. Estava metade certo: ela e a faixa da IA moravam
+  na <strong>mesma linha da grade</strong>, empilhadas, com a da IA por cima.
+  Mesmo com dado, continuaria invisível.
+</p>
+<p class="nota">
+  E existia um teste cobrando sobreposição <em>dentro</em> da faixa da IA,
+  escrito depois de um defeito idêntico. Ninguém tinha feito a mesma pergunta
+  <em>entre</em> as faixas da janela. A lição estava escrita um nível abaixo de
+  onde o defeito morava.
+</p>
+
+<h3>Escrevi de memória o que era medível</h3>
+<p>
+  A tradução de <code>ExchangeStoreType</code> saiu errada duas vezes no mesmo
+  lugar: o broker manda o <em>nome</em> do enum e eu lia número; e os números
+  que eu tinha escrito estavam trocados — <code>olNotExchange</code> é 3, e 4 é
+  caixa <em>adicional</em> do Exchange. Eu classificaria uma segunda caixa
+  corporativa como arquivo local. <strong>Dois testes meus carregavam o mesmo
+  chute</strong>, o que os tornava confirmação da memória, não do código. Os
+  valores hoje vêm de reflexão sobre o assembly.
+</p>
+
+<h3>Apaguei três testes meus por não provarem nada</h3>
+<p>
+  Um de concorrência, com barreira e duas tarefas, que <strong>passava com o
+  defeito presente</strong> — a janela era curta demais para as duas se
+  cruzarem. E dois do descarte do assistente, que passavam mesmo com todas as
+  guardas removidas.
+</p>
+<p>
+  No segundo caso fui medir por quê, em vez de supor: com um provedor que
+  responde <em>mesmo depois de cancelado</em> — o caso real, porque cancelar não
+  para uma chamada que já saiu — o resultado continuou vazio sem guarda nenhuma.
+  Quem fecha aquele caminho é o cancelamento, mais fundo que a tela. As guardas
+  ficam como defesa em profundidade, e agora está escrito que é isso que elas
+  são.
+</p>
+
+<div class="principio">
+  <p>
+    Linha verde que passa com o defeito presente é pior que lacuna declarada,
+    porque gasta a confiança do número que ela mesma produz.
+  </p>
+</div>
+
+<h3>Autorizei o ambiente no lugar do usuário</h3>
+<p>
+  Rodei o comando da cerimônia para reproduzir um erro dele, sem pensar que
+  aquele comando <em>é</em> a cerimônia. A linha no banco passou a dizer
+  “autorizado por você” sobre uma decisão que não era dele. Foi revogada e
+  refeita por quem devia.
+</p>
+
+<h2><span class="num">§ 7</span>O que fica sem correção</h2>
+
+<p>
+  Nada. As seis passadas terminaram sem defeito de produção pendente conhecido.
+  O que sobra é cobertura.
+</p>
+
+<h2><span class="num">§ 8</span>O que fica sem cobertura</h2>
+
+<p>
+  Em ordem de risco. Todas são guardas de ciclo de vida sustentadas por leitura
+  de código.
+</p>
+
+<div class="tabela-wrap wide">
+  <table>
+    <caption>Guardas sem teste determinístico</caption>
+    <thead>
+      <tr><th class="st"></th><th>Guarda</th><th>Por que ainda não tem teste</th></tr>
+    </thead>
+    <tbody>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>Descarte do assistente com transmissão em voo</td>
+        <td>O cancelamento fecha o caminho antes da guarda, então provar a
+            guarda como <em>única</em> defesa exige um transmissor que ignore o
+            token. Medido, não suposto.</td>
+      </tr>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>Troca de sessão durante a expansão da árvore</td>
+        <td>Pede um broker que segure o carregamento de filhos. Remover a guarda
+            hoje deixa os 805 verdes.</td>
+      </tr>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>Guardas de descarte da janela principal</td>
+        <td>Inicialização e recarga de contas pendentes seguidas de fechamento.
+            Dá para fazer com o broker falso e uma fonte bloqueável.</td>
+      </tr>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>Salvar anexo durante troca de mensagem</td>
+        <td>Não existe suíte para o leitor de mensagem. É a única da lista que
+            precisa de arquivo novo.</td>
+      </tr>
+      <tr class="s-ok">
+        <td class="st"></td>
+        <td>Descarte com varredura em voo</td>
+        <td><span class="chip medido">coberto</span> Resolvido nesta rodada, com
+            executor injetável e controle negativo dos dois lados.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<p class="nota">
+  Fora da lista, duas dívidas assumidas: a coordenação entre o fechamento da
+  janela e o descarte efetivo do broker; e o auxiliar de índices chamado
+  <code>Unico</code>, que descreve uma propriedade dependente da posição em que
+  ele é usado.
+</p>
+
+<h2><span class="num">§ 9</span>O que a Fase 2 continua não podendo afirmar</h2>
+
+<p>
+  Nada nesta rodada mudou os limites da fase. Eles seguem valendo, e valem
+  repetir porque agora há dado no cache e a tentação de confiar demais nele
+  aumenta.
+</p>
+
+<div class="tabela-wrap wide">
+  <table>
+    <caption>Limites que permanecem</caption>
+    <thead>
+      <tr><th class="st"></th><th>Afirmação</th><th>Estado</th></tr>
+    </thead>
+    <tbody>
+      <tr class="s-nao">
+        <td class="st"></td>
+        <td>“Esta mensagem não está na pasta”</td>
+        <td><span class="chip falta">proibida</span> Em cache, ausência não é
+            concluível.</td>
+      </tr>
+      <tr class="s-nao">
+        <td class="st"></td>
+        <td>“A varredura cobriu a pasta inteira”</td>
+        <td><span class="chip falta">proibida</span> A janela de sincronização
+            não é legível.</td>
+      </tr>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>“O acervo é o estado corrente da caixa”</td>
+        <td><span class="chip parcial">nunca</span> Ele é arquivo histórico
+            conservador; a lista ao lado é que lê ao vivo.</td>
+      </tr>
+      <tr class="s-par">
+        <td class="st"></td>
+        <td>Medições da fase</td>
+        <td><span class="chip parcial">uma conta</span> Um único armazenamento,
+            amostra recente e não aleatória. Caixa compartilhada, classificação
+            de anexo, IRM e efeito colateral de leitura seguem não medidos.</td>
+      </tr>
+    </tbody>
+  </table>
+</div>
+
+<h2><span class="num">§ 10</span>O que fazer a seguir</h2>
+
+<div class="acoes">
+  <div>
+    <span class="tempo">Curto</span>
+    <h3>Cobrir as quatro guardas restantes</h3>
+    <p>
+      Nenhuma é mistério: três saem com o broker falso e uma fonte bloqueável, e
+      a quarta pede a primeira suíte do leitor de mensagem. É trabalho
+      identificado, com receita.
+    </p>
+  </div>
+  <div>
+    <span class="tempo">Curto</span>
+    <h3>Atualizar o relatório e o escopo da Fase 2</h3>
+    <p>
+      O documento anterior ainda diz que o aplicativo não varre e que a pasta do
+      acervo está fixa. Quem o ler hoje lê coisa que deixou de ser verdade.
+    </p>
+  </div>
+  <div>
+    <span class="tempo">Quando fizer sentido</span>
+    <h3>Medir o efeito da janela, já que ela não é legível</h3>
+    <p>
+      A saída provável para a degradação permanente não é achar a configuração:
+      é medir o efeito dela. A fase já apontou esse caminho e ele continua
+      aberto.
+    </p>
+  </div>
+</div>
+
+<footer>
+  Iris · fechamento das pendências da Fase 2 · 28 de agosto de 2026<br>
+  <code>38e593d</code> → <code>dcf93d0</code> · 13 commits · 805 testes, 0 falhas<br>
+  Números de varredura lidos do cache de produção em
+  <code>%LOCALAPPDATA%\Iris\cache.db</code>, esquema versão 3.<br>
+  Revisão externa: seis passadas, cada uma sobre as correções da anterior.
+</footer>
+
+</div>
