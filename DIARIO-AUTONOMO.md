@@ -366,3 +366,37 @@ depois de meses de acúmulo. Não gravar "31 dias" em lugar nenhum.
 acervo — e facetas locais nomeadas como **sinais**, não como prioridade, em
 tabela derivada e descartável. Nunca em `user_state.triaged`, que é decisão
 durável do usuário e o esquema protege de propósito.
+
+### 28/08 — bloco 6 (continuação): a busca ligada à janela
+
+`BuscaNoAcervo` sem tela seria o **sétimo** caso do erro mais comum meu neste
+projeto: proteção que existe e não está ligada a nada. Ligada:
+
+- `AcervoViewModel.Procurar` é a porta — a §26.2 e a `ArchitectureTests` proíbem
+  a apresentação de instanciar leitor de cache, e quem já tem o banco aberto é o
+  acervo.
+- `BuscaViewModel` recebe uma **função**, não o banco. Sem isso não haveria
+  teste: o construtor abriria SQLite.
+- A faixa da busca fica junto do **acervo**, não da lista. A lista lê ao vivo do
+  Outlook; a busca lê o cache. Duas fontes diferentes com a mesma cara enganam em
+  silêncio.
+- `Busca.` entrou nas raízes de `BindingsDaJanelaTests` — sem isso os bindings
+  novos não seriam conferidos por ninguém.
+
+Oito testes de tela, com dois controles negativos medidos: fazer a ressalva
+aparecer só no resultado vazio derruba um; tratar falha de banco como "não achei"
+derruba outro.
+
+O que a tela cobra e que não é óbvio:
+
+- **A ressalva não some quando a busca acha.** Ressalva que só aparece no vazio
+  ensina a lê-la como "não achei", e ela diz outra coisa.
+- **"Ainda não procurei" ≠ "procurei e não achei".** É o mesmo erro que a lista
+  de mensagens já teve, quando "selecione uma pasta" e "esta pasta está vazia"
+  eram a mesma frase.
+- **Falha de banco não vira "não achei".** É a §23 na forma mais fácil de
+  cometer.
+
+E a armadilha do `CLAUDE.md` pela quarta vez: o local `quando` eclipsou a
+propriedade `Quando`, e a mensagem foi "String não converte para DateTimeOffset"
+numa linha que não tem String nenhuma.

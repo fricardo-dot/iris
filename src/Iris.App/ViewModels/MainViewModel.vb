@@ -69,6 +69,16 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property AcervoIndisponivel As String
 
         ''' <summary>
+        ''' A busca sobre o acervo.
+        '''
+        ''' <c>Nothing</c> quando o cache não abriu — mesmo tratamento do
+        ''' <see cref="Acervo"/>. Uma busca que existe sobre um cache que não
+        ''' existe seria uma caixa de texto que sempre responde "não achei",
+        ''' e essa é a resposta que a §23 proíbe.
+        ''' </summary>
+        Public ReadOnly Property Busca As BuscaViewModel
+
+        ''' <summary>
         ''' A IA — que hoje serve para dizer que <b>não está habilitada</b>.
         '''
         ''' A composição usa <c>ActivationRecord.DaProducao</c>, que é
@@ -121,6 +131,16 @@ Namespace Global.Iris.App.ViewModels
             Dim motivo As String = Nothing
             Acervo = AcervoViewModel.Abrir(ui, acervoSemPasta, motivo, broker, caminhoDoCache)
             AcervoIndisponivel = motivo
+
+            ' A BUSCA VIVE ENQUANTO O ACERVO VIVER, e pelo mesmo banco.
+            '
+            ' Ela recebe uma FUNÇÃO, e não o banco: a camada de apresentação
+            ' não instancia leitor de cache, que é a §26.2 e o que a
+            ' ArchitectureTests cobra. Quem sabe abrir o leitor é o acervo,
+            ' que já tem o banco na mão.
+            If Acervo IsNot Nothing Then
+                Busca = New BuscaViewModel(AddressOf Acervo.Procurar)
+            End If
 
             Assistente = MontarAssistente(ui)
 

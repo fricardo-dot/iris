@@ -492,6 +492,29 @@ Namespace Global.Iris.App.ViewModels
             TemAlgoADizer = (m.Ressalva IsNot Nothing) OrElse (Travado IsNot Nothing)
         End Sub
 
+        ''' <summary>
+        ''' <b>A porta da busca.</b>
+        '''
+        ''' Existe aqui, e não no <c>BuscaViewModel</c>, por causa da §26.2 e da
+        ''' <c>ArchitectureTests</c>: a camada de apresentação não instancia
+        ''' leitor de cache. Quem já tem o banco aberto é este ViewModel, e
+        ''' quem o fecha no <c>Dispose</c> também.
+        '''
+        ''' Devolver o resultado direto — em vez de mantê-lo — é deliberado:
+        ''' busca não tem estado que sobreviva à pergunta, e guardar o último
+        ''' resultado aqui criaria uma segunda cópia do acervo esperando ficar
+        ''' velha.
+        ''' </summary>
+        Public Function Procurar(termo As String) As Iris.Integration.ResultadoDaBusca
+            If _disposed Then
+                ' Janela fechando com a caixa de busca ainda em foco. Lançar
+                ' aqui viraria exceção numa tela que já saiu; devolver nulo
+                ' faria o chamador achar que não achou nada.
+                Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+            End If
+            Return New Iris.Integration.BuscaNoAcervo(_db).Procurar(termo)
+        End Function
+
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True

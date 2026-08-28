@@ -1138,6 +1138,120 @@
                                Visibility="{Binding Acervo.Travado, Converter={StaticResource NullToVis},
                                                     FallbackValue=Collapsed}"
                                AutomationProperties.Name="Falha na atualizacao do acervo" />
+
+                    <!-- ==================== BUSCA ====================
+                         Ela mora AQUI, junto do acervo, e nao junto da lista:
+                         a lista le ao vivo do Outlook e a busca le do cache.
+                         Poe-la ao lado da lista faria o usuario esperar que
+                         ela procurasse na caixa, e ela procura no acervo -
+                         que e um mes de metadados, sem corpo. Duas fontes
+                         diferentes com a mesma cara enganam em silencio.
+
+                         A ressalva fica visivel SEMPRE que houve busca, e
+                         nao so quando ela nao acha: uma ressalva que so
+                         aparece no vazio ensina a le-la como "nao achei", e
+                         ela diz outra coisa - onde se procurou, com que
+                         alcance, e que o corpo nao e procuravel. -->
+                    <StackPanel Margin="0,10,0,0"
+                                Visibility="{Binding Busca, Converter={StaticResource NullToVis},
+                                                     FallbackValue=Collapsed}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="PROCURAR NO ACERVO"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <TextBox Text="{Binding Busca.Termo, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="240" Margin="12,0,0,0"
+                                     VerticalAlignment="Center"
+                                     VerticalContentAlignment="Center"
+                                     Padding="6,3"
+                                     AutomationProperties.Name="Termo da busca no acervo">
+                                <TextBox.InputBindings>
+                                    <!-- Enter procura. Sem isto o usuario digita
+                                         e nao acontece nada, que e o formato de
+                                         "parece quebrado" mais barato de evitar. -->
+                                    <KeyBinding Key="Return" Command="{Binding Busca.ProcurarCommand}" />
+                                </TextBox.InputBindings>
+                            </TextBox>
+                            <Button Content="Procurar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Busca.ProcurarCommand}"
+                                    Margin="8,0,0,0"
+                                    ToolTip="Procura assunto e remetente no que ja foi varrido"
+                                    AutomationProperties.Name="Procurar no acervo" />
+                            <Button Content="Limpar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Busca.LimparCommand}"
+                                    Margin="6,0,0,0"
+                                    AutomationProperties.Name="Limpar a busca" />
+                            <TextBlock Text="{Binding Busca.Achados.Count, StringFormat={}{0} achado(s)}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       Margin="12,0,0,0" VerticalAlignment="Center"
+                                       Visibility="{Binding Busca.Procurou,
+                                                    Converter={StaticResource BoolToVis},
+                                                    FallbackValue=Collapsed}" />
+                        </StackPanel>
+
+                        <!-- Altura limitada: o acervo tem mil linhas, e uma
+                             lista sem teto empurraria a lista de mensagens
+                             para fora da tela. -->
+                        <ItemsControl ItemsSource="{Binding Busca.Achados}"
+                                      MaxHeight="160" Margin="0,8,0,0">
+                            <ItemsControl.Template>
+                                <ControlTemplate TargetType="ItemsControl">
+                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </ControlTemplate>
+                            </ItemsControl.Template>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Grid Margin="0,0,0,4">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="{Binding Assunto}"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}" />
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Remetente}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                <TextBlock Text="{Binding Pasta, StringFormat={} · {0}}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                <!-- "pode ja ter sido apagada": e o
+                                                     que impede o resultado de parecer
+                                                     o estado corrente da caixa. -->
+                                                <TextBlock Text="{Binding Aviso, StringFormat={} · {0}}"
+                                                           FontSize="11"
+                                                           Foreground="{DynamicResource Brush.Error}"
+                                                           Visibility="{Binding TemAviso,
+                                                                        Converter={StaticResource BoolToVis},
+                                                                        FallbackValue=Collapsed}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding Quando}"
+                                                   FontSize="11" Margin="12,0,0,0"
+                                                   VerticalAlignment="Top"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                    </Grid>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="{Binding Busca.Ressalva}"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Margin="0,6,0,0"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   Visibility="{Binding Busca.TemRessalva,
+                                                Converter={StaticResource BoolToVis},
+                                                FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="Ressalva da busca" />
+                    </StackPanel>
                 </StackPanel>
             </Border>
 

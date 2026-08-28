@@ -36,6 +36,7 @@ Public Class BindingsDaJanelaTests
     Private Shared Function Raizes() As Dictionary(Of String, Type)
         Return New Dictionary(Of String, Type) From {
             {"Acervo.", GetType(AcervoViewModel)},
+            {"Busca.", GetType(BuscaViewModel)},
             {"Connection.", GetType(ConnectionViewModel)},
             {"Composer.", GetType(ComposerViewModel)},
             {"Detail.", GetType(MessageDetailViewModel)},
