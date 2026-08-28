@@ -350,19 +350,27 @@ entre as aceitas, leitura internamente coerente, evidência de versão daquele
 mensagem real **sem rótulo** que satisfaça tudo isso é elegível hoje; "qualquer
 mensagem" não é.
 
-**E duas travas da ativação são inertes na combinação atual, o que não estava
-escrito em lugar nenhum.** Com `leituras = [Absent]`, só passa a leitura que
-declara ausência de rótulo — e uma `Absent` coerente não tem registro ativo.
-Como `rótulos = []` e `contentBits = [0]` só atuam **sobre registro ativo**,
-nenhum dos dois chega a ser exercido. Eles não estão errados; estão fora do
-caminho.
+**E duas travas da ativação são hoje redundantes, o que não estava escrito em
+lugar nenhum.** Com `leituras = [Absent]`, o que passa é a leitura que declara
+ausência de rótulo — e uma `Absent` coerente não tem registro ativo. Como
+`rótulos = []` e `contentBits = [0]` só decidem **sobre registro ativo**,
+nenhum dos dois chega a mudar o desfecho de nada que a combinação atual deixe
+passar.
 
-E não é qualquer alargamento que os acorda. Aceitar `Blank` não acorda — uma
-`Blank` coerente também tem zero registros. Aceitar `HistoricalOnly` não acorda
+**Redundante não é o mesmo que não executado, e a diferença importa.** Uma
+mensagem `Present` que chegue aqui já é negada por `LeituraNaoAceita` — mas a
+conferência **não retorna nesse ponto**: ela segue, confere coerência e chama a
+conferência de registros, e as duas travas rodam e podem acrescentar suas
+próprias violações a um pedido que já ia ser negado. Elas estão exercidas; não
+estão decidindo.
+
+E não é qualquer alargamento que as põe para decidir. Aceitar `Blank` não põe —
+uma `Blank` coerente também tem zero registros. Aceitar `HistoricalOnly` não põe
 — os registros dela são todos inativos, e o ramo de histórico sai antes de
-consultar GUID ou `contentBits`. Quem os acorda é **aceitar `Present`**, que é a
-leitura coerente com registro ativo. É nesse dia que essas duas travas são
-exercidas pela primeira vez, e é para esse dia que elas precisam estar certas.
+consultar GUID ou `contentBits`. Quem as põe para decidir é **aceitar
+`Present`**, que é a leitura coerente com registro ativo. É nesse dia que elas
+passam de acessórias a determinantes, e é para esse dia que precisam estar
+certas.
 
 **Correção de um erro deste documento:** a versão anterior dizia que
 `politicaCorporativaVerificada = false` fazia com que "só conteúdo sintético
