@@ -400,3 +400,43 @@ O que a tela cobra e que não é óbvio:
 E a armadilha do `CLAUDE.md` pela quarta vez: o local `quando` eclipsou a
 propriedade `Quando`, e a mensagem foi "String não converte para DateTimeOffset"
 numa linha que não tem String nenhuma.
+
+### 28/08 — verificação contra a máquina real
+
+Duas coisas que eu tinha deixado como "não verificado" passaram a ser medidas.
+
+**1. O encerramento novo do broker.** Abri o Iris, ele conectou (época 1, stores
+e pastas lidos, sem erro no log), e fechei **pela janela** — nunca por
+`Stop-Process`, que pularia justamente o caminho que eu queria exercitar.
+Encerrou em **0,5 s**, com `broker.shutdown ok`: sem aviso de fila que não
+drenou, sem falha de limpeza. O `OUTLOOK.EXE` do usuário continuou com o **mesmo
+PID**. O comentário do código deixou de dizer "não verificado".
+
+Isso prova que o caminho feliz não regrediu e não deixa órfão. **Não** prova a
+corrida que o portão fecha — ela é rara por definição, e um encerramento limpo
+não a exercita.
+
+**2. A busca, contra o acervo real.** `Iris.CrashHarness buscar <termo>`, modo
+novo e somente leitura, rodado sobre uma **cópia** do cache do usuário:
+
+| termo | achados | tempo |
+|---|---|---|
+| `regulatorio` (sem acento) | **305** | 22,7 ms |
+| `brainmetyl` | 26 | 26,3 ms |
+| `aquaba tx` (duas palavras) | 13 | 24,1 ms |
+| `palavraquenaoexisteemlugarnenhum` | 0 | 24,8 ms |
+
+Sobre **1.127 mensagens**. Três coisas ficam provadas que o teste sintético não
+alcançava:
+
+- a normalização funciona no corpus de verdade — `regulatorio` acha
+  `Regulatório - Kate`, que é o remetente com 22% do volume;
+- a conjunção funciona sobre vocabulário real: `aquaba tx` acha 13 e não 300;
+- **22 a 26 ms** é o número que sustenta a decisão de casar em memória. O gatilho
+  para trocar por FTS5 deixou de ser uma frase e passou a ter uma medida.
+
+Não consegui verificar a faixa da busca **na tela**: computer-use exige a
+aprovação do dono no monitor, e ele não está. O que dá para dizer é que o
+aplicativo abriu sem erro de binding no log e que `BindingsDaJanelaTests` passou
+a conferir a raiz `Busca.` no XAML de verdade. Ver a faixa desenhada fica para
+ele — está no relatório.

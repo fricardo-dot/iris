@@ -54,6 +54,25 @@ Namespace Global.Iris.CrashHarness
                 Return Ativacao(If(args.Length > 1, args(1), Nothing))
             End If
 
+            ' Modo BUSCAR: exercita a busca do acervo contra um cache DE
+            ' VERDADE, e mede quanto ela demora.
+            '
+            ' Existe por dois motivos. O primeiro e o de sempre neste projeto:
+            ' teste com dado sintetico prova o algoritmo contra o vocabulario
+            ' que eu mesmo inventei -- sem acento, sem prefixo de conversa, com
+            ' um remetente so. Mil linhas de uma caixa real dizem outra coisa.
+            '
+            ' O segundo e o numero. A busca casa EM MEMORIA, e isso so se
+            ' sustenta enquanto for instantaneo; o gatilho para trocar por FTS5
+            ' esta escrito no BuscaNoAcervo. Sem uma forma de medir, o gatilho
+            ' seria uma frase.
+            '
+            ' SO LEITURA. Abre o cache, procura, imprime. Nao grava nada.
+            If args.Length >= 1 AndAlso String.Equals(args(0), "buscar",
+                                                      StringComparison.Ordinal) Then
+                Return Buscar(args)
+            End If
+
             ' Modo AMBIENTE: a cerimonia do ambiente.
             '
             ' Nao e roteiro PowerShell -- eu escrevi um e ele nao roda: o
@@ -213,6 +232,60 @@ Namespace Global.Iris.CrashHarness
             Return IO.Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                 "Iris", "cache.db")
+        End Function
+
+        ''' <summary>
+        ''' Procura no acervo e conta quanto tempo levou.
+        '''
+        ''' <c>Iris.CrashHarness buscar &lt;termo&gt; [caminho-do-cache]</c>
+        ''' </summary>
+        Private Function Buscar(args As String()) As Integer
+            If args.Length < 2 Then
+                Console.Error.WriteLine("uso: buscar <termo> [caminho-do-cache]")
+                Return 2
+            End If
+
+            Dim termo = args(1)
+            Dim alvo = If(args.Length > 2, args(2), CacheDoUsuario())
+            Console.WriteLine($"cache:  {alvo}")
+            Console.WriteLine($"termo:  {termo}")
+            Console.WriteLine()
+
+            If Not IO.File.Exists(alvo) Then
+                Console.WriteLine("Nao existe cache. Ele nasce na primeira abertura do Iris.")
+                Return 1
+            End If
+
+            Dim falha As OpenFailure = Nothing
+            Using db = CacheDatabase.Open(alvo, CacheSchema.Intended(), falha)
+                If db Is Nothing Then
+                    Console.WriteLine($"o cache nao abriu: {falha}")
+                    Return 1
+                End If
+
+                Dim relogio = Diagnostics.Stopwatch.StartNew()
+                Dim r = New Iris.Integration.BuscaNoAcervo(db).Procurar(termo)
+                relogio.Stop()
+
+                Console.WriteLine($"achados:  {r.Achados.Count}")
+                Console.WriteLine($"acervo:   {r.TotalNoAcervo} mensagens em {r.Consultadas.Count} pasta(s)")
+                Console.WriteLine($"tempo:    {relogio.Elapsed.TotalMilliseconds:N1} ms")
+                Console.WriteLine()
+
+                For Each a In r.Achados.Take(10)
+                    Dim assunto = If(a.Item.Subject, "")
+                    If assunto.Length > 64 Then assunto = assunto.Substring(0, 61) & "..."
+                    Console.WriteLine($"  [{a.NomeDaPasta}] {assunto}  <{a.Item.SenderName}>")
+                Next
+                If r.Achados.Count > 10 Then
+                    Console.WriteLine($"  ... e mais {r.Achados.Count - 10}")
+                End If
+
+                Console.WriteLine()
+                Console.WriteLine("RESSALVA:")
+                Console.WriteLine("  " & r.Ressalva)
+                Return 0
+            End Using
         End Function
 
         Private Function Ambiente(args As String()) As Integer

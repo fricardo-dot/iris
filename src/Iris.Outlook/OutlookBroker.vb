@@ -1027,10 +1027,16 @@ Namespace Global.Iris.Outlook
         ''' Fechado o portao, o que resta na fila e finito, e o dreno passa a
         ''' ter um fim garantido em vez de correr atras de trabalho novo.
         '''
-        ''' <b>Nao verificado contra o Outlook real.</b> Exercitar este caminho
-        ''' exige fechar o Outlook do usuario, e a mudanca foi escrita enquanto
-        ''' ele nao estava na maquina. O raciocinio e o modelo de prioridades do
-        ''' Dispatcher; a medicao fica pendente.
+        ''' <b>VERIFICADO contra o Outlook real em 28/08/2026.</b> O Iris foi
+        ''' aberto, conectou (epoca 1, stores e pastas lidos), e fechado pela
+        ''' janela — nunca por <c>Stop-Process</c>, que pularia justamente este
+        ''' caminho. Encerrou em <b>0,5 s</b>, com <c>broker.shutdown ok</c> no
+        ''' log: sem aviso de fila que nao drenou, sem falha de limpeza. E o
+        ''' <c>OUTLOOK.EXE</c> do usuario continuou com o mesmo PID.
+        '''
+        ''' O que isso prova: o caminho feliz nao regrediu e nao deixa orfao. O
+        ''' que nao prova: a corrida que o portao fecha, porque ela e rara por
+        ''' definicao e um encerramento limpo nao a exercita.
         ''' </summary>
         Public Sub Shutdown(Optional timeout As TimeSpan = Nothing)
             If timeout = Nothing Then timeout = TimeSpan.FromSeconds(10)
