@@ -409,6 +409,14 @@ Namespace Global.Iris.App.ViewModels
             Dim destino = _saveFile.AskWhereToSave(anexo.FileName)
             If String.IsNullOrEmpty(destino) Then Return
 
+            ' A GERACAO DESTE SALVAMENTO.
+            '
+            ' _disposed sozinho fecha so o fechamento da janela. Sem geracao,
+            ' trocar de mensagem durante a gravacao publicava "Salvo em ..." --
+            ' ou a falha do anexo da mensagem A -- no leitor da B, com o
+            ' ViewModel vivo e ninguem para desconfiar.
+            Dim geracao = Volatile.Read(_generation)
+
             AttachmentStatus = $"Salvando {anexo.FileName}…"
 
             ' O diálogo já confirmou a sobrescrita com o usuário; aqui o
@@ -419,12 +427,14 @@ Namespace Global.Iris.App.ViewModels
 
             ' O ARQUIVO PODE TER SIDO GRAVADO, e isso vale: cancelar nao desfaz
             ' escrita ja comecada. O que nao vale e anunciar o desfecho num
-            ' leitor que ja saiu da tela.
-            If _disposed Then Return
+            ' leitor que ja saiu da tela -- ou que agora mostra outra mensagem.
+            If _disposed OrElse Volatile.Read(_generation) <> geracao Then Return
 
             Await _ui.InvokeAsync(
                 Sub()
-                    If _disposed Then Return
+                    ' De novo dentro do delegate: entre agendar e o dispatcher
+                    ' executar cabe um Dispose e cabe uma troca de mensagem.
+                    If _disposed OrElse Volatile.Read(_generation) <> geracao Then Return
                     If resultado.Succeeded Then
                         AttachmentStatus = $"Salvo em {destino}"
                     ElseIf resultado.IsAmbiguous Then

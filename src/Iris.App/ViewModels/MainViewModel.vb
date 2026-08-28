@@ -294,6 +294,18 @@ Namespace Global.Iris.App.ViewModels
         ''' — em vez de duplicar essa lógica aqui.
         ''' </summary>
         Private Async Function RecarregarERestaurarAsync(anterior As List(Of FolderKey)) As Task
+            ' A EPOCA QUE INICIOU ESTA RESTAURACAO.
+            '
+            ' As guardas de _disposed cobrem o fechamento. Sobrava outra coisa:
+            ' a sessao E2 comeca a reconstruir com o caminho guardado em E1, a
+            ' E3 chega antes de ela terminar, e a restauracao VENCIDA ainda
+            ' chamava TrySelectAsync sobre a arvore nova -- selecionando uma
+            ' pasta por iniciativa de uma sessao que ja acabou.
+            '
+            ' As geracoes internas do Folders impedem carga velha repovoar a
+            ' arvore. Nao impedem o CHAMADOR velho de escolher nela.
+            Dim minhaEpoca = _broker.SessionEpoch
+
             Await Folders.ReloadAsync()
             ' DEPOIS DE CADA Await.
             '
@@ -302,11 +314,11 @@ Namespace Global.Iris.App.ViewModels
             ' volta cedo e este metodo continuava ate o TrySelectAsync -- que
             ' expande no, chama o broker e reinstala selecao numa janela que
             ' ja saiu.
-            If _disposed Then Return
+            If _disposed OrElse minhaEpoca <> _broker.SessionEpoch Then Return
 
             ' A sessao foi SUBSTITUIDA: a lista de stores da anterior nao vale.
             Await RecarregarStoresAsync()
-            If _disposed Then Return
+            If _disposed OrElse minhaEpoca <> _broker.SessionEpoch Then Return
 
             If anterior Is Nothing OrElse anterior.Count = 0 Then Return
             If Await Folders.TrySelectAsync(anterior) Then Return
@@ -754,6 +766,11 @@ Namespace Global.Iris.App.ViewModels
             Composer.Dispose()
             Detail.Dispose()
             Connection.Dispose()
+            ' O ASSISTENTE TAMBEM. O que ele tem em voo e egress: cancelar nao
+            ' desfaz requisicao enviada, e quem registra o desfecho e o diario,
+            ' pela reconciliacao da proxima abertura. O que o descarte impede e
+            ' a tela morta ser escrita.
+            Assistente?.Dispose()
             Acervo?.Dispose()
         End Sub
 

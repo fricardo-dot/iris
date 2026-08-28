@@ -44,6 +44,7 @@ Namespace Global.Iris.App.ViewModels
     ''' </summary>
     Public NotInheritable Class AssistenteViewModel
         Inherits ObservableObject
+        Implements IDisposable
 
         Private ReadOnly _ui As Dispatcher
         Private ReadOnly _transmissor As AssistTransmitter
@@ -591,6 +592,39 @@ Namespace Global.Iris.App.ViewModels
             _cancelamento?.Cancel()
         End Sub
 
+        Private _descartado As Boolean
+
+        ''' <summary>
+        ''' <b>A janela fechou.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' Este ViewModel não era descartado por ninguém — nem
+        ''' <c>MainViewModel.Dispose</c> o cancelava. Uma transmissão em voo
+        ''' podia terminar <b>depois do fechamento</b>, publicar
+        ''' <c>Resultado</c> e <c>Ficha</c>, mexer em <c>Ocupado</c> e deixar o
+        ''' <c>_pulso</c> batendo.
+        '''
+        ''' É a mesma família das continuações do acervo e do leitor, e é a mais
+        ''' desconfortável delas: o que está em voo aqui é <b>egress</b>. Cancelar
+        ''' não desfaz uma requisição já enviada — o diário é quem sabe disso, e
+        ''' ele continua registrando o desfecho pela reconciliação da próxima
+        ''' abertura. O que muda é que a tela para de ser escrita.
+        '''
+        ''' A geração sobe primeiro: um voo que volte depois já é de outra
+        ''' geração e cai na guarda que sempre existiu.
+        ''' </summary>
+        Public Sub Dispose() Implements IDisposable.Dispose
+            If _descartado Then Return
+            _descartado = True
+
+            _geracao += 1
+            Try
+                _cancelamento?.Cancel()
+            Catch
+            End Try
+            If _pulso IsNot Nothing Then _pulso.Stop()
+        End Sub
+
         ''' <summary>
         ''' <b>Resumir.</b> Visível sempre, habilitado só quando dá.
         '''
@@ -800,7 +834,7 @@ Namespace Global.Iris.App.ViewModels
                 ' A GERACAO. Se o usuario trocou de mensagem enquanto isto
                 ' rodava, o resultado e de outro contexto — e mostrar seria pior
                 ' que nao mostrar: um resumo errado com cara de certo.
-                If minha <> _geracao Then Return
+                If _descartado OrElse minha <> _geracao Then Return
 
                 Publicar(r)
                 Ficha = Fichar(pedido.Destino, r)
@@ -823,7 +857,9 @@ Namespace Global.Iris.App.ViewModels
                 cts.Dispose()
                 If meu Then
                     _cancelamento = Nothing
-                    Ocupado = False
+                    ' Ocupado dispara notificacao e reconsulta de comando. Num
+                    ' ViewModel descartado isso e mexer em tela que ja saiu.
+                    If Not _descartado Then Ocupado = False
                     If _pulso IsNot Nothing Then _pulso.Stop()
                     ' CONGELA. Parar o pulso so faz a tela deixar de
                     ' reperguntar; sem fixar a duracao, Decorrido continuaria

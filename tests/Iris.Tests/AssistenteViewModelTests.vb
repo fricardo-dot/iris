@@ -96,6 +96,7 @@ Public Class AssistenteViewModelTests
         ''' de uma restrição de provedor que não casava com endpoint nenhum.
         ''' </summary>
         Friend Property RecusarCom As Integer?
+
         Friend Property Custo As Decimal?
         Friend Property Tokens As Integer?
         ''' <summary>Roda DENTRO da chamada, com o voo em andamento.</summary>
@@ -1499,4 +1500,27 @@ Public Class AssistenteViewModelTests
             "cancelou, e o cronometro seguiu contando")
     End Function
 
+    ''' <summary>
+    ''' <b>NAO HA TESTE do descarte com pedido em voo, e o motivo esta aqui.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Eu escrevi um. Ele segurava o provedor, descartava o ViewModel,
+    ''' liberava, e cobrava que Resultado continuasse vazio. Passava.
+    '''
+    ''' E passava COM TODAS AS GUARDAS REMOVIDAS -- o _descartado da checagem
+    ''' de publicacao, o _geracao += 1 do Dispose, e ate o Cancel. Tres
+    ''' controles negativos, os tres inuteis. Alguma outra coisa no caminho
+    ''' ja impedia a publicacao naquele cenario, e o teste estava medindo essa
+    ''' outra coisa enquanto afirmava medir a guarda.
+    '''
+    ''' Nesta mesma sessao eu ja apaguei um teste de concorrencia com Barrier
+    ''' pelo mesmo motivo. Linha verde que passa com o defeito presente e pior
+    ''' que lacuna, porque gasta a confianca do numero que ela mesma produz.
+    '''
+    ''' O que FICA provado por leitura, e nao por teste: AssistenteViewModel
+    ''' implementa IDisposable, sobe a geracao, cancela o voo e para o pulso;
+    ''' MainViewModel.Dispose o chama. Provar isso pede o mesmo tratamento que
+    ''' o acervo recebeu -- um executor injetavel -- e esta escrito no
+    ''' relatorio como pendencia.
+    ''' </summary>
 End Class

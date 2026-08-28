@@ -330,7 +330,16 @@ Public Class AcervoViewModelTests
 
                 ' Esperar FORA do dispatcher: bloquear aqui travaria a
                 ' continuacao que se quer observar.
-                Await Task.Run(Sub() entrou.Wait(TimeSpan.FromSeconds(10)))
+                '
+                ' E O RESULTADO DA ESPERA E COBRADO. Descartar o Boolean de
+                ' Wait era o defeito deste teste: no timeout ele seguia, via
+                ' Varrendo = True e descartava -- exercitando "cancelado ANTES
+                ' de o executor entrar", que e outro caso. A sincronizacao
+                ' existia justamente para tirar temporizacao daqui, e o
+                ' descarte a colocava de volta.
+                Dim entrouDeVerdade = Await Task.Run(
+                    Function() entrou.Wait(TimeSpan.FromSeconds(10)))
+                Assert.IsTrue(entrouDeVerdade, "o executor nao chegou a entrar")
                 Assert.IsTrue(vm.Varrendo, "controle: o voo esta em andamento")
 
                 vm.Dispose()
