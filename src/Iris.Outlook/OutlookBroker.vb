@@ -970,9 +970,51 @@ Namespace Global.Iris.Outlook
         ''' A liberação acontece com o pump AINDA VIVO: desconectar sinks e
         ''' liberar proxies pode exigir processamento de mensagens.
         ''' </summary>
+        ''' <summary>
+        ''' Encerra a sessao COM na propria STA.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A FILA E DRENADA ANTES, E ISSO NAO ERA VERDADE ATE 28/08/2026</b>
+        '''
+        ''' A liberacao roda em <c>DispatcherPriority.Send</c>, que e mais alta
+        ''' que <c>Normal</c> — e prioridade mais alta <b>fura a fila</b>. Uma
+        ''' leitura ja enfileirada pela janela, mas ainda nao executada, corria
+        ''' depois do <c>ReleaseSessionCore</c> e tocava RCW ja liberado.
+        '''
+        ''' As guardas de <c>_disposed</c> nos ViewModels nao cobrem isto: elas
+        ''' garantem que o RESULTADO e ignorado, e nao que a CHAMADA nao
+        ''' acontece. Estava anotado como divida assumida no relatorio de
+        ''' fechamento da Fase 2 — "a coordenacao entre o fechamento da janela e
+        ''' o descarte efetivo do broker".
+        '''
+        ''' O dreno e uma espera vazia em <c>ApplicationIdle</c>, que so retorna
+        ''' depois de tudo o que e mais prioritario ter sido processado. Com
+        ''' metade do orcamento de tempo: se trabalho novo continuar chegando,
+        ''' o dreno desiste e a liberacao acontece assim mesmo, porque
+        ''' <b>OUTLOOK.EXE orfao e pior que um RCW tocado tarde</b> (R7).
+        '''
+        ''' <b>Nao verificado contra o Outlook real.</b> Exercitar este caminho
+        ''' exige fechar o Outlook do usuario, e a mudanca foi escrita enquanto
+        ''' ele nao estava na maquina. O raciocinio e o modelo de prioridades do
+        ''' Dispatcher; a medicao fica pendente.
+        ''' </summary>
         Public Sub Shutdown(Optional timeout As TimeSpan = Nothing)
             If timeout = Nothing Then timeout = TimeSpan.FromSeconds(10)
             If _dispatcher Is Nothing Then Return
+
+            ' 1. DRENAR. Espera vazia na prioridade mais baixa util: ela so
+            '    volta quando nao ha mais nada acima dela na fila.
+            Try
+                _dispatcher.Invoke(Sub()
+                                   End Sub,
+                                   DispatcherPriority.ApplicationIdle, Nothing,
+                                   TimeSpan.FromMilliseconds(timeout.TotalMilliseconds / 2))
+            Catch ex As Exception
+                ' Fila que nao esvazia no orcamento nao pode adiar o
+                ' encerramento: seguir e liberar e o mal menor.
+                _log.Write(LogLevel.Warn, "broker.shutdown",
+                           "fila nao drenou no prazo: " & ex.GetType().Name)
+            End Try
 
             Dim limpezaOk = True
             Try

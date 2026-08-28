@@ -211,3 +211,46 @@ campo novo não pode se chamar `Linhas`, porque o parâmetro de `GravarPagina` s
 chama `linhas` e o eclipsaria dentro do próprio método que precisa escrever nele.
 
 Suíte: **821**.
+
+### 28/08 — blocos 4 e 5: as três dívidas restantes
+
+**Falha rara da suíte — fechada por construção, não por explicação.** Trinta
+execuções limpas não provam correção; ausência de sintoma nunca provou nada neste
+projeto. O que dá para fazer é transformar a hipótese em **regra imposta**:
+`ParalelismoDaSuiteTests` lê os arquivos da própria suíte e exige
+`<DoNotParallelize>` em toda classe que toca SQLite. Controle positivo (≥10
+classes conferidas, ≥20 arquivos lidos) e controle negativo confirmado — tirando
+o atributo de `CacheDatabaseTests`, o teste falha nomeando o arquivo.
+
+O irmão cobra que o assembly **continue** paralelizando o resto: desligar o
+paralelismo global satisfaria a regra da maneira preguiçosa e custaria minutos
+por execução.
+
+A dívida muda de forma: deixa de ser "explicar a falha" e passa a ser "a causa
+provável está fechada por construção; se ela voltar, a hipótese estava errada".
+É menos que uma explicação, e está escrito como sendo menos.
+
+**Auxiliar `Unico` — era pior do que a dívida descrevia.** Ele aparecia nas
+**duas** posições do construtor de `SchemaTable`, e cinco chamadas estavam na
+posição *não* única. Entre elas `Unico("incarnation_key")` em
+`metadata_observation` — coluna que se repete de propósito, uma observação por
+geração. Quem lesse aquela linha concluiria o contrário do que o esquema faz.
+Renomeado para `Indice`. Não pôde ser `Colunas`: o parâmetro se chama `colunas` e
+em VB isso colide com a função que o define.
+
+**Coordenação broker/fechamento — corrida real, corrigida.** A liberação roda em
+`DispatcherPriority.Send`, que **fura a fila**: uma leitura já enfileirada pela
+janela, ainda não executada, corria depois do `ReleaseSessionCore` e tocava RCW
+já liberado. As guardas de `_disposed` não cobrem isso — elas garantem que o
+*resultado* é ignorado, não que a *chamada* não acontece.
+
+`Shutdown` passou a drenar a fila primeiro, com espera vazia em
+`ApplicationIdle` e metade do orçamento de tempo. Se trabalho novo continuar
+chegando, desiste e libera assim mesmo: `OUTLOOK.EXE` órfão é pior que RCW tocado
+tarde (R7).
+
+**Não verificado contra o Outlook real** — exercitar exige fechar o Outlook do
+usuário, e ele não está na máquina. Vai para o relatório como pendência de
+medição, não de raciocínio.
+
+Suíte: **823**. **Blocos 1 a 5 encerrados.**

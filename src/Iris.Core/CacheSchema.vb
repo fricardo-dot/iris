@@ -102,8 +102,32 @@ Namespace Global.Iris.Core
                 Function(t) String.Equals(t.Name, nome, StringComparison.OrdinalIgnoreCase))
         End Function
 
-        ''' <summary>Um índice único sobre as colunas dadas.</summary>
-        Private Shared Function Unico(ParamArray colunas As String()) As String()
+        ''' <summary>
+        ''' Uma lista de colunas para um índice. <b>Não</b> diz se ele é único.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>ELA SE CHAMAVA <c>Unico</c>, E ISSO ERA MENTIRA EM CINCO LUGARES</b>
+        '''
+        ''' O nome antigo descrevia uma propriedade que depende de <b>onde a
+        ''' chamada aparece</b>, e não do que ela faz: o construtor de
+        ''' <see cref="SchemaTable"/> tem duas posições — <c>uniqueIndexes</c>
+        ''' e <c>indexes</c> — e o mesmo auxiliar servia às duas.
+        '''
+        ''' Cinco chamadas estavam na posição <b>não única</b>. Entre elas, a
+        ''' de <c>incarnation_key</c> em <c>metadata_observation</c> — que é
+        ''' justamente uma coluna que se repete de propósito, uma observação
+        ''' por geração. Quem lesse aquela linha concluiria o contrário do que
+        ''' o esquema faz.
+        '''
+        ''' Estava anotado como dívida assumida no relatório de fechamento da
+        ''' Fase 2. Nome neutro resolve: a posição do argumento passa a ser a
+        ''' única fonte da propriedade, e ela não mente.
+        '''
+        ''' O nome também não pode ser <c>Colunas</c>: em VB o parâmetro
+        ''' <c>colunas</c> colide com a função que o define. É a mesma família
+        ''' de armadilha, um degrau abaixo.
+        ''' </summary>
+        Private Shared Function Indice(ParamArray colunas As String()) As String()
             Return colunas
         End Function
 
@@ -143,13 +167,13 @@ Namespace Global.Iris.Core
                 Col("sync_window", "TEXT"),
                 Col("policy_version", "INTEGER", obrigatoria:=True),
                 Col("allowed", "INTEGER", obrigatoria:=True, check:="allowed IN (0,1)")
-            }, {Unico("fingerprint")}))
+            }, {Indice("fingerprint")}))
 
             t.Add(New SchemaTable("store", {
                 Col("store_key", "INTEGER", pk:=True, obrigatoria:=True),
                 Col("provider_store_id", "TEXT", obrigatoria:=True, doProvider:=True),
                 Col("display_name", "TEXT")
-            }, {Unico("provider_store_id")}))
+            }, {Indice("provider_store_id")}))
 
             ' published_generation_key + reconcile_epoch são o CAS que impede
             ' geração velha sobrescrever nova.
@@ -162,7 +186,7 @@ Namespace Global.Iris.Core
                 Col("reconcile_epoch", "INTEGER", obrigatoria:=True, check:="reconcile_epoch >= 0"),
                 Col("stability", "TEXT", obrigatoria:=True,
                     check:="stability IN ('estavel','instavel')")
-            }, {Unico("store_key", "provider_entry_id")}))
+            }, {Indice("store_key", "provider_entry_id")}))
 
             ' COBERTURA versionada, porque MUDA com sessão, janela e
             ' sincronização. A §19.2 mediu pastas cheias reportando ZERO
@@ -177,7 +201,7 @@ Namespace Global.Iris.Core
                 Col("source", "TEXT", obrigatoria:=True),
                 Col("observed_at", "TEXT", obrigatoria:=True),
                 Col("superseded_by", "INTEGER", refs:="coverage_observation")
-            }, Nothing, {Unico("folder_key", "observed_at")}))
+            }, Nothing, {Indice("folder_key", "observed_at")}))
 
             t.Add(New SchemaTable("item", {
                 Col("item_key", "INTEGER", pk:=True, obrigatoria:=True),
@@ -195,8 +219,8 @@ Namespace Global.Iris.Core
                 Col("internet_message_id", "TEXT", doProvider:=True),
                 Col("first_seen_generation", "INTEGER", refs:="generation"),
                 Col("last_seen_generation", "INTEGER", refs:="generation")
-            }, {Unico("folder_key", "provider_entry_id")},
-               {Unico("search_key"), Unico("internet_message_id")}))
+            }, {Indice("folder_key", "provider_entry_id")},
+               {Indice("search_key"), Indice("internet_message_id")}))
 
             ' METADADO — o que o 2.1 promete guardar, e faltava no modelo.
             ' Medido (§18.3): 349 bytes por mensagem, 11,7 MB para a caixa
@@ -213,7 +237,7 @@ Namespace Global.Iris.Core
                 Col("has_attachments", "INTEGER", check:="has_attachments IN (0,1)"),
                 Col("is_unread", "INTEGER", check:="is_unread IN (0,1)"),
                 Col("message_class", "TEXT")
-            }, Nothing, {Unico("incarnation_key")}))
+            }, Nothing, {Indice("incarnation_key")}))
 
             t.Add(New SchemaTable("association", {
                 Col("association_key", "INTEGER", pk:=True, obrigatoria:=True),
@@ -228,7 +252,7 @@ Namespace Global.Iris.Core
                 Col("generation_key", "INTEGER", refs:="generation"),
                 Col("absent_by_generation", "INTEGER", refs:="generation"),
                 Col("absent_by_coverage", "INTEGER", refs:="coverage_observation")
-            }, {Unico("item_key", "folder_key")}))
+            }, {Indice("item_key", "folder_key")}))
 
             ' §14 I2: pende do ITEM, nunca da encarnação.
             t.Add(New SchemaTable("user_state", {
@@ -236,7 +260,7 @@ Namespace Global.Iris.Core
                 Col("item_key", "INTEGER", obrigatoria:=True, refs:="item", aoExcluir:=DeleteAction.Restrict),
                 Col("triaged", "INTEGER"),
                 Col("ai_summary_ref", "TEXT")
-            }, {Unico("item_key")}))
+            }, {Indice("item_key")}))
 
             ' EVIDÊNCIA DE COEXISTÊNCIA — I8, e não é booleano. Um booleano
             ' afirma "checado" sem dizer onde nem quando, e a §16.1 mediu que
@@ -265,7 +289,7 @@ Namespace Global.Iris.Core
                 Col("generation_key", "INTEGER", refs:="generation"),
                 Col("coexistence_evidence_key", "INTEGER", refs:="coexistence_evidence"),
                 Col("retracted_at", "TEXT")
-            }, Nothing, {Unico("from_item_key"), Unico("to_item_key")},
+            }, Nothing, {Indice("from_item_key"), Indice("to_item_key")},
                {"from_item_key <> to_item_key"}))
 
             ' TENTATIVA — mutável, e é ONDE o checkpoint vive.
@@ -287,7 +311,7 @@ Namespace Global.Iris.Core
                 Col("started_at", "TEXT", obrigatoria:=True),
                 Col("ended_at", "TEXT"),
                 Col("rejection", "TEXT")
-            }, Nothing, {Unico("folder_key", "stage")}))
+            }, Nothing, {Indice("folder_key", "stage")}))
 
             ' As linhas ainda NÃO publicadas. É aqui que vive o conjunto de
             ' chaves vistas — nunca serializado dentro do cursor.
@@ -323,7 +347,7 @@ Namespace Global.Iris.Core
                 Col("has_attachments", "INTEGER", check:="has_attachments IN (0,1)"),
                 Col("is_unread", "INTEGER", check:="is_unread IN (0,1)"),
                 Col("message_class", "TEXT")
-            }, {Unico("attempt_key", "provider_entry_id")}))
+            }, {Indice("attempt_key", "provider_entry_id")}))
 
             ' O resultado PUBLICADO. Imutável.
             t.Add(New SchemaTable("generation", {
@@ -342,7 +366,7 @@ Namespace Global.Iris.Core
                 Col("distinct_keys", "INTEGER", obrigatoria:=True),
                 Col("reconcile_epoch", "INTEGER", obrigatoria:=True),
                 Col("published_at", "TEXT", obrigatoria:=True)
-            }, {Unico("attempt_key")}))
+            }, {Indice("attempt_key")}))
 
             ' O que precisa ser reprocessado depois de crash. Entra no MESMO
             ' commit da publicação: se saísse antes, um crash entre os dois
@@ -365,7 +389,7 @@ Namespace Global.Iris.Core
                     check:="delivery_attempts >= 0"),
                 Col("last_error", "TEXT"),
                 Col("last_attempt_at", "TEXT")
-            }, {Unico("generation_key")}))
+            }, {Indice("generation_key")}))
 
             ' ----------------------------------------------------------
             ' O diario do egress (FASE3 §29.6).
@@ -421,7 +445,7 @@ Namespace Global.Iris.Core
                 Col("http_status", "INTEGER",
                     check:="http_status IS NULL OR " &
                            "(http_status >= 100 AND http_status <= 599)")
-            }, {Unico("seq")}))
+            }, {Indice("seq")}))
 
             Return New CacheSchema(t)
         End Function
