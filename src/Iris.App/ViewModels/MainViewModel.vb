@@ -447,6 +447,18 @@ Namespace Global.Iris.App.ViewModels
             Try
                 Dim r = Await _broker.GetStoresAsync(Threading.CancellationToken.None)
 
+                ' A JANELA FECHOU NO MEIO.
+                '
+                ' Irma direta do defeito que a revisao anterior achou na
+                ' varredura: uma leitura pendurada no broker pode voltar depois
+                ' de o Dispose ter descartado o Acervo, e o Apontar la embaixo
+                ' tocaria um banco fechado.
+                '
+                ' O contador NAO resolve isto: se nenhuma leitura mais nova
+                ' comecou, esta continua sendo "a ultima". Tempo de vida e
+                ' outra pergunta que ordem de chegada.
+                If _disposed Then Return
+
                 ' Chegou tarde: outra leitura ja respondeu, seja de sessao
                 ' mais nova, seja da mesma. Escrever aqui rebaixaria a lista
                 ' corrente para um retrato mais velho.
@@ -454,6 +466,7 @@ Namespace Global.Iris.App.ViewModels
 
                 _stores = If(r IsNot Nothing AndAlso r.Succeeded, r.Value, Nothing)
             Catch ex As Exception
+                If _disposed Then Return
                 If minha <> _broker.SessionEpoch OrElse meuPedido <> _pedidoDeStores Then Return
                 ' Sem stores a varredura recusa por StoreDesconhecido, que diz
                 ' a verdade. Derrubar a abertura por causa disso seria pior.
@@ -461,6 +474,7 @@ Namespace Global.Iris.App.ViewModels
             End Try
 
             ' A pasta ja podia estar selecionada quando a lista chegou.
+            If _disposed Then Return
             Dim pasta = Folders.Selected
             If pasta IsNot Nothing Then
                 Acervo?.Apontar(pasta.Key, pasta.Name, StoreDe(pasta.Key))

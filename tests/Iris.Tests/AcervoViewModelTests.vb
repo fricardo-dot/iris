@@ -155,16 +155,22 @@ Public Class AcervoViewModelTests
                     Semear()
                     vm.Apontar(New FolderKey("entry-1", "store-1"), "Caixa",
                                New StoreInfo() With {.StoreId = "store-1"})
-                    ' A ressalva da 23, e nao "ainda nao foi varrida": esta
-                    ' pasta TEM geracao publicada.
+                    ' CONTROLE POSITIVO: a pasta semeada tem itens de verdade.
+                    '
+                    ' A primeira versao deste teste so olhava a Ressalva, porque
+                    ' semear association parecia caro. Provava que o servico
+                    ' passou a apontar para a sentinela zero -- e NAO provava o
+                    ' "esvazia" do nome, porque Itens ja era 0 antes.
+                    Assert.AreEqual(2, vm.Itens, "controle: a pasta semeada tem itens")
                     StringAssert.Contains(vm.Ressalva, "Acervo parcial",
                                           "controle: a pasta semeada foi varrida")
 
                     vm.Apontar(Nothing, Nothing, Nothing)
 
+                    Assert.AreEqual(0, vm.Itens,
+                        "o acervo continuou contando os itens da pasta anterior")
                     StringAssert.Contains(vm.Ressalva, "ainda não foi varrida",
-                        "o acervo continuou descrevendo a pasta anterior depois " &
-                        "de a selecao sumir")
+                        "e continuou descrevendo ela")
                     Assert.IsFalse(vm.PodeVarrer)
                 End Using
             End Sub)
@@ -231,6 +237,12 @@ Public Class AcervoViewModelTests
                 "INSERT INTO incarnation (incarnation_key, item_key, folder_key, " &
                 "  provider_entry_id, first_seen_generation, last_seen_generation) " &
                 "VALUES (2,2,1,'E-2',1,1)",
+                "INSERT INTO association (association_key, item_key, folder_key, presence, " &
+                "  observability, version, generation_key) " &
+                "VALUES (1,1,1,'presente','observavel',1,1)",
+                "INSERT INTO association (association_key, item_key, folder_key, presence, " &
+                "  observability, version, generation_key) " &
+                "VALUES (2,2,1,'presente','observavel',1,1)",
                 "UPDATE folder SET published_generation_key = 1 WHERE folder_key = 1"} _
 
                 Using cmd = conn.CreateCommand()

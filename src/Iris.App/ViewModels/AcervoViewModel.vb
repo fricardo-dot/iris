@@ -111,7 +111,12 @@ Namespace Global.Iris.App.ViewModels
                                      Optional caminho As String = Nothing) As AcervoViewModel
             motivoDaFalha = Nothing
             Try
-                caminho = If(String.IsNullOrWhiteSpace(caminho), CaminhoPadrao(), caminho)
+                ' GetFullPath: o parametro e String e nada impedia um caminho
+                ' RELATIVO. "cache.db" faria GetDirectoryName devolver vazio, e
+                ' CreateDirectory("") lanca -- o cache "nao abriria" por um
+                ' motivo que nao tem nada a ver com o cache.
+                caminho = IO.Path.GetFullPath(
+                    If(String.IsNullOrWhiteSpace(caminho), CaminhoPadrao(), caminho))
                 Directory.CreateDirectory(Path.GetDirectoryName(caminho))
 
                 Dim falha As OpenFailure = Nothing
