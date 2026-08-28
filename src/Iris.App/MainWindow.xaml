@@ -1066,6 +1066,119 @@
                 </Grid>
             </Grid>
 
+            <!-- ============ Agenda ============
+                 Aparece so quando a pasta selecionada e de CALENDARIO, e por
+                 isso divide a linha 2 com o acervo sem se sobrepor a ele: as
+                 duas condicoes sao mutuamente exclusivas.
+
+                 Foi exatamente uma sobreposicao nesta linha que escondeu a
+                 faixa do acervo por dias: ela e a da IA moravam as duas em
+                 Grid.Row=2, empilhadas. Aqui a exclusao e por CONTEUDO da
+                 pasta, e nao por acaso de layout.
+
+                 A agenda le AO VIVO do Outlook, como a lista, e ao contrario
+                 do acervo. Por isso ela nao tem ressalva de cobertura: nao ha
+                 retrato guardado para ressalvar. O que ela diz e quantos itens
+                 nao conseguiu ler. -->
+            <Border Grid.Row="2"
+                    Visibility="{Binding Agenda.TemPasta, Converter={StaticResource BoolToVis},
+                                         FallbackValue=Collapsed}"
+                    Background="{DynamicResource Brush.Surface.1}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16,8">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="AGENDA"
+                                   Style="{DynamicResource Text.Muted}"
+                                   VerticalAlignment="Center" />
+                        <Button Content="Atualizar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Agenda.AtualizarCommand}"
+                                Margin="12,0,0,0"
+                                ToolTip="Le de novo os proximos dias, ao vivo do Outlook"
+                                AutomationProperties.Name="Atualizar a agenda" />
+                        <TextBlock Text="{Binding Agenda.Resumo}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   Margin="12,0,0,0" VerticalAlignment="Center" />
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="90" Height="3" Margin="12,0,0,0"
+                                     BorderThickness="0"
+                                     Background="{DynamicResource Brush.Surface.3}"
+                                     Foreground="{DynamicResource Brush.Accent}"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding Agenda.Carregando,
+                                                  Converter={StaticResource BoolToVis},
+                                                  FallbackValue=Collapsed}"
+                                     AutomationProperties.Name="Lendo a agenda" />
+                    </StackPanel>
+
+                    <ItemsControl ItemsSource="{Binding Agenda.Compromissos}"
+                                  MaxHeight="180">
+                        <ItemsControl.Template>
+                            <ControlTemplate TargetType="ItemsControl">
+                                <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                    <ItemsPresenter />
+                                </ScrollViewer>
+                            </ControlTemplate>
+                        </ItemsControl.Template>
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <Grid Margin="0,0,0,4">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="150" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="{Binding Quando}"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                                               VerticalAlignment="Top" />
+                                    <StackPanel Grid.Column="1">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="{Binding Assunto}"
+                                                       FontSize="12"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       Foreground="{DynamicResource Brush.Text.Primary}" />
+                                            <!-- Ocorrencia de serie nao e compromisso
+                                                 avulso: mexer nela mexe na serie, e
+                                                 quem clica precisa saber antes. -->
+                                            <TextBlock Text=" · série"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                       Visibility="{Binding EhSerie,
+                                                                    Converter={StaticResource BoolToVis},
+                                                                    FallbackValue=Collapsed}" />
+                                            <!-- A unica informacao da agenda que
+                                                 PEDE acao, entao e a destacada. -->
+                                            <TextBlock Text=" · não respondido"
+                                                       FontSize="11"
+                                                       Foreground="{DynamicResource Brush.Error}"
+                                                       Visibility="{Binding Pendente,
+                                                                    Converter={StaticResource BoolToVis},
+                                                                    FallbackValue=Collapsed}" />
+                                        </StackPanel>
+                                        <TextBlock Text="{Binding Local}"
+                                                   FontSize="11"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                    </StackPanel>
+                                </Grid>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="{Binding Agenda.Erro}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource Brush.Error}"
+                               Visibility="{Binding Agenda.TemErro,
+                                            Converter={StaticResource BoolToVis},
+                                            FallbackValue=Collapsed}"
+                               AutomationProperties.Name="Falha ao ler a agenda" />
+                </StackPanel>
+            </Border>
+
             <!-- ============ Acervo ============
                  O que a varredura ja guardou no cache, e a RESSALVA que ele
                  obriga a mostrar junto.
@@ -1089,8 +1202,14 @@
 
                  Acervo nulo (cache que nao abriu) colapsa pelo conversor, e a
                  outra borda desta mesma linha assume. -->
+            <!-- E O ACERVO SOME QUANDO A AGENDA APARECE.
+
+                 As duas dividem a linha 2. Sem esta condicao elas se
+                 empilhariam, e a de cima cobriria a de baixo, que foi
+                 literalmente o defeito que escondeu a faixa do acervo por
+                 dias, quando ela e a da IA moravam as duas em Grid.Row=2. -->
             <Border Grid.Row="2"
-                    Visibility="{Binding Acervo, Converter={StaticResource NullToVis},
+                    Visibility="{Binding MostrarAcervo, Converter={StaticResource BoolToVis},
                                          FallbackValue=Collapsed}"
                     Background="{DynamicResource Brush.Surface.1}"
                     BorderBrush="{DynamicResource Brush.Border.Subtle}"

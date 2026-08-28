@@ -481,3 +481,44 @@ aparência de medida a um acaso.
 
 **O que a medição não mediu:** se dá para **criar**. Saber isso exige criar, e
 criar é mutação na caixa do dono.
+
+### 28/08 — Fase 6: o calendário, lido e na janela
+
+A única das três fases restantes com substância **e** que é só leitura.
+
+**A leitura.** `CalendarReading` + `CalendarFilter` + `GetAppointmentsAsync`,
+por **janela de datas** e não por página: ocorrência de série não existe até ser
+expandida, e expandir sem data-fim é infinito.
+
+**O controle negativo é o achado do dia.** A ordem exigida pelo OOM é
+`Sort → IncludeRecurrences → Restrict`. Invertendo para `Restrict` antes de
+`IncludeRecurrences`, a leitura devolveu **65 compromissos fora da janela
+pedida** — ocorrências de *REUNIÃO PERIÓDICA DE P&D* de **janeiro** numa janela
+de ±30 dias em torno de agosto.
+
+Eu esperava que a ordem errada *perdesse* ocorrências. Ela faz a expansão
+**ignorar o filtro**: uma agenda com sete meses de atraso, sem erro em lugar
+nenhum. E dos cinco testes do arquivo, **só um** cai nesse controle — está
+escrito assim.
+
+**Cinco testes contra o Outlook real**, somente leitura, mais um puro sobre o
+formato do filtro. Nada cria, move, apaga ou responde convite.
+
+**Na janela.** `AgendaViewModel` + faixa, aparecendo só quando a pasta
+selecionada é de calendário. E aí apareceu a armadilha de novo: a agenda ocuparia
+a **mesma linha 2** do acervo — que é exatamente a configuração que escondeu a
+faixa do acervo por dias. Desta vez a exclusão é **declarada**:
+`MostrarAcervo = Acervo IsNot Nothing AndAlso Not Agenda.TemPasta`, uma condição
+num lugar só, com teste e controle negativo.
+
+**E o teste antigo pegou a mudança sozinho.** `O_acervo_e_a_IA_nao_dividem_a_LINHA`
+falhou quando troquei o binding do acervo — ele procura pelo binding exato, e foi
+escrito para isso.
+
+**Outro dado medido e descartado, mesmo padrão do `message_class`:**
+`FolderNodeViewModel` recebia `ContentKind` no `FolderInfo` e jogava fora. Foi a
+agenda que precisou dele — apontá-la para a Caixa de Entrada mostraria
+"0 compromissos" sobre uma pasta que não tem compromisso por definição, e zero
+por engano é indistinguível de zero por medida.
+
+Suíte: **846**.

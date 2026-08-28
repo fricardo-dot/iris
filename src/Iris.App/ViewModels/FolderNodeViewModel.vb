@@ -45,6 +45,7 @@ Namespace Global.Iris.App.ViewModels
 
             Key = info.Key
             Name = info.Name
+            ContentKind = info.ContentKind
             _unreadCount = info.UnreadCount
             _itemCount = info.ItemCount
             _hasUnrealizedChildren = info.HasChildren
@@ -62,6 +63,21 @@ Namespace Global.Iris.App.ViewModels
 
         Public ReadOnly Property Key As FolderKey
         Public ReadOnly Property Name As String
+
+        ''' <summary>
+        ''' <b>O que a pasta guarda</b> — correio, calendário, contatos, tarefas.
+        '''
+        ''' O broker já media isto e o nó jogava fora, exatamente como o
+        ''' <c>MessageClass</c> era medido e substituído por constante na
+        ''' varredura. Dado que se mede e se descarta é dado que alguém vai
+        ''' acabar reinventando pior.
+        '''
+        ''' Quem precisou dele foi a agenda: apontá-la para a Caixa de Entrada
+        ''' faria a tela mostrar "0 compromissos" sobre uma pasta que não tem
+        ''' compromisso por definição — e zero por engano é indistinguível de
+        ''' zero por medida.
+        ''' </summary>
+        Public ReadOnly Property ContentKind As FolderContentKind
         Public ReadOnly Property Children As New ObservableCollection(Of FolderNodeViewModel)()
 
         ''' <summary>

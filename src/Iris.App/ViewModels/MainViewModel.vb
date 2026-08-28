@@ -79,6 +79,36 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property Busca As BuscaViewModel
 
         ''' <summary>
+        ''' <b>A agenda dos próximos dias.</b>
+        '''
+        ''' Ela aparece quando o usuário seleciona uma pasta de <b>calendário</b>
+        ''' na árvore, e some quando ele sai dela. Não é uma tela paralela: é o
+        ''' mesmo lugar da janela mudando de assunto conforme o que está
+        ''' selecionado, que é como a lista de mensagens já se comporta.
+        ''' </summary>
+        Public ReadOnly Property Agenda As AgendaViewModel
+
+        ''' <summary>
+        ''' <b>O acervo e a agenda dividem a mesma linha da janela, e nunca
+        ''' aparecem juntos.</b>
+        '''
+        ''' Isto existe como propriedade, e não como dois conversores torcendo
+        ''' para não coincidir, porque a sobreposição nesta exata linha já
+        ''' aconteceu: a faixa do acervo e a da IA moravam as duas em
+        ''' <c>Grid.Row="2"</c>, empilhadas, e a de cima cobria a de baixo. O
+        ''' acervo ficou invisível por dias, e o diagnóstico foi "não tem faixa
+        ''' acervo" — não era dado faltando, era uma linha de grade faltando.
+        '''
+        ''' Aqui a exclusão é uma condição declarada num lugar só, que dá para
+        ''' ler e para testar.
+        ''' </summary>
+        Public ReadOnly Property MostrarAcervo As Boolean
+            Get
+                Return Acervo IsNot Nothing AndAlso Not Agenda.TemPasta
+            End Get
+        End Property
+
+        ''' <summary>
         ''' A IA — que hoje serve para dizer que <b>não está habilitada</b>.
         '''
         ''' A composição usa <c>ActivationRecord.DaProducao</c>, que é
@@ -141,6 +171,8 @@ Namespace Global.Iris.App.ViewModels
             If Acervo IsNot Nothing Then
                 Busca = New BuscaViewModel(AddressOf Acervo.Procurar)
             End If
+
+            Agenda = New AgendaViewModel(broker)
 
             Assistente = MontarAssistente(ui)
 
@@ -433,8 +465,25 @@ Namespace Global.Iris.App.ViewModels
                 Messages.Clear()
                 Detail.Clear()
                 Acervo?.Apontar(Nothing, Nothing, Nothing)
+                Agenda?.Apontar(Nothing)
+                OnPropertyChanged(NameOf(MostrarAcervo))
                 Return
             End If
+
+            ' A AGENDA SEGUE A PASTA, e so aparece em pasta de CALENDARIO.
+            '
+            ' Apontar a agenda para a Caixa de Entrada faria a leitura pedir
+            ' compromissos a uma pasta de correio -- o Outlook devolveria vazio
+            ' ou lixo, e a tela mostraria "0 compromissos" sobre uma pasta que
+            ' nao tem compromisso nenhum por definicao. Zero por engano e
+            ' indistinguivel de zero por medida.
+            If pasta.ContentKind = FolderContentKind.Calendar Then
+                Agenda?.Apontar(pasta.Key)
+                Connection.Observe(Agenda.CarregarAsync(), "agenda.load")
+            Else
+                Agenda?.Apontar(Nothing)
+            End If
+            OnPropertyChanged(NameOf(MostrarAcervo))
 
             ' O ACERVO SEGUE A PASTA.
             '
@@ -798,6 +847,7 @@ Namespace Global.Iris.App.ViewModels
             Folders.Clear()
             Messages.Clear()
 
+            Agenda.Dispose()
             _watcher.Dispose()
             Composer.Dispose()
             Detail.Dispose()

@@ -37,6 +37,7 @@ Public Class BindingsDaJanelaTests
         Return New Dictionary(Of String, Type) From {
             {"Acervo.", GetType(AcervoViewModel)},
             {"Busca.", GetType(BuscaViewModel)},
+            {"Agenda.", GetType(AgendaViewModel)},
             {"Connection.", GetType(ConnectionViewModel)},
             {"Composer.", GetType(ComposerViewModel)},
             {"Detail.", GetType(MessageDetailViewModel)},
@@ -157,13 +158,54 @@ Public Class BindingsDaJanelaTests
 
         Dim doAcervo = Text.RegularExpressions.Regex.Match(
             xaml, "<Border Grid\.Row=""(\d+)""\s*?
-\s*Visibility=""\{Binding Acervo,")
+\s*Visibility=""\{Binding MostrarAcervo,")
         Assert.IsTrue(doAcervo.Success, "nao achei a faixa do acervo na janela")
 
         Assert.AreNotEqual(doAcervo.Groups(1).Value, daIa.Groups(1).Value,
             "as duas faixas voltaram para a mesma linha da grade, e a de baixo " &
             "cobre a de cima -- foi assim que a faixa do acervo passou a fase " &
             "inteira sem nunca ter sido vista")
+    End Sub
+
+
+    ''' <summary>
+    ''' <b>A agenda e o acervo dividem a linha 2, e por isso a exclusao tem
+    ''' de ser DECLARADA.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Quando a Fase 6 entrou, a agenda passou a ocupar a mesma linha do
+    ''' acervo. E deliberado: sao o mesmo lugar da janela mudando de assunto
+    ''' conforme a pasta selecionada. E e exatamente a situacao que produziu
+    ''' o defeito de 2026 -- duas bordas na mesma linha, cada uma com sua
+    ''' condicao, esperando nao coincidir.
+    '''
+    ''' A diferenca e que agora a exclusao nao e esperanca: o acervo depende
+    ''' de <c>MostrarAcervo</c>, que e <c>Acervo IsNot Nothing AndAlso Not
+    ''' Agenda.TemPasta</c>. Uma condicao, num lugar, que da para ler.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_agenda_e_o_acervo_se_EXCLUEM_na_mesma_linha()
+        Dim xaml = LerXaml()
+
+        Dim daAgenda = Text.RegularExpressions.Regex.Match(
+            xaml, "<Border Grid\.Row=""(\d+)""\s*
+\s*Visibility=""\{Binding Agenda\.TemPasta,")
+        Assert.IsTrue(daAgenda.Success,
+            "nao achei a faixa da agenda, ou ela deixou de depender de Agenda.TemPasta")
+
+        Dim doAcervo = Text.RegularExpressions.Regex.Match(
+            xaml, "<Border Grid\.Row=""(\d+)""\s*
+\s*Visibility=""\{Binding MostrarAcervo,")
+        Assert.IsTrue(doAcervo.Success,
+            "a faixa do acervo voltou a depender de algo que nao exclui a agenda")
+
+        Assert.AreEqual(daAgenda.Groups(1).Value, doAcervo.Groups(1).Value,
+            "controle: as duas TEM de estar na mesma linha. Em linhas diferentes, " &
+            "este teste deixa de proteger o que ele diz proteger")
+
+        ' E a exclusao existe do lado do ViewModel, e nao so no XAML.
+        Assert.IsNotNull(GetType(MainViewModel).GetProperty("MostrarAcervo"),
+            "MostrarAcervo sumiu do MainViewModel, e a exclusao virou coincidencia")
     End Sub
 
     ''' <summary>
