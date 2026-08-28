@@ -53,6 +53,15 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _db As CacheDatabase
         Private ReadOnly _servico As AcervoService
         Private ReadOnly _dreno As PublicationDrain
+
+        ''' <summary>
+        ''' O acervo de todas as pastas, para a busca. Alimentado pelo mesmo
+        ''' dreno que alimenta o painel — ver o construtor.
+        ''' </summary>
+        Private ReadOnly _todasAsPastas As AcervoDeTodasAsPastas
+
+        ''' <summary>Os dois consumidores, como um só, para o dreno.</summary>
+        Private ReadOnly _consumidores As IPublicationConsumer
         Private ReadOnly _broker As IOutlookBroker
         ''' <summary>O arquivo do cache — a varredura abre o dela por aqui.</summary>
         Private ReadOnly _caminho As String
@@ -167,6 +176,15 @@ Namespace Global.Iris.App.ViewModels
             _broker = broker
             _servico = New AcervoService(db, folderKey)
             _dreno = New PublicationDrain(db)
+
+            ' O SEGUNDO CONSUMIDOR, e o dreno alimenta OS DOIS.
+            '
+            ' A busca precisa de todas as pastas; o painel mostra uma. Dois
+            ' drenos seriam pior: cada um marcaria a geracao como entregue por
+            ' conta propria, e o segundo nunca veria o que o primeiro drenou.
+            ' Um dreno, um consumidor composto, e o fan-out la dentro.
+            _todasAsPastas = New AcervoDeTodasAsPastas(db)
+            _consumidores = New ConsumidorComposto(_servico, _todasAsPastas)
             Diario = New SqliteDisclosureJournal(db)
 
             AddHandler _servico.Mudou, AddressOf AoMudar
@@ -283,7 +301,7 @@ Namespace Global.Iris.App.ViewModels
         Private Sub Drenar()
             If _disposed Then Return
             Try
-                _dreno.Drenar(_servico)
+                _dreno.Drenar(_consumidores)
                 Travado = Nothing
             Catch ex As Exception
                 ' Consumidor que falha trava a cabeca da fila DE PROPOSITO —
@@ -504,6 +522,12 @@ Namespace Global.Iris.App.ViewModels
         ''' busca não tem estado que sobreviva à pergunta, e guardar o último
         ''' resultado aqui criaria uma segunda cópia do acervo esperando ficar
         ''' velha.
+        '''
+        ''' <b>E ela lê o acervo DRENADO, não o banco.</b> Até 28/08/2026 à
+        ''' tarde a busca abria o <c>ManifestReader</c> por conta própria, que é
+        ''' o contorno da §26.2 — ela podia mostrar uma geração que o painel ao
+        ''' lado ainda não tinha recebido, dois lugares da mesma janela
+        ''' discordando. Agora as duas leem o mesmo retrato.
         ''' </summary>
         Public Function Procurar(termo As String) As Iris.Integration.ResultadoDaBusca
             If _disposed Then
@@ -512,7 +536,7 @@ Namespace Global.Iris.App.ViewModels
                 ' faria o chamador achar que não achou nada.
                 Throw New ObjectDisposedException(NameOf(AcervoViewModel))
             End If
-            Return New Iris.Integration.BuscaNoAcervo(_db).Procurar(termo)
+            Return New Iris.Integration.BuscaNoAcervo(_todasAsPastas, _dreno).Procurar(termo)
         End Function
 
         Public Sub Dispose() Implements IDisposable.Dispose

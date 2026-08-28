@@ -67,15 +67,22 @@ Namespace Global.Iris.Integration
     ''' </summary>
     Public NotInheritable Class BuscaNoAcervo
 
-        Private ReadOnly _db As CacheDatabase
-        Private ReadOnly _conn As SqliteConnection
+        Private ReadOnly _acervo As AcervoDeTodasAsPastas
         Private ReadOnly _dreno As PublicationDrain
 
-        Public Sub New(db As CacheDatabase)
-            If db Is Nothing Then Throw New ArgumentNullException(NameOf(db))
-            _db = db
-            _conn = db.Connection
-            _dreno = New PublicationDrain(db)
+        ''' <summary>
+        ''' A busca recebe o acervo <b>já drenado</b>, e não o banco.
+        '''
+        ''' Foi o conserto de 28/08/2026, à tarde: antes ela abria o
+        ''' <c>ManifestReader</c> por conta própria a cada pergunta, o que é o
+        ''' contorno que a §26.2 proíbe. Agora a única fonte é o consumidor que
+        ''' o dreno alimenta — se a entrega travar, a busca congela junto com o
+        ''' painel, e diz isso.
+        ''' </summary>
+        Public Sub New(acervo As AcervoDeTodasAsPastas, dreno As PublicationDrain)
+            If acervo Is Nothing Then Throw New ArgumentNullException(NameOf(acervo))
+            _acervo = acervo
+            _dreno = dreno
         End Sub
 
         ''' <summary>
@@ -91,8 +98,8 @@ Namespace Global.Iris.Integration
             Dim semAcervo As New List(Of PastaConsultada)()
             Dim achados As New List(Of AchadoDaBusca)()
 
-            For Each pasta In Pastas()
-                Dim manifesto = New ManifestReader(_db).Ler(pasta.Chave)
+            For Each pasta In _acervo.Pastas
+                Dim manifesto = pasta.Manifesto
 
                 Dim descrita As New PastaConsultada(pasta.Chave, pasta.Nome,
                                                     manifesto.GenerationKey,
@@ -147,8 +154,8 @@ Namespace Global.Iris.Integration
             Dim pendentes As Integer
             Dim travado As Long?
             Try
-                pendentes = _dreno.Pendentes().Count
-                travado = _dreno.TravadoEm()
+                pendentes = If(_dreno Is Nothing, 0, _dreno.Pendentes().Count)
+                travado = If(_dreno Is Nothing, CType(Nothing, Long?), _dreno.TravadoEm())
             Catch
                 ' Banco travado nao pode derrubar a busca: o que ela ja leu
                 ' continua valendo. O que nao vale e AFIRMAR que a fila esta
@@ -157,26 +164,6 @@ Namespace Global.Iris.Integration
             End Try
 
             Return New ResultadoDaBusca(t, achados, consultadas, semAcervo, pendentes, travado)
-        End Function
-
-        Private Structure PastaBruta
-            Public Chave As Long
-            Public Nome As String
-        End Structure
-
-        Private Function Pastas() As List(Of PastaBruta)
-            Dim r As New List(Of PastaBruta)()
-            Using cmd = _conn.CreateCommand()
-                cmd.CommandText = "SELECT folder_key, name FROM folder ORDER BY name"
-                Using rd = cmd.ExecuteReader()
-                    While rd.Read()
-                        r.Add(New PastaBruta With {
-                            .Chave = rd.GetInt64(0),
-                            .Nome = If(rd.IsDBNull(1), "", rd.GetString(1))})
-                    End While
-                End Using
-            End Using
-            Return r
         End Function
 
     End Class

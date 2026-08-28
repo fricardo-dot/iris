@@ -661,3 +661,28 @@ abre os internos para a suíte"*. **O projeto abre** — eu tinha olhado a lista
 separação continua certa; o motivo que eu dei não era.
 
 Suíte: **866**.
+
+### 28/08 — a busca passou a PASSAR pelo dreno
+
+Terceira dívida. Era desenho e não conserto, e o desenho foi feito.
+
+`AcervoDeTodasAsPastas` é um segundo `IPublicationConsumer`: guarda o manifesto
+de todas as pastas e só o refaz quando o dreno entrega. `ConsumidorComposto` faz
+uma entrega alimentar os dois — dois drenos seriam pior, porque cada um marcaria
+a geração como entregue por conta própria e o segundo nunca veria o que o
+primeiro drenou.
+
+**O teste antigo cristalizava o contorno.** Ele cobrava que a busca *avisasse*
+sobre a publicação pendente — e passava porque a busca **via** a geração nova e
+ao mesmo tempo dizia que ela não tinha chegado. Agora o teste prova o oposto:
+publicou e não drenou ⇒ **a busca não vê**, igual ao painel ao lado. Ficar para
+trás junto é honesto; ficar na frente em silêncio não era.
+
+Controle negativo: reintroduzindo a releitura por pergunta, os dois testes caem
+com a mensagem exata do defeito.
+
+**E ficou mais rápida:** 22,7 ms → **6,2 ms** sobre as mesmas 1.127 mensagens
+reais, mesmos 305 achados. O manifesto passou a ser lido uma vez em vez de a
+cada pergunta — o contorno era mais lento *e* mais errado.
+
+Suíte: **868**.

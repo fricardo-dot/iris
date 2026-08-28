@@ -104,6 +104,20 @@ Public Class BuscaNoAcervoTests
         Return New ResolvedorDoAcervo(db).Pasta("store-1", entryId, nome)
     End Function
 
+    ''' <summary>
+    ''' A busca como a producao a monta: sobre o acervo DRENADO.
+    '''
+    ''' Ate 28/08/2026 a tarde os testes construiam a busca com o banco, e
+    ''' ela abria o ManifestReader sozinha -- o contorno da §26.2. Passar
+    ''' pelo dreno aqui e o que faz o teste exercitar o caminho real.
+    ''' </summary>
+    Private Shared Function Buscar(db As CacheDatabase) As BuscaNoAcervo
+        Dim todas As New AcervoDeTodasAsPastas(db)
+        Dim dreno As New PublicationDrain(db)
+        dreno.Drenar(todas)
+        Return New BuscaNoAcervo(todas, dreno)
+    End Function
+
     Private Shared ReadOnly Caixa As (String, String)() = {
         ("APROVAÇÃO AUDACCI: Cart. Brainmetyl 5ml", "Regulatório - Kate"),
         ("RES: Solicitação de informações sobre regularização", "Regulatório - Kate"),
@@ -127,7 +141,7 @@ Public Class BuscaNoAcervoTests
         Using db = Abrir()
             Semear(db, "Caixa de Entrada", "entrada", Caixa)
 
-            Dim r = New BuscaNoAcervo(db).Procurar("contrato")
+            Dim r = Buscar(db).Procurar("contrato")
 
             Assert.AreEqual(1, r.Achados.Count, "controle: tinha de achar o contrato")
             Assert.AreEqual("Contrato assinado", r.Achados(0).Item.Subject)
@@ -147,7 +161,7 @@ Public Class BuscaNoAcervoTests
     Public Sub Acha_sem_acento_e_sem_caixa()
         Using db = Abrir()
             Semear(db, "Caixa de Entrada", "entrada", Caixa)
-            Dim busca As New BuscaNoAcervo(db)
+            Dim busca = Buscar(db)
 
             Assert.AreEqual(2, busca.Procurar("REGULATORIO").Achados.Count,
                 "maiuscula sem acento tinha de achar 'Regulatório - Kate'")
@@ -175,7 +189,7 @@ Public Class BuscaNoAcervoTests
     Public Sub Duas_palavras_sao_conjuncao_e_atravessam_os_campos()
         Using db = Abrir()
             Semear(db, "Caixa de Entrada", "entrada", Caixa)
-            Dim busca As New BuscaNoAcervo(db)
+            Dim busca = Buscar(db)
 
             Assert.AreEqual(1, busca.Procurar("amostras aquaba").Achados.Count)
             Assert.AreEqual(0, busca.Procurar("amostras contrato").Achados.Count,
@@ -196,7 +210,7 @@ Public Class BuscaNoAcervoTests
         Using db = Abrir()
             Semear(db, "Caixa de Entrada", "entrada", Caixa)
 
-            Dim r = New BuscaNoAcervo(db).Procurar("palavraquenaoexiste")
+            Dim r = Buscar(db).Procurar("palavraquenaoexiste")
 
             Assert.AreEqual(0, r.Achados.Count)
             StringAssert.Contains(r.Ressalva, "Nada no acervo observado")
@@ -232,7 +246,7 @@ Public Class BuscaNoAcervoTests
             Semear(db, "Caixa de Entrada", "entrada", Caixa)
             SoRegistrar(db, "Itens Enviados", "enviados")
 
-            Dim r = New BuscaNoAcervo(db).Procurar("contrato")
+            Dim r = Buscar(db).Procurar("contrato")
 
             Assert.AreEqual(1, r.Consultadas.Count, "so a varrida foi consultada")
             Assert.AreEqual("Caixa de Entrada", r.Consultadas(0).Nome)
@@ -257,7 +271,7 @@ Public Class BuscaNoAcervoTests
             Semear(db, "Itens Enviados", "enviados",
                    {("RES: Contrato assinado", "Eu mesmo")})
 
-            Dim r = New BuscaNoAcervo(db).Procurar("contrato")
+            Dim r = Buscar(db).Procurar("contrato")
 
             Assert.AreEqual(2, r.Achados.Count)
             CollectionAssert.AreEquivalent(
@@ -277,7 +291,7 @@ Public Class BuscaNoAcervoTests
     Public Sub Termo_vazio_nao_devolve_nada()
         Using db = Abrir()
             Semear(db, "Caixa de Entrada", "entrada", Caixa)
-            Dim busca As New BuscaNoAcervo(db)
+            Dim busca = Buscar(db)
 
             For Each vazio In {"", "   ", Nothing}
                 Dim r = busca.Procurar(vazio)
@@ -297,7 +311,7 @@ Public Class BuscaNoAcervoTests
         Using db = Abrir()
             SoRegistrar(db, "Caixa de Entrada", "entrada")
 
-            Dim r = New BuscaNoAcervo(db).Procurar("qualquer coisa")
+            Dim r = Buscar(db).Procurar("qualquer coisa")
 
             Assert.AreEqual(0, r.Achados.Count)
             Assert.AreEqual(0, r.Consultadas.Count)
@@ -306,38 +320,147 @@ Public Class BuscaNoAcervoTests
     End Sub
 
     ''' <summary>
-    ''' <b>Publicação não entregue aparece na ressalva.</b>
+    ''' <b>A BUSCA NÃO ENXERGA O QUE O DRENO AINDA NÃO ENTREGOU.</b>
     '''
-    ''' É a §26.2 na forma que a busca comporta. O <c>AcervoService</c> é de
-    ''' uma pasta só, então uma busca entre pastas não cabe nele; o que ela
-    ''' pode fazer é contar a fila e dizer. Sem isso, o dreno travado sumiria
-    ''' atrás de uma lista que parece completa.
+    ''' ------------------------------------------------------------------
+    ''' <b>ESTE TESTE PROVAVA O CONTRÁRIO ATÉ 28/08/2026, À TARDE</b>
+    '''
+    ''' A versão anterior cobrava que a busca <i>avisasse</i> sobre a
+    ''' publicação pendente — e passava porque a busca lia o
+    ''' <c>ManifestReader</c> por conta própria. Ou seja: ela <b>via</b> a
+    ''' geração nova e ao mesmo tempo dizia que a geração nova não tinha
+    ''' chegado.
+    '''
+    ''' A revisão externa chamou isso pelo nome: o teste <b>cristalizava o
+    ''' contorno</b> em vez de provar convergência. Consultar o estado do dreno
+    ''' não é passar por ele.
+    '''
+    ''' Agora a busca lê o <see cref="AcervoDeTodasAsPastas"/>, que só muda
+    ''' quando o dreno entrega. Então o que este teste prova é o oposto do que
+    ''' provava: <b>publicou e não drenou ⇒ a busca não vê</b>, e o painel ao
+    ''' lado também não. Ficar para trás junto é honesto; ficar na frente em
+    ''' silêncio não era.
     ''' </summary>
     <TestMethod>
-    Public Sub Publicacao_nao_entregue_aparece_na_ressalva()
+    Public Sub A_busca_NAO_ve_geracao_que_o_dreno_nao_entregou()
         Using db = Abrir()
             Dim chave = Semear(db, "Caixa de Entrada", "entrada", Caixa)
 
-            ' Uma segunda varredura publica de novo e NINGUEM drena.
+            ' A busca e montada AGORA, com o acervo ja drenado.
+            Dim todas As New AcervoDeTodasAsPastas(db)
+            Dim dreno As New PublicationDrain(db)
+            dreno.Drenar(todas)
+            Dim busca As New BuscaNoAcervo(todas, dreno)
+
+            Assert.AreEqual(1, busca.Procurar("contrato").Achados.Count,
+                "controle: a busca acha o que ja foi drenado")
+
+            ' Uma segunda varredura publica UMA linha nova, e NINGUEM drena.
             Dim resolvedor As New ResolvedorDoAcervo(db)
             Dim amb = resolvedor.Ambiente(Impressao())
             Dim universo As New SweepUniverse("store-1", "entrada", "f", Nothing, 1, "amb-1")
             Dim fonte As New FonteDeLinhas(universo, {New SourceRow With {
-                .Key = "entrada-0", .Subject = "Contrato assinado",
+                .Key = "entrada-9", .Subject = "Aditivo contratual novissimo",
                 .SenderName = "Caroline Abreu",
-                .ReceivedAt = New DateTimeOffset(2026, 8, 20, 9, 0, 0, TimeSpan.Zero).ToString("o"),
+                .ReceivedAt = New DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero).ToString("o"),
                 .MessageClass = "IPM.Note"}})
             Dim r2 = New SweepRunner(fonte, New SqliteSweepSink(db, chave, amb.Chave), 50).
                      Executar(universo, 0, 2, EnvironmentPolicy.Capacidades(Impressao()),
                               CancellationToken.None)
             Assert.IsTrue(r2.Publicou, $"controle: a segunda varredura tinha de publicar. {r2.Motivo}")
 
-            Dim r = New BuscaNoAcervo(db).Procurar("contrato")
+            Dim r = busca.Procurar("novissimo")
 
+            ' O CONSERTO, EM UMA LINHA.
+            Assert.AreEqual(0, r.Achados.Count,
+                "a busca enxergou uma geracao que o dreno ainda nao entregou -- " &
+                "e o painel do acervo ao lado nao enxerga")
+
+            ' E ela AVISA, que e o outro lado do mesmo contrato.
             Assert.IsTrue(r.PublicacoesPendentes > 0,
-                $"controle: tinha de haver publicacao pendente, achei {r.PublicacoesPendentes}")
-            StringAssert.Contains(r.Ressalva, "não foram entregues")
+                $"tinha de haver entrega pendente, achei {r.PublicacoesPendentes}")
+            StringAssert.Contains(r.Ressalva, "painel do acervo")
         End Using
     End Sub
+
+    ''' <summary>
+    ''' <b>E depois de drenar, ela vê.</b>
+    '''
+    ''' O par do teste acima, e sem ele o outro passaria numa busca que
+    ''' simplesmente nunca acha nada novo. É o mesmo controle positivo que o
+    ''' resto deste arquivo tem, aplicado à convergência.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Depois_de_drenar_a_busca_VE()
+        Using db = Abrir()
+            Dim chave = Semear(db, "Caixa de Entrada", "entrada", Caixa)
+
+            Dim todas As New AcervoDeTodasAsPastas(db)
+            Dim dreno As New PublicationDrain(db)
+            dreno.Drenar(todas)
+            Dim busca As New BuscaNoAcervo(todas, dreno)
+
+            Dim resolvedor As New ResolvedorDoAcervo(db)
+            Dim amb = resolvedor.Ambiente(Impressao())
+            Dim universo As New SweepUniverse("store-1", "entrada", "f", Nothing, 1, "amb-1")
+            Dim fonte As New FonteDeLinhas(universo, {New SourceRow With {
+                .Key = "entrada-9", .Subject = "Aditivo contratual novissimo",
+                .SenderName = "Caroline Abreu",
+                .ReceivedAt = New DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero).ToString("o"),
+                .MessageClass = "IPM.Note"}})
+            Dim r2 = New SweepRunner(fonte, New SqliteSweepSink(db, chave, amb.Chave), 50).
+                     Executar(universo, 0, 2, EnvironmentPolicy.Capacidades(Impressao()),
+                              CancellationToken.None)
+            Assert.IsTrue(r2.Publicou, "controle: publicou")
+            Assert.AreEqual(0, busca.Procurar("novissimo").Achados.Count, "controle: ainda nao drenou")
+
+            dreno.Drenar(todas)
+
+            Assert.AreEqual(1, busca.Procurar("novissimo").Achados.Count,
+                "depois do dreno a busca tinha de enxergar a geracao nova")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>O consumidor composto entrega aos dois, e a falha de um trava.</b>
+    '''
+    ''' O <c>Drenar</c> entrega a UM consumidor, e agora há dois interessados.
+    ''' Dois drenos seriam pior: cada um marcaria a geração como entregue por
+    ''' conta própria, e o segundo nunca veria o que o primeiro drenou.
+    '''
+    ''' E se um falhar, a exceção tem de subir — a cabeça da fila trava de
+    ''' propósito. Engolir a falha de um para agradar o outro marcaria a
+    ''' geração como entregue a quem não a recebeu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_consumidor_composto_entrega_aos_dois_e_a_falha_SOBE()
+        Dim a As New ContadorDeEntregas()
+        Dim b As New ContadorDeEntregas()
+
+        Dim composto As New ConsumidorComposto(a, b)
+        composto.Receber(7)
+
+        Assert.AreEqual(1, a.Recebidas, "o primeiro nao recebeu")
+        Assert.AreEqual(1, b.Recebidas, "o segundo nao recebeu")
+
+        b.Explodir = True
+        Assert.ThrowsException(Of InvalidOperationException)(
+            Sub() composto.Receber(8),
+            "a falha de um consumidor foi engolida, e a geracao seria marcada " &
+            "como entregue a quem nao a recebeu")
+    End Sub
+
+    ''' <summary>Consumidor de teste que conta e, se pedirem, explode.</summary>
+    Private NotInheritable Class ContadorDeEntregas
+        Implements IPublicationConsumer
+
+        Friend Recebidas As Integer
+        Friend Property Explodir As Boolean
+
+        Public Sub Receber(geracao As Long) Implements IPublicationConsumer.Receber
+            If Explodir Then Throw New InvalidOperationException("consumidor falhou")
+            Recebidas += 1
+        End Sub
+    End Class
 
 End Class

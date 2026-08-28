@@ -616,10 +616,13 @@ que este ESCOPO carregava.
   e data. Os números da varredura e do egress continuam vindo do cache do dono,
   que não está no repositório. Ou se cria um caminho para reproduzi-los, ou se
   declara que são evidência operacional.
-- **A busca contorna o `PublicationDrain`.** Ela consulta o estado da fila, e
-  consultar não é passar. O `AcervoService` é de uma pasta, e uma busca entre
-  pastas não cabe nesse formato — encaixá-la pede um consumidor multi-pasta, que
-  é desenho e não conserto.
+- ~~A busca contorna o `PublicationDrain`.~~ **Fechada em 28/08/2026, à tarde.**
+  Era desenho e não conserto, e o desenho foi feito: `AcervoDeTodasAsPastas` é um
+  segundo `IPublicationConsumer`, e `ConsumidorComposto` faz o dreno alimentar os
+  dois com **uma** entrega. A busca deixou de abrir o `ManifestReader` sozinha.
+  Efeito colateral medido: a busca ficou **quase quatro vezes mais rápida** —
+  22,7 ms → 6,2 ms —, porque o manifesto passou a ser lido uma vez em vez de a
+  cada pergunta.
 - **Valores fabricados na paginação** — *medido, e a decisão está tomada.*
   `tools/medir-nulos-da-table.ps1` contou **zero nulos nas oito colunas, em
   1.109 linhas** da Caixa de Entrada. O defeito existe no contrato e não se

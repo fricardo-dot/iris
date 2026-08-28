@@ -263,8 +263,15 @@ Namespace Global.Iris.CrashHarness
                     Return 1
                 End If
 
+                ' A busca le o acervo DRENADO, e nao o banco -- e no harness
+                ' o dreno tem de rodar antes, senao a medicao seria feita
+                ' sobre um retrato que a producao nao mostraria.
+                Dim todas As New Iris.Integration.AcervoDeTodasAsPastas(db)
+                Dim dreno As New Iris.Integration.PublicationDrain(db)
+                dreno.Drenar(todas)
+
                 Dim relogio = Diagnostics.Stopwatch.StartNew()
-                Dim r = New Iris.Integration.BuscaNoAcervo(db).Procurar(termo)
+                Dim r = New Iris.Integration.BuscaNoAcervo(todas, dreno).Procurar(termo)
                 relogio.Stop()
 
                 Console.WriteLine($"achados:  {r.Achados.Count}")
