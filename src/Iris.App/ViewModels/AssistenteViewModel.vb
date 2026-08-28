@@ -867,7 +867,11 @@ Namespace Global.Iris.App.ViewModels
                     If _inicioDoVoo.HasValue Then
                         _duracaoDoVoo = _relogio() - _inicioDoVoo.Value
                     End If
-                    OnPropertyChanged(NameOf(Decorrido))
+                    ' A DURACAO fica gravada de qualquer jeito -- e estado
+                    ' interno, e congela-la e o certo. O que nao pode e AVISAR:
+                    ' notificacao de propriedade num ViewModel descartado
+                    ' contradiz a intencao do Dispose logo acima.
+                    If Not _descartado Then OnPropertyChanged(NameOf(Decorrido))
                 End If
             End Try
         End Function

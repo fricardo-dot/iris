@@ -318,7 +318,17 @@ Public Class AcervoViewModelTests
                 vm.ExecutorDaVarredura =
                     Function(pasta, nome, store, ct)
                         entrou.Set()
-                        liberar.Wait(TimeSpan.FromSeconds(10))
+                        ' O RESULTADO DA ESPERA E COBRADO AQUI TAMBEM.
+                        '
+                        ' O timeout existe para nao pendurar a suite, e nao
+                        ' como marco. Se ele expirar, o executor devolve sem o
+                        ' teste ter liberado -- e o que se mede deixa de ser o
+                        ' cenario escrito. Lancar aqui faz o teste falhar em
+                        ' vez de medir outra coisa em silencio.
+                        If Not liberar.Wait(TimeSpan.FromSeconds(10)) Then
+                            Throw New TimeoutException(
+                                "o teste nao liberou o executor a tempo")
+                        End If
                         Return Nothing
                     End Function
 

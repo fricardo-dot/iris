@@ -97,6 +97,7 @@ Public Class AssistenteViewModelTests
         ''' </summary>
         Friend Property RecusarCom As Integer?
 
+
         Friend Property Custo As Decimal?
         Friend Property Tokens As Integer?
         ''' <summary>Roda DENTRO da chamada, com o voo em andamento.</summary>
@@ -1501,17 +1502,29 @@ Public Class AssistenteViewModelTests
     End Function
 
     ''' <summary>
-    ''' <b>NAO HA TESTE do descarte com pedido em voo, e o motivo esta aqui.</b>
+    ''' <b>NAO HA TESTE do descarte com pedido em voo, e agora se sabe POR QUE.</b>
     '''
     ''' ------------------------------------------------------------------
     ''' Eu escrevi um. Ele segurava o provedor, descartava o ViewModel,
     ''' liberava, e cobrava que Resultado continuasse vazio. Passava.
     '''
-    ''' E passava COM TODAS AS GUARDAS REMOVIDAS -- o _descartado da checagem
-    ''' de publicacao, o _geracao += 1 do Dispose, e ate o Cancel. Tres
-    ''' controles negativos, os tres inuteis. Alguma outra coisa no caminho
-    ''' ja impedia a publicacao naquele cenario, e o teste estava medindo essa
-    ''' outra coisa enquanto afirmava medir a guarda.
+    ''' E passava COM TODAS AS GUARDAS REMOVIDAS. Eu suspeitei de "alguma
+    ''' outra coisa no caminho" e fui MEDIR, com um provedor que responde com
+    ''' sucesso mesmo depois de cancelado -- o caso real, porque cancelar nao
+    ''' para uma chamada HTTP que ja saiu.
+    '''
+    ''' Resultado da medicao: <b>vazio mesmo sem guarda nenhuma</b>. Quem fecha
+    ''' este caminho e o CANCELAMENTO, mais fundo que o ViewModel: o Dispose
+    ''' cancela o CTS que vai para o AssistTransmitter, e a publicacao nao
+    ''' chega a acontecer.
+    '''
+    ''' Entao as guardas <c>_descartado</c> e <c>_geracao += 1</c> sao defesa
+    ''' em profundidade AQUI, e nao o unico caminho -- ao contrario do que a
+    ''' revisao supos. Elas ficam: um dia alguem pode fazer o transmissor
+    ''' tolerar cancelamento, e dai elas passam a ser o que segura.
+    '''
+    ''' O que continua sem teste e a guarda como UNICA defesa, e prova-lo
+    ''' exige um transmissor que ignore o token. Esta escrito no relatorio.
     '''
     ''' Nesta mesma sessao eu ja apaguei um teste de concorrencia com Barrier
     ''' pelo mesmo motivo. Linha verde que passa com o defeito presente e pior

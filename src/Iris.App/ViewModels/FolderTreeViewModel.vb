@@ -222,9 +222,24 @@ Namespace Global.Iris.App.ViewModels
         ''' pasta por conta própria.
         ''' </summary>
         ''' <returns>True se chegou até o fim do caminho.</returns>
+        ''' <remarks>
+        ''' ------------------------------------------------------------------
+        ''' <b>A GERAÇÃO É CONFERIDA DENTRO DO LAÇO</b>
+        '''
+        ''' Expandir cada nível tem <c>Await</c> próprio, e uma sessão nova pode
+        ''' chegar no meio. O chamador conferir a época <b>antes</b> de chamar
+        ''' não bastava: a restauração vencida atravessava a expansão e ainda
+        ''' chegava ao <c>Selected = node</c>, escolhendo uma pasta por
+        ''' iniciativa de uma sessão que já tinha acabado.
+        '''
+        ''' E <c>Clear()</c> não resolve sozinho: ele sobe a geração e esvazia
+        ''' <c>Roots</c>, mas os <c>FolderNodeViewModel</c> que este laço já
+        ''' segurava continuam vivos na mão dele.
+        ''' </remarks>
         Public Async Function TrySelectAsync(caminho As List(Of FolderKey)) As Task(Of Boolean)
             If caminho Is Nothing OrElse caminho.Count = 0 Then Return False
 
+            Dim minha = Volatile.Read(_generation)
             Dim nivel As IEnumerable(Of FolderNodeViewModel) = Roots
             Dim node As FolderNodeViewModel = Nothing
 
@@ -238,12 +253,18 @@ Namespace Global.Iris.App.ViewModels
 
                 If i < caminho.Count - 1 Then
                     Await node.EnsureChildrenAsync()
+                    ' Depois de CADA nivel: a arvore pode ter sido trocada
+                    ' enquanto este nivel carregava.
+                    If Not Atual(minha) Then Return False
                     node.IsExpanded = True
                     nivel = node.Children
                 End If
             Next
 
             If node Is Nothing Then Return False
+            ' E imediatamente antes de escolher, que e o unico efeito que
+            ' sobrevive a esta funcao.
+            If Not Atual(minha) Then Return False
 
             Selected = node
             node.IsSelected = True
