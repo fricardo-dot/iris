@@ -1,8 +1,12 @@
 # Iris — Escopo do Projeto
 
 **Status:** Fases 0, 1, 2 e 3 executadas. A **IA foi ativada** em 27/08/2026 e
-o primeiro egress real saiu; as **pendências da Fase 2 foram fechadas** em
-28/08/2026 e o aplicativo varre. A Fase 4 continua **não planejada**.
+fez o primeiro egress real **com conteúdo sintético**, numa pasta de teste de 4
+itens que é a única autorizada — o alcance é limitado pela lista de pastas, e
+não pela política corporativa, que continua não verificada. As **pendências da
+Fase 2
+foram fechadas** em 28/08/2026 e o aplicativo varre. A Fase 4 continua **não
+planejada**.
 **Data:** 2026-08-28
 **Versão:** 6
 
@@ -308,8 +312,15 @@ antes e depois. A guarda S6 só publicou porque a conta fechou.
 
 **O que a autorização do ambiente NÃO destrava:** afirmar cobertura completa e
 concluir ausência. Em Exchange em cache a janela de sincronização não é legível
-(§22.3 e §22.4), então o Iris nunca sabe que ela mudou. Degradação permanente,
-e agora visível na tela.
+pelas superfícies examinadas (§22.3 e §22.4), então o Iris não sabe quando ela
+muda. É degradação **estrutural no suporte de hoje** — não há mecanismo
+conhecido de promoção, e a §23 deixou escritos os gatilhos que reabririam a
+decisão. Agora ela é visível na tela.
+
+**E a conta da S6 fechar não prova cobertura.** Ela *rejeita* quando os números
+não batem; não valida o universo. Mutação balanceada — um item sai e outro entra
+entre as contagens — passa por ela, e isso está documentado desde a Fase 2 como
+um teste que *passa*.
 
 ### Fase 3 — IA sob demanda (Grupo A) — *EXECUTADA e ATIVADA*
 
@@ -324,10 +335,26 @@ OpenRouter, modelo `google/gemini-3.7-flash`; ativação em
 `%ProgramData%\Iris\ativacao.json` com ACL conferida em três níveis; chave no
 Gerenciador de Credenciais do Windows, que o Iris lê e nunca imprime.
 
-**O que continua bloqueado, por decisão e não por atraso:**
-`politicaCorporativaVerificada` é `false`, então **só conteúdo sintético
-passa**. E-mail real continua recusado pelo portão. Destravar isso é decisão
-sobre a política corporativa aplicável, não trabalho de código.
+**O que de fato limita o alcance hoje — e não é o que este documento dizia até
+28/08.** A ativação autoriza **uma pasta**: `Iris-Teste`, subpasta da Caixa de
+Entrada, com 4 itens postos ali por mim. Mais `leituras = [Absent]`, `rótulos =
+[]` e `contentBits = [0]`. É a lista de pastas que segura o alcance — qualquer
+mensagem movida para dentro dela passaria a ser elegível, e nada no código
+distingue conteúdo sintético de real.
+
+**Correção de um erro deste documento:** a versão anterior dizia que
+`politicaCorporativaVerificada = false` fazia com que "só conteúdo sintético
+passe". **É falso, e a revisão externa de 28/08 pegou.** O campo é lido em
+exatamente dois lugares — o aviso da tela e a listagem do harness — e o portão
+de divulgação **nunca o consulta**. `Activation.vb` diz isso por escrito: *False
+não impede a ativação*. Apresentar como barreira de compliance o que é aviso
+visual é o tipo de erro que este projeto trata como crítico, e ele estava num
+documento de escopo.
+
+**O que segue sendo verdade:** a decisão sobre a política corporativa aplicável
+continua aberta, e é ela que deveria governar o alargamento das pastas. Enquanto
+ninguém a responder, alargar a lista é decisão sem base — mas é uma decisão de
+disciplina, e não um bloqueio que o código imponha.
 
 **Aprendido na ativação, e que não estava em lugar nenhum:** o slug de
 roteamento do OpenRouter vem do campo `tag` do endpoint, e `google` não existe —
@@ -359,11 +386,31 @@ técnico primeiro:
    mensagem por clique. Indexação semântica manda *tudo*, e a cerimônia de
    ativação atual não cobre isso — ela autoriza operações sobre pastas
    escolhidas, e não um varredor contínuo.
-3. **Onde o índice mora.** Índice local muda o custo; índice remoto muda o
-   modelo de ameaça, e o diário de divulgação teria de registrar uma ordem de
-   grandeza diferente de eventos.
+3. **Confirmar ou reabrir "o índice mora local".** A §6 e a §4 já decidiram:
+   embeddings armazenados localmente, no SQLite. A decisão é confirmá-la
+   sabendo o custo, ou reabri-la — índice remoto muda o modelo de ameaça, e o
+   diário de divulgação teria de registrar uma ordem de grandeza diferente de
+   eventos. O que não vale é tratá-la como nunca tomada.
+4. **Quem autoriza indexação em massa, e por qual ato.** A autorização do Grupo
+   B já está decidida em princípio na §6 — habilitação separada, pastas
+   explícitas, orçamento, interrupção. O que não existe é o **ato**: a cerimônia
+   de hoje autoriza operações sobre pastas escolhidas, por clique, e reusá-la
+   para um varredor contínuo alargaria uma autorização sem que ninguém tivesse
+   concordado com o alargamento.
+5. **Retenção, exclusão e reindexação.** O que acontece com o índice quando a
+   mensagem sai da caixa, a pasta muda, a política muda ou o modelo muda. Índice
+   que não sabe esquecer é cópia sensível com outro nome.
+6. **Identidade e versão do índice.** Modelo, fatiamento, idioma, dimensões — e
+   como migrar quando qualquer um deles mudar. Sem isso, "reindexar" vira
+   "recomeçar".
+7. **O que é qualidade aceitável, e como medi-la** antes de escolher provedor ou
+   modelo de embedding. Escolher primeiro e medir depois é como este projeto
+   errou o slug de roteamento na Fase 3.
+8. **O número do orçamento, e o comportamento em falha.** Que exista limite já
+   está decidido na §6; quanto ele vale, não. E falta dizer o que o Iris faz
+   quando o índice está fora — parar, degradar para busca textual, ou enfileirar.
 
-Enquanto essas três não tiverem resposta, planejar a fase é escolher a
+Enquanto essas oito não tiverem resposta, planejar a fase é escolher a
 implementação antes do requisito.
 
 ### Fase 5 — Tarefas
@@ -382,17 +429,34 @@ Dois marcos distintos, não um.
 
 Nenhum destes é fase; são dívidas conhecidas, com dono e receita.
 
-- **Cobrir quatro guardas de ciclo de vida** que hoje se sustentam por leitura
-  de código: descarte do assistente com transmissão em voo, troca de sessão
-  durante a expansão da árvore, guardas de descarte da janela principal, e
-  salvar anexo durante troca de mensagem. As três primeiras saem com o broker
-  falso e uma fonte bloqueável; a quarta pede a primeira suíte do leitor de
-  mensagem. Listadas em `RELATORIO-FASE2-FECHAMENTO.html` §8.
+- **Cobrir quatro categorias de guarda de ciclo de vida** que hoje se sustentam
+  por leitura de código — e cada categoria tem mais de um caminho: descarte do
+  assistente com transmissão em voo, troca de sessão durante a expansão da
+  árvore, guardas de descarte da janela principal (quatro caminhos) e guardas do
+  leitor de mensagem (três). O descarte do assistente pede um transmissor que
+  ignore o token de cancelamento; a troca de sessão e as guardas da janela saem
+  com o broker falso e uma fonte bloqueável; as do leitor pedem a primeira suíte
+  do leitor, que não existe. Abertas em `RELATORIO-FASE2-FECHAMENTO.html` §8.
 - **Verificar a política corporativa aplicável** — é o que separa o canário
   sintético do uso real da IA.
 - **Medir o efeito da janela de sincronização**, já que ela não é legível. A
-  saída para a degradação permanente não é achar a configuração: é medir o
-  efeito dela. Apontado na Fase 2 e ainda aberto.
+  saída não é achar a configuração: é medir o efeito dela. Apontado na Fase 2 e
+  ainda aberto.
+- **Explicar ou encerrar formalmente a falha rara da suíte** que a Fase 2 nunca
+  reproduziu — 1 falha em dez execuções, sem reprodução. Está nos dois
+  relatórios e aqui; quase caiu no vão entre eles.
+- **Duas dívidas herdadas do fechamento**, que estavam só lá: a coordenação
+  entre o fechamento da janela e o descarte efetivo do broker, e o auxiliar de
+  índices chamado `Unico`, que descreve uma propriedade dependente da posição em
+  que é usado.
+- **Decidir o que fazer com evidência não versionada.** Os números da varredura
+  real vêm do cache do usuário, que não está no repositório: a semântica é
+  auditável pelo código, a medição não é reproduzível a partir de um commit. Ou
+  se cria um caminho para reproduzi-la, ou se declara que é evidência
+  operacional e não prova versionada.
+- **Medir a qualidade e a utilidade do acervo parcial** — e não só o efeito da
+  janela. É a pré-condição escrita da Fase 4, e hoje há cache de verdade para
+  medir.
 
 ---
 
@@ -715,10 +779,12 @@ Option Infer On
 - [x] Confirmar a abordagem COM com Outlook clássico
 - [x] Escolher a stack
 - [x] Confirmar se a política permite `Send()` — **permite** (R2)
-- [ ] Escolher o provedor de IA e o modelo — **continua aberta, e agora é o que
-      bloqueia**. Atenção: busca semântica (Fase 4) exige **embeddings**, e nem
-      todo provedor oferece esse endpoint — escolher olhando só a Fase 3 pode
-      custar caro na 4
+- [x] Escolher o provedor de IA e o modelo **para o Grupo A** — OpenRouter com
+      `google/gemini-3.7-flash`, na ativação de 27/08/2026. Escolha revogável
+      pela própria cerimônia, e não arquitetural
+- [ ] Escolher o provedor de **embeddings** para a Fase 4 — **aberta**. É a
+      parte da pergunta antiga que a ativação não respondeu: nem todo provedor
+      oferece esse endpoint, e a escolha do Grupo A não a determina
 - [ ] Definir o visual: parecido com o Outlook ou identidade própria
 - [ ] Criptografia do cache: DPAPI, SQLCipher ou BitLocker + ACL (R14)
 - [ ] Triagem grava no Outlook ou só no cache? (seção 6)
@@ -732,6 +798,22 @@ Option Infer On
 ---
 
 ## Apêndice — histórico de revisão
+
+**v6 (2026-08-28)** — a IA foi **ativada** em 27/08 e o primeiro egress real
+saiu, com conteúdo sintético; e-mail real continua bloqueado, e isso é decisão
+sobre política corporativa e não trabalho de código. As **quatro pendências da
+Fase 2 foram fechadas** em 28/08: elas eram uma só — as peças da varredura
+existiam e nada as ligava. A pré-condição escrita da Fase 4 mudou de estado, e
+por isso as decisões que ela exige foram de três para oito. Três correções de
+honestidade vieram da revisão externa desta data, e a primeira é grave: este
+documento afirmava que `politicaCorporativaVerificada = false` fazia com que só
+conteúdo sintético passasse. **Não faz** — o campo é aviso de tela, o portão de
+divulgação não o consulta, e quem limita o alcance é a lista de pastas da
+ativação. Apresentar aviso visual como barreira de compliance é exatamente o
+erro que a §7 do relatório de fechamento diz que este projeto persegue, e ele
+estava aqui. As outras duas: "degradação permanente" virou "estrutural no
+suporte de hoje", e o primeiro egress passou a dizer que o conteúdo era
+sintético e que a pasta autorizada é uma só.
 
 **v5 (2026-08-25)** — Fases 2 e 3 executadas e encerradas, ambas aprovadas pelo
 Codex (352 e 642 testes). O bloqueio herdado da Fase 0 — rótulos do Purview

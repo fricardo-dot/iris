@@ -406,10 +406,11 @@ footer {
   <p class="eyebrow">Iris · Relatório de fim de fase</p>
   <h1>Fase 2 — o que ficou medido</h1>
   <p class="dek">
-    Seis marcos, do schema executável à varredura real contra a sua caixa e ao
-    acervo aparecendo na janela. O que a fase produziu de mais valioso não foram
-    as respostas — foram as perguntas que se revelaram mal feitas, e três
-    medições que derrubaram coisas que eu tinha escrito como certas.
+    Seis marcos, do schema executável à varredura real contra a sua caixa e à
+    faixa do acervo <em>escrita</em> — ela só foi vista na tela em 28/08, e o que
+    escondia era um defeito. O que a fase produziu de mais valioso não foram as
+    respostas — foram as perguntas que se revelaram mal feitas, e três medições
+    que derrubaram coisas que eu tinha escrito como certas.
   </p>
   <div class="meta">
     <span><b>25 de agosto de 2026</b></span>
@@ -446,9 +447,13 @@ footer {
       registrado como risco, não como resolvido. Perdi a evidência dela. A caça
       encontrou quatro fragilidades reais nos testes — <em>sem</em> relação
       estabelecida com a ocorrência.</li>
-    <li><strong>O Iris varre e publica a sua Caixa de Entrada</strong> —
-      1.013 itens, cobertura <em>parcial</em>. Retomada após cancelamento
-      converge sem duplicata.</li>
+    <li><strong>A cadeia de varredura foi exercitada contra a sua Caixa de
+      Entrada</strong> — 1.013 itens na medição de 25/08, cobertura
+      <em>parcial</em>, retomada após cancelamento convergindo sem duplicata.
+      <em>Fora do fluxo do aplicativo</em>: na data, os componentes existiam e
+      o app não os ligava. Ele passou a varrer em 28/08, e a caixa tinha 1.135
+      itens — os dois números são medições de datas diferentes, e não uma
+      contradição.</li>
     <li><strong>A Q8 morreu duas vezes</strong>, e as duas por medição: a janela
       de sincronização não é legível, e a contagem do servidor não vem pelo
       OOM.</li>
@@ -762,7 +767,10 @@ footer {
         são achados independentes, sem relação estabelecida com a ocorrência.
         29 execuções limpas desde então não provam que sumiu — provam que é rara.
         Toda execução agora grava <code>trx</code>, então ela volta a ser
-        observável.</td></tr>
+        observável. Esta tabela chegou a listar a mesma ocorrência duas vezes, e
+        a segunda linha atribuía a ela uma causa provável — contenção com os
+        testes de Outlook — que ninguém mediu. A linha saiu; a ocorrência
+        continua sem causa, e continua aberta no <code>ESCOPO.md</code>.</td></tr>
     <tr><td><strong>O cruzamento da Q1 relaxou</strong></td>
       <td>Ele exigia que a caixa não mudasse durante duas travessias, o que não é
         propriedade do código. Virou <code>T₁ ∩ T₂ ⊆ I ⊆ T₁ ∪ T₂</code>, e tudo
@@ -784,7 +792,9 @@ footer {
     <tr><td><strong>Identidade de ambiente incompleta</strong></td>
       <td>A janela não é legível, então o Iris não detecta quando ela muda — e
         mudança de janela invalidaria toda conclusão de ausência. Degradação
-        permanente, não pendência.</td></tr>
+        estrutural no suporte de hoje, não pendência de configuração — a
+        redação “permanente”, que esta linha usava, é mais forte que a
+        medição.</td></tr>
     <tr><td><strong>Mutação balanceada passa pelo S6</strong></td>
       <td>Um item sai e outro entra entre as contagens: os números fecham e a
         varredura publica um manifesto que nunca existiu. Documentado como teste
@@ -799,10 +809,6 @@ footer {
     <tr><td><strong>Crash test</strong></td>
       <td>Cobre término abrupto do processo. Não cobre falta de energia,
         corrupção de mídia nem morte do kernel.</td></tr>
-    <tr><td><strong>Uma falha não explicada</strong></td>
-      <td>Numa das dez execuções da suíte apareceu 1 falha, e ela não reproduziu
-        nas nove seguintes — nem o nome ficou registrado. Provável contenção com
-        os testes que tocam o Outlook, mas <em>provável</em> não é medido.</td></tr>
     <tr><td><strong>Uma caixa, uma máquina</strong></td>
       <td>Tudo foi medido no seu Exchange cached. PST e Exchange online nunca
         foram tocados.</td></tr>

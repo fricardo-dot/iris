@@ -405,23 +405,26 @@ footer {
     é igual às 1.135 que a pasta declarava, antes e depois. A varredura só
     publicou porque essa conta bateu.</li>
 
-    <li><strong>O ambiente tem cerimônia própria, e o programa não se
-    autoriza.</strong> Ele mede, grava <code>allowed = 0</code> e para. Quem
-    vira para 1 é o dono da caixa, por ferramenta separada.</li>
+    <li><strong>O ambiente tem cerimônia própria, e a varredura não eleva o
+    próprio perfil.</strong> Ela mede, grava <code>allowed = 0</code> e para.
+    Quem vira para 1 é o dono da caixa, por ferramenta separada. Isso vale para
+    o caminho da varredura, e não é invariante do programa inteiro — o §4
+    lista o que continua sendo escrito fora desse portão.</li>
 
     <li><strong>Autorizar destrava varrer e contar, e nada além disso.</strong>
     Em Exchange em cache a janela de sincronização não é legível — medido duas
     vezes, por caminhos diferentes. O Iris continua sem afirmar cobertura
-    completa e sem concluir ausência. É degradação permanente, e agora ela
+    completa e sem concluir ausência. É degradação <strong>estrutural no
+    suporte de hoje</strong> — não uma pendência de configuração — e agora ela
     aparece na tela.</li>
 
-    <li><strong>A revisão externa encontrou 20 defeitos em seis passadas</strong>,
-    três deles críticos. Um dos críticos era uma conexão SQLite compartilhada
-    por três threads. Nenhum apareceria em teste.</li>
+    <li><strong>A revisão externa encontrou 26 defeitos em seis passadas</strong>,
+    três deles críticos — sendo uma conexão SQLite compartilhada por três
+    threads. Nenhum apareceria em teste.</li>
 
-    <li><strong>Quatro guardas de ciclo de vida ficam sustentadas por leitura
-    de código, e não por teste.</strong> Estão listadas ao fim, com o motivo
-    de cada uma.</li>
+    <li><strong>Quatro categorias de guarda de ciclo de vida ficam sustentadas
+    por leitura de código, e não por teste</strong> — e cada categoria contém
+    mais de um caminho. Estão listadas ao fim, abertas.</li>
   </ul>
 </div>
 
@@ -430,7 +433,7 @@ footer {
   <div><span class="v">1.135</span><span class="k">na caixa de entrada</span></div>
   <div><span class="v">1.123</span><span class="k">guardadas</span></div>
   <div><span class="v">12</span><span class="k">recusadas</span></div>
-  <div><span class="v">20</span><span class="k">defeitos achados</span></div>
+  <div><span class="v">26</span><span class="k">defeitos achados</span></div>
   <div><span class="v">3</span><span class="k">testes meus apagados</span></div>
 </div>
 
@@ -498,6 +501,20 @@ footer {
   registrou, e não o que o programa relatou.
 </p>
 
+<div class="nota">
+  <strong>Esta evidência não é reproduzível a partir do repositório.</strong> Os
+  números foram lidos do cache de produção, que é dado do usuário e não está
+  versionado — nenhum <code>.db</code>, nenhum despejo. O que o repositório
+  sustenta é a <em>semântica</em>: o código mostra como cada campo é produzido e
+  persistido. Quem quiser reauditar tem de varrer a própria caixa.
+  <br><br>
+  Vale igual para <strong>o primeiro egress da IA</strong>: ele aconteceu fora
+  da suíte, e a linha que o registra mora no diário de divulgação do mesmo
+  cache. O que <em>é</em> versionado é o resultado da suíte —
+  <code>RESULTADO-SUITE.md</code> traz a saída dos 805, com commit e data, pelo
+  mesmo motivo pelo qual esta nota existe.
+</div>
+
 <div class="tabela-wrap wide">
   <table>
     <caption>Gerações publicadas · cache de produção</caption>
@@ -535,9 +552,10 @@ footer {
 </div>
 
 <p>
-  A guarda S6 exige que tudo o que a pasta declarava tenha sido <strong>lido ou
-  explicitamente recusado</strong>. Recusa declarada é mais forte que recusa
-  silenciosa, porque obriga a fonte a contar o que jogou fora:
+  A guarda S6 exige que toda linha <strong>que o provedor expôs e a paginação
+  percorreu</strong> tenha sido lida ou explicitamente recusada. Recusa
+  declarada é mais forte que recusa silenciosa, porque obriga a fonte a contar o
+  que jogou fora:
   <code>1.123 + 12 = 1.135</code>. As duas primeiras gerações trazem
   <code>—</code> na coluna de recusadas porque o número era calculado, usado
   para decidir se publicava, e <strong>jogado fora no mesmo instante</strong>.
@@ -551,19 +569,45 @@ footer {
 </p>
 
 <div class="nota">
+  <strong>A conta fechar não é prova de cobertura.</strong> A S6 <em>rejeita</em>
+  quando os números não batem; ela não valida o universo. Mutação balanceada —
+  um item sai e outro entra entre as contagens — passa por ela, e isso está
+  documentado desde a Fase 2 como um teste que <em>passa</em> — e ele é mais
+  duro do que parece: o item que ficou de fora existia do começo ao fim, e
+  saiu do manifesto pelo deslocamento do <em>offset</em>. Dizer que a conta
+  prova que “nada se perdeu em silêncio” seria, portanto, falso. O que ela
+  prova é que <strong>a cardinalidade percorrida bate com a declarada nas duas
+  pontas</strong>. Isso rejeita a linha que some sem compensação, e não
+  garante identidade do conjunto.
+</div>
+
+<div class="nota">
   A diferença de 12 é estável. O modelo da Fase 2 já registrava uma medição
   anterior idêntica em espírito — 1.022 declaradas, 1.013 guardadas, 9
   descartadas, estável em três execuções — e o comentário de lá diz o que ela
   ensinou: o sintoma parecia corrida quando era defeito permanente disfarçado.
 </div>
 
-<h2><span class="num">§ 4</span>O programa não se autoriza</h2>
+<h2><span class="num">§ 4</span>A varredura não eleva o próprio perfil</h2>
 
 <p>
   O perfil de ambiente nasce com <code>allowed = 0</code>. Quem o vira para 1 é
   uma ferramenta separada, que mostra o que foi medido e pede a decisão de quem
   responde pela caixa — mesmo desenho da ativação da IA, pelo mesmo motivo.
 </p>
+
+<div class="nota">
+  <strong>O escopo exato disto, porque a frase larga seria falsa.</strong> O que
+  está provado é que o caminho da varredura grava o perfil <em>negado</em> e só
+  cria ou povoa a pasta depois de autorização externa. O programa continua
+  escrevendo no cache fora desse gate: ele cria o arquivo, cria e migra o
+  esquema, grava o próprio perfil medido, e o dreno de publicação segue seu
+  curso. Fora do caminho da varredura há mais: o diário de divulgação da IA
+  grava intenção, voo e desfecho, e a reconciliação da abertura também escreve.
+  Nenhuma dessas escritas passa por este portão. “Nenhuma escrita antes da
+  autorização” <b>não</b> é invariante global, e dizer que era foi um exagero
+  desta página até 28/08.
+</div>
 
 <pre><code>dotnet run --project tools\Iris.CrashHarness -- ambiente
 dotnet run --project tools\Iris.CrashHarness -- ambiente --autorizar 2</code></pre>
@@ -581,8 +625,16 @@ dotnet run --project tools\Iris.CrashHarness -- ambiente --autorizar 2</code></p
   <p>
     <strong>O que ela não destrava:</strong> afirmar cobertura completa e
     concluir ausência. Em Exchange em cache a janela de sincronização não é
-    legível, então o Iris nunca sabe que ela mudou. A degradação é permanente e
-    de propósito — não é pendência que alguém destrava depois.
+    legível pelas superfícies examinadas — o objeto <code>Store</code>, os 294
+    valores do registro do perfil e as 65.536 tags MAPI —, então o Iris não sabe
+    quando ela muda.
+  </p>
+  <p>
+    A degradação é <strong>estrutural no suporte de hoje</strong>, e não uma
+    pendência de configuração. Chamá-la de <em>permanente</em>, como esta página
+    fez até 28/08, é mais forte que a medição: o que se mediu é que não há
+    mecanismo conhecido de promoção, e a própria Fase 2 deixou escritos os
+    gatilhos que reabririam a decisão.
   </p>
 </div>
 
@@ -724,15 +776,18 @@ dotnet run --project tools\Iris.CrashHarness -- ambiente --autorizar 2</code></p
 <h2><span class="num">§ 7</span>O que fica sem correção</h2>
 
 <p>
-  Nada. As seis passadas terminaram sem defeito de produção pendente conhecido.
-  O que sobra é cobertura.
+  <strong>Nenhum achado de produção destas seis passadas ficou sem
+  correção.</strong> Que é uma frase mais estreita que “nada”, e a diferença
+  importa: continuam de pé a mutação balanceada que passa pela S6, uma falha
+  rara da suíte que nunca foi explicada, e o que ninguém procurou.
 </p>
 
 <h2><span class="num">§ 8</span>O que fica sem cobertura</h2>
 
 <p>
-  Em ordem de risco. Todas são guardas de ciclo de vida sustentadas por leitura
-  de código.
+  Em ordem de risco. São <strong>categorias</strong>, e não guardas isoladas:
+  cada linha contém mais de um caminho, e a coluna da direita os abre. Todas se
+  sustentam por leitura de código.
 </p>
 
 <div class="tabela-wrap wide">
@@ -758,14 +813,19 @@ dotnet run --project tools\Iris.CrashHarness -- ambiente --autorizar 2</code></p
       <tr class="s-par">
         <td class="st"></td>
         <td>Guardas de descarte da janela principal</td>
-        <td>Inicialização e recarga de contas pendentes seguidas de fechamento.
-            Dá para fazer com o broker falso e uma fonte bloqueável.</td>
+        <td>Quatro caminhos: <code>InitializeAsync</code> pendente,
+            recarga de contas pendente, restauração de pasta vencida por sessão
+            nova, e recarga de árvore ou lista concluindo depois do fechamento.
+            Todos saem com o broker falso e uma fonte bloqueável.</td>
       </tr>
       <tr class="s-par">
         <td class="st"></td>
-        <td>Salvar anexo durante troca de mensagem</td>
-        <td>Não existe suíte para o leitor de mensagem. É a única da lista que
-            precisa de arquivo novo.</td>
+        <td>Guardas do leitor de mensagem</td>
+        <td>Três caminhos: salvar anexo durante troca de mensagem, salvar anexo
+            concluindo depois do descarte, e marcar como lida falhando tarde —
+            esta com dupla conferência, antes de agendar e dentro do delegate.
+            É a única linha que precisa de arquivo de teste novo: não existe
+            suíte para o leitor.</td>
       </tr>
       <tr class="s-ok">
         <td class="st"></td>
@@ -778,10 +838,12 @@ dotnet run --project tools\Iris.CrashHarness -- ambiente --autorizar 2</code></p
 </div>
 
 <p class="nota">
-  Fora da lista, duas dívidas assumidas: a coordenação entre o fechamento da
-  janela e o descarte efetivo do broker; e o auxiliar de índices chamado
+  Fora da lista, três dívidas assumidas. A coordenação entre o fechamento da
+  janela e o descarte efetivo do broker. O auxiliar de índices chamado
   <code>Unico</code>, que descreve uma propriedade dependente da posição em que
-  ele é usado.
+  ele é usado. E <strong>a falha rara da suíte que a Fase 2 nunca explicou</strong>
+  — ela não some por este relatório não a mencionar, e não mencioná-la seria
+  deixá-la cair no vão entre dois documentos.
 </p>
 
 <h2><span class="num">§ 9</span>O que a Fase 2 continua não podendo afirmar</h2>
@@ -833,11 +895,13 @@ dotnet run --project tools\Iris.CrashHarness -- ambiente --autorizar 2</code></p
 <div class="acoes">
   <div>
     <span class="tempo">Curto</span>
-    <h3>Cobrir as quatro guardas restantes</h3>
+    <h3>Cobrir as quatro categorias de guarda restantes</h3>
     <p>
-      Nenhuma é mistério: três saem com o broker falso e uma fonte bloqueável, e
-      a quarta pede a primeira suíte do leitor de mensagem. É trabalho
-      identificado, com receita.
+      Nenhuma é mistério, e cada uma tem sua receita: o descarte do assistente
+      pede um transmissor que ignore o token de cancelamento; a troca de sessão
+      e as guardas da janela saem com o broker falso e uma fonte bloqueável; e
+      as do leitor de mensagem pedem a primeira suíte do leitor, que não
+      existe.
     </p>
   </div>
   <div>
@@ -852,7 +916,7 @@ dotnet run --project tools\Iris.CrashHarness -- ambiente --autorizar 2</code></p
     <span class="tempo">Quando fizer sentido</span>
     <h3>Medir o efeito da janela, já que ela não é legível</h3>
     <p>
-      A saída provável para a degradação permanente não é achar a configuração:
+      A saída provável para essa degradação não é achar a configuração:
       é medir o efeito dela. A fase já apontou esse caminho e ele continua
       aberto.
     </p>

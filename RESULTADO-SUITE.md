@@ -1,6 +1,6 @@
-# Resultado da suíte — Fase 3
+# Resultado da suíte
 
-Este arquivo existe porque o relatório afirma "642 testes, 0 falhas, 0 pulados",
+Este arquivo existe porque os relatórios afirmam "N testes, 0 falhas, 0 pulados",
 e `TestResults/` é ignorado pelo git. Sem isto, os dois zeros seriam uma
 afirmação minha que ninguém consegue conferir pelo repositório.
 
@@ -10,12 +10,12 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição
+## Medição corrente — fechamento da Fase 2
 
 | | |
 |---|---|
-| **Commit** | `33ecc84` — a árvore da solução .NET que foi medida |
-| **Data** | 25 de agosto de 2026 |
+| **Commit** | `ef7096a` — a árvore da solução .NET que foi medida |
+| **Data** | 28 de agosto de 2026 |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
@@ -24,8 +24,27 @@ dotnet test Iris.slnx
 Test run for C:\Users\Ricardo\Documents\Iris\tests\Iris.Tests\bin\Debug\net10.0-windows\Iris.Tests.dll (.NETCoreApp,Version=v10.0)
 A total of 1 test files matched the specified pattern.
 
+Passed!  - Failed:     0, Passed:   805, Skipped:     0, Total:   805, Duration: 1 m 1 s - Iris.Tests.dll (net10.0)
+```
+
+É este o número que `RELATORIO-FASE2-FECHAMENTO.html` cita. Foi medido **depois**
+de todas as correções das seis passadas de revisão, e antes das correções de
+redação em documentos — que não são código executável.
+
+## Medição anterior — fechamento da Fase 3
+
+| | |
+|---|---|
+| **Commit** | `33ecc84` |
+| **Data** | 25 de agosto de 2026 |
+
+```
 Passed!  - Failed:     0, Passed:   642, Skipped:     0, Total:   642, Duration: 59 s - Iris.Tests.dll (net10.0)
 ```
+
+É o número de `RELATORIO-FASE3.html`. Fica registrado porque aquele relatório
+continua citando o resultado da árvore dele, e substituir a medição sem deixar
+rastro faria um documento correto para a sua data parecer errado.
 
 O último commit do **ciclo técnico original** é o `433c244`. Depois dele entraram
 documentação, estes arquivos de evidência, correções de redação em comentários de
@@ -73,3 +92,14 @@ provedor externo de IA: o HTTP do assistente usa só `127.0.0.1`, contra um
 `HttpListener`, e a ordem e o diário são provados com provedor falso. A suíte
 tem testes que falam com o **Outlook real**, e o comportamento de rede dele não
 é controlado aqui.
+
+Isso continua verdade depois da ativação de 27/08. O egress real aconteceu
+**fora da suíte**, por uso do aplicativo, e a evidência dele mora no diário de
+divulgação dentro do cache do usuário, que não está versionado. A suíte prova a
+semântica do caminho; ela não prova que o caminho foi percorrido naquela data.
+Quem quiser conferir o egress tem de olhar o `disclosure_log` da própria
+máquina, e não este repositório.
+
+**Não diz nada sobre os números da varredura real.** As 1.123 guardadas e as 12
+recusadas vêm do mesmo cache não versionado. Mesma distinção: o repositório
+sustenta a semântica, a máquina sustenta a medição.
