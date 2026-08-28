@@ -197,8 +197,6 @@ Namespace Global.Iris.Outlook
                                       cursor As MessageCursor, targetCount As Integer) As MessagePage
 
             Dim fonte As New TableRowSource(folder)
-            ' Uma pagina, uma contagem -- e a pagina pode custar varios lotes.
-            fonte.Zerar()
             Dim fronteira As DateTimeOffset? = If(cursor Is Nothing, Nothing, cursor.Boundary)
 
             Dim saida = CursorPaging.ReadPage(fonte, fronteira, targetCount)
@@ -238,7 +236,11 @@ Namespace Global.Iris.Outlook
             ' A FABRICACAO SOBE JUNTO COM O DESCARTE, e pelo mesmo motivo:
             ' celula ausente que virou 0 ou False e informacao sobre a
             ' leitura, e sem um numero ela nunca apareceria em lugar nenhum.
-            pagina.FabricatedCells = fonte.Fabricadas
+            '
+            ' Soma so as linhas que ENTRARAM na pagina. As de read-ahead, que o
+            ' CursorPaging converteu e devolveu para o lote seguinte, ficam de
+            ' fora -- e serao contadas na pagina delas, uma vez so.
+            pagina.FabricatedCells = Fabricadas(saida.Rows)
             pagina.NextCursor = If(saida.Ended, Nothing,
                                    MessageCursor.ForBoundary(query, saida.NextBoundary.Value).Encode())
             Return pagina
@@ -343,6 +345,8 @@ Namespace Global.Iris.Outlook
                 Dim primeiro As Integer = janela.Primeiro
                 Dim ultimo As Integer = janela.Ultimo
                 Dim descartadas = 0
+                ' A fabricacao do caminho legado, que ate 28/08 era muda.
+                Dim fabricadas = 0
 
                 For i = primeiro To ultimo
                     Dim bruto As Object = Nothing
@@ -355,7 +359,7 @@ Namespace Global.Iris.Outlook
                             descartadas += 1
                             Continue For
                         End If
-                        pagina.Items.Add(ResumirDoItem(mail, query.Folder.StoreId))
+                        pagina.Items.Add(ResumirDoItem(mail, query.Folder.StoreId, fabricadas))
                     Catch ex As COMException
                         ' Item corrompido ou nao baixado nao derruba a pagina.
                         descartadas += 1
@@ -366,6 +370,7 @@ Namespace Global.Iris.Outlook
                 Next
 
                 pagina.SkippedCount = descartadas
+                pagina.FabricatedCells = fabricadas
                 ' Avanca por POSICOES EXAMINADAS, nao por DTOs devolvidos:
                 ' contar DTOs relia as posicoes puladas e duplicava linha.
                 pagina.NextCursor = If(janela.Proximo.HasValue,
@@ -377,20 +382,34 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
-        Private Function ResumirDoItem(mail As OL.MailItem, storeId As String) As MailSummary
+        ''' <summary>
+        ''' Quantas células ausentes viraram valor nas linhas dadas.
+        '''
+        ''' Existe separada, e não embutida, porque é a única parte da contagem
+        ''' que dá para provar sem COM — e a propriedade que ela carrega é a
+        ''' que já errou duas vezes: <b>conta as linhas que recebeu, e só
+        ''' elas</b>.
+        ''' </summary>
+        Friend Function Fabricadas(linhas As IEnumerable(Of TableRow)) As Integer
+            If linhas Is Nothing Then Return 0
+            Return linhas.Sum(Function(l) If(l Is Nothing, 0, l.Fabricadas))
+        End Function
+
+        Private Function ResumirDoItem(mail As OL.MailItem, storeId As String,
+                                       ByRef fabricadas As Integer) As MailSummary
             Dim anexos = ContarAnexos(mail)
 
             ' ContentState.BodyAvailable significa "corpo LIDO", pela
             ' definicao do enum. A listagem nao le corpo nenhum.
             Return New MailSummary With {
-                .Key = New ItemKey(Texto(Function() mail.EntryID), storeId),
-                .Subject = Texto(Function() mail.Subject),
-                .SenderName = Texto(Function() mail.SenderName),
+                .Key = New ItemKey(Texto(Function() mail.EntryID, fabricadas), storeId),
+                .Subject = Texto(Function() mail.Subject, fabricadas),
+                .SenderName = Texto(Function() mail.SenderName, fabricadas),
                 .ReceivedTime = Data(Function() mail.ReceivedTime),
-                .SizeBytes = Numero(Function() mail.Size),
+                .SizeBytes = Numero(Function() mail.Size, fabricadas),
                 .HasAttachments = anexos > 0,
-                .IsUnread = Booleano(Function() mail.UnRead),
-                .MessageClass = Texto(Function() mail.MessageClass),
+                .IsUnread = Booleano(Function() mail.UnRead, fabricadas),
+                .MessageClass = Texto(Function() mail.MessageClass, fabricadas),
                 .Content = ContentState.MetadataOnly
             }
         End Function
@@ -419,19 +438,50 @@ Namespace Global.Iris.Outlook
 
         ' Propriedades COM lançam por item corrompido, offline ou baixado
         ' parcialmente. Um item ruim não pode derrubar a listagem.
+        '
+        ' MAS ELE TAMBEM NAO PODE SUMIR EM SILENCIO. Ate 28/08/2026 estes
+        ' quatro transformavam excecao em "", 0, False e Nothing sem contar --
+        ' e o caminho por Table ja contava. A revisao externa pegou: a lista
+        ' instrumentava o caminho rapido e deixava o legado mudo, entao o zero
+        ' que ela mostrava para esta pasta era um zero FABRICADO.
+        '
+        ' O contador vai por ByRef porque estes auxiliares sao do modulo e o
+        ' caminho legado nao tem um objeto onde acumular. Feio, e honesto.
 
-        Private Function Texto(getter As Func(Of String)) As String
-            Try : Return If(getter(), "") : Catch : Return "" : End Try
+        Private Function Texto(getter As Func(Of String), ByRef fabricadas As Integer) As String
+            Try
+                Return If(getter(), "")
+            Catch
+                fabricadas += 1
+                Return ""
+            End Try
         End Function
 
-        Private Function Numero(getter As Func(Of Integer)) As Integer
-            Try : Return getter() : Catch : Return 0 : End Try
+        Private Function Numero(getter As Func(Of Integer), ByRef fabricadas As Integer) As Integer
+            Try
+                Return getter()
+            Catch
+                fabricadas += 1
+                Return 0
+            End Try
         End Function
 
-        Private Function Booleano(getter As Func(Of Boolean)) As Boolean
-            Try : Return getter() : Catch : Return False : End Try
+        Private Function Booleano(getter As Func(Of Boolean), ByRef fabricadas As Integer) As Boolean
+            Try
+                Return getter()
+            Catch
+                fabricadas += 1
+                Return False
+            End Try
         End Function
 
+        ''' <summary>
+        ''' Data ilegível vira <c>Nothing</c>, e <b>não</b> conta como fabricação.
+        '''
+        ''' Aqui a ausência é preservada: <c>DateTimeOffset?</c> distingue "não
+        ''' sei" de qualquer valor. Contar seria alarmar sobre o único dos cinco
+        ''' campos que já faz a coisa certa.
+        ''' </summary>
         Private Function Data(getter As Func(Of DateTime)) As DateTimeOffset?
             Try
                 Dim valor = getter()
@@ -481,6 +531,27 @@ Namespace Global.Iris.Outlook
             Public Property IsUnread As Boolean
             Public Property HasAttachments As Boolean
             Public Property MessageClass As String = ""
+
+            ''' <summary>
+            ''' <b>Quantas células desta linha vieram ausentes e viraram valor.</b>
+            '''
+            ''' ------------------------------------------------------------------
+            ''' <b>POR QUE O NÚMERO MORA NA LINHA, E NÃO NA FONTE</b>
+            '''
+            ''' Ele já morou na fonte, e teve dois defeitos seguidos por causa
+            ''' disso. Primeiro subcontava: eu zerava a cada lote, e uma página
+            ''' custa vários. Depois <b>sobrecontava</b>: o <c>CursorPaging</c>
+            ''' lê um lote inteiro e para na primeira linha de outro instante, e
+            ''' as linhas de <i>read-ahead</i> — que não entram nesta página —
+            ''' já tinham sido convertidas e contadas. Na página seguinte elas
+            ''' seriam contadas de novo.
+            '''
+            ''' Contador compartilhado entre "quem converte" e "quem escolhe o
+            ''' que entra" erra nas duas direções, e cada conserto de um lado
+            ''' abre o outro. Na linha não há o que errar: quem entrar na página
+            ''' leva o seu número junto.
+            ''' </summary>
+            Public Property Fabricadas As Integer
         End Class
 
         ''' <summary>
@@ -577,12 +648,11 @@ Namespace Global.Iris.Outlook
                 Dim ultima = bruto.GetUpperBound(0)
                 If ultima < primeira Then Return vazio
 
-                ' NAO ZERA AQUI. Ver o comentario de Fabricadas: o
-                ' CursorPaging chama Ler() varias vezes para drenar empate, e
-                ' zerar por LOTE faria o DTO receber so o ultimo deles.
                 Dim linhas As New List(Of TableRow)(ultima - primeira + 1)
                 For r = primeira To ultima
-                    linhas.Add(New TableRow With {
+                    ' O acumulador vira o da LINHA: zera antes, colhe depois.
+                    Fabricadas = 0
+                    Dim linha As New TableRow With {
                         .EntryId = ComoEntryId(bruto(r, ColEntryId)),
                         .Subject = ComoTexto(bruto(r, ColSubject)),
                         .SenderName = ComoTexto(bruto(r, ColSender)),
@@ -591,7 +661,9 @@ Namespace Global.Iris.Outlook
                         .IsUnread = ComoBooleano(bruto(r, ColNaoLida)),
                         .MessageClass = ComoTexto(bruto(r, ColClasse)),
                         .HasAttachments = ComoBooleano(bruto(r, ColAnexo))
-                    })
+                    }
+                    linha.Fabricadas = Fabricadas
+                    linhas.Add(linha)
                 Next
                 Return linhas
             End Function
@@ -623,27 +695,14 @@ Namespace Global.Iris.Outlook
             End Function
 
             ''' <summary>
-            ''' Quantas células ausentes viraram valor <b>nesta página</b>.
+            ''' Acumulador de <b>uma linha</b>, enquanto ela é convertida.
             '''
-            ''' ------------------------------------------------------------------
-            ''' <b>ZERAR NO LUGAR ERRADO SUBCONTAVA, E A REVISÃO PEGOU</b>
-            '''
-            ''' A primeira versão zerava no início de <c>Ler</c>. Parecia certo —
-            ''' "o número descreve a página" — e estava errado: o
-            ''' <c>CursorPaging</c> chama <c>Ler</c> <b>várias vezes</b> por
-            ''' página, para drenar o grupo do último instante. O DTO recebia
-            ''' apenas o último lote, e uma fabricação no primeiro sumia.
-            '''
-            ''' Agora quem zera é <see cref="Zerar"/>, chamado uma vez por página
-            ''' por quem monta a página. O contador acumula entre os lotes, que é
-            ''' o que "por página" sempre quis dizer.
+            ''' Zerado antes de cada linha e colhido em
+            ''' <see cref="TableRow.Fabricadas"/> logo depois — ver o comentário
+            ''' lá para os dois defeitos que este campo já teve enquanto foi
+            ''' contador de lote e de página.
             ''' </summary>
             Friend Fabricadas As Integer
-
-            ''' <summary>Começa a contar uma página nova.</summary>
-            Friend Sub Zerar()
-                Fabricadas = 0
-            End Sub
 
             ''' <summary>
             ''' Construtor sem pasta, <b>só para a suíte</b>.

@@ -76,8 +76,10 @@ Namespace Global.Iris.Integration
         ''' Foi o conserto de 28/08/2026, à tarde: antes ela abria o
         ''' <c>ManifestReader</c> por conta própria a cada pergunta, o que é o
         ''' contorno que a §26.2 proíbe. Agora a única fonte é o consumidor que
-        ''' o dreno alimenta — se a entrega travar, a busca congela junto com o
-        ''' painel, e diz isso.
+        ''' o dreno alimenta. Com a entrega travada antes de qualquer uma das
+        ''' duas receber, as duas ficam no retrato anterior — e a busca diz
+        ''' isso. Uma falha <i>entre</i> as duas entregas deixa o painel à
+        ''' frente; ver o <see cref="ConsumidorComposto"/>.
         ''' </summary>
         Public Sub New(acervo As AcervoDeTodasAsPastas, dreno As PublicationDrain)
             If acervo Is Nothing Then Throw New ArgumentNullException(NameOf(acervo))
@@ -440,16 +442,29 @@ Namespace Global.Iris.Integration
                 '
                 ' Descrever errado um aviso de inconsistencia e pior que nao
                 ' avisar: quem le conclui a coisa errada com confianca.
+                ' ESTA FRASE JA ESTEVE ERRADA DUAS VEZES, EM SENTIDOS OPOSTOS.
+                '
+                ' Primeiro ela dizia que as publicacoes "nao foram entregues ao
+                ' acervo" -- falso, porque a publicacao ja materializa o acervo.
+                '
+                ' Depois virou "a busca ja as enxerga; o painel pode estar
+                ' atrasado". Era verdade enquanto a busca contornava o dreno, e
+                ' deixou de ser no MESMO dia em que o contorno saiu -- e eu nao
+                ' voltei aqui. A revisao externa pegou: a ressalva afirmava
+                ' exatamente o oposto do estado.
+                '
+                ' Agora as duas leem o mesmo retrato, e nenhuma enxerga a
+                ' geracao pendente. E isso que o usuario precisa saber.
                 If DrenoTravadoEm.HasValue Then
-                    partes.Add($"A entrega da geração {DrenoTravadoEm.Value} ao painel do acervo " &
-                               "está travada. A busca já enxerga essa varredura; o painel ao lado " &
-                               "pode estar atrasado.")
+                    partes.Add($"A entrega da geração {DrenoTravadoEm.Value} está travada. " &
+                               "Há varredura publicada que nem a busca nem o painel do acervo " &
+                               "estão enxergando ainda.")
                 ElseIf PublicacoesPendentes < 0 Then
-                    partes.Add("Não consegui conferir se há entrega pendente ao painel do acervo.")
+                    partes.Add("Não consegui conferir se há varredura esperando entrega.")
                 ElseIf PublicacoesPendentes > 0 Then
                     partes.Add($"{PublicacoesPendentes} varredura(s) publicada(s) ainda não foram " &
-                               "entregues ao painel do acervo. A busca já as enxerga; o painel " &
-                               "pode estar atrasado.")
+                               "entregues. O que você está vendo é o retrato anterior a elas — " &
+                               "na busca e no painel do acervo.")
                 End If
 
                 Return String.Join(" ", partes)

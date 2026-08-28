@@ -541,11 +541,12 @@ Namespace Global.Iris.App.ViewModels
         ''' lado ainda não tinha recebido, dois lugares da mesma janela
         ''' discordando.
         '''
-        ''' Agora as duas leem o mesmo retrato <b>na maior parte do tempo</b>.
-        ''' As entregas são sequenciais, então uma falha entre elas deixa o
-        ''' painel à frente da busca até a repetição — divergência temporária,
-        ''' e não perda. O <c>ConsumidorComposto</c> diz isso com todas as
-        ''' letras.
+        ''' Agora as duas leem o mesmo retrato <b>quando as duas entregas
+        ''' concluem</b>. Elas são sequenciais: se a primeira conclui e a
+        ''' segunda falha, o painel fica à frente da busca, e assim permanece
+        ''' enquanto a falha se repetir. Nada se perde — a pendência fica no
+        ''' banco —, mas não é entrega atômica, e o
+        ''' <c>ConsumidorComposto</c> diz isso.
         ''' </summary>
         Public Function Procurar(termo As String) As Iris.Integration.ResultadoDaBusca
             If _disposed Then

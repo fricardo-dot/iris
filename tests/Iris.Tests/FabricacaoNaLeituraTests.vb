@@ -161,47 +161,80 @@ Public Class FabricacaoNaLeituraTests
     End Sub
 
     ''' <summary>
-    ''' <b>O contador é de PÁGINA, e a página pode custar vários lotes.</b>
+    ''' <b>A PÁGINA SOMA SÓ AS LINHAS QUE ENTRARAM NELA.</b>
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>ZERAR NO LUGAR ERRADO SUBCONTAVA</b>
+    ''' <b>ESTE CONTADOR ERROU NAS DUAS DIREÇÕES, EM DIAS SEGUIDOS</b>
     '''
-    ''' A primeira versão zerava no início de <c>Ler</c>, e parecia certo. O
-    ''' <c>CursorPaging</c> chama <c>Ler</c> <b>várias vezes</b> por página, para
-    ''' drenar o grupo do último instante — então o DTO recebia só o último lote,
-    ''' e uma fabricação no primeiro sumia.
+    ''' Ele começou na <i>fonte</i>, zerado a cada <c>Ler</c> — e <b>subcontava</b>,
+    ''' porque o <c>CursorPaging</c> chama <c>Ler</c> várias vezes por página e o
+    ''' DTO recebia só o último lote.
     '''
-    ''' Quem zera agora é <c>Zerar</c>, chamado uma vez por página por quem monta
-    ''' a página. Este teste cobra as duas metades: que acumula sem <c>Zerar</c>,
-    ''' e que <c>Zerar</c> recomeça.
+    ''' Eu movi o reset para uma vez por página, e aí ele <b>sobrecontava</b>: o
+    ''' <c>CursorPaging</c> lê um lote inteiro e para na primeira linha de outro
+    ''' instante, então as linhas de <i>read-ahead</i> — que não entram nesta
+    ''' página — já tinham sido convertidas e contadas. Na página seguinte elas
+    ''' seriam contadas de novo.
     '''
-    ''' <b>O que ele NÃO cobre, e é preciso dizer:</b> o caminho inteiro
-    ''' <c>ReadPage → LerPorTabela → MessagePage.FabricatedCells</c>. Isso pede
-    ''' uma <c>Table</c> de verdade com célula nula dentro, e a medição de 28/08
-    ''' mostrou que esta caixa não tem nenhuma. O que se prova aqui é o contrato
-    ''' do contador; a ligação até o DTO é sustentada por leitura.
+    ''' Cada conserto de um lado abria o outro, porque o número morava no lugar
+    ''' errado: entre <i>quem converte</i> e <i>quem escolhe o que entra</i>.
+    '''
+    ''' <b>Agora ele mora na LINHA.</b> Quem entra na página leva o seu número
+    ''' junto, e a página soma o que recebeu. Não há o que errar — e é por isso
+    ''' que este teste é sobre a soma, e não sobre o reset.
     ''' </summary>
     <TestMethod>
-    Public Sub O_contador_acumula_entre_lotes_e_Zerar_recomeca()
+    Public Sub A_pagina_soma_so_as_linhas_que_recebeu()
+        Dim entraram = {
+            New MessagePaging.TableRow With {.EntryId = "E-1", .Fabricadas = 2},
+            New MessagePaging.TableRow With {.EntryId = "E-2", .Fabricadas = 0},
+            New MessagePaging.TableRow With {.EntryId = "E-3", .Fabricadas = 1}
+        }
+
+        Assert.AreEqual(3, MessagePaging.Fabricadas(entraram),
+            "a pagina tem de somar as fabricacoes das linhas que recebeu")
+
+        ' A linha de read-ahead NAO esta na lista, entao nao entra na conta --
+        ' e sera contada na pagina dela, uma vez so.
+        Assert.AreEqual(2, MessagePaging.Fabricadas({entraram(0)}),
+            "somou linha que nao foi passada")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Lista vazia e lista nula somam zero, e não explodem.</b>
+    '''
+    ''' Uma página legitimamente vazia é comum — fim da pasta —, e um contador
+    ''' que estourasse ali derrubaria a listagem por causa da instrumentação.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Pagina_vazia_soma_zero()
+        Assert.AreEqual(0, MessagePaging.Fabricadas(Array.Empty(Of MessagePaging.TableRow)()))
+        Assert.AreEqual(0, MessagePaging.Fabricadas(Nothing))
+    End Sub
+
+    ''' <summary>
+    ''' <b>O acumulador da linha zera entre linhas.</b>
+    '''
+    ''' É a metade que o <c>Ler</c> faz e que este teste alcança sem COM: zerar
+    ''' antes de converter e colher depois. Sem o zerar, a segunda linha herdaria
+    ''' a fabricação da primeira e o total da página dobraria.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_acumulador_da_linha_zera_entre_linhas()
         Dim f As New MessagePaging.TableRowSource()
 
-        ' Primeiro lote.
+        ' Linha 1: duas ausencias.
+        f.Fabricadas = 0
         f.ComoTexto(Nothing)
         f.ComoInteiro(Nothing)
-        Assert.AreEqual(2, f.Fabricadas)
+        Dim daPrimeira = f.Fabricadas
+        Assert.AreEqual(2, daPrimeira)
 
-        ' Segundo lote da MESMA pagina: acumula, e nao recomeca.
+        ' Linha 2: uma so, e ela nao pode herdar as da primeira.
+        f.Fabricadas = 0
         f.ComoBooleano(Nothing)
-        Assert.AreEqual(3, f.Fabricadas,
-            "o contador recomecou entre lotes: a pagina perderia as fabricacoes " &
-            "de todos os lotes menos o ultimo")
-
-        ' Pagina nova.
-        f.Zerar()
-        Assert.AreEqual(0, f.Fabricadas, "Zerar tinha de recomecar a contagem")
-
-        f.ComoTexto(Nothing)
-        Assert.AreEqual(1, f.Fabricadas)
+        Assert.AreEqual(1, f.Fabricadas,
+            "a segunda linha herdou a fabricacao da primeira")
     End Sub
 
 End Class

@@ -643,13 +643,15 @@ que este ESCOPO carregava.
   `Table`.
 - ~~A cobertura do calendário nunca foi medida.~~ **Medida em 28/08/2026, à
   tarde**, por `tools/medir-cobertura-calendario.ps1`: o calendário padrão local
-  vai de 2024-06-07 a 2026-12-15 — **921 dias, sem corte** —, com 411 dos 434
-  compromissos anteriores ao horizonte do correio.
-  Na formulação mais estreita que se sustenta: **o corte de ~31 dias observado
-  nas pastas de correio não aparece neste calendário**. Isso derruba a
-  inferência que eu tinha escrito de manhã — *"a janela é do store"* —, e **não**
-  autoriza dizer que o calendário está inteiro: pode haver outro corte mais
-  antigo, e os dois roteiros nem correlacionam `StoreID`.
+  tem compromissos de 2024-06-07 a 2026-12-15, com 411 dos 434 anteriores ao
+  horizonte do correio e distribuição contínua por ano.
+  **A formulação que se sustenta, e nada além dela:** o corte de ~31 dias
+  observado nas pastas de correio **não aparece neste calendário padrão local**.
+  Não é "921 dias sem corte" — a medição não procura cortes mais antigos que o
+  item mais velho que ela achou. E não falsifica "a janela é por store" em
+  geral: os dois roteiros **não correlacionam `StoreID`**, então a comparação é
+  por data, e não por caixa. O que ela derruba é a certeza com que eu tinha
+  escrito a inferência.
 - **A contagem do servidor continua inalcançável**, para correio e para
   calendário. Isso não é dívida de trabalho: é o limite do OOM, e é por isso que
   o Iris não conclui ausência em lugar nenhum.

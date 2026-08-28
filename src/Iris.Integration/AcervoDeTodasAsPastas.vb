@@ -35,9 +35,13 @@ Namespace Global.Iris.Integration
     ''' mesma janela discordando sobre o que existe.
     '''
     ''' Agora ela lê deste cache em memória, que só muda quando o dreno
-    ''' entrega. Se a entrega travar, a busca <b>congela junto com o painel</b>
-    ''' — e diz isso. Ficar para trás junto é honesto; ficar na frente em
-    ''' silêncio não era.
+    ''' entrega. Se a entrega travar antes de <b>qualquer</b> uma das duas
+    ''' receber, as duas ficam no retrato anterior — e a busca diz isso. Ficar
+    ''' para trás junto é honesto; ficar na frente em silêncio não era.
+    '''
+    ''' <b>"Junto" tem um limite, e ele está no <see cref="ConsumidorComposto"/>:</b>
+    ''' as entregas são sequenciais, então uma falha <i>entre</i> elas deixa o
+    ''' painel à frente da busca.
     '''
     ''' ------------------------------------------------------------------
     ''' <b>O CONSTRUTOR NÃO LÊ NADA, E ISSO É O CONSERTO</b>
@@ -205,10 +209,15 @@ Namespace Global.Iris.Integration
     ''' segunda falhar, o painel muda e a busca fica para trás — e eu escrevi,
     ''' na primeira versão, que as duas <i>"congelam juntas"</i>. Não congelam.
     '''
-    ''' O que salva é a semântica do dreno: a geração continua pendente e será
-    ''' repetida, e as duas partes são idempotentes. Então a divergência é
-    ''' <b>temporária</b>, e não perda silenciosa. Chamar isso de simultâneo
-    ''' era mais forte que o mecanismo.
+    ''' O que o dreno garante é que a geração <b>continua pendente</b> e será
+    ''' tentada de novo, e que as duas partes são idempotentes. Isso é
+    ''' possibilidade de convergência, e <b>não</b> convergência: uma falha
+    ''' persistente mantém a divergência enquanto durar.
+    '''
+    ''' Eu escrevi "temporária" na correção anterior, e a revisão externa
+    ''' apontou que continua sendo mais forte que o mecanismo. O que se pode
+    ''' afirmar é: <b>nada se perde em silêncio</b> — a pendência fica no
+    ''' banco, e a busca a anuncia.
     ''' </summary>
     Public NotInheritable Class ConsumidorComposto
         Implements IPublicationConsumer

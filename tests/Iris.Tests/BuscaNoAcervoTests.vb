@@ -390,10 +390,24 @@ Public Class BuscaNoAcervoTests
                 "a busca enxergou uma geracao que o dreno ainda nao entregou -- " &
                 "e o painel do acervo ao lado nao enxerga")
 
-            ' E ela AVISA, que e o outro lado do mesmo contrato.
+            ' E ELA AVISA -- COM A FRASE CERTA.
+            '
+            ' Esta assercao so cobrava a presenca de "painel do acervo", e por
+            ' isso passou junto com uma ressalva que dizia o OPOSTO do estado:
+            ' "a busca ja as enxerga; o painel pode estar atrasado", escrita
+            ' quando a busca ainda contornava o dreno e nao revisada quando o
+            ' contorno saiu. A revisao externa pegou.
+            '
+            ' Agora ela cobra o SENTIDO: que a ressalva diga que o retrato e o
+            ' anterior, e que NAO afirme que a busca ja enxerga.
             Assert.IsTrue(r.PublicacoesPendentes > 0,
                 $"tinha de haver entrega pendente, achei {r.PublicacoesPendentes}")
+            StringAssert.Contains(r.Ressalva, "retrato anterior")
             StringAssert.Contains(r.Ressalva, "painel do acervo")
+            Assert.IsFalse(r.Ressalva.Contains("já as enxerga"),
+                "a ressalva afirma que a busca enxerga a geracao pendente, e ela nao enxerga")
+            Assert.IsFalse(r.Ressalva.Contains("painel pode estar atrasado"),
+                "a ressalva poe o painel atras da busca, e as duas leem o mesmo retrato")
         End Using
     End Sub
 

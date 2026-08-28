@@ -721,3 +721,40 @@ quando devolvo o `Recarregar()` ao construtor.
    que o cabeçalho já estivesse corrigido.
 
 Suíte: **870**.
+
+### 28/08 — oitava passada: a ressalva afirmava o oposto do código
+
+Codex confirmou que a correção do crítico é real — o construtor não lê mais, e o
+`Recarregar()` está dentro do mesmo `Try`, então uma falha no dreno não o
+dispara. Sete achados novos.
+
+**O mais afiado:** a ressalva da busca dizia *"a busca já as enxerga; o painel
+pode estar atrasado"*. Era verdade enquanto a busca contornava o dreno, e deixou
+de ser **no mesmo dia** em que o contorno saiu — e eu não voltei à frase. Ela
+passou a afirmar exatamente o oposto do estado. E **o teste passava junto**,
+porque só cobrava a presença de "painel do acervo". Agora ele cobra o sentido.
+
+**O contador errou nas duas direções, em dias seguidos.** Primeiro subcontava
+(zerado por lote). Eu movi o reset para uma vez por página, e aí **sobrecontava**:
+o `CursorPaging` lê um lote inteiro e para na primeira linha de outro instante,
+então as linhas de *read-ahead* — que não entram nesta página — já tinham sido
+contadas, e seriam contadas de novo na página seguinte.
+
+Cada conserto de um lado abria o outro, porque o número morava entre *quem
+converte* e *quem escolhe o que entra*. **Agora ele mora na linha**, e a página
+soma o que recebeu. Não há o que errar.
+
+**E o caminho legado ainda fabricava em silêncio** — eu instrumentei só o rápido,
+então o zero que a lista mostrava para pastas no caminho lento era um zero
+fabricado. Os quatro auxiliares passaram a contar.
+
+Mais três de calibragem: *"temporária"* continuava mais forte que o mecanismo (o
+dreno garante possibilidade de convergência, não convergência); sobrevivia
+*"congelam juntas"* em três lugares; e o ESCOPO dizia *"921 dias, sem corte"* e
+*"derruba"* — a medição não procura cortes mais antigos que o item mais velho que
+achou, e os dois roteiros não correlacionam `StoreID`.
+
+`RESULTADO-SUITE.md` remedido: **872** no `d61037a`. Os relatórios diziam 870
+enquanto o arquivo versionado registrava 805.
+
+Suíte: **872**.

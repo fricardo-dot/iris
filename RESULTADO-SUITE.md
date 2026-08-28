@@ -10,12 +10,30 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — fechamento da Fase 2
+## Medição corrente — fim do dia autônomo
 
 | | |
 |---|---|
-| **Commit** | `ef7096a` — a árvore da solução .NET que foi medida |
-| **Data** | 28 de agosto de 2026 |
+| **Commit** | `d61037a` — a árvore da solução .NET que foi medida |
+| **Data** | 28 de agosto de 2026, à tarde |
+| **SDK** | .NET 10.0.301 |
+| **Alvo** | `net10.0-windows` |
+| **Máquina** | Windows 11 Pro 10.0.26200 |
+
+```
+Passed!  - Failed:     0, Passed:   872, Skipped:     0, Total:   872, Duration: 1 m 8 s - Iris.Tests.dll (net10.0)
+```
+
+É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A revisão externa
+apontou que os relatórios diziam 870 enquanto este arquivo registrava 805 — a
+afirmação existia sem a evidência versionada que o próprio projeto exige.
+
+## Medição do fechamento da Fase 2
+
+| | |
+|---|---|
+| **Commit** | `ef7096a` |
+| **Data** | 28 de agosto de 2026, de manhã |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
@@ -27,9 +45,9 @@ A total of 1 test files matched the specified pattern.
 Passed!  - Failed:     0, Passed:   805, Skipped:     0, Total:   805, Duration: 1 m 1 s - Iris.Tests.dll (net10.0)
 ```
 
-É este o número que `RELATORIO-FASE2-FECHAMENTO.html` cita. Foi medido **depois**
-de todas as correções das seis passadas de revisão, e antes das correções de
-redação em documentos — que não são código executável.
+É o número que `RELATORIO-FASE2-FECHAMENTO.html` cita. Foi medido **depois** de
+todas as correções das seis passadas de revisão daquele bloco, e antes das
+correções de redação em documentos — que não são código executável.
 
 ## Medição anterior — fechamento da Fase 3
 
