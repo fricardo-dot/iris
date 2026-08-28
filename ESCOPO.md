@@ -286,7 +286,28 @@ O subsistema. Precisa definir, não apenas mencionar:
 - Reconciliação sem reler a caixa inteira
 
 Mais importação inicial paginada, tombstones, retomada após falha e busca
-textual. Só aqui listagem e busca passam a ler exclusivamente do cache.
+textual.
+
+> **Duas frases deste parágrafo eram falsas, e ficaram falsas por três dias.**
+> Descobertas em 28/08/2026, por revisão externa, enquanto se planejava a Fase 4.
+>
+> **"busca textual"** — não foi entregue. Não existe consulta textual sobre o
+> cache em lugar nenhum do produto: nem esquema de busca, nem serviço, nem tela.
+> O `ManifestReader` lê o manifesto de uma pasta e devolve as linhas
+> publicadas; ele não procura nada.
+>
+> **"listagem e busca passam a ler exclusivamente do cache"** — a listagem
+> **não** lê do cache. Ela continua lendo ao vivo do Outlook, e isso é
+> deliberado e está escrito no próprio `MainViewModel`: *"Não substitui a
+> lista: ela continua lendo AO VIVO do Outlook, e é isso que o usuário
+> opera"*. O acervo é um painel ao lado, não a fonte da lista.
+>
+> A segunda é pior que a primeira. A primeira é uma entrega que faltou; a
+> segunda descreve uma arquitetura que o projeto **decidiu não ter**, e
+> decidiu por um bom motivo (§23: em cache o acervo é arquivo conservador,
+> não o estado corrente da caixa). Um documento de escopo afirmando o
+> contrário do que o código faz de propósito é o formato de erro que este
+> projeto persegue nos outros lugares.
 
 **Encerrada em 25/08/2026** (352 testes) e **pendências fechadas em 28/08/2026**
 (805 testes) — `RELATORIO-FASE2.html` e `RELATORIO-FASE2-FECHAMENTO.html`.

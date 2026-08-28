@@ -312,3 +312,57 @@ Sete achados; três de gravidade alta, e o primeiro é o meu.
    justamente a função que **não** é mutação. Remanejado para `MutateAsync`.
 
 Suíte: **823**.
+
+### 28/08 — bloco 6: a Fase 4 não vai ser executada, e o motivo é bom
+
+Levei as oito decisões ao Codex antes de escrever qualquer linha. Ele desmontou
+o plano, com razão, e o achado mais importante não era sobre a Fase 4.
+
+**O ESCOPO afirmava duas coisas falsas sobre a Fase 2, e elas estavam lá desde
+25/08:**
+
+1. *"busca textual"* como entregue. **Não foi.** Não existe consulta textual
+   sobre o cache em lugar nenhum: nem esquema, nem serviço, nem tela. O
+   `ManifestReader` lê o manifesto de uma pasta; ele não procura nada.
+2. *"listagem e busca passam a ler exclusivamente do cache"*. **A listagem não
+   lê do cache** — continua lendo ao vivo do Outlook, e isso é deliberado, está
+   escrito no `MainViewModel`, e é a §23. O documento afirmava o contrário de
+   uma decisão que o projeto tomou de propósito.
+
+A segunda é pior. A primeira é entrega que faltou; a segunda descreve uma
+arquitetura que o projeto **decidiu não ter**.
+
+**Sobre as oito decisões, o veredito do Codex:**
+
+| # | Meu voto | O que ele achou |
+|---|---|---|
+| 1 | cobertura parcial | quase certa — mas a ressalva não pode viver só na UI; tem de ser estrutural, presa a geração/universo/instante |
+| 2 | zero egress na v1 | **certa**, e proporcional ao corpus |
+| 3 | índice local | incompleta — "local" não resolve: criptografia do cache (R14) segue aberta |
+| 4 | cerimônia separada | direção certa, **prova errada**: `127.0.0.1` prova protocolo, não impossibilidade de egress |
+| 5 | retenção | **errada** — o Iris não sabe que a mensagem "morreu"; sair da janela, mover e excluir são indistinguíveis |
+| 6 | versão do índice | parcial — falta origem, normalização, métrica; e reconstrução tem de trocar ponteiro, não apagar antes |
+| 7 | qualidade | **errada como critério** — precisão sozinha premia quem marca quase nada |
+| 8 | orçamento | **não decidida** — "teto por execução" não diz qual teto |
+
+**E o que ele disse que eu precisava ouvir:** minhas regras de triagem produzem
+*sinais sem direção validada*. `RE:`/`RES:` identifica sintaxe de assunto, não
+necessidade de ação. Remetente com 22% do volume pode ser automação. Anexo pode
+ser contrato ou assinatura de e-mail. **Nenhuma dessas variáveis tem direção
+segura sem rótulos, e só o dono da caixa pode rotular.** Eu posso definir o
+protocolo; não posso fabricar o oráculo.
+
+**Decisão: a Fase 4 NÃO é executada.** Chamar isso de Fase 4 seria trocar a
+entrega pelo andaime. E a Fase 4 como está escrita provavelmente não faz sentido
+agora: 1.123 itens, sem corpo indexável, janela de um mês, sem conjunto de
+consultas, e sem nem a busca textual de baseline.
+
+**Correção importante do Codex, que eu tinha errado:** a janela de 31 dias é do
+**Outlook**, não do cache do Iris. O cache foi desenhado para acumular — ele pode
+crescer para além da janela daqui para frente. A Fase 4 pode ganhar sentido
+depois de meses de acúmulo. Não gravar "31 dias" em lugar nenhum.
+
+**O que passa a ser entregue no lugar:** a lacuna real — busca textual sobre o
+acervo — e facetas locais nomeadas como **sinais**, não como prioridade, em
+tabela derivada e descartável. Nunca em `user_state.triaged`, que é decisão
+durável do usuário e o esquema protege de propósito.
