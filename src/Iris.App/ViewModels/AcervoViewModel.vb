@@ -54,6 +54,8 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _servico As AcervoService
         Private ReadOnly _dreno As PublicationDrain
         Private ReadOnly _broker As IOutlookBroker
+        ''' <summary>O arquivo do cache — a varredura abre o dela por aqui.</summary>
+        Private ReadOnly _caminho As String
         ''' <summary>
         ''' O voo corrente da varredura, para o descarte poder cancelá-lo.
         ''' </summary>
@@ -94,12 +96,22 @@ Namespace Global.Iris.App.ViewModels
         ''' vazia silenciosa, porque tela vazia é indistinguível de "não há
         ''' nada guardado".
         ''' </summary>
+        ''' <param name="caminho">
+        ''' Onde o cache mora. <c>Nothing</c> usa <see cref="CaminhoPadrao"/>.
+        '''
+        ''' Existe para o teste poder apontar para um arquivo descartável: sem
+        ''' isto, qualquer teste deste ViewModel abriria o cache <b>de verdade
+        ''' do usuário</b> — e a revisão apontou, com razão, que os caminhos
+        ''' concorrentes daqui não tinham cobertura nenhuma justamente porque
+        ''' ninguém conseguia instanciá-lo sem tocar na máquina.
+        ''' </param>
         Public Shared Function Abrir(ui As Dispatcher, folderKey As Long,
                                      ByRef motivoDaFalha As String,
-                                     Optional broker As IOutlookBroker = Nothing) As AcervoViewModel
+                                     Optional broker As IOutlookBroker = Nothing,
+                                     Optional caminho As String = Nothing) As AcervoViewModel
             motivoDaFalha = Nothing
             Try
-                Dim caminho = CaminhoPadrao()
+                caminho = If(String.IsNullOrWhiteSpace(caminho), CaminhoPadrao(), caminho)
                 Directory.CreateDirectory(Path.GetDirectoryName(caminho))
 
                 Dim falha As OpenFailure = Nothing
@@ -108,7 +120,7 @@ Namespace Global.Iris.App.ViewModels
                     motivoDaFalha = $"o cache não abriu ({falha})"
                     Return Nothing
                 End If
-                Return New AcervoViewModel(ui, db, folderKey, broker)
+                Return New AcervoViewModel(ui, db, folderKey, broker, caminho)
             Catch ex As Exception
                 motivoDaFalha = $"o cache não abriu ({ex.GetType().Name}: {ex.Message})"
                 Return Nothing
@@ -116,9 +128,10 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         Private Sub New(ui As Dispatcher, db As CacheDatabase, folderKey As Long,
-                        broker As IOutlookBroker)
+                        broker As IOutlookBroker, caminho As String)
             _ui = ui
             _db = db
+            _caminho = caminho
             ' Sem broker nao ha varredura, e o botao fica desabilitado. E o
             ' caso dos testes que so olham o lado de leitura.
             _broker = broker
@@ -286,8 +299,13 @@ Namespace Global.Iris.App.ViewModels
             _storeDoAlvo = store
 
             If pasta Is Nothing OrElse String.IsNullOrWhiteSpace(pasta.EntryId) Then
+                ' ESVAZIA. Sem isto o acervo continuava mostrando itens e
+                ' ressalva da ULTIMA pasta depois de a selecao sumir -- numeros
+                ' sem dono, descrevendo uma pasta que ninguem esta olhando.
+                _servico.Apontar(0L)
                 OnPropertyChanged(NameOf(PodeVarrer))
                 VarrerCommand.NotifyCanExecuteChanged()
+                Atualizar()
                 Return
             End If
 
@@ -349,7 +367,7 @@ Namespace Global.Iris.App.ViewModels
                 Dim r = Await Task.Run(
                     Function()
                         Dim falha As OpenFailure = Nothing
-                        Using db = CacheDatabase.Open(CaminhoPadrao(),
+                        Using db = CacheDatabase.Open(_caminho,
                                                       CacheSchema.Intended(), falha)
                             If db Is Nothing Then Return Nothing
                             Return New VarreduraDaPasta(_broker, db).
@@ -357,11 +375,27 @@ Namespace Global.Iris.App.ViewModels
                         End Using
                     End Function)
 
+                ' A JANELA FECHOU NO MEIO.
+                '
+                ' Defeito que nasceu na correcao anterior: o Dispose cancela e
+                ' NAO espera, e o SweepRunner captura o cancelamento e devolve
+                ' um SweepResult -- entao o Await nao lanca, e a execucao
+                ' seguia por Recarregar() e Atualizar() sobre um _db ja
+                ' descartado. O Catch convertia a corrida em "A varredura
+                ' falhou", numa tela que ja nao existe.
+                If _disposed Then Return
+
                 ' TROCOU DE PASTA: o voo terminou e publicou, e isso vale. O
                 ' que nao vale e escrever o desfecho dele na faixa de outra
                 ' pasta -- seria uma recusa da pasta A aparecendo sob o nome
                 ' da B.
-                If Not ReferenceEquals(doVoo, _alvoDoOutlook) Then Return
+                '
+                ' Equals, e nao ReferenceEquals: FolderKey e imutavel e tem
+                ' igualdade de VALOR por (EntryId, StoreId). Comparar por
+                ' referencia e mais estreito que a identidade de dominio --
+                ' recarregar a arvore reconstroi o objeto da MESMA pasta, e o
+                ' resultado seria descartado a toa.
+                If Not doVoo.Equals(_alvoDoOutlook) Then Return
 
                 If r Is Nothing Then
                     Travado = "O cache nao abriu para a varredura."
@@ -373,13 +407,15 @@ Namespace Global.Iris.App.ViewModels
             Catch ex As OperationCanceledException
                 ' A janela fechou no meio. Nao ha tela para avisar.
             Catch ex As Exception
-                Travado = "A varredura falhou."
+                If Not _disposed Then Travado = "A varredura falhou."
             Finally
                 If ReferenceEquals(_cancelamentoDaVarredura, cts) Then
                     _cancelamentoDaVarredura = Nothing
                 End If
                 cts.Dispose()
-                Varrendo = False
+                ' Varrendo dispara OnPropertyChanged e NotifyCanExecuteChanged.
+                ' Num objeto descartado isso e mexer em tela que ja saiu.
+                If Not _disposed Then Varrendo = False
             End Try
         End Function
 

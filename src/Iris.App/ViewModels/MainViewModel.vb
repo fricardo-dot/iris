@@ -28,6 +28,15 @@ Namespace Global.Iris.App.ViewModels
         ''' de uma que falhou.
         ''' </summary>
         Private _stores As IReadOnlyList(Of Model.StoreInfo)
+
+        ''' <summary>
+        ''' Quantas leituras de store foram <b>iniciadas</b>. Só a última
+        ''' iniciada pode escrever — a época sozinha não ordena duas leituras
+        ''' da mesma sessão.
+        '''
+        ''' Só é tocado no dispatcher, então não precisa de <c>Interlocked</c>.
+        ''' </summary>
+        Private _pedidoDeStores As Long
         Private ReadOnly _ui As Global.System.Windows.Threading.Dispatcher
 
         ''' <summary>
@@ -426,17 +435,26 @@ Namespace Global.Iris.App.ViewModels
         ''' store de outra sessão, e a autorização valeria para a coisa errada.
         ''' </summary>
         Private Async Function RecarregarStoresAsync() As Task
+            ' CONTADOR, ALEM DA EPOCA.
+            '
+            ' A epoca so separa sessoes. Duas leituras da MESMA sessao ainda
+            ' podem terminar invertidas -- e a pior delas e a que FALHA por
+            ' ultimo: o Catch limparia _stores por cima de uma lista boa que
+            ' ja tinha chegado.
+            _pedidoDeStores += 1
+            Dim meuPedido = _pedidoDeStores
             Dim minha = _broker.SessionEpoch
             Try
                 Dim r = Await _broker.GetStoresAsync(Threading.CancellationToken.None)
 
-                ' Chegou tarde: outra leitura, de uma sessao mais nova, ja
-                ' respondeu. Escrever aqui seria rebaixar a lista corrente.
-                If minha <> _broker.SessionEpoch Then Return
+                ' Chegou tarde: outra leitura ja respondeu, seja de sessao
+                ' mais nova, seja da mesma. Escrever aqui rebaixaria a lista
+                ' corrente para um retrato mais velho.
+                If minha <> _broker.SessionEpoch OrElse meuPedido <> _pedidoDeStores Then Return
 
                 _stores = If(r IsNot Nothing AndAlso r.Succeeded, r.Value, Nothing)
             Catch ex As Exception
-                If minha <> _broker.SessionEpoch Then Return
+                If minha <> _broker.SessionEpoch OrElse meuPedido <> _pedidoDeStores Then Return
                 ' Sem stores a varredura recusa por StoreDesconhecido, que diz
                 ' a verdade. Derrubar a abertura por causa disso seria pior.
                 _stores = Nothing
