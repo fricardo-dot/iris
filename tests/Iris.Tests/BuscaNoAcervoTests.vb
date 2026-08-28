@@ -114,7 +114,19 @@ Public Class BuscaNoAcervoTests
     Private Shared Function Buscar(db As CacheDatabase) As BuscaNoAcervo
         Dim todas As New AcervoDeTodasAsPastas(db)
         Dim dreno As New PublicationDrain(db)
+
+        ' A MESMA SEQUENCIA DA PRODUCAO, e ela nao e acidental.
+        '
+        ' O acervo nasce VAZIO de proposito: ler no construtor seria ler na
+        ' frente do dreno quando ha publicacao pendente de uma queda
+        ' anterior. Entao drena primeiro -- cada entrega recarrega -- e so
+        ' carrega a mao se nada veio, que e o caso da abertura normal.
+        '
+        ' Um helper que fizesse diferente do AcervoViewModel testaria outro
+        ' programa.
         dreno.Drenar(todas)
+        If todas.Recarregado = 0 Then todas.Recarregar()
+
         Return New BuscaNoAcervo(todas, dreno)
     End Function
 
@@ -350,6 +362,8 @@ Public Class BuscaNoAcervoTests
             Dim todas As New AcervoDeTodasAsPastas(db)
             Dim dreno As New PublicationDrain(db)
             dreno.Drenar(todas)
+            If todas.Recarregado = 0 Then todas.Recarregar()
+            If todas.Recarregado = 0 Then todas.Recarregar()
             Dim busca As New BuscaNoAcervo(todas, dreno)
 
             Assert.AreEqual(1, busca.Procurar("contrato").Achados.Count,
@@ -462,5 +476,75 @@ Public Class BuscaNoAcervoTests
             Recebidas += 1
         End Sub
     End Class
+
+    ''' <summary>
+    ''' <b>REABRIR COM PUBLICAÇÃO PENDENTE — o caso que o dreno existe para
+    ''' recuperar, e onde a primeira versão contornava.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O QUE A REVISÃO EXTERNA ACHOU</b>
+    '''
+    ''' O <c>AcervoDeTodasAsPastas</c> lia o manifesto <b>no construtor</b>, com
+    ''' a justificativa de que "na abertura não há entrega pendente". É falso:
+    ''' uma queda entre publicar e marcar drenada deixa publicação pendente
+    ''' <b>persistida no banco</b>. Na abertura seguinte, o construtor leria a
+    ''' geração nova antes de o dreno entregá-la — o contorno de novo, reduzido
+    ''' à abertura.
+    '''
+    ''' E os testes passavam pelo motivo errado: o <c>Semear</c> já drenava, e o
+    ''' <c>Drenar</c> seguinte não tinha nada a entregar.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ESTE TESTE SIMULA A QUEDA</b>
+    '''
+    ''' Publica sem drenar, <b>fecha o banco</b>, reabre, e constrói o acervo do
+    ''' zero — que é exatamente a sequência de uma reabertura depois de queda.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo o <c>Recarregar()</c> ao construtor,
+    ''' este teste falha — a busca enxerga a geração que ninguém entregou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Reabrir_com_publicacao_pendente_NAO_mostra_a_geracao_nova()
+        Dim chave As Long
+        Using db = Abrir()
+            chave = Semear(db, "Caixa de Entrada", "entrada", Caixa)
+
+            ' Publica UMA linha nova e NINGUEM drena -- e ai o processo "morre".
+            Dim resolvedor As New ResolvedorDoAcervo(db)
+            Dim amb = resolvedor.Ambiente(Impressao())
+            Dim universo As New SweepUniverse("store-1", "entrada", "f", Nothing, 1, "amb-1")
+            Dim fonte As New FonteDeLinhas(universo, {New SourceRow With {
+                .Key = "entrada-9", .Subject = "Aditivo pos-queda",
+                .SenderName = "Caroline Abreu",
+                .ReceivedAt = New DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero).ToString("o"),
+                .MessageClass = "IPM.Note"}})
+            Dim r2 = New SweepRunner(fonte, New SqliteSweepSink(db, chave, amb.Chave), 50).
+                     Executar(universo, 0, 2, EnvironmentPolicy.Capacidades(Impressao()),
+                              CancellationToken.None)
+            Assert.IsTrue(r2.Publicou, $"controle: tinha de publicar. {r2.Motivo}")
+        End Using
+
+        ' O BANCO E REABERTO, e o acervo nasce do zero.
+        SqliteConnection.ClearAllPools()
+        Using db = Abrir()
+            Dim dreno As New PublicationDrain(db)
+            Assert.IsTrue(dreno.Pendentes().Count > 0,
+                "controle: a publicacao pendente tinha de ter sobrevivido ao fechamento")
+
+            Dim todas As New AcervoDeTodasAsPastas(db)
+            Assert.AreEqual(0, todas.Recarregado,
+                "o construtor leu o manifesto -- e nesta situacao isso e ler na " &
+                "frente do dreno")
+
+            Dim busca As New BuscaNoAcervo(todas, dreno)
+            Assert.AreEqual(0, busca.Procurar("pos-queda").Achados.Count,
+                "a busca enxergou uma geracao que ninguem entregou, logo apos reabrir")
+
+            ' E depois de drenar, ela ve -- o par positivo.
+            dreno.Drenar(todas)
+            Assert.AreEqual(1, busca.Procurar("pos-queda").Achados.Count,
+                "depois do dreno a geracao pendente tinha de aparecer")
+        End Using
+    End Sub
 
 End Class

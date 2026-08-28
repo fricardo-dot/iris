@@ -216,8 +216,9 @@ Write-Host "  Quantos itens existem no servidor alem do horizonte. Isso continua
 Write-Host "  inalcancavel pelo OOM, e por isso o Iris nao conclui ausencia." -ForegroundColor DarkGray
 Write-Host "  Tambem nao diz nada sobre pastas com menos de $MinimoDeItens itens," -ForegroundColor DarkGray
 Write-Host "  nem sobre pastas cuja leitura falhou -- essas foram avisadas acima." -ForegroundColor DarkGray
-Write-Host "  E mistura stores, se houver mais de um: a janela e do store, entao" -ForegroundColor DarkGray
-Write-Host "  duas caixas com janelas diferentes apareceriam como ruido." -ForegroundColor DarkGray
+Write-Host "  E MISTURA STORES, se houver mais de um, sem separar por StoreID." -ForegroundColor DarkGray
+Write-Host "  Duas caixas com politicas diferentes apareceriam como ruido, e a" -ForegroundColor DarkGray
+Write-Host "  coincidencia de datas poderia ate ser entre caixas distintas." -ForegroundColor DarkGray
 
 if ($Csv) {
     $ordenadas | Export-Csv -Path $Csv -NoTypeInformation -Encoding UTF8

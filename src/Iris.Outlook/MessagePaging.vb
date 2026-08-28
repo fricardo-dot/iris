@@ -197,6 +197,8 @@ Namespace Global.Iris.Outlook
                                       cursor As MessageCursor, targetCount As Integer) As MessagePage
 
             Dim fonte As New TableRowSource(folder)
+            ' Uma pagina, uma contagem -- e a pagina pode custar varios lotes.
+            fonte.Zerar()
             Dim fronteira As DateTimeOffset? = If(cursor Is Nothing, Nothing, cursor.Boundary)
 
             Dim saida = CursorPaging.ReadPage(fonte, fronteira, targetCount)
@@ -575,10 +577,9 @@ Namespace Global.Iris.Outlook
                 Dim ultima = bruto.GetUpperBound(0)
                 If ultima < primeira Then Return vazio
 
-                ' ZERA POR PAGINA. O numero descreve a pagina, e nao a vida do
-                ' objeto -- somar entre paginas faria a ultima parecer a pior.
-                Fabricadas = 0
-
+                ' NAO ZERA AQUI. Ver o comentario de Fabricadas: o
+                ' CursorPaging chama Ler() varias vezes para drenar empate, e
+                ' zerar por LOTE faria o DTO receber so o ultimo deles.
                 Dim linhas As New List(Of TableRow)(ultima - primeira + 1)
                 For r = primeira To ultima
                     linhas.Add(New TableRow With {
@@ -622,12 +623,27 @@ Namespace Global.Iris.Outlook
             End Function
 
             ''' <summary>
-            ''' Quantas células ausentes viraram valor desde a última página.
+            ''' Quantas células ausentes viraram valor <b>nesta página</b>.
             '''
-            ''' Zerado por página em <c>Ler</c>, para o número descrever a página
-            ''' e não a vida do objeto.
+            ''' ------------------------------------------------------------------
+            ''' <b>ZERAR NO LUGAR ERRADO SUBCONTAVA, E A REVISÃO PEGOU</b>
+            '''
+            ''' A primeira versão zerava no início de <c>Ler</c>. Parecia certo —
+            ''' "o número descreve a página" — e estava errado: o
+            ''' <c>CursorPaging</c> chama <c>Ler</c> <b>várias vezes</b> por
+            ''' página, para drenar o grupo do último instante. O DTO recebia
+            ''' apenas o último lote, e uma fabricação no primeiro sumia.
+            '''
+            ''' Agora quem zera é <see cref="Zerar"/>, chamado uma vez por página
+            ''' por quem monta a página. O contador acumula entre os lotes, que é
+            ''' o que "por página" sempre quis dizer.
             ''' </summary>
             Friend Fabricadas As Integer
+
+            ''' <summary>Começa a contar uma página nova.</summary>
+            Friend Sub Zerar()
+                Fabricadas = 0
+            End Sub
 
             ''' <summary>
             ''' Construtor sem pasta, <b>só para a suíte</b>.

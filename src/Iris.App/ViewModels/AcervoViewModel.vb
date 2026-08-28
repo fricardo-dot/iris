@@ -302,6 +302,18 @@ Namespace Global.Iris.App.ViewModels
             If _disposed Then Return
             Try
                 _dreno.Drenar(_consumidores)
+
+                ' E SO DEPOIS DE DRENAR O ACERVO DE TODAS AS PASTAS CARREGA.
+                '
+                ' Ele nasce vazio de proposito -- ler no construtor seria ler
+                ' na frente do dreno quando ha publicacao pendente de uma
+                ' queda anterior. Aqui a leitura acontece DEPOIS de a fila ter
+                ' sido entregue, entao o retrato nunca esta a frente dela.
+                '
+                ' Chamar mesmo quando nada foi drenado e o ponto: sem entrega
+                ' pendente nenhum Receber dispara, e sem isto a busca ficaria
+                ' vazia para sempre numa abertura normal.
+                If _todasAsPastas.Recarregado = 0 Then _todasAsPastas.Recarregar()
                 Travado = Nothing
             Catch ex As Exception
                 ' Consumidor que falha trava a cabeca da fila DE PROPOSITO —
@@ -527,7 +539,13 @@ Namespace Global.Iris.App.ViewModels
         ''' tarde a busca abria o <c>ManifestReader</c> por conta própria, que é
         ''' o contorno da §26.2 — ela podia mostrar uma geração que o painel ao
         ''' lado ainda não tinha recebido, dois lugares da mesma janela
-        ''' discordando. Agora as duas leem o mesmo retrato.
+        ''' discordando.
+        '''
+        ''' Agora as duas leem o mesmo retrato <b>na maior parte do tempo</b>.
+        ''' As entregas são sequenciais, então uma falha entre elas deixa o
+        ''' painel à frente da busca até a repetição — divergência temporária,
+        ''' e não perda. O <c>ConsumidorComposto</c> diz isso com todas as
+        ''' letras.
         ''' </summary>
         Public Function Procurar(termo As String) As Iris.Integration.ResultadoDaBusca
             If _disposed Then

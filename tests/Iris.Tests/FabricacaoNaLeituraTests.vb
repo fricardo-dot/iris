@@ -145,8 +145,8 @@ Public Class FabricacaoNaLeituraTests
     ''' <summary>
     ''' <b>O contador soma as fabricações de uma página.</b>
     '''
-    ''' Ele descreve a <b>página</b>, e é zerado a cada leitura — somar entre
-    ''' páginas faria a última parecer a pior.
+    ''' Ele acumula dentro de uma página. Quem recomeça é <c>Zerar</c>, e o
+    ''' teste abaixo cobra isso — este aqui só prova a soma.
     ''' </summary>
     <TestMethod>
     Public Sub O_contador_soma_dentro_da_pagina()
@@ -158,6 +158,50 @@ Public Class FabricacaoNaLeituraTests
         f.ComoBooleano(Nothing)
 
         Assert.AreEqual(4, f.Fabricadas)
+    End Sub
+
+    ''' <summary>
+    ''' <b>O contador é de PÁGINA, e a página pode custar vários lotes.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ZERAR NO LUGAR ERRADO SUBCONTAVA</b>
+    '''
+    ''' A primeira versão zerava no início de <c>Ler</c>, e parecia certo. O
+    ''' <c>CursorPaging</c> chama <c>Ler</c> <b>várias vezes</b> por página, para
+    ''' drenar o grupo do último instante — então o DTO recebia só o último lote,
+    ''' e uma fabricação no primeiro sumia.
+    '''
+    ''' Quem zera agora é <c>Zerar</c>, chamado uma vez por página por quem monta
+    ''' a página. Este teste cobra as duas metades: que acumula sem <c>Zerar</c>,
+    ''' e que <c>Zerar</c> recomeça.
+    '''
+    ''' <b>O que ele NÃO cobre, e é preciso dizer:</b> o caminho inteiro
+    ''' <c>ReadPage → LerPorTabela → MessagePage.FabricatedCells</c>. Isso pede
+    ''' uma <c>Table</c> de verdade com célula nula dentro, e a medição de 28/08
+    ''' mostrou que esta caixa não tem nenhuma. O que se prova aqui é o contrato
+    ''' do contador; a ligação até o DTO é sustentada por leitura.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_contador_acumula_entre_lotes_e_Zerar_recomeca()
+        Dim f As New MessagePaging.TableRowSource()
+
+        ' Primeiro lote.
+        f.ComoTexto(Nothing)
+        f.ComoInteiro(Nothing)
+        Assert.AreEqual(2, f.Fabricadas)
+
+        ' Segundo lote da MESMA pagina: acumula, e nao recomeca.
+        f.ComoBooleano(Nothing)
+        Assert.AreEqual(3, f.Fabricadas,
+            "o contador recomecou entre lotes: a pagina perderia as fabricacoes " &
+            "de todos os lotes menos o ultimo")
+
+        ' Pagina nova.
+        f.Zerar()
+        Assert.AreEqual(0, f.Fabricadas, "Zerar tinha de recomecar a contagem")
+
+        f.ComoTexto(Nothing)
+        Assert.AreEqual(1, f.Fabricadas)
     End Sub
 
 End Class

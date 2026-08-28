@@ -40,16 +40,37 @@ Namespace Global.Iris.Integration
     ''' silêncio não era.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>A PRIMEIRA CARGA É DIRETA, E PRECISA SER</b>
+    ''' <b>O CONSTRUTOR NÃO LÊ NADA, E ISSO É O CONSERTO</b>
     '''
-    ''' Na abertura não há entrega pendente: tudo o que foi publicado em
-    ''' sessões anteriores já está drenado, e esperar por um dreno que não vem
-    ''' deixaria a busca vazia para sempre.
+    ''' A primeira versão desta classe lia o manifesto no construtor, com a
+    ''' justificativa de que <i>"na abertura não há entrega pendente"</i>.
+    ''' <b>É falso</b>, e a revisão externa de 28/08/2026 nomeou o caso: uma
+    ''' queda entre publicar e marcar drenada deixa publicação pendente
+    ''' <b>persistida</b>. Na abertura seguinte, o construtor leria o manifesto
+    ''' novo antes de o dreno entregar — que é o contorno de novo, reduzido à
+    ''' abertura.
     '''
-    ''' Isso não é o contorno de novo. O contorno era <b>ignorar</b> o dreno
-    ''' em regime; aqui ele é a única fonte de mudança depois da abertura, e o
-    ''' <see cref="Recarregado"/> conta quantas vezes o estado mudou — para
-    ''' que "a busca está velha" seja uma pergunta com resposta.
+    ''' Agora ele nasce <b>vazio</b>. Quem o enche é <see cref="Receber"/>, ou
+    ''' um <see cref="Recarregar"/> que o dono chame <b>depois</b> de drenar.
+    ''' A ordem é do dono, e está escrita no <c>AcervoViewModel</c>.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O QUE ELE AINDA NÃO GARANTE, E É PRECISO DIZER</b>
+    '''
+    ''' <see cref="Receber"/> ignora <i>qual</i> geração chegou e relê o
+    ''' manifesto corrente. Com <b>duas</b> gerações pendentes — 10 e 11 — e o
+    ''' manifesto já apontando para 11, a entrega da 10 torna a 11 visível
+    ''' antes de a 11 ser entregue.
+    '''
+    ''' Na prática a janela é curta: o <c>Drenar</c> percorre a fila inteira em
+    ''' ordem numa chamada só, então a inconsistência não sobrevive ao laço —
+    ''' a menos que um consumidor falhe no meio. Mas <b>curta não é
+    ''' inexistente</b>, e a propriedade "não vê o que o dreno não entregou"
+    ''' vale para uma geração pendente, e não para uma fila.
+    '''
+    ''' Consertar isso pede o manifesto <b>de uma geração específica</b>, e o
+    ''' <see cref="ManifestReader"/> lê a publicada da pasta. É trabalho de
+    ''' desenho, e está no relatório.
     ''' </summary>
     Public NotInheritable Class AcervoDeTodasAsPastas
         Implements IPublicationConsumer
@@ -65,13 +86,14 @@ Namespace Global.Iris.Integration
             If db Is Nothing Then Throw New ArgumentNullException(NameOf(db))
             _db = db
             _conn = db.Connection
-            Recarregar()
+            ' NAO LE AQUI. Ver o cabecalho: ler no construtor e ler na frente
+            ' do dreno quando ha publicacao pendente de uma queda anterior.
         End Sub
 
         ''' <summary>
-        ''' Quantas vezes o retrato foi refeito. A primeira carga conta como
-        ''' uma — não existe estado "nunca carregado" para alguém confundir
-        ''' com "não há nada".
+        ''' Quantas vezes o retrato foi refeito. <b>Zero quer dizer que ninguém
+        ''' carregou ainda</b> — e isso é diferente de "não há nada guardado".
+        ''' Quem lê e vê zero está lendo antes do dreno.
         ''' </summary>
         Public ReadOnly Property Recarregado As Integer
             Get
@@ -94,9 +116,14 @@ Namespace Global.Iris.Integration
         ''' O dreno entregou uma geração. Reler tudo, e não só a pasta dela.
         '''
         ''' Reler o acervo inteiro a cada entrega parece desperdício e não é:
-        ''' as gerações chegam raramente — uma varredura por clique — e um
-        ''' retrato parcial abriria a porta para as pastas discordarem entre
-        ''' si sobre de quando é o retrato.
+        ''' as gerações chegam raramente — uma varredura por clique.
+        '''
+        ''' <b>Mas ele não produz um retrato de um instante</b>, e eu escrevi
+        ''' que produzia. As leituras de manifesto não estão numa transação
+        ''' única, então duas pastas podem refletir instantes diferentes. Reler
+        ''' tudo <i>reduz</i> a divergência; não a elimina. E o custo de reler
+        ''' todas as pastas nunca foi medido — com poucas pastas é irrelevante,
+        ''' e "poucas" não é um número que alguém tenha conferido.
         ''' </summary>
         Public Sub Receber(geracao As Long) Implements IPublicationConsumer.Receber
             Recarregar()
@@ -170,6 +197,18 @@ Namespace Global.Iris.Integration
     ''' fila trava, que é o comportamento que o dreno já tem de propósito.
     ''' Engolir a falha de um para agradar o outro faria a geração ser marcada
     ''' como entregue a quem não a recebeu.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O QUE ISTO NÃO É: ENTREGA ATÔMICA</b>
+    '''
+    ''' As partes recebem <b>em sequência</b>. Se a primeira concluir e a
+    ''' segunda falhar, o painel muda e a busca fica para trás — e eu escrevi,
+    ''' na primeira versão, que as duas <i>"congelam juntas"</i>. Não congelam.
+    '''
+    ''' O que salva é a semântica do dreno: a geração continua pendente e será
+    ''' repetida, e as duas partes são idempotentes. Então a divergência é
+    ''' <b>temporária</b>, e não perda silenciosa. Chamar isso de simultâneo
+    ''' era mais forte que o mecanismo.
     ''' </summary>
     Public NotInheritable Class ConsumidorComposto
         Implements IPublicationConsumer

@@ -686,3 +686,38 @@ reais, mesmos 305 achados. O manifesto passou a ser lido uma vez em vez de a
 cada pergunta — o contorno era mais lento *e* mais errado.
 
 Suíte: **868**.
+
+### 28/08 — revisão das três dívidas: um crítico, e ele era o mesmo contorno
+
+Codex achou sete coisas, e a primeira dói: **eu disse ter fechado o contorno do
+dreno e tinha deixado ele na abertura.** `AcervoDeTodasAsPastas` lia o manifesto
+no construtor, justificando que *"na abertura não há entrega pendente"* — falso,
+porque uma queda entre publicar e marcar drenada deixa pendência **persistida**.
+
+E os testes passavam pelo motivo errado: o `Semear` já drenava, então o `Drenar`
+seguinte não tinha o que entregar.
+
+**Corrigido:** o construtor não lê nada. Quem enche é o `Receber`, ou um
+`Recarregar()` que o dono chame **depois** de drenar. Teste novo que simula a
+queda — publica sem drenar, **fecha o banco**, reabre, constrói do zero — e cai
+quando devolvo o `Recarregar()` ao construtor.
+
+**Os outros seis:**
+
+1. `Receber` ignora *qual* geração chegou. Com duas pendentes, entregar a
+   primeira torna a segunda visível cedo. Escrito no código; consertar pede o
+   manifesto de uma geração específica, que o `ManifestReader` não faz.
+2. **`FabricatedCells` não era lido por ninguém** — o número morria no DTO. É
+   literalmente o erro mais comum meu. A lista passou a mostrá-lo.
+3. **O contador subcontava:** eu zerava no início de `Ler`, e o `CursorPaging`
+   chama `Ler` **várias vezes** por página. O DTO recebia só o último lote.
+   Virou `Zerar()`, chamado uma vez por página — e o teste que eu tinha **não
+   pegava**, porque cada teste criava uma fonte nova.
+4. O fan-out não é atômico: se o primeiro consumidor conclui e o segundo falha,
+   o painel fica à frente da busca até a repetição. Eu escrevi "congelam juntas".
+5. A conclusão do calendário estava mais forte que a evidência — os dois
+   roteiros nem correlacionam `StoreID`. Reescrita na formulação estreita.
+6. Sobrou a frase *"a janela é do store"* na **saída** do `medir-janela`, ainda
+   que o cabeçalho já estivesse corrigido.
+
+Suíte: **870**.

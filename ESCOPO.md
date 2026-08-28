@@ -617,12 +617,17 @@ que este ESCOPO carregava.
   que não está no repositório. Ou se cria um caminho para reproduzi-los, ou se
   declara que são evidência operacional.
 - ~~A busca contorna o `PublicationDrain`.~~ **Fechada em 28/08/2026, à tarde.**
-  Era desenho e não conserto, e o desenho foi feito: `AcervoDeTodasAsPastas` é um
-  segundo `IPublicationConsumer`, e `ConsumidorComposto` faz o dreno alimentar os
-  dois com **uma** entrega. A busca deixou de abrir o `ManifestReader` sozinha.
-  Efeito colateral medido: a busca ficou **quase quatro vezes mais rápida** —
-  22,7 ms → 6,2 ms —, porque o manifesto passou a ser lido uma vez em vez de a
+  `AcervoDeTodasAsPastas` é um segundo `IPublicationConsumer`, e
+  `ConsumidorComposto` faz o dreno alimentar os dois. A busca deixou de abrir o
+  `ManifestReader` sozinha, e ficou **quase quatro vezes mais rápida** —
+  22,7 ms → 6,2 ms — porque o manifesto passou a ser lido uma vez em vez de a
   cada pergunta.
+  **Duas ressalvas que a revisão obrigou a escrever, e que ficam abertas:**
+  o consumidor relê o manifesto *corrente* e ignora qual geração chegou, então
+  com **duas** gerações pendentes a entrega da primeira torna a segunda visível
+  cedo; e as entregas são sequenciais, então uma falha entre elas deixa o painel
+  à frente da busca até a repetição. As duas são temporárias e nenhuma perde
+  dado — mas nenhuma das duas é "entrega atômica", e eu tinha escrito que era.
 - **Valores fabricados na paginação** — *medido, e a decisão está tomada.*
   `tools/medir-nulos-da-table.ps1` contou **zero nulos nas oito colunas, em
   1.109 linhas** da Caixa de Entrada. O defeito existe no contrato e não se
@@ -630,15 +635,21 @@ que este ESCOPO carregava.
   desproporcional — e mostrar "não sei" sem parecer "não" é uma decisão de tela
   que ninguém precisou tomar ainda.
   **O que foi feito no lugar:** `MessagePage.FabricatedCells` conta as células
-  ausentes que viraram valor, pela mesma regra que a varredura já segue — recusa
-  declarada é mais forte que recusa silenciosa. O silêncio saiu; a migração fica
-  para o dia em que o número deixar de ser zero.
+  ausentes que viraram valor, e a **lista mostra o número** — sem consumidor ele
+  seria mais uma proteção ligada a nada, que é o erro mais comum deste projeto.
+  A migração fica para o dia em que o número deixar de ser zero.
+  **Estado honesto:** migração *adiada com o risco instrumentado*, e não dívida
+  encerrada. A medição é de uma pasta, uma conta, um momento, e só do caminho
+  `Table`.
 - ~~A cobertura do calendário nunca foi medida.~~ **Medida em 28/08/2026, à
-  tarde**, por `tools/medir-cobertura-calendario.ps1`. O resultado corrigiu uma
-  inferência minha da manhã: o calendário do **mesmo store** vai de 2024-06-07 a
-  2026-12-15 — **921 dias, sem corte** —, com 411 dos 434 compromissos
-  anteriores ao horizonte do correio. **A janela alcança o correio, não o
-  store.** O que continua aberto é menor e está abaixo.
+  tarde**, por `tools/medir-cobertura-calendario.ps1`: o calendário padrão local
+  vai de 2024-06-07 a 2026-12-15 — **921 dias, sem corte** —, com 411 dos 434
+  compromissos anteriores ao horizonte do correio.
+  Na formulação mais estreita que se sustenta: **o corte de ~31 dias observado
+  nas pastas de correio não aparece neste calendário**. Isso derruba a
+  inferência que eu tinha escrito de manhã — *"a janela é do store"* —, e **não**
+  autoriza dizer que o calendário está inteiro: pode haver outro corte mais
+  antigo, e os dois roteiros nem correlacionam `StoreID`.
 - **A contagem do servidor continua inalcançável**, para correio e para
   calendário. Isso não é dívida de trabalho: é o limite do OOM, e é por isso que
   o Iris não conclui ausência em lugar nenhum.

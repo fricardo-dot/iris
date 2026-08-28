@@ -23,9 +23,19 @@
     mesma ressalva do acervo -- "pode faltar, e o Iris nao conclui ausencia".
 
     Se NAO tiver -- se o calendario for anos e o correio for um mes --,
-    entao a janela e do CORREIO, e a agenda pode dizer bem mais sobre si do
-    que diz hoje. As duas respostas mudam o que a tela deve afirmar, e
-    nenhuma delas era conhecida.
+    entao o corte observado no correio nao esta sendo aplicado a este
+    calendario, e a agenda pode dizer mais sobre si do que diz hoje.
+
+    O QUE A RESPOSTA NAO AUTORIZA A CONCLUIR
+
+    Que o calendario esteja INTEIRO localmente. Ausencia de corte nao e
+    presenca de tudo: pode haver outro corte mais antigo que o roteiro nao
+    alcanca, e a contagem do servidor continua inalcancavel pelo OOM.
+
+    E a comparacao com o correio e por DATA, nao por store: este roteiro le
+    a pasta padrao de calendario, e o medir-janela.ps1 percorre todos os
+    stores sem separar por StoreID. Dizer "o mesmo store" seria afirmar uma
+    correlacao que nenhum dos dois instrumentos estabelece.
 
     O QUE ELE MEDE
 
@@ -79,6 +89,10 @@ try {
     $n = $itens.Count
 
     Write-Host ("pasta:  {0}" -f $pasta.Name)
+    # O StoreID sai impresso porque a comparacao com o correio depende dele,
+    # e o medir-janela nao o imprime. Sem os dois lados, "mesmo store" e
+    # suposicao.
+    try { Write-Host ("store:  {0}..." -f $pasta.StoreID.Substring(0, 32)) } catch { }
     Write-Host ("itens:  {0}   (mestres, sem expansao de serie)" -f $n)
     Write-Host ""
 
@@ -149,13 +163,22 @@ try {
         Write-Host "  distribuicao por ano antes de concluir."
     } else {
         Write-Host "HORIZONTES DIFERENTES." -ForegroundColor Green
-        Write-Host ("  Ha {0} compromissos anteriores ao corte do correio. A janela de" -f $antesDoHorizonte)
-        Write-Host "  sincronizacao NAO alcanca o calendario da mesma forma -- ele guarda"
-        Write-Host "  muito mais historico localmente que o correio."
+        Write-Host ("  Ha {0} compromissos anteriores ao corte do correio." -f $antesDoHorizonte)
         Write-Host ""
-        Write-Host "  CONSEQUENCIA: a agenda pode afirmar mais sobre si do que o acervo"
-        Write-Host "  afirma. O que ela continua NAO podendo e concluir ausencia, porque"
-        Write-Host "  a contagem do servidor segue inalcancavel pelo OOM."
+        Write-Host "  O QUE ISTO SUSTENTA, na formulacao mais estreita que serve:"
+        Write-Host "  o corte de ~31 dias observado nas pastas de correio NAO aparece"
+        Write-Host "  neste calendario padrao local."
+        Write-Host ""
+        Write-Host "  O QUE NAO SUSTENTA: que o calendario esteja inteiro; que nao"
+        Write-Host "  exista outro corte mais antigo; que nenhuma politica de cache"
+        Write-Host "  alcance calendario; nem a comparacao 'mesmo store', porque este"
+        Write-Host "  roteiro le a pasta padrao e o medir-janela percorre todos os"
+        Write-Host "  stores sem separar por StoreID."
+        Write-Host ""
+        Write-Host "  CONSEQUENCIA para a tela: repetir na agenda a ressalva de janela"
+        Write-Host "  do acervo seria ressalva emprestada. O que ela continua NAO"
+        Write-Host "  podendo e concluir ausencia -- por falta de prova, e nao por"
+        Write-Host "  janela."
     }
 
     Write-Host ""

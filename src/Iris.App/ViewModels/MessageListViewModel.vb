@@ -95,6 +95,22 @@ Namespace Global.Iris.App.ViewModels
         Private _lastPageMs As Double
         Private _skipped As Integer
 
+        ''' <summary>
+        ''' Quantas células ausentes viraram valor nas páginas desta pasta.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' Existe porque o contador nasceu, em 28/08/2026, <b>sem consumidor</b>
+        ''' — o número era calculado no <c>MessagePage</c> e morria ali. A
+        ''' revisão externa foi direta: <i>"o silêncio não saiu; o número morre
+        ''' no MessagePage"</i>.
+        '''
+        ''' É literalmente o erro que este projeto conta seis vezes: proteção que
+        ''' existe e não está ligada a nada. Um contador de fabricação que
+        ''' ninguém lê é pior que nenhum, porque dá a impressão de que alguém
+        ''' está olhando.
+        ''' </summary>
+        Private _fabricadas As Integer
+
         Public Sub New(broker As IOutlookBroker,
                        ui As Global.System.Windows.Threading.Dispatcher,
                        observe As Action(Of Task, String))
@@ -222,6 +238,13 @@ Namespace Global.Iris.App.ViewModels
                 Dim linha = $"{Messages.Count} de {_total} · última página {_lastPageMs:0} ms"
                 ' "28 de 30" sem explicação vira mistério.
                 If _skipped > 0 Then linha &= $" · {_skipped} item(ns) ignorado(s)"
+                ' AUSENCIA QUE VIROU VALOR. Tamanho 0, "nao lida" e "sem anexo"
+                ' que na verdade sao "o Outlook nao respondeu". A medicao de
+                ' 28/08 achou ZERO destes em 1.109 linhas -- entao esta frase
+                ' nao deve aparecer, e se aparecer e informacao de verdade.
+                If _fabricadas > 0 Then
+                    linha &= $" · {_fabricadas} campo(s) que o Outlook nao entregou"
+                End If
                 Return linha
             End Get
         End Property
@@ -276,6 +299,7 @@ Namespace Global.Iris.App.ViewModels
             HasMore = False
             ErrorMessage = ""
             _skipped = 0
+            _fabricadas = 0
             AtualizarEstados()
         End Sub
 
@@ -369,6 +393,7 @@ Namespace Global.Iris.App.ViewModels
                             Messages.Clear()
                             ErrorMessage = ""
                             _skipped = 0
+                            _fabricadas = 0
                             AtualizarEstados()
                         End Sub)
                 End If
@@ -407,6 +432,7 @@ Namespace Global.Iris.App.ViewModels
 
                         _nextCursor = pagina.NextCursor
                         _skipped += pagina.SkippedCount
+                        _fabricadas += pagina.FabricatedCells
                         ' TotalAtStart so vem na primeira pagina; nas demais
                         ' o valor anterior e mantido.
                         If pagina.TotalAtStart.HasValue Then Total = pagina.TotalAtStart.Value
