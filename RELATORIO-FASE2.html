@@ -416,7 +416,7 @@ footer {
     <span><b>25 de agosto de 2026</b></span>
     <span>352 testes · <b>0 falhas</b> · 0 pulados</span>
     <span>13 passadas de revisão com o Codex</span>
-    <span><code>f83f4e3</code> → <code>HEAD</code></span>
+    <span><code>f83f4e3</code> → <code>ea01107</code></span>
   </div>
 </header>
 
@@ -653,8 +653,11 @@ footer {
   <p>E o pior era o disfarce: <em>"lidas 1013 &lt;&gt; antes 1022"</em> é
   exatamente o que uma mensagem chegando no meio produziria.
   <strong>Defeito permanente vestido de comportamento correto.</strong></p>
-  <p>Só descobri porque rodei três vezes e a diferença ficou estável em 9 —
-  corrida não dá o mesmo número três vezes.</p>
+  <p>Só descobri porque rodei três vezes e a diferença ficou estável em 9. Isso
+  é <em>indício</em> de descarte sistemático, e não prova de que não era
+  corrida: sob agendamento e carga parecidos, uma corrida pode repetir o mesmo
+  número. O que fechou a questão foi achar as 9 linhas e ver que nenhuma era
+  mensagem.</p>
 </div>
 
 <h2><span class="num">05</span>A Q8, e as duas mortes dela</h2>

@@ -2,9 +2,9 @@
 
 **Status:** Fases 0, 1, 2 e 3 executadas. A **IA foi ativada** em 27/08/2026 e
 fez o primeiro egress real **com conteúdo sintético**, numa pasta de teste de 4
-itens que é a única autorizada — o alcance é limitado pela lista de pastas, e
-não pela política corporativa, que continua não verificada. As **pendências da
-Fase 2
+itens que é a única autorizada — o alcance é **restrito pela lista de pastas da
+cerimônia**, e não bloqueado pela política corporativa, que continua não
+verificada e não é consultada pelo portão. As **pendências da Fase 2
 foram fechadas** em 28/08/2026 e o aplicativo varre. A Fase 4 continua **não
 planejada**.
 **Data:** 2026-08-28
@@ -337,10 +337,26 @@ Gerenciador de Credenciais do Windows, que o Iris lê e nunca imprime.
 
 **O que de fato limita o alcance hoje — e não é o que este documento dizia até
 28/08.** A ativação autoriza **uma pasta**: `Iris-Teste`, subpasta da Caixa de
-Entrada, com 4 itens postos ali por mim. Mais `leituras = [Absent]`, `rótulos =
-[]` e `contentBits = [0]`. É a lista de pastas que segura o alcance — qualquer
-mensagem movida para dentro dela passaria a ser elegível, e nada no código
-distingue conteúdo sintético de real.
+Entrada, com 4 itens postos ali por mim. É a lista de pastas que segura o
+alcance, conferida no portão por igualdade ordinal de `StoreId` e `EntryId`, e
+**nada no código distingue conteúdo sintético de real**.
+
+Estar na pasta não basta, e a redação anterior — "qualquer mensagem movida para
+dentro dela passaria a ser elegível" — era mais forte que o portão. Cada
+mensagem ainda tem de passar, item a item: a classificação tem de ser *dela*, a
+pasta declarada tem de bater, **sem anexo**, leitura estruturalmente elegível e
+entre as aceitas, leitura internamente coerente, evidência de versão daquele
+`EntryId` com `ChangeKey`, e as regras de histórico, GUID e `contentBits`. Uma
+mensagem real **sem rótulo** que satisfaça tudo isso é elegível hoje; "qualquer
+mensagem" não é.
+
+**E duas travas da ativação são inertes na combinação atual, o que não estava
+escrito em lugar nenhum.** Com `leituras = [Absent]`, só passa a leitura que
+declara ausência de rótulo — e uma `Absent` coerente não tem registro ativo.
+Como `rótulos = []` e `contentBits = [0]` só atuam **sobre registro ativo**,
+nenhum dos dois chega a ser exercido. Eles não estão errados; estão fora do
+caminho. Quem alargar `leituras` um dia passa a depender deles pela primeira
+vez, e é aí que eles precisam estar certos.
 
 **Correção de um erro deste documento:** a versão anterior dizia que
 `politicaCorporativaVerificada = false` fazia com que "só conteúdo sintético
@@ -351,10 +367,13 @@ não impede a ativação*. Apresentar como barreira de compliance o que é aviso
 visual é o tipo de erro que este projeto trata como crítico, e ele estava num
 documento de escopo.
 
-**O que segue sendo verdade:** a decisão sobre a política corporativa aplicável
-continua aberta, e é ela que deveria governar o alargamento das pastas. Enquanto
-ninguém a responder, alargar a lista é decisão sem base — mas é uma decisão de
-disciplina, e não um bloqueio que o código imponha.
+**O que segue sendo verdade, com a palavra certa:** o alcance é **restrito**,
+não *bloqueado*. Restrito por um ato deliberado — a lista de pastas da cerimônia
+— que quem tem a máquina desfaz quando quiser. A decisão sobre a política
+corporativa aplicável continua aberta, e é ela que deveria governar o
+alargamento; enquanto ninguém a responder, alargar é decisão sem base. Mas isso
+é **disciplina**, e não barreira imposta pelo código. Este documento usava as
+duas palavras como sinônimo, e elas não são.
 
 **Aprendido na ativação, e que não estava em lugar nenhum:** o slug de
 roteamento do OpenRouter vem do campo `tag` do endpoint, e `google` não existe —
@@ -791,7 +810,10 @@ Option Infer On
 - [ ] Verificar a política corporativa aplicável antes da Fase 3 (R11) —
       **continua aberta**. A Fase 3 foi executada assim mesmo porque o desenho
       não depende dela: sem resposta, ausência de rótulo **não autoriza**. Mas
-      ela é pré-condição da cerimônia de ativação (`FASE3.md` §28.3)
+      ela **deveria** ser pré-condição da cerimônia (`FASE3.md` §28.3), e a
+      cerimônia de 27/08 aconteceu com o campo em `false` — nada no código
+      impediu, porque o portão não lê o campo. Isso torna a decisão mais
+      urgente, não menos
 - [x] Testar rótulos do Purview antes da Fase 3 (seção 10) — **medido no marco
       3.0**, pelo broker real, somente leitura. Ver `FASE3.md` §34
 
