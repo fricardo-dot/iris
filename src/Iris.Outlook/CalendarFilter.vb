@@ -6,17 +6,22 @@ Namespace Global.Iris.Outlook
     ''' <b>O filtro <c>Restrict</c> de uma janela de calendário — só texto.</b>
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>POR QUE ISTO É PÚBLICO E MORA SOZINHO</b>
+    ''' <b>POR QUE ISTO MORA SOZINHO</b>
     '''
-    ''' <c>Iris.Outlook</c> <b>não</b> abre os internos para a suíte, e isso é
-    ''' deliberado: a camada COM não deve ser cutucada por dentro. Mas o
-    ''' formato deste filtro é lógica pura — nenhuma linha aqui toca em COM —
-    ''' e é exatamente o tipo de coisa que tem de ser testável sem Outlook
-    ''' aberto.
+    ''' Porque o formato deste filtro é <b>lógica pura</b> — nenhuma linha aqui
+    ''' toca em COM — e misturá-lo com <c>CalendarReading</c>, que é cheio de
+    ''' RCW e de <c>Try/Finally</c>, esconde a única parte que dá para ler
+    ''' sozinha e conferir de cabeça.
     '''
-    ''' Então ele sai de <c>CalendarReading</c>, que é <c>Friend</c> e cheio de
-    ''' RCW, e vira um tipo público de duas funções. A alternativa seria abrir
-    ''' os internos do projeto inteiro para testar duas concatenações.
+    ''' <b>CORREÇÃO DE 28/08/2026, à tarde.</b> Este comentário dizia que a
+    ''' extração era necessária porque <i>"Iris.Outlook não abre os internos
+    ''' para a suíte"</i>. <b>É falso — o projeto abre</b>, por
+    ''' <c>InternalsVisibleTo</c> no <c>.vbproj</c>. Eu tinha olhado a lista de
+    ''' projetos com um comando truncado e concluí do que não vi.
+    '''
+    ''' A separação continua certa; o motivo que eu dei para ela não era. E é
+    ''' exatamente o formato de erro que este projeto persegue: afirmar a
+    ''' partir do que não se mediu.
     '''
     ''' ------------------------------------------------------------------
     ''' <b>O FORMATO DA DATA NÃO É ESCOLHA</b>

@@ -233,6 +233,10 @@ Namespace Global.Iris.Outlook
             Next
 
             pagina.SkippedCount = descartadas
+            ' A FABRICACAO SOBE JUNTO COM O DESCARTE, e pelo mesmo motivo:
+            ' celula ausente que virou 0 ou False e informacao sobre a
+            ' leitura, e sem um numero ela nunca apareceria em lugar nenhum.
+            pagina.FabricatedCells = fonte.Fabricadas
             pagina.NextCursor = If(saida.Ended, Nothing,
                                    MessageCursor.ForBoundary(query, saida.NextBoundary.Value).Encode())
             Return pagina
@@ -571,6 +575,10 @@ Namespace Global.Iris.Outlook
                 Dim ultima = bruto.GetUpperBound(0)
                 If ultima < primeira Then Return vazio
 
+                ' ZERA POR PAGINA. O numero descreve a pagina, e nao a vida do
+                ' objeto -- somar entre paginas faria a ultima parecer a pior.
+                Fabricadas = 0
+
                 Dim linhas As New List(Of TableRow)(ultima - primeira + 1)
                 For r = primeira To ultima
                     linhas.Add(New TableRow With {
@@ -613,8 +621,43 @@ Namespace Global.Iris.Outlook
                 Return linha.EntryId
             End Function
 
-            Private Shared Function ComoTexto(valor As Object) As String
-                Return If(TryCast(valor, String), "")
+            ''' <summary>
+            ''' Quantas células ausentes viraram valor desde a última página.
+            '''
+            ''' Zerado por página em <c>Ler</c>, para o número descrever a página
+            ''' e não a vida do objeto.
+            ''' </summary>
+            Friend Fabricadas As Integer
+
+            ''' <summary>
+            ''' Construtor sem pasta, <b>só para a suíte</b>.
+            '''
+            ''' As conversões são lógica pura e não precisam de COM; o resto da
+            ''' classe precisa. Sem esta porta, provar que o contador conta
+            ''' exigiria um Outlook aberto com uma célula nula dentro — que é
+            ''' justamente o que a medição de 28/08 mostrou não existir nesta
+            ''' caixa.
+            '''
+            ''' Um contador que só pode ser exercitado por um estado que não se
+            ''' consegue produzir é um contador sem prova.
+            ''' </summary>
+            Friend Sub New()
+            End Sub
+
+            ''' <summary>
+            ''' Texto ausente vira vazio — e conta.
+            '''
+            ''' Vazio e ausente são coisas diferentes: um assunto em branco é uma
+            ''' mensagem sem assunto; um <c>Nothing</c> é o provedor não tendo
+            ''' respondido. Colapsar os dois é o que este contador denuncia.
+            ''' </summary>
+            Friend Function ComoTexto(valor As Object) As String
+                Dim s = TryCast(valor, String)
+                If s Is Nothing Then
+                    Fabricadas += 1
+                    Return ""
+                End If
+                Return s
             End Function
 
             ''' <summary>
@@ -623,23 +666,50 @@ Namespace Global.Iris.Outlook
             ''' ItemKey e textual: hex minusculo aqui daria chave que nunca casa,
             ''' com o mesmo sintoma silencioso.
             ''' </summary>
-            Private Shared Function ComoEntryId(valor As Object) As String
+            Friend Function ComoEntryId(valor As Object) As String
                 Dim bytes = TryCast(valor, Byte())
                 If bytes IsNot Nothing Then Return Convert.ToHexString(bytes)
-                Return If(TryCast(valor, String), "")
+                Dim s = TryCast(valor, String)
+                If s Is Nothing Then
+                    Fabricadas += 1
+                    Return ""
+                End If
+                Return s
             End Function
 
-            Private Shared Function ComoInteiro(valor As Object) As Integer
-                If valor Is Nothing Then Return 0
-                Try : Return Convert.ToInt32(valor, CultureInfo.InvariantCulture)
-                Catch : Return 0
+            ''' <summary>Tamanho ausente ou ilegível vira <c>0</c> — e conta.</summary>
+            Friend Function ComoInteiro(valor As Object) As Integer
+                If valor Is Nothing Then
+                    Fabricadas += 1
+                    Return 0
+                End If
+                Try
+                    Return Convert.ToInt32(valor, CultureInfo.InvariantCulture)
+                Catch
+                    Fabricadas += 1
+                    Return 0
                 End Try
             End Function
 
-            Private Shared Function ComoBooleano(valor As Object) As Boolean
-                If valor Is Nothing Then Return False
-                Try : Return Convert.ToBoolean(valor, CultureInfo.InvariantCulture)
-                Catch : Return False
+            ''' <summary>
+            ''' Booleano ausente ou ilegível vira <c>False</c> — e conta.
+            '''
+            ''' Este é o pior dos três: <c>False</c> em "não lida" e em "tem
+            ''' anexo" são afirmações que o usuário lê como fato. O
+            ''' <c>MailSummary</c> já não tem <c>IsProtected</c> justamente para
+            ''' não afirmar "não é protegida" sem ter medido; aqui a mesma
+            ''' afirmação escapava por dentro da conversão.
+            ''' </summary>
+            Friend Function ComoBooleano(valor As Object) As Boolean
+                If valor Is Nothing Then
+                    Fabricadas += 1
+                    Return False
+                End If
+                Try
+                    Return Convert.ToBoolean(valor, CultureInfo.InvariantCulture)
+                Catch
+                    Fabricadas += 1
+                    Return False
                 End Try
             End Function
 

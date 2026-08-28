@@ -185,6 +185,31 @@ Namespace Global.Iris.Model
         Public Property SkippedCount As Integer
 
         ''' <summary>
+        ''' <b>Quantas células vieram ausentes e viraram valor.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' Quando a <c>Table</c> devolve <c>Nothing</c> numa coluna, a conversão
+        ''' produz <c>0</c> para tamanho, <c>False</c> para não-lida e para
+        ''' anexo, e texto vazio. <b>Ausência vira fato</b>, e é a mesma família
+        ''' do <c>message_class</c> que era constante fabricada.
+        '''
+        ''' <b>Medido em 28/08/2026:</b> <c>tools/medir-nulos-da-table.ps1</c>
+        ''' contou <b>zero</b> nulos nas oito colunas, em 1.109 linhas da Caixa
+        ''' de Entrada. O defeito existe no contrato e não se manifesta nesta
+        ''' caixa — o que não é o mesmo que não existir.
+        '''
+        ''' Tornar os campos anuláveis até a tela seria migração de esquema e
+        ''' uma forma de mostrar "não sei" sem parecer "não". Desproporcional
+        ''' para zero ocorrências. <b>Mas o silêncio não precisava continuar:</b>
+        ''' este contador custa nada e faz a fabricação aparecer, no dia em que
+        ''' acontecer, no mesmo lugar onde o descarte já aparece.
+        '''
+        ''' É a regra que a varredura já segue: <i>recusa declarada é mais forte
+        ''' que recusa silenciosa</i>.
+        ''' </summary>
+        Public Property FabricatedCells As Integer
+
+        ''' <summary>
         ''' Quantas linhas vieram da DRENAGEM do grupo empatado, alem do
         ''' alvo pedido.
         '''

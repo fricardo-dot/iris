@@ -620,10 +620,16 @@ que este ESCOPO carregava.
   consultar não é passar. O `AcervoService` é de uma pasta, e uma busca entre
   pastas não cabe nesse formato — encaixá-la pede um consumidor multi-pasta, que
   é desenho e não conserto.
-- **Valores fabricados na paginação.** Falha de leitura vira fato: tamanho `0`,
-  não lida `False`, anexo `False`, texto vazio. É a mesma família do
-  `message_class` corrigido hoje, mas corrigir exige campos anuláveis e migração
-  de esquema — decisão de tamanho.
+- **Valores fabricados na paginação** — *medido, e a decisão está tomada.*
+  `tools/medir-nulos-da-table.ps1` contou **zero nulos nas oito colunas, em
+  1.109 linhas** da Caixa de Entrada. O defeito existe no contrato e não se
+  manifesta nesta caixa, então a migração para campos anuláveis seria
+  desproporcional — e mostrar "não sei" sem parecer "não" é uma decisão de tela
+  que ninguém precisou tomar ainda.
+  **O que foi feito no lugar:** `MessagePage.FabricatedCells` conta as células
+  ausentes que viraram valor, pela mesma regra que a varredura já segue — recusa
+  declarada é mais forte que recusa silenciosa. O silêncio saiu; a migração fica
+  para o dia em que o número deixar de ser zero.
 - ~~A cobertura do calendário nunca foi medida.~~ **Medida em 28/08/2026, à
   tarde**, por `tools/medir-cobertura-calendario.ps1`. O resultado corrigiu uma
   inferência minha da manhã: o calendário do **mesmo store** vai de 2024-06-07 a

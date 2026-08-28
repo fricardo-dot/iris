@@ -635,3 +635,29 @@ soubesse.
 para ela a ressalva do acervo seria ressalva emprestada. O que continua valendo
 é o outro lado: a contagem do servidor segue inalcançável, então ausência
 continua proibida — **por falta de prova, e não por janela**.
+
+### 28/08 — valores fabricados: medir antes de migrar
+
+Segunda dívida da lista. A tentação era fazer a migração para campos anuláveis
+direto — mas a disciplina deste projeto é medir primeiro, e foi assim que o
+`message_class` apareceu.
+
+`tools/medir-nulos-da-table.ps1`, sobre a Caixa de Entrada real: **zero nulos
+nas oito colunas, em 1.109 linhas.**
+
+Então a migração seria trabalho grande por risco que não se materializa aqui. O
+que **não** podia continuar era o silêncio: `MessagePage.FabricatedCells` conta
+as células ausentes que viraram valor, pela mesma regra da varredura — *recusa
+declarada é mais forte que recusa silenciosa*.
+
+Seis testes puros, sem Outlook, com controle positivo primeiro (valor presente
+não pode contar, senão o número vira ruído que se aprende a ignorar) e controle
+negativo: desligando os seis incrementos, cinco dos seis caem.
+
+**E achei outra afirmação falsa minha, de hoje de manhã.** O comentário do
+`CalendarFilter` dizia que a extração era necessária porque *"Iris.Outlook não
+abre os internos para a suíte"*. **O projeto abre** — eu tinha olhado a lista de
+`InternalsVisibleTo` com um comando truncado e concluí do que não vi. A
+separação continua certa; o motivo que eu dei não era.
+
+Suíte: **866**.
