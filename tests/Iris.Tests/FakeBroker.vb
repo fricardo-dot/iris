@@ -508,9 +508,17 @@ Friend NotInheritable Class FakeBroker
         Return ForaDaAlcada(Of OperationResult(Of MessagePage))()
     End Function
 
+    ''' <summary>Detalhes por chave de item, para o leitor de mensagem.</summary>
+    Friend ReadOnly Detalhes As New Dictionary(Of String, MessageDetail)()
+
     Public Function GetMessageDetailAsync(item As ItemKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessageDetail)) Implements IOutlookBroker.GetMessageDetailAsync
-        Return ForaDaAlcada(Of OperationResult(Of MessageDetail))()
+        Dim d As MessageDetail = Nothing
+        If Not Detalhes.TryGetValue(item.EntryId, d) Then
+            Return ForaDaAlcada(Of OperationResult(Of MessageDetail))()
+        End If
+        Chamadas.Add("GetMessageDetail")
+        Return Task.FromResult(OperationResult(Of MessageDetail).Ok(d))
     End Function
 
     ''' <summary>
@@ -574,15 +582,47 @@ Friend NotInheritable Class FakeBroker
         Return ForaDaAlcada(Of OperationResult(Of LabelColumnProbe))()
     End Function
 
-    Public Function SaveAttachmentAsync(attachment As AttachmentKey, destinationPath As String,
-                                        overwrite As Boolean, cancel As CancellationToken) _
+    ' ---- O LEITOR DE MENSAGEM ------------------------------------------
+    '
+    ' Mesma historia da arvore: sem uma gravacao de anexo que se segure no
+    ' meio, "salvar durante a troca de mensagem" nao tem como ser escrito.
+
+    ''' <summary>Segura a gravacao do anexo no meio.</summary>
+    Friend TravaDoAnexo As TaskCompletionSource(Of Boolean)
+
+    ''' <summary>Segura a marcacao de lida no meio.</summary>
+    Friend TravaDaLeitura As TaskCompletionSource(Of Boolean)
+
+    ''' <summary>Como a gravacao termina. <c>None</c> e sucesso.</summary>
+    Friend FalhaAoSalvarAnexo As ErrorKind = ErrorKind.None
+
+    ''' <summary>Como a marcacao termina. <c>None</c> e sucesso.</summary>
+    Friend FalhaAoMarcarLida As ErrorKind = ErrorKind.None
+
+    ''' <summary>Liga os dois metodos acima; sem isto continuam "fora da alcada".</summary>
+    Friend LeitorLigado As Boolean
+
+    Public Async Function SaveAttachmentAsync(attachment As AttachmentKey, destinationPath As String,
+                                              overwrite As Boolean, cancel As CancellationToken) _
         As Task(Of OperationResult(Of String)) Implements IOutlookBroker.SaveAttachmentAsync
-        Return ForaDaAlcada(Of OperationResult(Of String))()
+        If Not LeitorLigado Then Return Await ForaDaAlcada(Of OperationResult(Of String))()
+        Chamadas.Add("SaveAttachment")
+        If TravaDoAnexo IsNot Nothing Then Await TravaDoAnexo.Task
+        If FalhaAoSalvarAnexo <> ErrorKind.None Then
+            Return OperationResult(Of String).Fail(FalhaAoSalvarAnexo, "")
+        End If
+        Return OperationResult(Of String).Ok(destinationPath)
     End Function
 
-    Public Function MarkReadAsync(item As ItemKey, isRead As Boolean, cancel As CancellationToken) _
+    Public Async Function MarkReadAsync(item As ItemKey, isRead As Boolean, cancel As CancellationToken) _
         As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.MarkReadAsync
-        Return ForaDaAlcada(Of OperationResult(Of Boolean))()
+        If Not LeitorLigado Then Return Await ForaDaAlcada(Of OperationResult(Of Boolean))()
+        Chamadas.Add("MarkRead")
+        If TravaDaLeitura IsNot Nothing Then Await TravaDaLeitura.Task
+        If FalhaAoMarcarLida <> ErrorKind.None Then
+            Return OperationResult(Of Boolean).Fail(FalhaAoMarcarLida, "")
+        End If
+        Return OperationResult(Of Boolean).Ok(True)
     End Function
 
     Public Function SubscribeFolderAsync(folder As FolderKey, cancel As CancellationToken) _

@@ -71,3 +71,26 @@ sem escolher.
   guarda. Vai para o relatório.
 
 Suíte: **816**, 0 falhas, 0 pulados.
+
+**Categoria 4 — guardas do leitor de mensagem.** Fechada. Era a única linha que
+pedia arquivo novo, e era literal: `MessageDetailViewModel` nunca tinha sido
+instanciado por um teste. `LeitorDeMensagemTests` nasceu com cinco testes, dois
+deles controles positivos.
+
+- salvar anexo durante troca de mensagem → **coberto**
+- salvar anexo concluindo depois do descarte → **coberto** (as duas guardas do
+  `SalvarAnexoAsync` desligadas derrubam os dois)
+- marcar como lida falhando tarde → **coberto**, e medido nos três estados: cada
+  conferência sozinha é suficiente, as duas juntas é o que o teste prova
+
+Erro meu, e é o do `CLAUDE.md` na letra: os locais `leitor` e `linha` eclipsaram
+as funções `Leitor()` e `Linha()` do próprio arquivo. A mensagem foi
+"tipo não pode ser inferido", que não aponta para nada. Renomeadas para
+`AbrirLeitor()` e `LinhaDe()`.
+
+E um segundo, meu e de ferramenta: um `re.sub` com `"\1"` fora de raw string
+escreveu o **byte 0x01** dentro do arquivo VB. O compilador disse "Character is
+not valid", que dessa vez apontava para o lugar certo.
+
+Suíte: **821**, 0 falhas, 0 pulados. **Bloco 1 encerrado**: das quatro
+categorias, três estão cobertas e uma tem dois caminhos que não isolei.
