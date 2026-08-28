@@ -182,6 +182,15 @@ Friend Class DestinoFalso
     Implements ISweepSink
 
     Friend ReadOnly Paginas As New List(Of (Numero As Integer, Chaves As List(Of String), Cursor As String))()
+
+    ''' <summary>
+    ''' As LINHAS inteiras, e nao so as chaves.
+    '''
+    ''' Guardar so a chave bastava enquanto a suite so perguntava "quem chegou".
+    ''' Nao basta para perguntar "chegou como veio" — e foi assim que o
+    ''' <c>MessageClass</c> constante sobreviveu a suite inteira.
+    ''' </summary>
+    Friend ReadOnly LinhasGravadas As New List(Of SourceRow)()
     Friend ReadOnly Descartadas As New List(Of String)()
     Friend Property Publicadas As Integer = 0
     Friend Property CoberturaPublicada As FolderCoverage = FolderCoverage.Desconhecida
@@ -217,6 +226,7 @@ Friend Class DestinoFalso
             Throw New SourceUnavailableException(RecusarAoGravar.Value, "destino, nao fonte")
         End If
         Paginas.Add((pagina, linhas.Select(Function(l) l.Key).ToList(), cursorDepois))
+        LinhasGravadas.AddRange(linhas.ToList())
     End Sub
 
     ''' <summary>

@@ -132,6 +132,30 @@ Namespace Global.Iris.Integration.Outlook
         ''' a origem clássica de mensagem aparecendo com hora errada depois de
         ''' ler do cache, e persistir é justamente o que vai acontecer com
         ''' isto.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O <c>MessageClass</c> É O MEDIDO, E ISSO JÁ FOI DIFERENTE</b>
+        '''
+        ''' Até 28/08/2026 esta função gravava a <b>constante</b>
+        ''' <c>"IPM.Note"</c>, jogando fora o valor que o broker tinha lido da
+        ''' coluna de <c>Table</c> — de graça, na mesma leitura, e que a
+        ''' paginação já usa para decidir o que é mensagem.
+        '''
+        ''' O efeito era invisível: só linha que passa pelo filtro chega aqui, e
+        ''' tudo o que passa começa com <c>IPM.Note</c>. Mas o cache ficava
+        ''' <b>afirmando</b> uma classificação que ninguém tinha medido naquela
+        ''' linha — e "IPM.Note" não é um valor, é um prefixo:
+        ''' <c>IPM.Note.SMIME</c> e <c>IPM.Note.Microsoft.Conversation</c> caem
+        ''' todos no mesmo filtro e viravam a mesma constante.
+        '''
+        ''' Foi encontrado medindo o acervo real: 1.123 linhas,
+        ''' <b>uma</b> classe distinta. Um número assim é bonito demais para ser
+        ''' medição, e não era.
+        '''
+        ''' Quem afirma tem de ter medido. Este arquivo tem um irmão que já diz
+        ''' isso: <c>MailSummary</c> não tem <c>IsProtected</c> justamente
+        ''' porque preencher com <c>False</c> seria afirmar "não é protegida"
+        ''' sem ter medido.
         ''' </summary>
         Private Shared Function Traduzir(m As MailSummary) As SourceRow
             Return New SourceRow With {
@@ -142,7 +166,7 @@ Namespace Global.Iris.Integration.Outlook
                 .SizeBytes = CType(m.SizeBytes, Long?),
                 .HasAttachments = m.HasAttachments,
                 .IsUnread = m.IsUnread,
-                .MessageClass = "IPM.Note"}
+                .MessageClass = m.MessageClass}
         End Function
 
     End Class

@@ -100,4 +100,59 @@ Public Class AdaptadorTraduzFalhaTests
         Next
     End Sub
 
+
+    ''' ==================================================================
+
+    ''' <summary>
+    ''' <b>O <c>MessageClass</c> que chega ao cache e o MEDIDO, e nao uma
+    ''' constante.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' Ate 28/08/2026 o <c>Traduzir</c> gravava <c>"IPM.Note"</c> fixo. Nenhum
+    ''' teste percebeu, e nenhum teria: o filtro da paginacao so deixa passar
+    ''' linha que COMECA com <c>IPM.Note</c>, entao a constante coincidia com a
+    ''' verdade em todos os casos comuns.
+    '''
+    ''' Quem encontrou foi a MEDICAO do acervo real: 1.123 linhas e <b>uma</b>
+    ''' classe distinta. Numero limpo demais para ser medida.
+    '''
+    ''' Este teste usa uma subclasse — <c>IPM.Note.SMIME</c> — que passa pelo
+    ''' filtro e <b>nao</b> e igual a constante. E o unico formato em que a
+    ''' diferenca entre "medido" e "afirmado" fica visivel de fora.
+    ''' </summary>
+    <TestMethod>
+    Public Sub MessageClass_chega_ao_destino_como_veio_do_broker()
+        Dim b As New FakeBroker()
+        b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+            New MessagePage With {
+                .Items = New List(Of MailSummary)() From {
+                    New MailSummary With {
+                        .Key = New ItemKey("E-1", "store-1"),
+                        .Subject = "assinada", .SenderName = "quem",
+                        .ReceivedTime = New DateTimeOffset(2026, 8, 28, 9, 0, 0, TimeSpan.Zero),
+                        .MessageClass = "IPM.Note.SMIME"},
+                    New MailSummary With {
+                        .Key = New ItemKey("E-2", "store-1"),
+                        .Subject = "comum", .SenderName = "quem",
+                        .ReceivedTime = New DateTimeOffset(2026, 8, 28, 9, 1, 0, TimeSpan.Zero),
+                        .MessageClass = "IPM.Note"}},
+                .NextCursor = Nothing,
+                .TotalAtStart = 2})
+
+        Dim destino As New DestinoFalso()
+        Dim fonte As New OutlookSweepSource(b, New FolderKey("pasta-1", "store-1"),
+                                            Universo(), 1)
+        Dim cap = EnvironmentPolicy.Capacidades(
+            New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing))
+        Dim r = New SweepRunner(fonte, destino, 10).
+                Executar(Universo(), 0, 1, cap, CancellationToken.None)
+
+        Assert.AreEqual(2, destino.LinhasGravadas.Count,
+            $"controle: as duas linhas tinham de chegar ao destino. motivo: {r.Motivo}")
+
+        Dim classes = destino.LinhasGravadas.Select(Function(l) l.MessageClass).OrderBy(Function(x) x).ToList()
+        Assert.AreEqual("IPM.Note|IPM.Note.SMIME", String.Join("|", classes),
+            "a classe gravada nao e a que o broker mediu")
+    End Sub
+
 End Class

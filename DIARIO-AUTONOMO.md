@@ -133,3 +133,81 @@ que não é observável por API pública — só por reflexão ou por um *seam* 
 Vai para o relatório como decisão, não como esquecimento.
 
 Suíte: **820** (um teste a menos, e o que saiu não provava nada).
+
+### 28/08 — bloco 2: o efeito da janela de sincronização, MEDIDO
+
+Dívida aberta desde a Fase 2. O ESCOPO dizia a saída: *"não é achar a
+configuração; é medir o efeito dela"*. Ferramenta nova: `tools/medir-janela.ps1`,
+somente leitura, sem abrir corpo nem anexo.
+
+**A medição, 28/08/2026, caixa corporativa real:**
+
+| Pasta | Itens | Mais antigo | Mais novo | Span |
+|---|---|---|---|---|
+| Caixa de Entrada | 1.098 | 2026-07-28 | 2026-08-28 | 31 d |
+| Itens Enviados | 119 | 2026-07-28 | 2026-08-28 | 31 d |
+| Itens Excluídos | 98 | 2026-07-28 | 2026-08-27 | 30 d |
+| Spam | 22 | 2026-07-28 | 2026-08-28 | 31 d |
+| Caixa de Entrada\1. Backup | 37 | 2026-07-28 | 2026-08-28 | 31 d |
+| Lixo Eletrônico | 178 | 2026-07-29 | 2026-08-28 | 30 d |
+| Rascunhos | 68 | 2026-07-31 | 2026-08-22 | 22 d |
+| Problemas de Sincronização | 31 | 2026-08-22 | 2026-08-23 | 1 d |
+
+**Cinco pastas cortam no mesmo dia: 28/07/2026.** Enviados, Excluídos, Spam,
+uma subpasta manual de arquivamento e a Caixa de Entrada — usos completamente
+diferentes, volumes de 22 a 1.098, e o mesmo primeiro item. Isso não é hábito de
+arquivamento. É o horizonte do store.
+
+**O efeito da janela é uma janela deslizante de ~31 dias.** Rascunhos foge
+porque rascunho é local; Problemas de Sincronização foge porque a pasta é
+recriada.
+
+**O que isto muda, e é material:** "cobertura parcial" deixou de ser ressalva
+formal. O acervo do Iris nunca conterá mais de ~1 mês da caixa. Para a Fase 4
+isso é decisivo — busca semântica sobre uma janela de 31 dias é um produto
+diferente de busca semântica sobre um arquivo histórico.
+
+**O que continua não dito:** quantos itens existem no servidor além do
+horizonte. Isso segue inalcançável pelo OOM, e é por isso que o Iris não conclui
+ausência.
+
+### 28/08 — bloco 3: qualidade e utilidade do acervo parcial
+
+Pré-condição escrita da Fase 4. Medido sobre as 1.123 linhas da Caixa de Entrada
+no cache.
+
+**Completude:** `subject`, `sender_name`, `received_at`, `size_bytes` — **0%
+vazios**. `last_modified_at` — **100% vazio**. `internet_message_id` e
+`search_key` — **100% vazios**, e isso é *deliberado e documentado*: a Q1 mediu
+que nenhum dos dois vem por coluna de `Table`, e preenchê-los custaria abrir o
+`MailItem` de cada mensagem.
+
+**Identidade:** 1.123 incarnations, 1.123 items, 1.123 entry_ids distintos. Sem
+duplicata.
+
+**Material para triagem e busca:** 338 com anexo, 235 não lidas, 138 remetentes
+distintos, 719 assuntos distintos em 1.123 (**64% únicos**). Os cinco assuntos
+mais repetidos aparecem 19, 18, 16, 12 e 11 vezes, todos com prefixo `RES:`/`RE:`
+— o acervo é **pesado em conversas**, e as conversas são identificáveis pelo
+assunto. Um remetente sozinho responde por 252 das 1.123 (22%).
+
+**Defeito encontrado pela medição, e corrigido.** `message_class` tinha **uma**
+classe distinta em 1.123 linhas. Número limpo demais para ser medida — e não era:
+`OutlookSweepSource.Traduzir` descartava o valor que o broker havia lido da
+coluna de `Table` e gravava a constante `"IPM.Note"`.
+
+O efeito era invisível porque o filtro da paginação só deixa passar linha que
+*começa* com `IPM.Note`. Mas `IPM.Note` é prefixo, não valor: `IPM.Note.SMIME` e
+`IPM.Note.Microsoft.Conversation` passam pelo filtro e viravam a mesma constante.
+O cache afirmava uma classificação que ninguém mediu naquela linha — o mesmo erro
+que o comentário de `MailSummary` condena para `IsProtected`.
+
+Corrigido, com teste e controle negativo. `DestinoFalso` passou a guardar as
+**linhas** e não só as chaves — guardar só a chave é o motivo de a constante ter
+sobrevivido à suíte inteira.
+
+E a armadilha do `CLAUDE.md` cobrou pedágio pela terceira vez nesta sessão: o
+campo novo não pode se chamar `Linhas`, porque o parâmetro de `GravarPagina` se
+chama `linhas` e o eclipsaria dentro do próprio método que precisa escrever nele.
+
+Suíte: **821**.
