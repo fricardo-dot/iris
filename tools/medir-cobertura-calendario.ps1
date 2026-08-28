@@ -42,8 +42,12 @@
     1. O span do calendario: primeiro e ultimo compromisso, sem expansao de
        serie. Mestres so, que e o que existe como item.
     2. A distribuicao por ano, para ver se ha corte ou se e continuo.
-    3. Quantos compromissos ha ANTES do horizonte do correio. Se houver
-       muitos, esta provado que a janela nao alcanca o calendario.
+    3. Quantos compromissos ha ANTES do horizonte do correio. Muitos deles
+       mostram que o corte de ~31 dias NAO APARECE neste calendario -- e so
+       isso. Nao prova "a janela nao alcanca o calendario": este roteiro nao
+       correlaciona StoreID com o do medir-janela, entao a comparacao e por
+       data e nao por caixa, e ele nao procura corte mais antigo que o item
+       mais velho que achou.
 
     O QUE ELE NAO MEDE
 

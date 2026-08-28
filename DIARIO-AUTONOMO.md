@@ -809,3 +809,43 @@ o `--amend` invalidou.
 painel"*, `Entrega_PARCIAL_deixa_o_painel_a_FRENTE` cai.
 
 Suíte: **874**.
+
+---
+
+## Décima passada — a quarta volta da mesma frase, e o padrão nomeado
+
+Quatro achados: um alto, dois médios, um baixo.
+
+**O alto foi a ressalva de novo — a quarta vez.** Na nona eu tinha tirado a
+afirmação categórica sobre o **painel** e mantido uma sobre a **busca**. E ela é
+falsa pela *outra* dívida, a de o consumidor ignorar qual geração chegou: com 10
+e 11 pendentes e o manifesto já apontando para 11, entregar a 10 faz a busca
+recarregar a 11; se a entrega da 11 falhar, a busca enxerga exatamente a geração
+que a ressalva jurava que ela não via.
+
+**O padrão, agora com nome:** nas quatro voltas eu afirmei *o estado de alguém* —
+ora do painel, ora da busca. Este objeto não sabe o estado de ninguém; ele sabe o
+estado da **fila**. A versão atual afirma só isso, e no modo certo: havendo
+entrega pendente, **nada na tela pode ser *tratado como*** o retrato da última
+varredura. Não diz que está atrás, não diz que está à frente.
+
+E o estado virou teste — `Com_DUAS_geracoes_pendentes_a_busca_ve_a_SEGUNDA_cedo`
+—, agora com o `AcervoDeTodasAsPastas` **real**. A dívida estava escrita desde a
+manhã, com a observação de que *"na prática a janela é curta"*. Curta não é
+inexistente, e foi a revisão que ligou a dívida à frase.
+
+**O primeiro médio foi sobre o nome do meu teste.** `Entrega_PARCIAL_deixa_o_
+painel_a_FRENTE` usa dois contadores: prova que o fan-out é sequencial e que a
+falha do segundo mantém a geração pendente, e **não** prova nada sobre o painel
+de produção. O nome prometia a integração e o corpo entregava a unidade.
+Renomeado, e o comentário passou a dizer o que ele não prova.
+
+**O segundo foi calibragem sobrevivendo em mais três lugares** — incluindo um que
+eu tinha acabado de reescrever: o `AgendaViewModel` concluía pela agenda inteira
+o que foi medido só no calendário padrão local, enquanto a UI abre qualquer pasta
+classificada como calendário. E o `medir-cobertura-calendario.ps1` ainda dizia
+"está provado".
+
+**O baixo:** o cabeçalho do relatório dizia 25 commits e o rodapé 27.
+
+Suíte: **875**.

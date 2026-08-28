@@ -10,28 +10,40 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — depois da nona revisão
+## Medição corrente — depois da décima revisão
 
 | | |
 |---|---|
-| **Commit** | `ff37f0d` — a árvore da solução .NET que foi medida |
+| **Commit** | `602d8e8` — a árvore da solução .NET que foi medida |
 | **Data** | 28 de agosto de 2026, à noite |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
 
 ```
-Passed!  - Failed:     0, Passed:   874, Skipped:     0, Total:   874, Duration: 1 m 12 s - Iris.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   875, Skipped:     0, Total:   875, Duration: 1 m 6 s - Iris.Tests.dll (net10.0)
 ```
 
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
-última antes do commit, e o único arquivo tocado depois dela foi este diário —
-que não é código executável.
+última antes do commit, e o que mudou depois dela foram documentos e um roteiro
+de medição — nada da solução .NET.
 
-**São 874 e não 875** porque a nona passada acrescentou três testes e **apagou
-um**: o `O_acumulador_da_linha_zera_entre_linhas` fazia os dois resets com a
-própria mão e passaria com a correção desfeita. Trocá-lo por um teste que dirige
-a produção é o motivo de a conta não fechar por soma.
+**A conta não fecha por soma, e é de propósito.** A nona passada acrescentou
+três testes e **apagou um** — o `O_acumulador_da_linha_zera_entre_linhas` fazia
+os dois resets com a própria mão e passaria com a correção desfeita. A décima
+acrescentou um, que mede a dívida das duas gerações pendentes com o acervo real.
+872 → 874 → 875.
+
+### Medição da nona revisão
+
+| | |
+|---|---|
+| **Commit** | `ff37f0d` |
+| **Data** | 28 de agosto de 2026, à noite |
+
+```
+Passed!  - Failed:     0, Passed:   874, Skipped:     0, Total:   874, Duration: 1 m 12 s - Iris.Tests.dll (net10.0)
+```
 
 ### Medição anterior — fim do dia autônomo
 
