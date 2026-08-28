@@ -204,6 +204,19 @@ Public Class ArvoreDePastasTests
     '''
     ''' Duas chamadas concorrentes tem de produzir <b>um</b> pedido ao broker,
     ''' e as duas so voltam com os filhos ja no lugar.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A ASSERCAO QUE FALTAVA, E SEM ELA O TESTE ERA DECORATIVO</b>
+    '''
+    ''' A primeira versao criava a segunda chamada e so olhava para ela depois
+    ''' de liberar a trava. Com o defeito antigo presente — o ramo
+    ''' <c>Loading</c> voltando na hora — o teste continuava <b>verde</b>:
+    ''' havia um pedido so, a primeira chamada acabava povoando os filhos, e o
+    ''' <c>WhenAll</c> terminava.
+    '''
+    ''' O que separa "esperou" de "desistiu" e o estado da segunda tarefa
+    ''' <b>enquanto o broker ainda esta travado</b>. Se ela ja terminou ali,
+    ''' ela desistiu.
     ''' </summary>
     <TestMethod>
     Public Sub Quem_chega_no_meio_da_carga_ESPERA_o_mesmo_voo()
@@ -219,6 +232,13 @@ Public Class ArvoreDePastasTests
 
                 Dim primeiro = no.EnsureChildrenAsync()
                 Dim segundo = no.EnsureChildrenAsync()
+
+                ' AQUI, com a trava ainda fechada. Quem espera nao pode ter
+                ' terminado; quem desiste ja terminou.
+                Assert.IsFalse(segundo.IsCompleted,
+                    "o segundo pedido voltou na hora em vez de esperar o primeiro")
+                Assert.IsFalse(primeiro.IsCompleted,
+                    "controle: o primeiro tinha de estar preso no broker")
 
                 b.TravaDasFilhas.SetResult(True)
                 Await Task.WhenAll(primeiro, segundo)

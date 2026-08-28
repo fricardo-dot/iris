@@ -1540,11 +1540,22 @@ Public Class AssistenteViewModelTests
             .Custo = 0.0009D,
             .Tokens = 900
         }
+        ' DENTRO DO PROVEDOR, e nao "Ocupado".
+        '
+        ' Ocupado sobe ANTES de o Task.Run agendar a transmissao, entao
+        ' espera-lo prova que o pedido comecou e nao que ele chegou ao
+        ' provedor. Com o marco errado, o provedor podia entrar depois do
+        ' Dispose e ate depois de a trava ser liberada -- o teste continuaria
+        ' valido para "operacao pendente", e nao para "transmissao EM VOO",
+        ' que e o que o nome promete.
+        Dim dentro As New ManualResetEventSlim(False)
+        p.AoEnviar = Sub() dentro.Set()
+
         Dim vm = Montar(Ativacao(), p, Pronta())
 
         Dim t = Pedir(vm)
-        Await Task.Run(Sub() SpinWait.SpinUntil(Function() vm.Ocupado, 5000))
-        Assert.IsTrue(vm.Ocupado, "controle: o voo comecou")
+        Await Task.Run(Sub() dentro.Wait(TimeSpan.FromSeconds(10)))
+        Assert.IsTrue(dentro.IsSet, "controle: a transmissao tinha de estar DENTRO do provedor")
 
         vm.Dispose()
         p.Trava.Set()
@@ -1592,11 +1603,14 @@ Public Class AssistenteViewModelTests
             .Trava = New ManualResetEventSlim(False),
             .IgnorarCancelamento = True
         }
+        Dim dentro As New ManualResetEventSlim(False)
+        p.AoEnviar = Sub() dentro.Set()
+
         Dim vm = Montar(Ativacao(), p, Pronta())
 
         Dim t = Pedir(vm)
-        Await Task.Run(Sub() SpinWait.SpinUntil(Function() vm.Ocupado, 5000))
-        Assert.IsTrue(vm.Ocupado, "controle: o voo comecou")
+        Await Task.Run(Sub() dentro.Wait(TimeSpan.FromSeconds(10)))
+        Assert.IsTrue(dentro.IsSet, "controle: a transmissao tinha de estar DENTRO do provedor")
 
         ' so a partir daqui interessa: o que a tela ouviria DEPOIS do fechamento.
         Dim avisos As New List(Of String)()
@@ -1619,21 +1633,24 @@ Public Class AssistenteViewModelTests
     End Function
 
     ''' <summary>
-    ''' <b>Descartar duas vezes nao pode fazer nada acontecer duas vezes.</b>
+    ''' <b>NAO HA TESTE de "descartar duas vezes", e o motivo e o de sempre.</b>
     '''
-    ''' <c>Dispose</c> e chamado pelo <c>MainViewModel.Dispose</c> e pode ser
-    ''' chamado de novo por qualquer um — o contrato de <c>IDisposable</c> exige
-    ''' que a segunda chamada seja inocua. A guarda e o <c>If _descartado Then
-    ''' Return</c> na primeira linha; sem ele, a geracao subiria de novo, o que
-    ''' e inofensivo hoje e deixa de ser no dia em que alguem ler a geracao para
-    ''' decidir outra coisa.
+    ''' ------------------------------------------------------------------
+    ''' Eu escrevi um: descartava duas vezes e cobrava <c>Resultado</c> vazio.
+    ''' A revisao externa mediu e ele <b>passava com a guarda removida</b> —
+    ''' sem o <c>If _descartado Then Return</c>, a segunda chamada so
+    ''' incrementa de novo a geracao privada, tenta cancelar um
+    ''' <c>CancellationTokenSource</c> que ja e <c>Nothing</c>, e para um pulso
+    ''' ja parado. Nada disso e observavel de fora.
+    '''
+    ''' A guarda continua certa — e o contrato de <c>IDisposable</c> — e
+    ''' continua sem consequencia visivel <b>hoje</b>. Ela deixa de ser inocua
+    ''' no dia em que alguem ler a geracao para decidir outra coisa, e nesse
+    ''' dia havera o que medir.
+    '''
+    ''' Teste apagado em vez de mantido. Linha verde que passa com o defeito
+    ''' presente e pior que lacuna: ela gasta a confianca do numero que ela
+    ''' mesma produz, e este arquivo ja perdeu dois testes por isso.
     ''' </summary>
-    <TestMethod>
-    Public Sub Descartar_duas_vezes_e_inocuo()
-        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta())
-        vm.Dispose()
-        vm.Dispose()
-        Assert.AreEqual("", vm.Resultado)
-    End Sub
 
 End Class

@@ -508,13 +508,27 @@ Friend NotInheritable Class FakeBroker
         Return ForaDaAlcada(Of OperationResult(Of MessagePage))()
     End Function
 
-    ''' <summary>Detalhes por chave de item, para o leitor de mensagem.</summary>
+    ''' <summary>
+    ''' Detalhes por chave de item COMPLETA — <c>EntryId</c> e <c>StoreId</c>.
+    '''
+    ''' Indexar so pelo <c>EntryId</c> deixaria uma leitura do store errado
+    ''' passar calada, e a propriedade deste duplo sempre foi a contraria:
+    ''' chamada fora da alcada quebra o teste em vez de passar por sorte.
+    ''' </summary>
     Friend ReadOnly Detalhes As New Dictionary(Of String, MessageDetail)()
+
+    Friend Sub ComDetalhe(d As MessageDetail)
+        Detalhes(Item(d.Key)) = d
+    End Sub
+
+    Private Shared Function Item(k As ItemKey) As String
+        Return $"{k.StoreId}|{k.EntryId}"
+    End Function
 
     Public Function GetMessageDetailAsync(item As ItemKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessageDetail)) Implements IOutlookBroker.GetMessageDetailAsync
         Dim d As MessageDetail = Nothing
-        If Not Detalhes.TryGetValue(item.EntryId, d) Then
+        If Not Detalhes.TryGetValue(FakeBroker.Item(item), d) Then
             Return ForaDaAlcada(Of OperationResult(Of MessageDetail))()
         End If
         Chamadas.Add("GetMessageDetail")
@@ -602,12 +616,29 @@ Friend NotInheritable Class FakeBroker
     ''' <summary>Liga os dois metodos acima; sem isto continuam "fora da alcada".</summary>
     Friend LeitorLigado As Boolean
 
+    ''' <summary>
+    ''' Ligar o leitor nao pode virar "aceita qualquer coisa". A chave tem de
+    ''' ser de um item conhecido, e <c>MarkRead</c> so existe para marcar como
+    ''' LIDA — o Iris nunca desmarca. Fora disso continua estourando, que e a
+    ''' propriedade que este duplo sempre teve.
+    ''' </summary>
+    Private Function Conhecido(k As ItemKey) As Boolean
+        Return k IsNot Nothing AndAlso Detalhes.ContainsKey(Item(k))
+    End Function
+
     Public Async Function SaveAttachmentAsync(attachment As AttachmentKey, destinationPath As String,
                                               overwrite As Boolean, cancel As CancellationToken) _
         As Task(Of OperationResult(Of String)) Implements IOutlookBroker.SaveAttachmentAsync
         If Not LeitorLigado Then Return Await ForaDaAlcada(Of OperationResult(Of String))()
+        If attachment Is Nothing OrElse Not Conhecido(attachment.Owner) Then
+            Throw New NotSupportedException("Anexo de um item que este duplo nao conhece.")
+        End If
+        If String.IsNullOrWhiteSpace(destinationPath) Then
+            Throw New NotSupportedException("Gravar anexo sem destino.")
+        End If
         Chamadas.Add("SaveAttachment")
         If TravaDoAnexo IsNot Nothing Then Await TravaDoAnexo.Task
+        Chamadas.Add("SaveAttachment-fim")
         If FalhaAoSalvarAnexo <> ErrorKind.None Then
             Return OperationResult(Of String).Fail(FalhaAoSalvarAnexo, "")
         End If
@@ -617,8 +648,18 @@ Friend NotInheritable Class FakeBroker
     Public Async Function MarkReadAsync(item As ItemKey, isRead As Boolean, cancel As CancellationToken) _
         As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.MarkReadAsync
         If Not LeitorLigado Then Return Await ForaDaAlcada(Of OperationResult(Of Boolean))()
+        If Not Conhecido(item) Then
+            Throw New NotSupportedException("Marcar um item que este duplo nao conhece.")
+        End If
+        If Not isRead Then
+            Throw New NotSupportedException("O Iris nao desmarca mensagem.")
+        End If
         Chamadas.Add("MarkRead")
         If TravaDaLeitura IsNot Nothing Then Await TravaDaLeitura.Task
+        ' MARCO DE CONCLUSAO. Sem ele, um teste que cobra "nao reverteu" so
+        ' pode esperar tempo, e tempo nao e evidencia de que a operacao
+        ' terminou.
+        Chamadas.Add("MarkRead-fim")
         If FalhaAoMarcarLida <> ErrorKind.None Then
             Return OperationResult(Of Boolean).Fail(FalhaAoMarcarLida, "")
         End If

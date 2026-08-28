@@ -53,8 +53,8 @@ cadeia inteira de comandos.
 conferências independentemente suficientes** — remover uma passa, remover todas
 falha. Os testes provam a propriedade da cadeia, e está escrito assim.
 
-**Categoria 3 — guardas de descarte da janela principal.** Três de quatro
-caminhos fechados. A razão real de não haver primeiro teste não era a receita:
+**Categoria 3 — guardas de descarte da janela principal.** Dois de quatro
+caminhos fechados na primeira passada; o terceiro fechou depois da revisão. A razão real de não haver primeiro teste não era a receita:
 `MainViewModel` **não podia ser construído** numa suíte, porque o construtor
 abria o cache do usuário. O caminho virou parâmetro opcional; produção continua
 sem escolher.
@@ -94,3 +94,42 @@ not valid", que dessa vez apontava para o lugar certo.
 
 Suíte: **821**, 0 falhas, 0 pulados. **Bloco 1 encerrado**: das quatro
 categorias, três estão cobertas e uma tem dois caminhos que não isolei.
+
+### 28/08 — revisão do bloco 1 com o Codex, e o que ela derrubou
+
+Sete achados. **Dois testes meus passavam com a guarda que eles nomeiam
+removida** — exatamente o defeito que este projeto persegue.
+
+1. `Quem_chega_no_meio_da_carga_ESPERA_o_mesmo_voo` só olhava a segunda tarefa
+   **depois** de liberar a trava. Com o defeito antigo presente ele ficava verde.
+   Passou a cobrar `segundo.IsCompleted = False` **com a trava ainda fechada** —
+   é isso que separa "esperou" de "desistiu".
+2. `Descartar_duas_vezes_e_inocuo` passava com o `If _descartado Then Return`
+   removido, porque a segunda chamada não tem efeito observável de fora.
+   **Apagado**, com o motivo no lugar dele.
+3. A "cerca" da recarga da árvore não iniciava recarga nenhuma: a trava
+   interceptava a leitura de stores do `ConnectionViewModel`, e o `Dispose` caía
+   antes de `Folders.ReloadAsync` existir. Reescrito com a receita do Codex —
+   abrir a janela inteira, **depois** travar, disparar a recarga por nome e
+   guardar a tarefa. Agora o controle negativo dispara, e **o quarto caminho da
+   categoria 3 está coberto de verdade**.
+4. Dois testes esperavam relógio. `MarkReadAsync` ganhou marco de conclusão
+   (`MarkRead-fim`); a restauração de sessão passou a esperar a árvore da E3.
+5. "Transmissão em voo" usava `vm.Ocupado` como marco — e `Ocupado` sobe antes
+   de o `Task.Run` agendar o provedor. Passou a usar `AoEnviar`, que roda dentro
+   da chamada.
+6. `FakeBroker`: ligar uma capacidade estava virando "aceita tudo". `Detalhes`
+   passou a ser indexado pela chave completa (`StoreId` **e** `EntryId`), e
+   salvar anexo / marcar como lida rejeitam item desconhecido, destino vazio e
+   `isRead:=False` — o Iris nunca desmarca.
+7. Contradição no próprio diário, corrigida.
+
+Codex confirmou o que passou: os **7** avisos, as cadeias `Atual(geracao)`, os
+três estados da marcação, e que o `Optional caminhoDoCache` é aceitável porque
+só encaminha capacidade que o `AcervoViewModel` já tinha.
+
+Resta **um** caminho não coberto: a recarga de stores pendente. Codex concorda
+que não é observável por API pública — só por reflexão ou por um *seam* interno.
+Vai para o relatório como decisão, não como esquecimento.
+
+Suíte: **820** (um teste a menos, e o que saiu não provava nada).

@@ -195,66 +195,49 @@ Public Class JanelaPrincipalTests
     ''' nas colecoes de uma janela que ja saiu.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>O CONTROLE NEGATIVO DESTE NAO DISTINGUE, E ISSO FICA ESCRITO</b>
+    ''' <b>DUAS VERSOES ERRADAS ANTES DESTA, E AS DUAS PASSAVAM</b>
     '''
-    ''' Removendo o <c>Folders.Clear()</c> do <c>Dispose</c>, este teste
-    ''' <b>continua verde</b>. Medi o estado do broker nos dois casos e ele e
-    ''' identico:
+    ''' A primeira esperava 100 ms fixos: media relogio, nao guarda. A segunda
+    ''' instalava a trava <b>antes</b> do <c>InitializeAsync</c> — e a primeira
+    ''' leitura de stores interceptada nem era a da arvore, era a do
+    ''' <c>ConnectionViewModel</c>. Com ela presa ali, o <c>SyncContentWithSession</c>
+    ''' nunca acontecia, <c>Folders.ReloadAsync</c> nunca comecava, e o
+    ''' <c>Dispose</c> caia antes de existir recarga. O teste era outra
+    ''' variacao de "fechar durante a abertura" com nome errado.
     '''
-    ''' <code>
-    '''   chamadas = Probe | GetStores | GetStores-fim
-    '''   filhas   = (vazio)
-    '''   raizes   = 0
-    ''' </code>
+    ''' Esta versao abre a janela <b>inteira</b> primeiro, so entao instala a
+    ''' trava, e dispara a recarga da arvore <b>explicitamente</b>, guardando a
+    ''' tarefa para poder esperar por ela.
     '''
-    ''' Ou seja: a recarga resume depois da trava e para antes de pedir filha
-    ''' nenhuma, <b>com ou sem</b> a guarda do <c>Dispose</c>. Quem a segura e
-    ''' outra coisa dentro do proprio <c>FolderTreeViewModel</c> — a cadeia de
-    ''' <c>Atual(geracao)</c> que <c>ArvoreDePastasTests</c> ja cobre.
-    '''
-    ''' Entao este teste <b>nao</b> prova a guarda do <c>Dispose</c>. Ele prova
-    ''' a propriedade composta — <i>fechar durante a recarga nao repovoa</i> —
-    ''' e fica como cerca de regressao, dito com esse nome. Chamar de cobertura
-    ''' seria repetir o erro que a Fase 2 documentou: linha verde que passa com
-    ''' o defeito presente gasta a confianca do numero que ela mesma produz.
-    '''
-    ''' A guarda do <c>Dispose</c> isolada continua sem teste, e esta no
-    ''' relatorio.
+    ''' <b>Controle negativo confirmado:</b> removendo o <c>Folders.Clear()</c>
+    ''' do <c>Dispose</c>, este teste falha.
     ''' </summary>
     <TestMethod>
-    Public Sub Fechar_durante_a_recarga_da_arvore_NAO_repovoa_CERCA()
+    Public Sub Fechar_durante_a_recarga_da_arvore_NAO_repovoa()
         NoDispatcherAsync(
             Async Function(d)
                 Dim b = Broker()
-                b.TravaDosStores = New TaskCompletionSource(Of Boolean)()
                 Dim vm = Janela(b, d)
 
-                Dim voo = vm.InitializeAsync()
-                Assert.IsTrue(PediuStores(b) > 0,
-                    "controle: a recarga tinha de estar parada no broker")
+                ' A janela abre INTEIRA primeiro.
+                Await vm.InitializeAsync()
+                Await Assentar(Function() vm.Folders.Roots.Count > 0)
+                Assert.AreEqual(1, vm.Folders.Roots.Count, "controle: a arvore carregou")
+
+                ' So agora a fonte trava, e a recarga e disparada por nome.
+                b.TravaDosStores = New TaskCompletionSource(Of Boolean)()
+                Dim antes = b.PedidosDeFilhas.Count
+                Dim recarga = vm.Folders.ReloadAsync()
+                Await Assentar(Function() b.Chamadas.FindAll(Function(x) x = "GetStores").Count > 1)
+                Assert.IsFalse(recarga.IsCompleted,
+                    "controle: a recarga tinha de estar presa no broker")
 
                 vm.Dispose()
                 b.TravaDosStores.SetResult(True)
-                Await voo
+                Await recarga
 
-                ' O SINAL E O PEDIDO DAS FILHAS, e ele tem de NAO acontecer.
-                '
-                ' A primeira versao esperava 100 ms fixos e passava ate com o
-                ' Folders.Clear() removido do Dispose: media relogio, nao
-                ' guarda. A segunda tentou esperar o pedido das filhas como
-                ' marco -- e ele nunca chega, justamente porque a guarda
-                ' funciona: o ReloadAsync ve a geracao vencida logo depois dos
-                ' stores e volta antes de pedir filha nenhuma.
-                '
-                ' Entao o pedido das filhas e o SINTOMA da guarda ausente. A
-                ' espera sai cedo se ele acontecer, e vai ate o fim se nao
-                ' acontecer. Quem sustenta que isto nao e vacuo e o controle
-                ' positivo la em cima, que cobra o pedido das filhas na
-                ' recarga normal.
-                Await Assentar(Function() b.PedidosDeFilhas.Count > 0)
-
-                Assert.AreEqual(0, b.PedidosDeFilhas.Count,
-                    $"a recarga da janela fechada seguiu para as filhas. chamadas={String.Join(",", b.Chamadas)} filhas={String.Join(",", b.PedidosDeFilhas)} raizes={vm.Folders.Roots.Count}")
+                Assert.AreEqual(antes, b.PedidosDeFilhas.Count,
+                    "a recarga da janela fechada seguiu para as filhas")
                 Assert.AreEqual(0, vm.Folders.Roots.Count,
                     "a recarga da janela fechada repovoou a arvore")
             End Function)
@@ -305,6 +288,15 @@ Public Class JanelaPrincipalTests
                 Await Assentar()
 
                 b.TravaDosStores.SetResult(True)
+
+                ' MARCO, E NAO RELOGIO: a restauracao da E3 recarrega a arvore,
+                ' e so depois de ela estar de pe e que faz sentido perguntar
+                ' se alguem selecionou pasta nela. Esperar tempo fixo aqui
+                ' poderia afirmar "ninguem selecionou" antes de a restauracao
+                ' defeituosa sequer chegar ao TrySelectAsync.
+                Await Assentar(Function() vm.Folders.Roots.Count > 0)
+                Assert.AreEqual(1, vm.Folders.Roots.Count,
+                    "controle: a arvore da sessao nova tinha de ter carregado")
                 Await Assentar()
 
                 Assert.IsNull(vm.Folders.Selected,

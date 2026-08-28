@@ -52,14 +52,14 @@ Public Class LeitorDeMensagemTests
         Dim b As New FakeBroker()
         b.LeitorLigado = True
         For n = 1 To 2
-            b.Detalhes($"E-{n}") = New MessageDetail With {
+            b.ComDetalhe(New MessageDetail With {
                 .Key = Chave(n), .Subject = $"assunto {n}",
                 .SenderName = "quem", .SenderAddress = "quem@x.invalido",
                 .Content = ContentState.AttachmentsAvailable, .Format = BodyFormat.PlainText,
                 .TextBody = $"corpo {n}",
                 .RecipientsStatus = PartStatus.Full,
                 .AttachmentsStatus = PartStatus.Full,
-                .Attachments = New List(Of AttachmentInfo)() From {Anexo(n)}}
+                .Attachments = New List(Of AttachmentInfo)() From {Anexo(n)}})
         Next
         Return b
     End Function
@@ -246,6 +246,14 @@ Public Class LeitorDeMensagemTests
                 leitor.Dispose()
 
                 b.TravaDaLeitura.SetResult(True)
+
+                ' MARCO, E NAO RELOGIO. Sem o "MarkRead-fim" so daria para
+                ' esperar um tempo e torcer: uma continuacao atrasada faria o
+                ' teste concluir "nao reverteu" antes de a reversao ter tido
+                ' chance de acontecer, e ele passaria ate com a guarda fora.
+                Await Assentar(Function() b.Chamadas.Contains("MarkRead-fim"))
+                Assert.IsTrue(b.Chamadas.Contains("MarkRead-fim"),
+                    "controle: a marcacao tinha de ter terminado")
                 Await Assentar(Function() linha.IsUnread, voltas:=40)
 
                 Assert.IsFalse(linha.IsUnread,
