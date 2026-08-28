@@ -419,6 +419,23 @@ footer {
   </div>
 </header>
 
+<div class="principio" style="max-width:100%">
+  <p>
+    <strong>Adendo de 28 de agosto de 2026.</strong> Este relatório descreve a
+    fase como ela estava em 25/08, e continua valendo como registro daquela
+    data. <strong>Quatro pendências que ele lista foram fechadas depois</strong>
+    — o aplicativo passou a varrer, o acervo passou a seguir a pasta
+    selecionada, o ambiente ganhou cerimônia própria e a faixa foi vista
+    funcionando.
+  </p>
+  <p>
+    O que mudou está marcado <span class="chip medido">fechado</span> nas
+    seções 07 e 08. O relato completo, com os números da varredura real e as
+    seis passadas de revisão que ela exigiu, está em
+    <code>RELATORIO-FASE2-FECHAMENTO.html</code>.
+  </p>
+</div>
+
 <section class="resumo">
   <h2>O essencial, sem suavizar</h2>
   <ul>
@@ -438,7 +455,9 @@ footer {
     <li><strong>O Iris não conclui que uma mensagem sumiu de uma pasta</strong> —
       decisão sua, §23, com gatilhos de reabertura escritos.</li>
     <li><strong>O manifesto é um acervo, não o estado corrente da caixa.</strong>
-      A UI ainda não mostra isso.</li>
+      <span class="chip medido">fechado</span> Em 28/08 a faixa passou a mostrar
+      a ressalva na tela, junto com o número de linhas que a varredura viu e
+      recusou por não serem mensagem.</li>
   </ul>
 </section>
 
@@ -705,17 +724,17 @@ footer {
 
 <div class="wide acoes">
   <div>
-    <span class="tempo">quando abrir o Iris</span>
-    <h3>Olhar a faixa do acervo</h3>
+    <span class="tempo">feito em 28/08</span>
+    <h3>Olhar a faixa do acervo <span class="chip medido">fechado</span></h3>
     <p>
-      Ela compila, os bindings resolvem e há teste cobrando que estejam lá — mas
-      <strong>não foi verificada visualmente</strong>. Abrir o app conectaria ao
-      seu Outlook, e isso não é coisa de fazer sem você pedir.
+      Ela foi vista, e a primeira coisa que apareceu foi um defeito: ela e a
+      faixa da IA moravam na <strong>mesma linha da grade</strong>, empilhadas,
+      com a da IA por cima. Não era falta de dado — era uma linha de grade
+      faltando.
     </p>
     <p>
-      Numa máquina limpa ela dirá <em>"esta pasta ainda não foi varrida"</em>,
-      que é a verdade: o app não varre, e o cache só tem o que uma importação
-      manual colocou nele.
+      Hoje ela mostra a ressalva da §23 na caixa real, com 1.123 itens
+      guardados e as 12 linhas recusadas por não serem mensagem.
     </p>
   </div>
   <div>
@@ -750,13 +769,18 @@ footer {
         o que cai entre o núcleo e o universo é tolerado <em>por não ser
         decidível</em>, não por ser inofensivo. Perda sistemática da Table
         continua reprovando.</td></tr>
-    <tr><td><strong>A faixa não foi vista</strong></td>
-      <td>Compila, os bindings resolvem, há teste cobrando que estejam lá — mas
-        ninguém olhou a tela. Verificação visual continua desejável antes de
-        distribuir.</td></tr>
-    <tr><td><strong>O app não varre</strong></td>
-      <td>O cache só tem o que uma importação manual colocou. Disparar a varredura
-        pelo app é a fase seguinte, e a pasta do acervo está fixa em 1.</td></tr>
+    <tr><td><strong>A faixa não foi vista</strong>
+        <span class="chip medido">fechado</span></td>
+      <td>Vista em 28/08, e o ato de olhar achou o defeito: ela dividia a linha
+        da grade com a faixa da IA e ficava por baixo. Há teste novo cobrando
+        que as duas declarem linhas diferentes.</td></tr>
+    <tr><td><strong>O app não varre</strong>
+        <span class="chip medido">fechado</span></td>
+      <td>Fechado em 28/08. Faltava a tradução de identidade entre
+        <code>(StoreId, EntryId)</code> e as chaves do cache — as três peças da
+        varredura existiam e nada as ligava. A constante da pasta morreu; o
+        acervo segue a seleção. Ver
+        <code>RELATORIO-FASE2-FECHAMENTO.html</code>.</td></tr>
     <tr><td><strong>Identidade de ambiente incompleta</strong></td>
       <td>A janela não é legível, então o Iris não detecta quando ela muda — e
         mudança de janela invalidaria toda conclusão de ausência. Degradação

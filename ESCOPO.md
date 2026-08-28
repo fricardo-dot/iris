@@ -1,9 +1,10 @@
 # Iris — Escopo do Projeto
 
-**Status:** Fases 0, 1, 2 e 3 executadas — a Fase 3 está encerrada com a
-**ativação da IA pendente de decisão do usuário**; a Fase 4 não foi planejada
-**Data:** 2026-08-25
-**Versão:** 5
+**Status:** Fases 0, 1, 2 e 3 executadas. A **IA foi ativada** em 27/08/2026 e
+o primeiro egress real saiu; as **pendências da Fase 2 foram fechadas** em
+28/08/2026 e o aplicativo varre. A Fase 4 continua **não planejada**.
+**Data:** 2026-08-28
+**Versão:** 6
 
 ---
 
@@ -283,14 +284,55 @@ O subsistema. Precisa definir, não apenas mencionar:
 Mais importação inicial paginada, tombstones, retomada após falha e busca
 textual. Só aqui listagem e busca passam a ler exclusivamente do cache.
 
-### Fase 3 — IA sob demanda (Grupo A) — *EXECUTADA, com a ativação pendente*
+**Encerrada em 25/08/2026** (352 testes) e **pendências fechadas em 28/08/2026**
+(805 testes) — `RELATORIO-FASE2.html` e `RELATORIO-FASE2-FECHAMENTO.html`.
+
+As quatro pendências eram uma só: as três peças da varredura existiam e **nada
+as ligava**. Faltava traduzir `(StoreId, EntryId)` do Outlook nas chaves
+inteiras do cache. O que entrou:
+
+- `ResolvedorDoAcervo` — a tradução, idempotente. Reencontrar a pasta **não**
+  toca em época, geração publicada nem estabilidade: são resultado da
+  varredura, e reescrevê-los a cada clique apagaria o trabalho anterior.
+- `VarreduraDaPasta` — a ordem inteira num lugar, e ela **para** se o ambiente
+  não foi autorizado.
+- **Cerimônia do ambiente** — o programa mede, grava `allowed = 0` e para. Quem
+  vira para 1 é o dono da caixa, por `Iris.CrashHarness -- ambiente`. Se o
+  programa aprovasse a própria medição, o gate D2 viraria decoração.
+- Botão **Varrer esta pasta**, explícito: varrer é caro e escreve no cache.
+- Esquema do cache na **versão 3**, com migração aditiva por tabela fechada de
+  passos conhecidos. O que não está listado continua falhando fechado.
+
+**Medido na caixa real:** 1.123 guardadas + 12 recusadas = 1.135 declaradas,
+antes e depois. A guarda S6 só publicou porque a conta fechou.
+
+**O que a autorização do ambiente NÃO destrava:** afirmar cobertura completa e
+concluir ausência. Em Exchange em cache a janela de sincronização não é legível
+(§22.3 e §22.4), então o Iris nunca sabe que ela mudou. Degradação permanente,
+e agora visível na tela.
+
+### Fase 3 — IA sob demanda (Grupo A) — *EXECUTADA e ATIVADA*
 
 Resumo e redação sobre a mensagem ou thread aberta.
 
 **Executada em 25/08/2026**: sete marcos, 642 testes, `FASE3.md` §§28–39 e
-`RELATORIO-FASE3.html`. Implementação e provas **locais** concluídas; a ativação
-operacional e a aceitação contra provedor real continuam bloqueadas — por
-desenho, não por atraso.
+`RELATORIO-FASE3.html`.
+
+**Ativada em 27/08/2026.** A ordem completa foi exercitada contra provedor real
+— cerimônia, portão, capability, diário, voo, resposta e tela. Provedor
+OpenRouter, modelo `google/gemini-3.7-flash`; ativação em
+`%ProgramData%\Iris\ativacao.json` com ACL conferida em três níveis; chave no
+Gerenciador de Credenciais do Windows, que o Iris lê e nunca imprime.
+
+**O que continua bloqueado, por decisão e não por atraso:**
+`politicaCorporativaVerificada` é `false`, então **só conteúdo sintético
+passa**. E-mail real continua recusado pelo portão. Destravar isso é decisão
+sobre a política corporativa aplicável, não trabalho de código.
+
+**Aprendido na ativação, e que não estava em lugar nenhum:** o slug de
+roteamento do OpenRouter vem do campo `tag` do endpoint, e `google` não existe —
+os reais são `google-vertex` e `google-ai-studio`. Uma lista que não casa com
+nada faz o pedido ser recusado, que é o desfecho certo pelo motivo errado.
 
 **Recorte que difere desta frase:** a produção manda **a mensagem selecionada**,
 e não a thread. Reconstrução de conversa está fora do escopo (seção 6), e juntar
@@ -298,9 +340,31 @@ mensagens que *parecem* da mesma conversa seria decidir divulgação por
 semelhança. O mecanismo aceita várias mensagens; o que não existe é quem as
 escolha.
 
-### Fase 4 — Triagem e busca semântica (Grupo B)
+### Fase 4 — Triagem e busca semântica (Grupo B) — *NÃO PLANEJADA*
 
 Depois de medir qualidade do cache e custo de indexação.
+
+**A pré-condição mudou de estado em 28/08/2026.** Antes não havia como medir
+qualidade do cache, porque o cache só tinha o que uma importação manual de teste
+tivesse posto nele. Agora ele tem uma caixa de verdade — 1.123 mensagens, com a
+conta do S6 fechando — e a medição passou a ser possível.
+
+O que precisa ser decidido antes de planejar esta fase, e nenhum deles é
+técnico primeiro:
+
+1. **O que a triagem faz com a cobertura parcial.** Em cache, o acervo é arquivo
+   histórico conservador. Uma triagem que trate ausência do índice como ausência
+   da caixa reintroduz exatamente a conclusão que a §23 proíbe.
+2. **Quanto conteúdo sai da máquina, e por quanto tempo.** O Grupo A manda uma
+   mensagem por clique. Indexação semântica manda *tudo*, e a cerimônia de
+   ativação atual não cobre isso — ela autoriza operações sobre pastas
+   escolhidas, e não um varredor contínuo.
+3. **Onde o índice mora.** Índice local muda o custo; índice remoto muda o
+   modelo de ameaça, e o diário de divulgação teria de registrar uma ordem de
+   grandeza diferente de eventos.
+
+Enquanto essas três não tiverem resposta, planejar a fase é escolher a
+implementação antes do requisito.
 
 ### Fase 5 — Tarefas
 
@@ -311,6 +375,24 @@ silenciosa em massa.
 ### Fase 6 — Calendário / Fase 7 — Contatos
 
 Dois marcos distintos, não um.
+
+---
+
+### O que faz sentido antes de qualquer fase nova
+
+Nenhum destes é fase; são dívidas conhecidas, com dono e receita.
+
+- **Cobrir quatro guardas de ciclo de vida** que hoje se sustentam por leitura
+  de código: descarte do assistente com transmissão em voo, troca de sessão
+  durante a expansão da árvore, guardas de descarte da janela principal, e
+  salvar anexo durante troca de mensagem. As três primeiras saem com o broker
+  falso e uma fonte bloqueável; a quarta pede a primeira suíte do leitor de
+  mensagem. Listadas em `RELATORIO-FASE2-FECHAMENTO.html` §8.
+- **Verificar a política corporativa aplicável** — é o que separa o canário
+  sintético do uso real da IA.
+- **Medir o efeito da janela de sincronização**, já que ela não é legível. A
+  saída para a degradação permanente não é achar a configuração: é medir o
+  efeito dela. Apontado na Fase 2 e ainda aberto.
 
 ---
 
