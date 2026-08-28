@@ -387,16 +387,17 @@ footer.fim {
   <p class="eyebrow">Iris · trabalho autônomo · 28 de agosto de 2026</p>
   <h1>Um dia sem você na máquina</h1>
   <p class="dek">
-    Você pediu para eu fazer as fases restantes sozinho e anotar onde travasse.
+    Você pediu para eu fazer as fases restantes sozinho e anotar onde travasse;
+    depois, trabalhando remoto, para eu seguir com o que não dependesse de você.
     Duas das fases eu decidi <em>não</em> fazer, e essa é a parte do relatório
     que importa mais — porque foi decisão minha, tomada no seu lugar, e você
     pode desfazer qualquer uma delas.
   </p>
   <div class="meta">
-    <span><b>860</b> testes · 0 falhas · 0 pulados</span>
-    <span><b>17</b> commits</span>
-    <span><b>5</b> passadas de revisão externa</span>
-    <span><code>874f223</code> → <code>abec1a2</code></span>
+    <span><b>870</b> testes · 0 falhas · 0 pulados</span>
+    <span><b>23</b> commits</span>
+    <span><b>7</b> passadas de revisão externa</span>
+    <span><code>874f223</code> → <code>254304e</code></span>
   </div>
 </header>
 
@@ -433,7 +434,7 @@ footer.fim {
 
 <div class="numeros wide">
   <div><span class="v">805</span><span class="k">testes ao começar</span></div>
-  <div><span class="v">860</span><span class="k">testes ao terminar</span></div>
+  <div><span class="v">870</span><span class="k">testes ao terminar</span></div>
   <div><span class="v">31</span><span class="k">dias de horizonte</span></div>
   <div><span class="v">65</span><span class="k">fora da janela, na ordem errada</span></div>
   <div><span class="v">22,7</span><span class="k">ms por busca, 1.127 msgs</span></div>
@@ -893,11 +894,61 @@ footer.fim {
 </table>
 </div>
 
-<h2><span class="num">§ 7</span>O que fica sem correção</h2>
+<h2><span class="num">§ 7</span>A tarde: três dívidas fechadas</h2>
 
 <p>
-  Nenhum achado de produção destas cinco passadas ficou sem correção. O que
-  sobra é dívida assumida, e ela cabe em quatro linhas.
+  Você disse que estava remoto e pediu para eu seguir com o que não depende de
+  você. As três dívidas da lista eram trabalho, e não decisão.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>Fechadas à tarde, e o que a medição mudou em cada uma</caption>
+  <thead><tr><th>Dívida</th><th>Como fechou</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Cobertura do calendário</strong></td>
+      <td>O calendário local vai de 2024-06-07 a 2026-12-15 —
+          <strong>921 dias, sem corte</strong> — contra os ~31 dias do correio,
+          com 411 dos 434 compromissos antes do corte.
+          <strong>Isso derrubou uma afirmação minha da manhã:</strong> eu tinha
+          escrito que "a janela é do store", e era inferência. Ela alcança o
+          correio.</td>
+    </tr>
+    <tr>
+      <td><strong>Valores fabricados na paginação</strong></td>
+      <td>Medi antes de migrar: <strong>zero nulos em 1.109 linhas</strong>, nas
+          oito colunas. Migração de esquema seria desproporcional. Em vez dela, a
+          fabricação passou a ser <em>contada</em>, e a lista mostra o número.
+          Estado honesto: <em>adiada com o risco instrumentado</em>, não
+          encerrada.</td>
+    </tr>
+    <tr>
+      <td><strong>A busca e o dreno</strong></td>
+      <td>Deixou de contornar: um segundo consumidor multi-pasta, alimentado pelo
+          mesmo dreno. Publicou-e-não-drenou ⇒ a busca não vê, igual ao painel. E
+          ficou <strong>quase quatro vezes mais rápida</strong> — 22,7 ms →
+          6,2 ms — porque o manifesto passou a ser lido uma vez em vez de a cada
+          pergunta.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<div class="nota">
+  <strong>E a revisão da tarde achou um crítico contra mim.</strong> Eu disse ter
+  fechado o contorno do dreno e tinha deixado ele <em>na abertura</em>: o acervo
+  lia o manifesto no construtor, justificando que "na abertura não há entrega
+  pendente" — falso, porque uma queda entre publicar e marcar drenada deixa
+  pendência persistida. E os meus testes passavam pelo motivo errado, porque a
+  fixture já drenava antes. Corrigido, com um teste que fecha e reabre o banco.
+</div>
+
+<h2><span class="num">§ 8</span>O que fica sem correção</h2>
+
+<p>
+  Nenhum achado de produção destas sete passadas ficou sem correção. O que sobra
+  é dívida assumida, e agora ela cabe em três linhas.
 </p>
 
 <div class="tabela-wrap wide">
@@ -905,22 +956,16 @@ footer.fim {
   <thead><tr><th>Dívida</th><th>Por que fica</th></tr></thead>
   <tbody>
     <tr>
-      <td>A busca contorna o <code>PublicationDrain</code></td>
-      <td>Ela consulta o estado da fila, e consultar não é passar. O
-          <code>AcervoService</code> é de uma pasta, e uma busca entre pastas não
-          cabe nesse formato — encaixá-la é desenho, não conserto.</td>
+      <td>O consumidor ignora <em>qual</em> geração chegou</td>
+      <td>Com duas gerações pendentes, entregar a primeira torna a segunda
+          visível cedo. Consertar pede o manifesto de uma geração específica, e o
+          leitor só sabe ler a publicada da pasta.</td>
     </tr>
     <tr>
-      <td>Valores fabricados na paginação</td>
-      <td>Falha de leitura vira fato: tamanho <code>0</code>, não lida
-          <code>False</code>, anexo <code>False</code>. Mesma família do
-          <code>message_class</code>, mas corrigir exige campos anuláveis e
-          migração de esquema.</td>
-    </tr>
-    <tr>
-      <td>Cobertura do calendário não medida</td>
-      <td>A agenda diz o que leu e se truncou. Não diz o que existe além do que
-          o Outlook expõe, e ninguém mediu isso.</td>
+      <td>O fan-out não é atômico</td>
+      <td>Se o primeiro consumidor conclui e o segundo falha, o painel fica à
+          frente da busca até a repetição. Temporário e sem perda — mas eu tinha
+          escrito "congelam juntas", e não congelam.</td>
     </tr>
     <tr>
       <td>A guarda não observável</td>
@@ -930,7 +975,7 @@ footer.fim {
 </table>
 </div>
 
-<h2><span class="num">§ 8</span>O que fazer a seguir</h2>
+<h2><span class="num">§ 9</span>O que fazer a seguir</h2>
 
 <div class="acoes wide">
   <div>
@@ -959,6 +1004,15 @@ footer.fim {
     </p>
   </div>
   <div>
+    <span class="tempo">Se quiser saber</span>
+    <h3>Por que o calendário guarda 2,5 anos</h3>
+    <p>
+      E o correio, um mês. Eu <em>infiro</em> que é o controle deslizante do
+      Outlook, que é uma configuração de correio. A medição mostra só que os
+      horizontes são diferentes — e inferir foi exatamente o erro da manhã.
+    </p>
+  </div>
+  <div>
     <span class="tempo">Quando quiser a Fase 5</span>
     <h3>Ficar na máquina</h3>
     <p>
@@ -977,8 +1031,8 @@ footer.fim {
 
 <footer class="fim">
   Iris · trabalho autônomo de 28 de agosto de 2026<br>
-  <code>874f223</code> → <code>abec1a2</code> · 17 commits · 860 testes, 0 falhas, 0 pulados<br>
-  Cinco passadas de revisão externa · nada foi enviado por e-mail · nenhuma cerimônia foi executada
+  <code>874f223</code> → <code>254304e</code> · 23 commits · 870 testes, 0 falhas, 0 pulados<br>
+  Sete passadas de revisão externa · nada foi enviado por e-mail · nenhuma cerimônia foi executada
 </footer>
 
 </div>
