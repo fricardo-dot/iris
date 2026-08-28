@@ -158,9 +158,13 @@ try {
 
     Write-Host ""
     if ($antesDoHorizonte -eq 0) {
-        Write-Host "MESMO HORIZONTE. O calendario tambem corta onde o correio corta." -ForegroundColor Yellow
-        Write-Host "  A janela de sincronizacao alcanca os dois, e a agenda herda a"
-        Write-Host "  mesma ressalva do acervo: pode faltar, e nao se conclui ausencia."
+        Write-Host "NENHUM COMPROMISSO ANTES DO HORIZONTE DO CORREIO." -ForegroundColor Yellow
+        Write-Host "  Isso NAO prova que o calendario corta ali: um calendario que so"
+        Write-Host "  tenha compromissos recentes da exatamente este retrato. E os dois"
+        Write-Host "  roteiros nao correlacionam StoreID, entao a comparacao e por data"
+        Write-Host "  e nao por caixa."
+        Write-Host "  O que se sustenta: nada aqui contradiz a ressalva do acervo, e"
+        Write-Host "  ausencia continua nao sendo concluivel."
     } elseif ($antesDoHorizonte -lt ($lidos / 20)) {
         Write-Host "QUASE O MESMO HORIZONTE, com poucos itens antes." -ForegroundColor Yellow
         Write-Host "  Poucos itens antigos podem ser excecao, e nao alcance. Olhe a"

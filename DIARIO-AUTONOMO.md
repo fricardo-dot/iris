@@ -849,3 +849,43 @@ classificada como calendário. E o `medir-cobertura-calendario.ps1` ainda dizia
 **O baixo:** o cabeçalho do relatório dizia 25 commits e o rodapé 27.
 
 Suíte: **875**.
+
+---
+
+## Décima primeira passada — a que teria chegado à tela dele
+
+Cinco achados. Um alto, dois médios, dois baixos.
+
+**A ressalva errou pela quinta vez, e agora na abertura.** Ela dizia *"ainda não
+foram entregues"*, e `Pendentes()` não significa isso: significa
+`drained_at IS NULL`. A entrega é **ao menos uma vez**, e o `DrenoAposCrashTests`
+— que já existia — diz com todas as letras *"o disco diz que a UI NÃO recebeu, e
+ela recebeu"*. A parte modal estava certa; a abertura, não. Agora ela diz o que a
+fila sabe: **entrega não confirmada**.
+
+**Mas o achado que importa é o outro.** O comentário da agenda já reconhecia que
+a medição de cobertura só alcança o **calendário padrão local**, e a agenda abre
+qualquer pasta classificada como calendário. Só que o XAML ao lado continuava
+dizendo *"por isso ela não tem ressalva de cobertura"*, e a tela mostrava
+`0 compromisso(s)`.
+
+Numa caixa compartilhada, o aplicativo **afirmava ausência** — que é exatamente o
+que este projeto proíbe em todo lugar, menos onde ninguém tinha olhado. É o
+mesmo defeito do `message_class` constante e do zero fabricado da paginação, pela
+terceira vez, e desta vez ele estava na tela. Agora o resumo diz **"nenhum
+compromisso LIDO até dd/MM — o que não é o mesmo que não haver"**, e o XAML
+explica por quê.
+
+O resto: **falta de controle de causalidade** no meu teste das duas gerações (sem
+ele o teste prova o estado final e não a causa — corrigido com um `Assert` de
+zero antes de qualquer entrega); o ramo **executável** do
+`medir-cobertura-calendario.ps1` concluindo *"MESMO HORIZONTE"* quando não acha
+item antigo, o que um calendário só com compromissos recentes produz igual; e a
+contagem de commits, que eu tinha *igualado* nos dois lugares e continuava
+errada nos dois.
+
+**Dois controles negativos confirmados desfazendo:** devolvendo o
+`$"{j.Items.Count} compromisso(s)"` incondicional, o teste da agenda cai;
+devolvendo *"ainda não foram entregues"*, o da busca cai.
+
+Suíte: **876**.
