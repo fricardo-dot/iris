@@ -355,8 +355,14 @@ escrito em lugar nenhum.** Com `leituras = [Absent]`, só passa a leitura que
 declara ausência de rótulo — e uma `Absent` coerente não tem registro ativo.
 Como `rótulos = []` e `contentBits = [0]` só atuam **sobre registro ativo**,
 nenhum dos dois chega a ser exercido. Eles não estão errados; estão fora do
-caminho. Quem alargar `leituras` um dia passa a depender deles pela primeira
-vez, e é aí que eles precisam estar certos.
+caminho.
+
+E não é qualquer alargamento que os acorda. Aceitar `Blank` não acorda — uma
+`Blank` coerente também tem zero registros. Aceitar `HistoricalOnly` não acorda
+— os registros dela são todos inativos, e o ramo de histórico sai antes de
+consultar GUID ou `contentBits`. Quem os acorda é **aceitar `Present`**, que é a
+leitura coerente com registro ativo. É nesse dia que essas duas travas são
+exercidas pela primeira vez, e é para esse dia que elas precisam estar certas.
 
 **Correção de um erro deste documento:** a versão anterior dizia que
 `politicaCorporativaVerificada = false` fazia com que "só conteúdo sintético
@@ -822,8 +828,8 @@ Option Infer On
 ## Apêndice — histórico de revisão
 
 **v6 (2026-08-28)** — a IA foi **ativada** em 27/08 e o primeiro egress real
-saiu, com conteúdo sintético; e-mail real continua bloqueado, e isso é decisão
-sobre política corporativa e não trabalho de código. As **quatro pendências da
+saiu, com conteúdo sintético; o alcance segue **restrito** — não bloqueado — à
+única pasta que a cerimônia autorizou. As **quatro pendências da
 Fase 2 foram fechadas** em 28/08: elas eram uma só — as peças da varredura
 existiam e nada as ligava. A pré-condição escrita da Fase 4 mudou de estado, e
 por isso as decisões que ela exige foram de três para oito. Três correções de
