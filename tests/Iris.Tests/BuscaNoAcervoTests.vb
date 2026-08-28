@@ -401,22 +401,28 @@ Public Class BuscaNoAcervoTests
             ' Agora ela cobra o SENTIDO: que a ressalva diga que o retrato e o
             ' anterior, e que NAO afirme que a busca ja enxerga.
             '
-            ' A TERCEIRA PROIBICAO VEIO DEPOIS, e de outro achado: a frase
-            ' passou a dizer "na busca E no painel", que e verdade AQUI e falsa
-            ' na entrega parcial. Ver o teste
-            ' Entrega_PARCIAL_deixa_o_painel_a_FRENTE, que e onde essa
-            ' generalizacao quebra.
+            ' AS PROIBICOES VIERAM UMA POR VOLTA, E FORAM QUATRO.
+            '
+            ' A frase ja disse "nao foram entregues ao acervo" (falso: a
+            ' publicacao materializa o acervo), "a busca ja as enxerga" (era
+            ' verdade so enquanto a busca contornava o dreno), "na busca E no
+            ' painel" (falso na entrega parcial) e "a busca mostra o retrato
+            ' anterior" (falso com duas geracoes pendentes). Cada uma passou no
+            ' teste da vez, porque o teste da vez so exercitava o estado em que
+            ' ela era verdadeira.
+            '
+            ' O que ela pode afirmar e o estado da FILA, e e isso que se cobra
+            ' aqui. Os dois estados que derrubaram as duas ultimas versoes tem
+            ' teste proprio, logo abaixo.
             Assert.IsTrue(r.PublicacoesPendentes > 0,
                 $"tinha de haver entrega pendente, achei {r.PublicacoesPendentes}")
-            StringAssert.Contains(r.Ressalva, "retrato anterior")
+            StringAssert.Contains(r.Ressalva, "retrato da última varredura")
             StringAssert.Contains(r.Ressalva, "painel do acervo")
-            Assert.IsFalse(r.Ressalva.Contains("já as enxerga"),
-                "a ressalva afirma que a busca enxerga a geracao pendente, e ela nao enxerga")
-            Assert.IsFalse(r.Ressalva.Contains("painel pode estar atrasado"),
-                "a ressalva poe o painel atras da busca, e nao e isso que ela sabe")
-            Assert.IsFalse(r.Ressalva.Contains("na busca e no painel"),
-                "a ressalva afirma pelos DOIS, e ela nao pode saber do painel: " &
-                "na entrega parcial ele fica a frente")
+            Assert.IsFalse(r.Ressalva.Contains("já as enxerga"), "volta 2")
+            Assert.IsFalse(r.Ressalva.Contains("na busca e no painel"), "volta 3")
+            Assert.IsFalse(r.Ressalva.Contains("a busca mostra é o retrato anterior"),
+                "volta 4: a ressalva afirma o estado da BUSCA, e ela nao sabe " &
+                "-- ver Com_DUAS_geracoes_pendentes_a_busca_ve_a_SEGUNDA_cedo")
         End Using
     End Sub
 
@@ -488,27 +494,29 @@ Public Class BuscaNoAcervoTests
     End Sub
 
     ''' <summary>
-    ''' <b>ENTREGA PARCIAL: o painel fica À FRENTE, e a ressalva não pode dizer
-    ''' o contrário.</b>
+    ''' <b>UMA ENTREGA QUE FALHA NO MEIO DEIXA O PRIMEIRO CONSUMIDOR À FRENTE.</b>
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>O ESTADO QUE A FRASE ANTERIOR NEGAVA</b>
+    ''' <b>O QUE ESTE TESTE PROVA, E O QUE ELE NÃO PROVA</b>
     '''
-    ''' O <c>ConsumidorComposto</c> entrega ao painel primeiro e à busca depois,
-    ''' <b>sem transação</b>. Se a segunda falha, a exceção sobe, a geração
-    ''' continua pendente — e o painel <b>já a recebeu</b>. É a dívida "o fan-out
-    ''' não é atômico", que estava escrita no ESCOPO e não estava coberta.
+    ''' <b>Prova:</b> o <c>ConsumidorComposto</c> chama em sequência e sem
+    ''' transação; a falha do segundo mantém a geração pendente <i>depois</i> de
+    ''' o primeiro já ter recebido. É a dívida "o fan-out não é atômico", que
+    ''' estava escrita no ESCOPO e não tinha cobertura nenhuma.
     '''
-    ''' Nesse estado, as duas frases que a ressalva já teve eram falsas: o "nem a
-    ''' busca nem o painel" do ramo travado e o "na busca e no painel" deste
-    ''' ramo. Ambas afirmam sobre o painel uma coisa que a busca não pode saber.
-    ''' A revisão externa pegou, e este teste é o que impede a terceira volta.
+    ''' <b>Não prova:</b> que o painel de produção fique à frente da busca de
+    ''' produção. Os dois membros aqui são contadores; o <c>AcervoService</c> e o
+    ''' <c>AcervoDeTodasAsPastas</c> reais não entram. O teste anterior tinha o
+    ''' nome <c>..._deixa_o_painel_a_FRENTE</c>, e a revisão externa apontou que
+    ''' o nome prometia a integração e o corpo entregava a unidade. O nome mudou;
+    ''' o corpo é o mesmo, e continua valendo pelo que é.
     '''
-    ''' <b>Controle negativo:</b> devolvendo "— na busca e no painel do acervo"
-    ''' à ressalva, a asserção do final cai.
+    ''' O estado de produção que de fato falsificou a ressalva tem teste próprio:
+    ''' <c>Com_DUAS_geracoes_pendentes_a_busca_ve_a_SEGUNDA_cedo</c>, que usa o
+    ''' acervo real.
     ''' </summary>
     <TestMethod>
-    Public Sub Entrega_PARCIAL_deixa_o_painel_a_FRENTE()
+    Public Sub Entrega_que_falha_no_meio_deixa_o_PRIMEIRO_consumidor_a_frente()
         Using db = Abrir()
             Dim chave = Semear(db, "Caixa de Entrada", "entrada", Caixa)
 
@@ -549,16 +557,119 @@ Public Class BuscaNoAcervoTests
             Assert.AreEqual(0, r.Achados.Count, "a busca enxergou o que nao lhe foi entregue")
             Assert.IsTrue(r.PublicacoesPendentes > 0)
 
-            ' O CONSERTO: a ressalva fala pela BUSCA, e do painel so diz o que
-            ' e certo -- que ele PODE estar a frente.
-            StringAssert.Contains(r.Ressalva, "retrato anterior")
+            ' O CONSERTO: a ressalva fala do estado da FILA, e nao do estado
+            ' de nenhum dos dois lados.
+            StringAssert.Contains(r.Ressalva, "retrato da última varredura")
             Assert.IsFalse(r.Ressalva.Contains("na busca e no painel"),
-                "a ressalva poe o painel no mesmo retrato da busca, e neste " &
-                "exato estado ele esta uma geracao a frente")
+                "a ressalva poe os dois no mesmo retrato, e neste exato estado " &
+                "o primeiro consumidor esta uma geracao a frente")
             Assert.IsFalse(r.Ressalva.Contains("nem a busca nem o painel"),
-                "a ressalva afirma que o painel nao enxerga, e ele enxerga")
+                "a ressalva afirma que nenhum dos dois enxerga, e um enxerga")
         End Using
     End Sub
+
+    ''' <summary>
+    ''' <b>COM DUAS GERAÇÕES PENDENTES, A BUSCA VÊ A SEGUNDA — antes de ela ser
+    ''' entregue.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ESTE É O ESTADO QUE DERRUBOU A QUARTA VERSÃO DA RESSALVA</b>
+    '''
+    ''' <c>AcervoDeTodasAsPastas.Receber</c> ignora <i>qual</i> geração chegou e
+    ''' relê o manifesto <b>corrente</b>. Com 10 e 11 pendentes e o manifesto já
+    ''' apontando para 11, entregar a 10 faz a busca recarregar a 11. Se a
+    ''' entrega da 11 falhar, a busca está enxergando exatamente a geração que a
+    ''' ressalva jurava que ela não via.
+    '''
+    ''' A dívida estava escrita no <c>AcervoDeTodasAsPastas</c> desde a manhã,
+    ''' com a observação de que "na prática a janela é curta". <b>Curta não é
+    ''' inexistente</b> — e foi a revisão externa que ligou a dívida à frase.
+    '''
+    ''' Aqui o acervo é o <b>real</b>, e não um contador: o que se mede é a busca
+    ''' de produção achando o que ninguém lhe entregou.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo <i>"O que a busca mostra é o retrato
+    ''' anterior a elas"</i> à ressalva, a asserção do final cai.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Com_DUAS_geracoes_pendentes_a_busca_ve_a_SEGUNDA_cedo()
+        Using db = Abrir()
+            Dim chave = Semear(db, "Caixa de Entrada", "entrada", Caixa)
+
+            Dim todas As New AcervoDeTodasAsPastas(db)
+            Dim dreno As New PublicationDrain(db)
+            dreno.Drenar(todas)
+            If todas.Recarregado = 0 Then todas.Recarregar()
+            If todas.Recarregado = 0 Then todas.Recarregar()
+            Dim busca As New BuscaNoAcervo(todas, dreno)
+
+            ' DUAS varreduras publicam, e ninguem drena entre elas.
+            Varrer(db, chave, "entrada-9", "Aditivo contratual novissimo")
+            Varrer(db, chave, "entrada-10", "Aditivo contratual rarissimo")
+            Assert.AreEqual(2, dreno.Pendentes().Count,
+                "controle: as duas geracoes tinham de estar pendentes")
+
+            ' So a PRIMEIRA e entregue; a segunda falha e continua pendente.
+            Assert.ThrowsException(Of InvalidOperationException)(
+                Sub() dreno.Drenar(New EntregaSoAPrimeira(todas)))
+            Assert.AreEqual(1, dreno.Pendentes().Count,
+                "controle: a segunda geracao tinha de continuar pendente")
+
+            ' A DIVIDA, MEDIDA: a busca ja enxerga a geracao pendente.
+            Assert.AreEqual(1, busca.Procurar("rarissimo").Achados.Count,
+                "controle desta divida: se a busca NAO ve a segunda geracao, " &
+                "entao o Receber deixou de reler o manifesto corrente -- e a " &
+                "ressalva pode voltar a afirmar pela busca")
+
+            ' ENTAO A RESSALVA NAO PODE DIZER QUE A BUSCA ESTA ATRAS.
+            Dim r = busca.Procurar("rarissimo")
+            Assert.IsTrue(r.PublicacoesPendentes > 0)
+            StringAssert.Contains(r.Ressalva, "retrato da última varredura")
+            Assert.IsFalse(r.Ressalva.Contains("a busca mostra é o retrato anterior"),
+                "a ressalva afirma que a busca esta atras, e ela acabou de " &
+                "achar a geracao pendente")
+            Assert.IsFalse(r.Ressalva.Contains("esta busca não está enxergando"),
+                "a ressalva afirma que a busca nao enxerga, e ela enxerga")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' Uma varredura de uma linha só, publicando sem drenar.
+    ''' </summary>
+    Private Sub Varrer(db As CacheDatabase, chave As Long, id As String, assunto As String)
+        Dim resolvedor As New ResolvedorDoAcervo(db)
+        Dim amb = resolvedor.Ambiente(Impressao())
+        Dim universo As New SweepUniverse("store-1", "entrada", "f", Nothing, 1, "amb-1")
+        Dim fonte As New FonteDeLinhas(universo, {New SourceRow With {
+            .Key = id, .Subject = assunto, .SenderName = "Caroline Abreu",
+            .ReceivedAt = New DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero).ToString("o"),
+            .MessageClass = "IPM.Note"}})
+        Dim r = New SweepRunner(fonte, New SqliteSweepSink(db, chave, amb.Chave), 50).
+                Executar(universo, 0, 2, EnvironmentPolicy.Capacidades(Impressao()),
+                         CancellationToken.None)
+        Assert.IsTrue(r.Publicou, $"controle: a varredura tinha de publicar. {r.Motivo}")
+    End Sub
+
+    ''' <summary>
+    ''' Entrega a primeira geração ao alvo REAL e falha na segunda — que é a
+    ''' sequência de uma queda no meio do laço do dreno.
+    ''' </summary>
+    Private NotInheritable Class EntregaSoAPrimeira
+        Implements IPublicationConsumer
+
+        Private ReadOnly _alvo As IPublicationConsumer
+        Private _quantas As Integer
+
+        Public Sub New(alvo As IPublicationConsumer)
+            _alvo = alvo
+        End Sub
+
+        Public Sub Receber(geracao As Long) Implements IPublicationConsumer.Receber
+            _quantas += 1
+            If _quantas > 1 Then Throw New InvalidOperationException("entrega falhou na segunda")
+            _alvo.Receber(geracao)
+        End Sub
+    End Class
 
     ''' <summary>Consumidor de teste que conta e, se pedirem, explode.</summary>
     Private NotInheritable Class ContadorDeEntregas

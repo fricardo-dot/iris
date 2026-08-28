@@ -451,23 +451,36 @@ Namespace Global.Iris.Integration
                 ' travado quanto o "na busca e no painel" deste ramo afirmam
                 ' sobre o painel uma coisa que este objeto nao pode saber.
                 '
-                ' O QUE ESTA VERSAO FAZ DIFERENTE: ela so afirma sobre A BUSCA,
-                ' que e o que este objeto de fato controla, e diz do painel
-                ' apenas o que e certo -- que ele PODE estar a frente, porque a
-                ' entrega e sequencial. Ressalva que afirma demais e pior que
-                ' ressalva nenhuma: quem le conclui errado com confianca.
+                ' (4) Virou "esta busca nao esta enxergando" / "o que a busca
+                ' mostra e o retrato anterior". Eu tinha tirado a afirmacao
+                ' categorica sobre o PAINEL e mantido uma sobre a BUSCA -- e ela
+                ' e falsa pela OUTRA divida, a de o consumidor ignorar qual
+                ' geracao chegou. Com 10 e 11 pendentes e o manifesto ja
+                ' apontando para 11, entregar a 10 faz esta busca recarregar a
+                ' 11; se a entrega da 11 falhar, a busca esta enxergando
+                ' exatamente a geracao que a ressalva jura que ela nao ve.
+                '
+                ' O PADRAO DAS QUATRO VOLTAS: toda vez eu afirmei o ESTADO de
+                ' alguem -- ora do painel, ora da busca. E este objeto nao sabe
+                ' o estado de ninguem; ele sabe o estado da FILA.
+                '
+                ' Entao esta versao afirma so isso, e no modo certo: havendo
+                ' entrega pendente, NADA na tela pode ser TRATADO COMO o retrato
+                ' da ultima varredura. Nao diz que esta atras, nao diz que esta
+                ' a frente, e continua sendo exatamente o que quem procura
+                ' precisa saber antes de concluir do silencio.
                 If DrenoTravadoEm.HasValue Then
                     partes.Add($"A entrega da geração {DrenoTravadoEm.Value} está travada. " &
-                               "Há varredura publicada que esta busca não está enxergando. " &
-                               "O painel do acervo pode estar à frente: as entregas são " &
-                               "sequenciais, e a falha pode ter caído entre as duas.")
+                               "Enquanto ela não completar, nada aqui pode ser tratado como o " &
+                               "retrato da última varredura — nem esta busca, nem o painel do " &
+                               "acervo.")
                 ElseIf PublicacoesPendentes < 0 Then
                     partes.Add("Não consegui conferir se há varredura esperando entrega.")
                 ElseIf PublicacoesPendentes > 0 Then
                     partes.Add($"{PublicacoesPendentes} varredura(s) publicada(s) ainda não foram " &
-                               "entregues. O que a busca mostra é o retrato anterior a elas. " &
-                               "O painel do acervo pode estar à frente: as entregas são " &
-                               "sequenciais, e não atômicas.")
+                               "entregues. Nada aqui pode ser tratado como o retrato da última " &
+                               "varredura — nem esta busca, nem o painel do acervo, e os dois " &
+                               "podem estar em pontos diferentes.")
                 End If
 
                 Return String.Join(" ", partes)

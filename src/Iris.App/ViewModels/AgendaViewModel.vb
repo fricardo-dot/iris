@@ -56,11 +56,13 @@ Namespace Global.Iris.App.ViewModels
     ''' medição, que não procura cortes mais antigos que o item mais velho que
     ''' ela achou e não correlaciona <c>StoreID</c> entre os dois roteiros.
     '''
-    ''' Então a agenda <b>não</b> mostra uma fatia de um mês, e dizer que ela
-    ''' mostra seria repetir para o calendário a ressalva que só vale para o
-    ''' correio. O que continua verdade é o outro lado: a contagem do servidor
-    ''' segue inalcançável pelo OOM, então <b>ausência continua proibida</b> —
-    ''' por falta de prova, e não por janela.
+    ''' Então repetir aqui a ressalva de um mês, que vale para o correio, seria
+    ''' ressalva emprestada. <b>Mas o alcance disso é o calendário padrão local,
+    ''' e a agenda abre qualquer pasta classificada como calendário</b> — numa
+    ''' caixa compartilhada, ou noutro store, ninguém mediu nada. O que continua
+    ''' verdade dos dois lados: a contagem do servidor segue inalcançável pelo
+    ''' OOM, então <b>ausência continua proibida</b> — por falta de prova, e não
+    ''' por janela.
     '''
     ''' Então a agenda diz o que ela <b>sabe</b>: quantos compromissos leu na
     ''' janela, quantos vieram de séries, quantos itens recusou, e se a
