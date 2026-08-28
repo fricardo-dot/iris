@@ -394,10 +394,10 @@ footer.fim {
     pode desfazer qualquer uma delas.
   </p>
   <div class="meta">
-    <span><b>872</b> testes · 0 falhas · 0 pulados</span>
+    <span><b>874</b> testes · 0 falhas · 0 pulados</span>
     <span><b>25</b> commits</span>
-    <span><b>8</b> passadas de revisão externa</span>
-    <span><code>874f223</code> → <code>118277f</code></span>
+    <span><b>9</b> passadas de revisão externa</span>
+    <span><code>874f223</code> → <code>ff37f0d</code></span>
   </div>
 </header>
 
@@ -435,7 +435,7 @@ footer.fim {
 
 <div class="numeros wide">
   <div><span class="v">805</span><span class="k">testes ao começar</span></div>
-  <div><span class="v">872</span><span class="k">testes ao terminar</span></div>
+  <div><span class="v">874</span><span class="k">testes ao terminar</span></div>
   <div><span class="v">31</span><span class="k">dias de horizonte</span></div>
   <div><span class="v">65</span><span class="k">fora da janela, na ordem errada</span></div>
   <div><span class="v">22,7</span><span class="k">ms por busca, 1.127 msgs</span></div>
@@ -948,11 +948,75 @@ footer.fim {
   fixture já drenava antes. Corrigido, com um teste que fecha e reabre o banco.
 </div>
 
+<h3>A nona passada, e o padrão que ela expôs</h3>
+
+<p>
+  Sete achados, <strong>dois altos</strong> — e os dois no mesmo lugar onde eu
+  tinha consertado no dia anterior. Não é coincidência: são os dois pontos onde
+  eu vinha consertando <em>a redação do conserto</em> em vez do mecanismo.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>Nona revisão · o que ela achou nas correções da oitava</caption>
+  <thead><tr><th>Achado</th><th>O que estava errado, e o que mudou</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>A ressalva ainda mentia</strong> — agora por generalizar</td>
+      <td>Eu tinha trocado <em>"a busca já as enxerga; o painel pode estar
+          atrasado"</em> por <em>"o retrato anterior — na busca <b>e</b> no
+          painel"</em>. É verdade quando ninguém drenou e <strong>falsa na
+          entrega parcial</strong>: o fan-out entrega ao painel primeiro e à
+          busca depois, sem transação, então uma falha entre as duas deixa o
+          painel uma geração à frente. <strong>Terceira volta da mesma frase, em
+          três eixos diferentes</strong> — e o meu teste aceitava a
+          generalização porque só exercitava o caso em que ela é verdadeira.
+          Agora a ressalva <strong>só afirma sobre a busca</strong>, e do painel
+          diz apenas o que é certo: que ele <em>pode</em> estar à frente.</td>
+    </tr>
+    <tr>
+      <td><strong>O caminho legado ainda fabricava calado</strong></td>
+      <td>Eu instrumentei os três auxiliares e deixei de fora o
+          <code>ContarAnexos</code> — que não é auxiliar, e cuja falha vira
+          <code>HasAttachments = False</code>, a pior das cinco, porque o
+          usuário lê como afirmação. E nos auxiliares contei só a exceção: o
+          getter pode devolver <code>Nothing</code> sem lançar nada, e o caminho
+          rápido já contava esse caso. Duas instrumentações discordando faz o
+          número depender de <em>qual caminho a pasta tomou</em>.</td>
+    </tr>
+    <tr>
+      <td><strong>O teste do reset provava o teste</strong></td>
+      <td>Ele fazia os dois resets <strong>com a própria mão</strong> — apagar o
+          reset da produção o deixaria verde. O laço saiu de dentro do
+          <code>Ler</code>, que precisa de uma <code>Table</code> do Outlook, e
+          virou <code>ConverterLinhas</code>, que recebe o bloco cru. O teste
+          entrega buracos na primeira linha e nenhum na segunda, e o
+          <strong>zero da segunda</strong> é o que prova o reset.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  O resto foi calibragem sobrevivendo em arquivos que eu não tinha aberto:
+  <em>"temporária"</em>, <em>"921 dias, sem corte"</em> e <em>"é do store"</em>
+  em seis lugares, dois comentários descrevendo código removido, e o hash que um
+  <code>--amend</code> meu invalidou minutos depois de eu o citar como evidência.
+</p>
+
+<div class="nota">
+  <strong>A dívida que virou teste.</strong> "O fan-out não é atômico" estava
+  escrita no ESCOPO desde a manhã e não tinha cobertura nenhuma — foi
+  precisamente o estado que ela descreve que falsificou a minha ressalva. Agora
+  ele tem teste próprio, com controle negativo: devolvendo a frase antiga, o
+  teste cai.
+</div>
+
 <h2><span class="num">§ 8</span>O que fica sem correção</h2>
 
 <p>
-  Nenhum achado de produção destas sete passadas ficou sem correção. O que sobra
-  é dívida assumida, e agora ela cabe em três linhas.
+  Nenhum achado de produção destas <strong>nove</strong> passadas ficou sem
+  correção. O que sobra é dívida assumida, e agora ela cabe em três linhas.
 </p>
 
 <div class="tabela-wrap wide">
@@ -1038,8 +1102,8 @@ footer.fim {
 
 <footer class="fim">
   Iris · trabalho autônomo de 28 de agosto de 2026<br>
-  <code>874f223</code> → <code>118277f</code> · 25 commits · 872 testes, 0 falhas, 0 pulados<br>
-  Oito passadas de revisão externa · nada foi enviado por e-mail · nenhuma cerimônia foi executada
+  <code>874f223</code> → <code>ff37f0d</code> · 27 commits · 874 testes, 0 falhas, 0 pulados<br>
+  Nove passadas de revisão externa · nada foi enviado por e-mail · nenhuma cerimônia foi executada
 </footer>
 
 </div>

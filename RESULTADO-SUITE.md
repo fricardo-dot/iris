@@ -10,23 +10,43 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — fim do dia autônomo
+## Medição corrente — depois da nona revisão
 
 | | |
 |---|---|
-| **Commit** | `118277f` — a árvore da solução .NET que foi medida |
-| **Data** | 28 de agosto de 2026, à tarde |
+| **Commit** | `ff37f0d` — a árvore da solução .NET que foi medida |
+| **Data** | 28 de agosto de 2026, à noite |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
 
 ```
+Passed!  - Failed:     0, Passed:   874, Skipped:     0, Total:   874, Duration: 1 m 12 s - Iris.Tests.dll (net10.0)
+```
+
+É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
+última antes do commit, e o único arquivo tocado depois dela foi este diário —
+que não é código executável.
+
+**São 874 e não 875** porque a nona passada acrescentou três testes e **apagou
+um**: o `O_acumulador_da_linha_zera_entre_linhas` fazia os dois resets com a
+própria mão e passaria com a correção desfeita. Trocá-lo por um teste que dirige
+a produção é o motivo de a conta não fechar por soma.
+
+### Medição anterior — fim do dia autônomo
+
+| | |
+|---|---|
+| **Commit** | `118277f` |
+| **Data** | 28 de agosto de 2026, à tarde |
+
+```
 Passed!  - Failed:     0, Passed:   872, Skipped:     0, Total:   872, Duration: 1 m 4 s - Iris.Tests.dll (net10.0)
 ```
 
-É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A revisão externa
-apontou que os relatórios diziam 870 enquanto este arquivo registrava 805 — a
-afirmação existia sem a evidência versionada que o próprio projeto exige.
+Fica registrada porque a revisão externa apontou que os relatórios diziam 870
+enquanto este arquivo registrava 805 — a afirmação existia sem a evidência
+versionada que o próprio projeto exige.
 
 ## Medição do fechamento da Fase 2
 
