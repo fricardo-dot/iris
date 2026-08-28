@@ -143,10 +143,13 @@ Public Class FabricacaoNaLeituraTests
     End Sub
 
     ''' <summary>
-    ''' <b>O contador soma as fabricações de uma página.</b>
+    ''' <b>O acumulador soma enquanto uma linha é convertida.</b>
     '''
-    ''' Ele acumula dentro de uma página. Quem recomeça é <c>Zerar</c>, e o
-    ''' teste abaixo cobra isso — este aqui só prova a soma.
+    ''' O comentário aqui ainda mandava o leitor a um <c>Zerar()</c> que foi
+    ''' removido junto com o contador de página — a revisão externa pegou. Quem
+    ''' recomeça hoje é o <c>ConverterLinhas</c>, uma vez por linha, e é o teste
+    ''' <c>Cada_linha_leva_o_SEU_numero</c> que cobra isso na produção.
+    ''' Este aqui só prova que a soma acontece.
     ''' </summary>
     <TestMethod>
     Public Sub O_contador_soma_dentro_da_pagina()
@@ -213,28 +216,133 @@ Public Class FabricacaoNaLeituraTests
     End Sub
 
     ''' <summary>
-    ''' <b>O acumulador da linha zera entre linhas.</b>
+    ''' <b>CADA LINHA LEVA O SEU NÚMERO — e é a produção que faz isso.</b>
     '''
-    ''' É a metade que o <c>Ler</c> faz e que este teste alcança sem COM: zerar
-    ''' antes de converter e colher depois. Sem o zerar, a segunda linha herdaria
-    ''' a fabricação da primeira e o total da página dobraria.
+    ''' ------------------------------------------------------------------
+    ''' <b>O TESTE ANTERIOR PASSARIA COM A CORREÇÃO DESFEITA</b>
+    '''
+    ''' Ele chamava os conversores em sequência e fazia <c>f.Fabricadas = 0</c>
+    ''' entre as duas "linhas" — <b>com a própria mão</b>. Ou seja: provava que
+    ''' zerar zera. Apagar o <c>Fabricadas = 0</c> da produção o deixaria verde,
+    ''' e foi exatamente essa a crítica da revisão externa.
+    '''
+    ''' Por isso o laço saiu de dentro do <c>Ler</c>, que precisa de uma
+    ''' <c>Table</c> do Outlook, e virou <c>ConverterLinhas</c>, que recebe o
+    ''' bloco cru. Agora quem zera e quem colhe é o código de produção, e o
+    ''' teste só entrega os dados e confere.
+    '''
+    ''' <b>Controle negativo, nas duas direções:</b> sem o <c>Fabricadas = 0</c>,
+    ''' a segunda linha herda as quatro da primeira e a asserção do zero cai;
+    ''' colhendo antes do inicializador em vez de depois, a primeira linha vem
+    ''' com zero e a outra asserção cai.
     ''' </summary>
     <TestMethod>
-    Public Sub O_acumulador_da_linha_zera_entre_linhas()
+    Public Sub Cada_linha_leva_o_SEU_numero()
         Dim f As New MessagePaging.TableRowSource()
 
-        ' Linha 1: duas ausencias.
-        f.Fabricadas = 0
-        f.ComoTexto(Nothing)
-        f.ComoInteiro(Nothing)
-        Dim daPrimeira = f.Fabricadas
-        Assert.AreEqual(2, daPrimeira)
+        ' Duas linhas, oito colunas -- a mesma forma que o GetArray devolve.
+        Dim bruto(1, 7) As Object
 
-        ' Linha 2: uma so, e ela nao pode herdar as da primeira.
-        f.Fabricadas = 0
-        f.ComoBooleano(Nothing)
-        Assert.AreEqual(1, f.Fabricadas,
-            "a segunda linha herdou a fabricacao da primeira")
+        ' LINHA 0: quatro buracos -- EntryID, assunto, tamanho e anexo.
+        bruto(0, 0) = Nothing
+        bruto(0, 1) = Nothing
+        bruto(0, 2) = "Caroline Abreu"
+        bruto(0, 3) = New DateTime(2026, 8, 25, 9, 0, 0)
+        bruto(0, 4) = Nothing
+        bruto(0, 5) = True
+        bruto(0, 6) = "IPM.Note"
+        bruto(0, 7) = Nothing
+
+        ' LINHA 1: inteira. Ela vem DEPOIS de propósito -- e o zero dela e o
+        ' que prova o reset.
+        bruto(1, 0) = New Byte() {&HA, &H1B}
+        bruto(1, 1) = "Aditivo contratual"
+        bruto(1, 2) = "Marcos Vinicius"
+        bruto(1, 3) = New DateTime(2026, 8, 26, 10, 0, 0)
+        bruto(1, 4) = 4096
+        bruto(1, 5) = False
+        bruto(1, 6) = "IPM.Note"
+        bruto(1, 7) = True
+
+        Dim convertidas = f.ConverterLinhas(bruto)
+
+        Assert.AreEqual(2, convertidas.Count)
+        Assert.AreEqual(4, convertidas(0).Fabricadas,
+            "a linha com quatro buracos nao levou o seu numero")
+        Assert.AreEqual(0, convertidas(1).Fabricadas,
+            "a linha inteira herdou a fabricacao da anterior -- o reset sumiu")
+
+        ' E as celulas boas continuam chegando certas, para o teste nao passar
+        ' com um conversor que so conta e nao converte.
+        Assert.AreEqual("0A1B", convertidas(1).EntryId)
+        Assert.AreEqual("Aditivo contratual", convertidas(1).Subject)
+        Assert.AreEqual(4096, convertidas(1).SizeBytes)
+        Assert.IsTrue(convertidas(1).HasAttachments)
     End Sub
+
+    ''' <summary>
+    ''' <b>O CAMINHO LEGADO CONTA — inclusive a ausência sem exceção.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>DUAS INSTRUMENTAÇÕES DISCORDANDO É PIOR QUE UMA SÓ</b>
+    '''
+    ''' A listagem tem dois caminhos: <c>Table</c>, rápido, e a iteração por
+    ''' <c>MailItem</c>, para o store que recusa a coluna de EntryID longo. Até
+    ''' 28/08/2026 só o rápido contava, então o zero mostrado numa pasta lida
+    ''' pelo legado era um zero <b>fabricado</b>.
+    '''
+    ''' Instrumentei o legado, e a revisão externa achou o buraco que sobrou:
+    ''' eu contei só o <c>Catch</c>. O getter pode devolver <c>Nothing</c>
+    ''' <b>sem lançar nada</b> — e o <c>ComoTexto</c> do caminho rápido já
+    ''' contava esse caso. O número passava a depender de qual caminho a pasta
+    ''' tomou, que é a pior propriedade possível para um número que sobe para a
+    ''' tela como aviso.
+    '''
+    ''' <b>Fora deste teste:</b> <c>ContarAnexos</c> também conta agora, e não
+    ''' tem teste — ele precisa de um <c>MailItem</c> real que falhe ao abrir
+    ''' <c>Attachments</c>. Está dito com esse nome no código.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_legado_conta_a_excecao_E_o_Nothing_calado()
+        Dim n = 0
+
+        ' Controle: valor bom nao e fabricacao.
+        Assert.AreEqual("Aditivo", MessagePaging.TextoDoItem(Function() "Aditivo", n))
+        Assert.AreEqual(0, n, "valor legivel foi contado como fabricacao")
+
+        ' O CASO QUE ESCAPOU: Nothing sem excecao.
+        Assert.AreEqual("", MessagePaging.TextoDoItem(Function() CType(Nothing, String), n))
+        Assert.AreEqual(1, n, "Nothing sem excecao virou vazio EM SILENCIO")
+
+        ' E a excecao, que era a unica contada antes.
+        Assert.AreEqual("", MessagePaging.TextoDoItem(AddressOf TextoQueExplode, n))
+        Assert.AreEqual(2, n)
+
+        Assert.AreEqual(0, MessagePaging.NumeroDoItem(AddressOf NumeroQueExplode, n))
+        Assert.AreEqual(3, n)
+
+        Assert.IsFalse(MessagePaging.BooleanoDoItem(AddressOf BooleanoQueExplode, n))
+        Assert.AreEqual(4, n)
+
+        ' Controles dos outros dois, para o teste nao passar com auxiliares
+        ' que contam sempre.
+        Assert.AreEqual(4096, MessagePaging.NumeroDoItem(Function() 4096, n))
+        Assert.IsTrue(MessagePaging.BooleanoDoItem(Function() True, n))
+        Assert.AreEqual(4, n, "valor legivel foi contado como fabricacao")
+    End Sub
+
+    ' Propriedade COM ilegivel, que e o que os auxiliares do legado existem
+    ' para sobreviver: item corrompido, offline ou baixado pela metade.
+    Private Shared Function TextoQueExplode() As String
+        Throw New InvalidOperationException("propriedade COM ilegivel")
+    End Function
+
+    Private Shared Function NumeroQueExplode() As Integer
+        Throw New InvalidOperationException("propriedade COM ilegivel")
+    End Function
+
+    Private Shared Function BooleanoQueExplode() As Boolean
+        Throw New InvalidOperationException("propriedade COM ilegivel")
+    End Function
 
 End Class

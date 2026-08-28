@@ -17,19 +17,25 @@
     CORREIO tera item local mais antigo que hoje menos N, e o corte aparece
     em varias delas ao mesmo tempo.
 
-    UMA CORRECAO: A JANELA NAO E DO STORE
+    UMA CORRECAO: "A JANELA E DO STORE" ERA INFERENCIA
 
-    Este cabecalho dizia "a janela e do store e nao da pasta", e isso era
+    Este cabecalho afirmava "a janela e do store e nao da pasta", e isso era
     inferencia minha, nao medida. Em 28/08/2026, a tarde, o
-    medir-cobertura-calendario.ps1 mediu o calendario do MESMO store:
+    medir-cobertura-calendario.ps1 mediu o calendario padrao local:
 
       correio ...... corta em 2026-07-28, ~31 dias
-      calendario ... vai de 2024-06-07 a 2026-12-15, 921 dias, sem corte
+      calendario ... compromissos de 2024-06-07 a 2026-12-15
 
     411 dos 434 compromissos sao anteriores ao corte do correio, e a
-    distribuicao por ano e continua. Entao a janela alcanca o CORREIO, e nao
-    o store inteiro -- que e, alias, como o controle deslizante do Outlook
-    funciona.
+    distribuicao por ano e continua.
+
+    O QUE ISSO SUSTENTA, E SO ISSO: o corte de ~31 dias NAO APARECE neste
+    calendario. Nao e "921 dias sem corte" -- a medicao nao procura cortes
+    mais antigos que o item mais velho que ela achou. E nao falsifica "a
+    janela e do store": os dois roteiros NAO CORRELACIONAM StoreID, entao a
+    comparacao e por data, e nao por caixa. O que caiu foi a CERTEZA da
+    inferencia -- que e o suficiente para nao repetir a ressalva do correio
+    no calendario.
 
     O roteiro so mede pastas de correio (DefaultItemType = 0), entao a
     medida dele continua valendo. O que mudou foi a explicacao.

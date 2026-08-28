@@ -44,12 +44,17 @@ Namespace Global.Iris.App.ViewModels
     '''
     ''' <code>
     '''   correio ...... corta em 2026-07-28, ~31 dias
-    '''   calendário ... 2024-06-07 a 2026-12-15, 921 dias, sem corte
+    '''   calendário ... compromissos de 2024-06-07 a 2026-12-15
     ''' </code>
     '''
     ''' <b>411 dos 434</b> compromissos são anteriores ao corte do correio, e a
-    ''' distribuição por ano é contínua. A janela de sincronização alcança o
-    ''' correio; <b>não alcança o calendário</b>.
+    ''' distribuição por ano é contínua.
+    '''
+    ''' <b>O que isso sustenta, e nada além:</b> o corte de ~31 dias <i>não
+    ''' aparece</i> neste calendário. Este comentário chegou a dizer "921 dias,
+    ''' sem corte" e "não alcança o calendário" — as duas mais fortes que a
+    ''' medição, que não procura cortes mais antigos que o item mais velho que
+    ''' ela achou e não correlaciona <c>StoreID</c> entre os dois roteiros.
     '''
     ''' Então a agenda <b>não</b> mostra uma fatia de um mês, e dizer que ela
     ''' mostra seria repetir para o calendário a ressalva que só vale para o

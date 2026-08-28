@@ -754,7 +754,58 @@ dreno garante possibilidade de convergência, não convergência); sobrevivia
 *"derruba"* — a medição não procura cortes mais antigos que o item mais velho que
 achou, e os dois roteiros não correlacionam `StoreID`.
 
-`RESULTADO-SUITE.md` remedido: **872** no `d61037a`. Os relatórios diziam 870
+`RESULTADO-SUITE.md` remedido: **872** no `118277f` (o `d61037a` que eu tinha
+escrito aqui foi invalidado por um `--amend` meu, minutos depois). Os relatórios diziam 870
 enquanto o arquivo versionado registrava 805.
 
 Suíte: **872**.
+
+---
+
+## Nona passada de revisão — e o padrão que ela expôs
+
+Sete achados, e **dois altos**. Os dois no mesmo lugar onde eu já tinha
+consertado no dia anterior: o contador de fabricação e a ressalva da busca.
+
+**1. A ressalva ainda mentia — agora por generalizar.** Eu tinha trocado *"a
+busca já as enxerga; o painel pode estar atrasado"* por *"o retrato anterior —
+na busca **e** no painel"*. É verdade quando ninguém drenou, e **falsa na
+entrega parcial**: o `ConsumidorComposto` entrega ao painel primeiro e à busca
+depois, sem transação, então uma falha entre as duas deixa o painel uma geração
+à frente. O ramo travado errava do mesmo jeito, dizendo *"nem a busca nem o
+painel"*.
+
+E o meu teste aceitava a generalização, porque só exercitava o caso em que ela
+é verdadeira. **Terceira volta da mesma frase, em três eixos diferentes.** O que
+mudou desta vez não foi a redação: a ressalva passou a **só afirmar sobre a
+busca**, que é o que este objeto controla, e do painel diz apenas o que é certo
+— que ele *pode* estar à frente. E a entrega parcial ganhou teste próprio, que é
+a dívida "o fan-out não é atômico" saindo do ESCOPO e entrando na suíte.
+
+**2. O caminho legado ainda fabricava calado, por dois buracos.** Eu instrumentei
+os três auxiliares e deixei de fora o `ContarAnexos` — que não é auxiliar, e cuja
+falha vira `HasAttachments = False`, a **pior** das cinco, porque o usuário lê
+como afirmação. E nos auxiliares eu contei só o `Catch`: o getter pode devolver
+`Nothing` sem lançar nada, e o caminho rápido já contava esse caso. Duas
+instrumentações discordando faz o número depender de *qual caminho a pasta
+tomou*.
+
+**3. E o teste do reset provava o teste, não a produção.** Ele fazia
+`f.Fabricadas = 0` **com a própria mão** entre as duas linhas — apagar o reset da
+produção o deixaria verde. O laço saiu de dentro do `Ler`, que precisa de uma
+`Table` do Outlook, e virou `ConverterLinhas`, que recebe o bloco cru. Agora o
+teste entrega um `Object(,)` com buracos na primeira linha e nenhum na segunda, e
+o **zero da segunda** é o que prova o reset.
+
+O resto foi calibragem que sobreviveu em arquivos que eu não tinha aberto:
+*"temporária"* no ESCOPO e no relatório, *"921 dias, sem corte"* e *"é do store"*
+em mais quatro lugares — incluindo o `AgendaViewModel` e o cabeçalho do
+`medir-janela.ps1` —, dois comentários descrevendo código removido, e o hash que
+o `--amend` invalidou.
+
+**Três controles negativos, confirmados desfazendo:** sem o `Fabricadas = 0`,
+`Cada_linha_leva_o_SEU_numero` cai; sem a contagem do `Nothing`,
+`O_legado_conta_a_excecao_E_o_Nothing_calado` cai; devolvendo *"na busca e no
+painel"*, `Entrega_PARCIAL_deixa_o_painel_a_FRENTE` cai.
+
+Suíte: **874**.

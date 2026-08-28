@@ -400,6 +400,12 @@ Public Class BuscaNoAcervoTests
             '
             ' Agora ela cobra o SENTIDO: que a ressalva diga que o retrato e o
             ' anterior, e que NAO afirme que a busca ja enxerga.
+            '
+            ' A TERCEIRA PROIBICAO VEIO DEPOIS, e de outro achado: a frase
+            ' passou a dizer "na busca E no painel", que e verdade AQUI e falsa
+            ' na entrega parcial. Ver o teste
+            ' Entrega_PARCIAL_deixa_o_painel_a_FRENTE, que e onde essa
+            ' generalizacao quebra.
             Assert.IsTrue(r.PublicacoesPendentes > 0,
                 $"tinha de haver entrega pendente, achei {r.PublicacoesPendentes}")
             StringAssert.Contains(r.Ressalva, "retrato anterior")
@@ -407,7 +413,10 @@ Public Class BuscaNoAcervoTests
             Assert.IsFalse(r.Ressalva.Contains("já as enxerga"),
                 "a ressalva afirma que a busca enxerga a geracao pendente, e ela nao enxerga")
             Assert.IsFalse(r.Ressalva.Contains("painel pode estar atrasado"),
-                "a ressalva poe o painel atras da busca, e as duas leem o mesmo retrato")
+                "a ressalva poe o painel atras da busca, e nao e isso que ela sabe")
+            Assert.IsFalse(r.Ressalva.Contains("na busca e no painel"),
+                "a ressalva afirma pelos DOIS, e ela nao pode saber do painel: " &
+                "na entrega parcial ele fica a frente")
         End Using
     End Sub
 
@@ -476,6 +485,79 @@ Public Class BuscaNoAcervoTests
             Sub() composto.Receber(8),
             "a falha de um consumidor foi engolida, e a geracao seria marcada " &
             "como entregue a quem nao a recebeu")
+    End Sub
+
+    ''' <summary>
+    ''' <b>ENTREGA PARCIAL: o painel fica À FRENTE, e a ressalva não pode dizer
+    ''' o contrário.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O ESTADO QUE A FRASE ANTERIOR NEGAVA</b>
+    '''
+    ''' O <c>ConsumidorComposto</c> entrega ao painel primeiro e à busca depois,
+    ''' <b>sem transação</b>. Se a segunda falha, a exceção sobe, a geração
+    ''' continua pendente — e o painel <b>já a recebeu</b>. É a dívida "o fan-out
+    ''' não é atômico", que estava escrita no ESCOPO e não estava coberta.
+    '''
+    ''' Nesse estado, as duas frases que a ressalva já teve eram falsas: o "nem a
+    ''' busca nem o painel" do ramo travado e o "na busca e no painel" deste
+    ''' ramo. Ambas afirmam sobre o painel uma coisa que a busca não pode saber.
+    ''' A revisão externa pegou, e este teste é o que impede a terceira volta.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo "— na busca e no painel do acervo"
+    ''' à ressalva, a asserção do final cai.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Entrega_PARCIAL_deixa_o_painel_a_FRENTE()
+        Using db = Abrir()
+            Dim chave = Semear(db, "Caixa de Entrada", "entrada", Caixa)
+
+            Dim todas As New AcervoDeTodasAsPastas(db)
+            Dim dreno As New PublicationDrain(db)
+            dreno.Drenar(todas)
+            If todas.Recarregado = 0 Then todas.Recarregar()
+            If todas.Recarregado = 0 Then todas.Recarregar()
+            Dim busca As New BuscaNoAcervo(todas, dreno)
+
+            ' Uma varredura nova publica, e ninguem drena ainda.
+            Dim resolvedor As New ResolvedorDoAcervo(db)
+            Dim amb = resolvedor.Ambiente(Impressao())
+            Dim universo As New SweepUniverse("store-1", "entrada", "f", Nothing, 1, "amb-1")
+            Dim fonte As New FonteDeLinhas(universo, {New SourceRow With {
+                .Key = "entrada-9", .Subject = "Aditivo contratual novissimo",
+                .SenderName = "Caroline Abreu",
+                .ReceivedAt = New DateTimeOffset(2026, 8, 25, 9, 0, 0, TimeSpan.Zero).ToString("o"),
+                .MessageClass = "IPM.Note"}})
+            Dim r2 = New SweepRunner(fonte, New SqliteSweepSink(db, chave, amb.Chave), 50).
+                     Executar(universo, 0, 2, EnvironmentPolicy.Capacidades(Impressao()),
+                              CancellationToken.None)
+            Assert.IsTrue(r2.Publicou, $"controle: a varredura tinha de publicar. {r2.Motivo}")
+
+            ' A ENTREGA PARCIAL: o primeiro recebe, o segundo falha.
+            Dim painel As New ContadorDeEntregas()
+            Dim quebrada As New ContadorDeEntregas() With {.Explodir = True}
+            Assert.ThrowsException(Of InvalidOperationException)(
+                Sub() dreno.Drenar(New ConsumidorComposto(painel, quebrada)))
+
+            ' O ESTADO, medido e nao suposto.
+            Assert.AreEqual(1, painel.Recebidas,
+                "controle: o primeiro consumidor tinha de ter recebido")
+            Assert.IsTrue(dreno.Pendentes().Count > 0,
+                "controle: a geracao tinha de continuar pendente")
+
+            Dim r = busca.Procurar("novissimo")
+            Assert.AreEqual(0, r.Achados.Count, "a busca enxergou o que nao lhe foi entregue")
+            Assert.IsTrue(r.PublicacoesPendentes > 0)
+
+            ' O CONSERTO: a ressalva fala pela BUSCA, e do painel so diz o que
+            ' e certo -- que ele PODE estar a frente.
+            StringAssert.Contains(r.Ressalva, "retrato anterior")
+            Assert.IsFalse(r.Ressalva.Contains("na busca e no painel"),
+                "a ressalva poe o painel no mesmo retrato da busca, e neste " &
+                "exato estado ele esta uma geracao a frente")
+            Assert.IsFalse(r.Ressalva.Contains("nem a busca nem o painel"),
+                "a ressalva afirma que o painel nao enxerga, e ele enxerga")
+        End Using
     End Sub
 
     ''' <summary>Consumidor de teste que conta e, se pedirem, explode.</summary>

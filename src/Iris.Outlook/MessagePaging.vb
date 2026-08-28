@@ -397,19 +397,19 @@ Namespace Global.Iris.Outlook
 
         Private Function ResumirDoItem(mail As OL.MailItem, storeId As String,
                                        ByRef fabricadas As Integer) As MailSummary
-            Dim anexos = ContarAnexos(mail)
+            Dim anexos = ContarAnexos(mail, fabricadas)
 
             ' ContentState.BodyAvailable significa "corpo LIDO", pela
             ' definicao do enum. A listagem nao le corpo nenhum.
             Return New MailSummary With {
-                .Key = New ItemKey(Texto(Function() mail.EntryID, fabricadas), storeId),
-                .Subject = Texto(Function() mail.Subject, fabricadas),
-                .SenderName = Texto(Function() mail.SenderName, fabricadas),
+                .Key = New ItemKey(TextoDoItem(Function() mail.EntryID, fabricadas), storeId),
+                .Subject = TextoDoItem(Function() mail.Subject, fabricadas),
+                .SenderName = TextoDoItem(Function() mail.SenderName, fabricadas),
                 .ReceivedTime = Data(Function() mail.ReceivedTime),
-                .SizeBytes = Numero(Function() mail.Size, fabricadas),
+                .SizeBytes = NumeroDoItem(Function() mail.Size, fabricadas),
                 .HasAttachments = anexos > 0,
-                .IsUnread = Booleano(Function() mail.UnRead, fabricadas),
-                .MessageClass = Texto(Function() mail.MessageClass, fabricadas),
+                .IsUnread = BooleanoDoItem(Function() mail.UnRead, fabricadas),
+                .MessageClass = TextoDoItem(Function() mail.MessageClass, fabricadas),
                 .Content = ContentState.MetadataOnly
             }
         End Function
@@ -423,13 +423,27 @@ Namespace Global.Iris.Outlook
         ''' <summary>
         ''' mail.Attachments é objeto COM próprio. Escrever
         ''' mail.Attachments.Count cria um RCW intermediário sem dono.
+        '''
+        ''' ----------------------------------------------------------------
+        ''' <b>A FALHA AQUI É A PIOR DAS CINCO, E ERA A MAIS CALADA</b>
+        '''
+        ''' Ela vira <c>HasAttachments = False</c> — que o usuário lê como "não
+        ''' tem anexo", uma <b>afirmação</b>, e não como "não sei". A primeira
+        ''' instrumentação do caminho legado passou por cima dela: eu contei os
+        ''' três auxiliares e esqueci este, que não é auxiliar. A revisão
+        ''' externa pegou.
+        '''
+        ''' <b>Sem teste, e dito com esse nome:</b> exercitar este caminho pede
+        ''' um <c>MailItem</c> real que falhe ao abrir <c>Attachments</c>. Os
+        ''' outros três recebem <c>Func</c> e têm teste.
         ''' </summary>
-        Private Function ContarAnexos(mail As OL.MailItem) As Integer
+        Private Function ContarAnexos(mail As OL.MailItem, ByRef fabricadas As Integer) As Integer
             Dim anexos As OL.Attachments = Nothing
             Try
                 anexos = mail.Attachments
                 Return anexos.Count
             Catch
+                fabricadas += 1
                 Return 0
             Finally
                 ComHelpers.Release(anexos)
@@ -447,17 +461,46 @@ Namespace Global.Iris.Outlook
         '
         ' O contador vai por ByRef porque estes auxiliares sao do modulo e o
         ' caminho legado nao tem um objeto onde acumular. Feio, e honesto.
+        '
+        ' O SUFIXO -DoItem NAO E ENFEITE. Eles sao Friend para TEREM TESTE, e
+        ' Friend em Module vale para o assembly inteiro: com os nomes curtos,
+        ' Texto, Numero e Booleano colidiriam com os homonimos privados de
+        ' MessageReading, DraftWriting e CalendarReading. E a mesma familia de
+        ' armadilha que o CLAUDE.md ja lista doze vezes.
 
-        Private Function Texto(getter As Func(Of String), ByRef fabricadas As Integer) As String
+        ''' <summary>
+        ''' Texto ilegível <b>ou ausente</b> vira vazio — e conta nos dois casos.
+        '''
+        ''' ----------------------------------------------------------------
+        ''' <b>A AUSÊNCIA SEM EXCEÇÃO ESCAPOU DA PRIMEIRA INSTRUMENTAÇÃO</b>
+        '''
+        ''' Eu contei só o <c>Catch</c>. Mas o getter pode devolver
+        ''' <c>Nothing</c> sem lançar nada, e o <c>If(..., "")</c> transformava
+        ''' isso em <c>""</c> mudo — enquanto o <c>ComoTexto</c> do caminho
+        ''' rápido já contava exatamente esse caso.
+        '''
+        ''' Duas instrumentações discordando é pior que uma só: o número passa a
+        ''' depender de <i>qual caminho a pasta tomou</i>, e é o mesmo número
+        ''' que sobe para a tela.
+        ''' </summary>
+        Friend Function TextoDoItem(getter As Func(Of String), ByRef fabricadas As Integer) As String
+            Dim lido As String
             Try
-                Return If(getter(), "")
+                lido = getter()
             Catch
                 fabricadas += 1
                 Return ""
             End Try
+
+            If lido Is Nothing Then
+                fabricadas += 1
+                Return ""
+            End If
+            Return lido
         End Function
 
-        Private Function Numero(getter As Func(Of Integer), ByRef fabricadas As Integer) As Integer
+        ''' <summary>Número ilegível vira <c>0</c> — e conta.</summary>
+        Friend Function NumeroDoItem(getter As Func(Of Integer), ByRef fabricadas As Integer) As Integer
             Try
                 Return getter()
             Catch
@@ -466,7 +509,8 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
-        Private Function Booleano(getter As Func(Of Boolean), ByRef fabricadas As Integer) As Boolean
+        ''' <summary>Booleano ilegível vira <c>False</c> — e conta.</summary>
+        Friend Function BooleanoDoItem(getter As Func(Of Boolean), ByRef fabricadas As Integer) As Boolean
             Try
                 Return getter()
             Catch
@@ -648,11 +692,34 @@ Namespace Global.Iris.Outlook
                 Dim ultima = bruto.GetUpperBound(0)
                 If ultima < primeira Then Return vazio
 
-                Dim linhas As New List(Of TableRow)(ultima - primeira + 1)
+                Return ConverterLinhas(bruto)
+            End Function
+
+            ''' <summary>
+            ''' <b>Converte o bloco cru em linhas, e dá a cada uma o seu número.</b>
+            '''
+            ''' ----------------------------------------------------------------
+            ''' <b>POR QUE ISTO É UM MÉTODO, E NÃO O CORPO DO <c>Ler</c></b>
+            '''
+            ''' Enquanto era o corpo do <c>Ler</c>, o zerar-antes e o colher-depois
+            ''' não tinham como ser provados: o <c>Ler</c> precisa de uma
+            ''' <c>Table</c> do Outlook, e o teste que eu tinha escrito fazia os
+            ''' dois resets <b>com a própria mão</b>. Ele passaria com o reset
+            ''' removido da produção — a revisão externa pegou.
+            '''
+            ''' Separado, o teste passa um <c>Object(,)</c> montado à mão, com
+            ''' buracos numa linha e não na outra, e cobra o número de <i>cada
+            ''' linha</i>. Tirar o <c>Fabricadas = 0</c> daqui derruba o teste.
+            ''' </summary>
+            Friend Function ConverterLinhas(bruto As Object(,)) As List(Of TableRow)
+                Dim primeira = bruto.GetLowerBound(0)
+                Dim ultima = bruto.GetUpperBound(0)
+                Dim linhas As New List(Of TableRow)(Math.Max(0, ultima - primeira + 1))
+
                 For r = primeira To ultima
                     ' O acumulador vira o da LINHA: zera antes, colhe depois.
                     Fabricadas = 0
-                    Dim linha As New TableRow With {
+                    Dim convertida As New TableRow With {
                         .EntryId = ComoEntryId(bruto(r, ColEntryId)),
                         .Subject = ComoTexto(bruto(r, ColSubject)),
                         .SenderName = ComoTexto(bruto(r, ColSender)),
@@ -662,8 +729,8 @@ Namespace Global.Iris.Outlook
                         .MessageClass = ComoTexto(bruto(r, ColClasse)),
                         .HasAttachments = ComoBooleano(bruto(r, ColAnexo))
                     }
-                    linha.Fabricadas = Fabricadas
-                    linhas.Add(linha)
+                    convertida.Fabricadas = Fabricadas
+                    linhas.Add(convertida)
                 Next
                 Return linhas
             End Function

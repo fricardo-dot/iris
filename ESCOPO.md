@@ -357,10 +357,14 @@ concluir ausência. Em Exchange em cache a janela de sincronização não é leg
 pelas superfícies examinadas (§22.3 e §22.4), então o Iris não sabe quando ela
 muda.
 
-**E ela é do correio, não do store** — medido em 28/08/2026: o calendário do
-mesmo store guarda 921 dias sem corte, contra os ~31 dias das pastas de correio.
-A degradação vale para o acervo de mensagens; repeti-la para o calendário seria
-ressalva emprestada. É degradação **estrutural no suporte de hoje** — não há mecanismo
+**E o corte não aparece no calendário** — medido em 28/08/2026: o calendário
+padrão local tem compromissos de 2024-06-07 a 2026-12-15, contra o corte de ~31
+dias das pastas de correio. Esta seção dizia *"ela é do correio, não do store"*
+e *"921 dias sem corte"*, e as duas coisas são mais fortes que a medição: os
+dois roteiros **não correlacionam `StoreID`** — a comparação é por data, e não
+por caixa —, e a medição não procura cortes mais antigos que o item mais velho
+que ela achou. O que se sustenta é que a degradação vale para o acervo de
+mensagens, e repeti-la para o calendário seria ressalva emprestada. É degradação **estrutural no suporte de hoje** — não há mecanismo
 conhecido de promoção, e a §23 deixou escritos os gatilhos que reabririam a
 decisão. Agora ela é visível na tela.
 
@@ -626,8 +630,12 @@ que este ESCOPO carregava.
   o consumidor relê o manifesto *corrente* e ignora qual geração chegou, então
   com **duas** gerações pendentes a entrega da primeira torna a segunda visível
   cedo; e as entregas são sequenciais, então uma falha entre elas deixa o painel
-  à frente da busca até a repetição. As duas são temporárias e nenhuma perde
-  dado — mas nenhuma das duas é "entrega atômica", e eu tinha escrito que era.
+  à frente da busca até a repetição. Nenhuma das duas perde dado — a pendência
+  fica registrada e a entrega pode ser repetida —, mas *"temporária"* era mais
+  forte que o mecanismo: falha persistente mantém a divergência enquanto durar.
+  E nenhuma das duas é "entrega atômica", que era o que eu tinha escrito.
+  **A entrega parcial passou a ter teste em 28/08** — antes ela estava só
+  descrita aqui, e a ressalva da busca chegava a afirmar o contrário dela.
 - **Valores fabricados na paginação** — *medido, e a decisão está tomada.*
   `tools/medir-nulos-da-table.ps1` contou **zero nulos nas oito colunas, em
   1.109 linhas** da Caixa de Entrada. O defeito existe no contrato e não se

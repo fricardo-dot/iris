@@ -137,22 +137,20 @@ Namespace Global.Iris.Integration
                 Next
             Next
 
-            ' O DRENO: UM DESVIO DECLARADO, E NAO UM CUMPRIMENTO.
+            ' O DRENO: A BUSCA PASSA POR ELE, E TAMBEM O CONSULTA.
             '
-            ' A §26.2 exige um CONSUMIDOR ligado ao dreno, e proibe leitura
-            ' direta como substituto. Esta busca le o ManifestReader de cada
-            ' pasta e depois so CONSULTA a fila. A revisao externa de 28/08 foi
-            ' explicita: consultar o estado do dreno nao e passar por ele.
+            ' ESTE COMENTARIO DESCREVIA CODIGO QUE NAO EXISTE MAIS, e ficou
+            ' assim por uma passada inteira. Ele dizia que a busca "le o
+            ' ManifestReader de cada pasta e depois so CONSULTA a fila" -- um
+            ' desvio declarado da §26.2. O desvio saiu no mesmo dia: a busca le
+            ' o AcervoDeTodasAsPastas, que e um IPublicationConsumer ligado ao
+            ' dreno e so muda quando o dreno entrega. Eu tirei o desvio e
+            ' esqueci a confissao dele aqui; a revisao externa pegou.
             '
-            ' Fica assim, e fica dito com esse nome, por um motivo concreto: o
-            ' AcervoService e de UMA pasta, com Apontar/Atual, e uma busca entre
-            ' pastas nao cabe nesse formato. Encaixa-la exigiria um consumidor
-            ' multi-pasta -- que e trabalho de desenho, nao conserto de linha.
-            '
-            ' O que a consulta compra: o dreno travado APARECE na tela por onde
-            ' o usuario esta olhando, em vez de sumir atras de uma lista que
-            ' parece completa. E menos do que a §26.2 pede, e mais do que
-            ' silencio. Esta no relatorio como divida.
+            ' O que sobrou e legitimo, e continua necessario: alem de LER pelo
+            ' consumidor, a busca CONSULTA a fila para montar a ressalva. Sem
+            ' isso o dreno travado sumiria atras de uma lista que parece
+            ' completa -- e quem procura concluiria ausencia do silencio.
             Dim pendentes As Integer
             Dim travado As Long?
             Try
@@ -432,39 +430,44 @@ Namespace Global.Iris.Integration
                 ' que o acervo mostrado está atrás do que já foi varrido — e
                 ' quem procura precisa saber disso antes de concluir do
                 ' silêncio.
-                ' A FRASE ESTAVA FACTUALMENTE ERRADA ATE 28/08.
                 '
-                ' Ela dizia que as publicacoes "ainda nao foram entregues ao
-                ' acervo". Nao e isso: a publicacao JA materializou o acervo, e
-                ' esta busca pode estar mostrando exatamente a geracao que ela
-                ' dizia nao ter chegado. O que esta pendente e a entrega ao
-                ' CONSUMIDOR -- o painel do acervo, que se atualiza pelo dreno.
+                ' ------------------------------------------------------------
+                ' ESTA FRASE JA ESTEVE ERRADA TRES VEZES, E NAO NO MESMO EIXO.
                 '
-                ' Descrever errado um aviso de inconsistencia e pior que nao
-                ' avisar: quem le conclui a coisa errada com confianca.
-                ' ESTA FRASE JA ESTEVE ERRADA DUAS VEZES, EM SENTIDOS OPOSTOS.
+                ' (1) Dizia que as publicacoes "nao foram entregues ao acervo".
+                ' Falso: a publicacao JA materializa o acervo. O que fica
+                ' pendente e a entrega ao CONSUMIDOR.
                 '
-                ' Primeiro ela dizia que as publicacoes "nao foram entregues ao
-                ' acervo" -- falso, porque a publicacao ja materializa o acervo.
-                '
-                ' Depois virou "a busca ja as enxerga; o painel pode estar
+                ' (2) Virou "a busca ja as enxerga; o painel pode estar
                 ' atrasado". Era verdade enquanto a busca contornava o dreno, e
-                ' deixou de ser no MESMO dia em que o contorno saiu -- e eu nao
-                ' voltei aqui. A revisao externa pegou: a ressalva afirmava
-                ' exatamente o oposto do estado.
+                ' deixou de ser no MESMO dia em que o contorno saiu.
                 '
-                ' Agora as duas leem o mesmo retrato, e nenhuma enxerga a
-                ' geracao pendente. E isso que o usuario precisa saber.
+                ' (3) Virou "o retrato anterior -- na busca E no painel". Essa
+                ' errou por GENERALIZAR: e verdade quando ninguem drenou, e
+                ' falsa na ENTREGA PARCIAL. O ConsumidorComposto entrega ao
+                ' painel primeiro e a busca depois, sem transacao. Se a segunda
+                ' falha, a geracao continua pendente -- e o painel JA a recebeu.
+                ' Nesse estado, tanto o "nem a busca nem o painel" do ramo
+                ' travado quanto o "na busca e no painel" deste ramo afirmam
+                ' sobre o painel uma coisa que este objeto nao pode saber.
+                '
+                ' O QUE ESTA VERSAO FAZ DIFERENTE: ela so afirma sobre A BUSCA,
+                ' que e o que este objeto de fato controla, e diz do painel
+                ' apenas o que e certo -- que ele PODE estar a frente, porque a
+                ' entrega e sequencial. Ressalva que afirma demais e pior que
+                ' ressalva nenhuma: quem le conclui errado com confianca.
                 If DrenoTravadoEm.HasValue Then
                     partes.Add($"A entrega da geração {DrenoTravadoEm.Value} está travada. " &
-                               "Há varredura publicada que nem a busca nem o painel do acervo " &
-                               "estão enxergando ainda.")
+                               "Há varredura publicada que esta busca não está enxergando. " &
+                               "O painel do acervo pode estar à frente: as entregas são " &
+                               "sequenciais, e a falha pode ter caído entre as duas.")
                 ElseIf PublicacoesPendentes < 0 Then
                     partes.Add("Não consegui conferir se há varredura esperando entrega.")
                 ElseIf PublicacoesPendentes > 0 Then
                     partes.Add($"{PublicacoesPendentes} varredura(s) publicada(s) ainda não foram " &
-                               "entregues. O que você está vendo é o retrato anterior a elas — " &
-                               "na busca e no painel do acervo.")
+                               "entregues. O que a busca mostra é o retrato anterior a elas. " &
+                               "O painel do acervo pode estar à frente: as entregas são " &
+                               "sequenciais, e não atômicas.")
                 End If
 
                 Return String.Join(" ", partes)

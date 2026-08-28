@@ -411,8 +411,9 @@ footer.fim {
 
     <li><strong>O efeito da janela de sincronização foi medido</strong> — a
     dívida mais antiga em aberto. Cinco pastas de usos completamente diferentes
-    cortam no <strong>mesmo dia</strong>. É horizonte do store, não hábito de
-    arquivamento.</li>
+    cortam no <strong>mesmo dia</strong>. É horizonte imposto, não hábito de
+    arquivamento — e o <em>"do store"</em> que eu tinha escrito aqui era
+    inferência, não medida. Ver a tabela da tarde.</li>
 
     <li><strong>O ESCOPO afirmava quatro coisas falsas</strong>, e uma delas era
     sobre uma entrega que não existia: "busca textual". Corrigi o documento e
@@ -714,7 +715,7 @@ footer.fim {
 
 <h2><span class="num">§ 4</span>As três medições que mudaram decisões</h2>
 
-<h3>O horizonte é de 31 dias, e é do store</h3>
+<h3>O horizonte é de 31 dias, e é imposto</h3>
 
 <p>
   A dívida mais antiga em aberto. O ESCOPO já tinha escrito a saída: <em>"não é
@@ -908,12 +909,15 @@ footer.fim {
   <tbody>
     <tr>
       <td><strong>Cobertura do calendário</strong></td>
-      <td>O calendário local vai de 2024-06-07 a 2026-12-15 —
-          <strong>921 dias, sem corte</strong> — contra os ~31 dias do correio,
-          com 411 dos 434 compromissos antes do corte.
-          <strong>Isso derrubou uma afirmação minha da manhã:</strong> eu tinha
-          escrito que "a janela é do store", e era inferência. Ela alcança o
-          correio.</td>
+      <td>O calendário padrão local tem compromissos de 2024-06-07 a
+          2026-12-15, com 411 dos 434 anteriores ao corte do correio.
+          <strong>O que se sustenta, e nada além:</strong> o corte de ~31 dias
+          <em>não aparece</em> neste calendário. Não é "921 dias sem corte" — a
+          medição não procura cortes mais antigos que o item mais velho que ela
+          achou —, e não falsifica "a janela é do store", porque os dois
+          roteiros não correlacionam <code>StoreID</code>. O que ela derrubou
+          foi a <em>certeza</em> com que eu tinha escrito a inferência de
+          manhã.</td>
     </tr>
     <tr>
       <td><strong>Valores fabricados na paginação</strong></td>
@@ -964,8 +968,11 @@ footer.fim {
     <tr>
       <td>O fan-out não é atômico</td>
       <td>Se o primeiro consumidor conclui e o segundo falha, o painel fica à
-          frente da busca até a repetição. Temporário e sem perda — mas eu tinha
-          escrito "congelam juntas", e não congelam.</td>
+          frente da busca até a repetição. Sem perda — a pendência fica e a
+          entrega pode ser repetida —, mas não "temporário": falha persistente
+          mantém a divergência enquanto durar. Eu tinha escrito "congelam
+          juntas", e não congelam. <strong>Agora tem teste</strong>, e a
+          ressalva da busca deixou de afirmar pelo painel.</td>
     </tr>
     <tr>
       <td>A guarda não observável</td>
