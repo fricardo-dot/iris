@@ -440,3 +440,44 @@ aprovação do dono no monitor, e ele não está. O que dá para dizer é que o
 aplicativo abriu sem erro de binding no log e que `BindingsDaJanelaTests` passou
 a conferir a raiz `Busca.` no XAML de verdade. Ver a faixa desenhada fica para
 ele — está no relatório.
+
+### 28/08 — blocos 7, 8 e 9: medir antes de escrever as Fases 5, 6 e 7
+
+As três fases estão no ESCOPO com **uma frase cada**. Planejá-las sem medir
+repetiria o erro que a Fase 0 existiu para evitar — a v1 do ESCOPO afirmava que
+WPF em VB não era suportado no .NET moderno, e a premissa era falsa.
+
+`tools/medir-grupos.ps1`, somente leitura, contra a caixa real:
+
+| Grupo | Fase | Itens | Custo por item | Propriedades legíveis |
+|---|---|---|---|---|
+| **Calendário** | 6 | **434** | 30,9 ms | 10 de 10 |
+| **Contatos** | 7 | **0** | — | — |
+| **Tarefas** | 5 | **3** | 83,3 ms | 9 de 9 |
+
+**Três achados que reescrevem as três fases.**
+
+**Fase 7 (Contatos) não tem consumidor.** A pasta de Contatos está **vazia**. Numa
+conta corporativa os contatos vivem no GAL — e o GAL está explicitamente **fora
+de escopo** na §8 do ESCOPO ("Paridade com To Do, Planner ou GAL"). Um módulo de
+contatos aqui seria uma tela para uma pasta com zero itens.
+
+**Fase 5 (Tarefas) é uma feature de escrita, não de leitura.** Três itens. O
+valor não está em ler as três tarefas que existem, está em **criar** tarefas a
+partir de e-mails — que é o que o ESCOPO descreve: *a IA sugere, você confirma, o
+Iris cria o `TaskItem`*. Escrever na caixa do dono é exatamente o que eu declarei
+que não faço com ele ausente.
+
+**Fase 6 (Calendário) é a que tem substância.** 434 itens, todas as dez
+propriedades legíveis em 100 de 100, e **30,9 ms por item** — quase o dobro dos
+~16 ms que a Fase 0 mediu por mensagem e que tornou o cache obrigatório. Ler o
+calendário inteiro uma vez custaria ~13 s. A conclusão da Fase 2 se aplica antes
+de a Fase 6 começar.
+
+**4 recorrentes em 100** (os mais recentes por `[Start]`). A primeira versão
+amostrava os "30 primeiros" sem ordenar, e `Items.Item(i)` sem `Sort` devolve a
+ordem interna do provedor — relatar "0 em 30" a partir daquilo seria dar
+aparência de medida a um acaso.
+
+**O que a medição não mediu:** se dá para **criar**. Saber isso exige criar, e
+criar é mutação na caixa do dono.
