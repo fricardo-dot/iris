@@ -585,34 +585,50 @@ sustentado; "não tem consumidor" seria forte demais.**
 
 Nenhum destes é fase; são dívidas conhecidas, com dono e receita.
 
-- **Cobrir quatro categorias de guarda de ciclo de vida** que hoje se sustentam
-  por leitura de código — e cada categoria tem mais de um caminho: descarte do
-  assistente com transmissão em voo, troca de sessão durante a expansão da
-  árvore, guardas de descarte da janela principal (quatro caminhos) e guardas do
-  leitor de mensagem (três). O descarte do assistente pede um transmissor que
-  ignore o token de cancelamento; a troca de sessão e as guardas da janela saem
-  com o broker falso e uma fonte bloqueável; as do leitor pedem a primeira suíte
-  do leitor, que não existe. Abertas em `RELATORIO-FASE2-FECHAMENTO.html` §8.
-- **Verificar a política corporativa aplicável** — é o que separa o canário
-  sintético do uso real da IA.
-- **Medir o efeito da janela de sincronização**, já que ela não é legível. A
-  saída não é achar a configuração: é medir o efeito dela. Apontado na Fase 2 e
-  ainda aberto.
-- **Explicar ou encerrar formalmente a falha rara da suíte** que a Fase 2 nunca
-  reproduziu — 1 falha em dez execuções, sem reprodução. Está nos dois
-  relatórios e aqui; quase caiu no vão entre eles.
-- **Duas dívidas herdadas do fechamento**, que estavam só lá: a coordenação
-  entre o fechamento da janela e o descarte efetivo do broker, e o auxiliar de
-  índices chamado `Unico`, que descreve uma propriedade dependente da posição em
-  que é usado.
-- **Decidir o que fazer com evidência não versionada.** Os números da varredura
-  real vêm do cache do usuário, que não está no repositório: a semântica é
-  auditável pelo código, a medição não é reproduzível a partir de um commit. Ou
-  se cria um caminho para reproduzi-la, ou se declara que é evidência
-  operacional e não prova versionada.
-- **Medir a qualidade e a utilidade do acervo parcial** — e não só o efeito da
-  janela. É a pré-condição escrita da Fase 4, e hoje há cache de verdade para
-  medir.
+**Atualizado em 28/08/2026, à tarde.** Esta lista tinha sete itens de manhã e
+cinco deles foram fechados no mesmo dia. Deixá-los aqui faria o documento pedir
+trabalho já feito — que é a mesma família de erro das quatro afirmações falsas
+que este ESCOPO carregava.
+
+#### Fechadas em 28/08/2026
+
+| Dívida | Como fechou |
+|---|---|
+| Cobrir as quatro categorias de guarda | **8 dos 9 caminhos** cobertos, todos com controle negativo medido. Nasceram três arquivos de teste, incluindo a primeira suíte do leitor de mensagem |
+| Medir o efeito da janela de sincronização | `tools/medir-janela.ps1`. Horizonte comum de ~31 dias em cinco pastas de usos diferentes |
+| Medir a qualidade do acervo parcial | Medido, e a medição achou um defeito: `message_class` era constante fabricada |
+| Explicar ou encerrar a falha rara da suíte | **Fechada por construção**, e não por explicação: `ParalelismoDaSuiteTests` impõe a regra que a hipótese sugeria |
+| Coordenação broker/fechamento, e o auxiliar `Unico` | As duas fechadas. A primeira era corrida real e foi verificada contra o Outlook; a segunda era pior que a dívida dizia — cinco chamadas na posição *não* única |
+
+#### Abertas
+
+- **Verificar a política corporativa aplicável** — decisão do dono, e a única
+  desta lista que não é trabalho. É o que separa o canário sintético do uso real
+  da IA. Sabemos agora que ela não bloqueia nada sozinha: quem restringe é a
+  lista de pastas da cerimônia.
+- **Decidir o que fazer com evidência não versionada.** Meio-caminho andado: o
+  resultado da suíte passou a ser versionado em `RESULTADO-SUITE.md`, com commit
+  e data. Os números da varredura e do egress continuam vindo do cache do dono,
+  que não está no repositório. Ou se cria um caminho para reproduzi-los, ou se
+  declara que são evidência operacional.
+- **A busca contorna o `PublicationDrain`.** Ela consulta o estado da fila, e
+  consultar não é passar. O `AcervoService` é de uma pasta, e uma busca entre
+  pastas não cabe nesse formato — encaixá-la pede um consumidor multi-pasta, que
+  é desenho e não conserto.
+- **Valores fabricados na paginação.** Falha de leitura vira fato: tamanho `0`,
+  não lida `False`, anexo `False`, texto vazio. É a mesma família do
+  `message_class` corrigido hoje, mas corrigir exige campos anuláveis e migração
+  de esquema — decisão de tamanho.
+- **A cobertura do calendário nunca foi medida.** A agenda diz quantos leu e se
+  a leitura truncou; não diz o que existe além do que o Outlook expõe. O
+  `medir-janela.ps1` mede pastas de correio; o calendário pede o equivalente.
+- **Uma guarda que não é observável por API pública** — a recarga de contas
+  pendente durante o fechamento. Depois do `Dispose` a seleção já é `Nothing`, e
+  os dois mundos são indistinguíveis de fora. Só por reflexão ou por um *seam*
+  interno. Fica como decisão, e não como esquecimento.
+- **Ninguém viu a busca e a agenda desenhadas.** Os bindings são conferidos
+  contra o XAML de verdade e o aplicativo abre e fecha sem erro, mas capturar
+  tela exige a aprovação do dono no monitor.
 
 ---
 
