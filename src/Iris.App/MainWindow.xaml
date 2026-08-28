@@ -1084,8 +1084,11 @@
                  cobertura", e a revisao externa pegou: o horizonte local so foi
                  medido no calendario PADRAO, e esta agenda abre qualquer pasta
                  classificada como calendario: caixa compartilhada, outro
-                 store, ninguem mediu. Por isso o resumo com zero itens diz
-                 "nenhum compromisso LIDO", e nao "0 compromisso(s)". -->
+                 store, ninguem mediu. Por isso o resumo diz sempre LIDO, com
+                 zero itens ou com doze: "nenhum compromisso LIDO ate dd/MM" e
+                 "12 compromisso(s) lido(s) ate dd/MM". Numero apresentado como
+                 TOTAL e a mesma afirmacao que o zero era, so que mais dificil
+                 de notar. -->
             <Border Grid.Row="2"
                     Visibility="{Binding Agenda.TemPasta, Converter={StaticResource BoolToVis},
                                          FallbackValue=Collapsed}"

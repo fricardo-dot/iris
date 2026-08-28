@@ -101,7 +101,14 @@ try {
     Write-Host ""
 
     if ($n -eq 0) {
-        Write-Host "Calendario vazio. Nada a medir." -ForegroundColor Yellow
+        # "VAZIO" SERIA AFIRMACAO DE AUSENCIA, e este roteiro nao pode fazer
+        # essa -- pelo mesmo motivo que ele repete no cabecalho: a contagem do
+        # servidor e inalcancavel pelo OOM. Zero item EXPOSTO LOCALMENTE nao e
+        # zero compromisso.
+        Write-Host "NENHUM COMPROMISSO EXPOSTO LOCALMENTE nesta pasta." -ForegroundColor Yellow
+        Write-Host "  Isso NAO quer dizer que o calendario esteja vazio: a contagem do"
+        Write-Host "  servidor continua inalcancavel pelo OOM. Nao ha o que medir aqui,"
+        Write-Host "  e tambem nao ha o que concluir."
         exit 0
     }
 

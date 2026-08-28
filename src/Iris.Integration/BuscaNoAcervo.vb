@@ -154,7 +154,15 @@ Namespace Global.Iris.Integration
             Dim pendentes As Integer
             Dim travado As Long?
             Try
-                pendentes = If(_dreno Is Nothing, 0, _dreno.Pendentes().Count)
+                ' SEM DRENO NAO E FILA LIMPA, E SIM FILA NAO OBSERVADA.
+                '
+                ' Isto devolvia 0 -- a mesma resposta de "olhei e nao ha nada
+                ' pendente". Os dois chamadores de producao passam um dreno
+                ' real, entao a tela nunca chegou nesse estado; mas a classe
+                ' aceita Nothing, e "aceita e mente" e pior que "nao aceita".
+                ' O -1 e o mesmo caminho do banco travado, e cai na frase que
+                ' ja existe: "nao consegui conferir".
+                pendentes = If(_dreno Is Nothing, -1, _dreno.Pendentes().Count)
                 travado = If(_dreno Is Nothing, CType(Nothing, Long?), _dreno.TravadoEm())
             Catch
                 ' Banco travado nao pode derrubar a busca: o que ela ja leu

@@ -427,6 +427,12 @@ Public Class BuscaNoAcervoTests
                 "volta 5: Pendentes() e drained_at IS NULL, e nao 'nao recebeu'. " &
                 "A entrega e ao menos uma vez, e o DrenoAposCrashTests cobre a " &
                 "janela em que o consumidor recebeu e o disco ainda nao sabe")
+
+            ' E COBRAR A FORMULACAO, e nao so proibir a antiga: sem esta linha
+            ' o teste passa com a abertura simplesmente APAGADA, ou trocada por
+            ' outra frase falsa que nao esteja na lista de proibidas. Proibir
+            ' e barato; exigir e o que prende.
+            StringAssert.Contains(r.Ressalva, "entrega não confirmada")
         End Using
     End Sub
 

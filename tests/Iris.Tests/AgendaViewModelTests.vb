@@ -98,6 +98,11 @@ Public Class AgendaViewModelTests
         Assert.AreEqual(3, vm.Compromissos.Count)
         StringAssert.Contains(vm.Resumo, "3 compromisso(s)")
         StringAssert.Contains(vm.Resumo, "1 de séries")
+
+        ' E O NUMERO POSITIVO TAMBEM E "LIDO". A primeira correcao qualificou
+        ' so o zero, e sobrou "12 compromissos" numa pasta cuja cobertura
+        ' ninguem mediu -- a mesma afirmacao, mais dificil de notar.
+        StringAssert.Contains(vm.Resumo, "lido(s)")
         Assert.IsFalse(vm.TemErro)
         Assert.IsFalse(vm.Carregando)
     End Function

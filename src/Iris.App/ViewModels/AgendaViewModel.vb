@@ -248,11 +248,19 @@ Namespace Global.Iris.App.ViewModels
             ' compromisso(s)" numa pasta compartilhada sem ressalva nenhuma.
             '
             ' "LIDO" e a palavra que faz a diferenca, e ela custa nada.
+            '
+            ' E ELA VALE PARA OS DOIS RAMOS. A primeira correcao qualificou so
+            ' o zero, e a revisao seguinte apontou que ficaram TRES versoes da
+            ' mesma historia: o comentario da classe prometendo "quantos
+            ' compromissos LEU", o XAML qualificando so o caso zero, e a tela
+            ' apresentando o numero positivo como TOTAL. Um "12 compromissos"
+            ' numa pasta cuja cobertura ninguem mediu e a mesma afirmacao que
+            ' o "0 compromissos" era, so que mais dificil de notar.
             If j.Items.Count = 0 Then
                 partes.Add($"nenhum compromisso LIDO até {j.Ate.LocalDateTime:dd/MM} — " &
                            "o que não é o mesmo que não haver")
             Else
-                partes.Add($"{j.Items.Count} compromisso(s) até {j.Ate.LocalDateTime:dd/MM}")
+                partes.Add($"{j.Items.Count} compromisso(s) lido(s) até {j.Ate.LocalDateTime:dd/MM}")
             End If
 
             If j.FromRecurrence > 0 Then
