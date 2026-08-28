@@ -14,14 +14,14 @@ dotnet test Iris.slnx
 
 | | |
 |---|---|
-| **Commit** | `d61037a` — a árvore da solução .NET que foi medida |
+| **Commit** | `118277f` — a árvore da solução .NET que foi medida |
 | **Data** | 28 de agosto de 2026, à tarde |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
 
 ```
-Passed!  - Failed:     0, Passed:   872, Skipped:     0, Total:   872, Duration: 1 m 8 s - Iris.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   872, Skipped:     0, Total:   872, Duration: 1 m 4 s - Iris.Tests.dll (net10.0)
 ```
 
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A revisão externa
