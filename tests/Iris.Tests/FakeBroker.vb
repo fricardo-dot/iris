@@ -437,14 +437,29 @@ Friend NotInheritable Class FakeBroker
         Throw New NotSupportedException("O compositor não deveria chamar isto.")
     End Function
 
-    Public Function ConnectAsync(cancel As CancellationToken) As Task(Of SessionState) _
+    ''' <summary>
+    ''' O que o probe e o connect respondem. <c>Nothing</c> mantem o
+    ''' comportamento antigo -- "fora da alcada" -- para nao mudar nenhum
+    ''' teste que nunca falou de sessao.
+    ''' </summary>
+    Friend EstadoDaSessao As SessionState? = Nothing
+
+    ''' <summary>Segura o probe no meio, para fechar a janela durante a abertura.</summary>
+    Friend TravaDoProbe As TaskCompletionSource(Of Boolean)
+
+    Public Async Function ConnectAsync(cancel As CancellationToken) As Task(Of SessionState) _
         Implements IOutlookBroker.ConnectAsync
-        Return ForaDaAlcada(Of SessionState)()
+        If Not EstadoDaSessao.HasValue Then Return Await ForaDaAlcada(Of SessionState)()
+        Chamadas.Add("Connect")
+        Return EstadoDaSessao.Value
     End Function
 
-    Public Function ProbeAsync(cancel As CancellationToken) As Task(Of SessionState) _
+    Public Async Function ProbeAsync(cancel As CancellationToken) As Task(Of SessionState) _
         Implements IOutlookBroker.ProbeAsync
-        Return ForaDaAlcada(Of SessionState)()
+        If Not EstadoDaSessao.HasValue Then Return Await ForaDaAlcada(Of SessionState)()
+        Chamadas.Add("Probe")
+        If TravaDoProbe IsNot Nothing Then Await TravaDoProbe.Task
+        Return EstadoDaSessao.Value
     End Function
 
     ''' <summary>
@@ -458,6 +473,7 @@ Friend NotInheritable Class FakeBroker
             Return Await ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of StoreInfo)))()
         End If
         If TravaDosStores IsNot Nothing Then Await TravaDosStores.Task
+        Chamadas.Add("GetStores-fim")
         If FalhaAoListarStores <> ErrorKind.None Then
             Return OperationResult(Of IReadOnlyList(Of StoreInfo)).Fail(FalhaAoListarStores, "")
         End If
@@ -585,6 +601,18 @@ Friend NotInheritable Class FakeBroker
         RaiseEvent FolderInvalidated(Me, Nothing)
     End Sub
 
+End Class
+
+''' <summary>Gravador de arquivo que não abre diálogo nenhum.</summary>
+Friend NotInheritable Class FakeSaveFile
+    Implements Iris.App.ISaveFileService
+
+    Friend Escolha As String
+
+    Public Function AskWhereToSave(suggestedName As String) As String _
+        Implements Iris.App.ISaveFileService.AskWhereToSave
+        Return Escolha
+    End Function
 End Class
 
 ''' <summary>Escolhedor de arquivo que não abre diálogo nenhum.</summary>

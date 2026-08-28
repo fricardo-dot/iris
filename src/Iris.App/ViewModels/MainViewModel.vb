@@ -78,8 +78,24 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property Assistente As AssistenteViewModel
 
+        ''' <summary>
+        ''' O caminho do cache e OPCIONAL, e existe por um motivo especifico:
+        ''' sem ele este ViewModel nao tinha como ser construido num teste.
+        '''
+        ''' <c>AcervoViewModel.Abrir</c> sem caminho usa o cache do usuario,
+        ''' entao instanciar a janela principal numa suite mexeria no banco de
+        ''' producao dele. Era essa a razao real de as guardas de descarte
+        ''' daqui estarem "sustentadas por leitura de codigo": nao havia
+        ''' primeiro teste possivel.
+        '''
+        ''' Producao continua chamando sem o parametro. Ninguem em
+        ''' <c>Application.xaml.vb</c> escolhe caminho, e e assim que tem de
+        ''' ser: um caminho configuravel em producao seria outra decisao, e
+        ''' bem maior que esta.
+        ''' </summary>
         Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher,
-                       saveFile As ISaveFileService, pickFile As IPickFileService)
+                       saveFile As ISaveFileService, pickFile As IPickFileService,
+                       Optional caminhoDoCache As String = Nothing)
             _broker = broker
             _ui = ui
             _epocaVista = broker.SessionEpoch
@@ -103,7 +119,7 @@ Namespace Global.Iris.App.ViewModels
             ' silencio vira tela vazia, e tela vazia e indistinguivel de "nao
             ' ha nada guardado".
             Dim motivo As String = Nothing
-            Acervo = AcervoViewModel.Abrir(ui, acervoSemPasta, motivo, broker)
+            Acervo = AcervoViewModel.Abrir(ui, acervoSemPasta, motivo, broker, caminhoDoCache)
             AcervoIndisponivel = motivo
 
             Assistente = MontarAssistente(ui)

@@ -37,3 +37,37 @@ fases novas.
 ---
 
 ## Registro
+
+### 28/08 — bloco 1: guardas sem teste
+
+**Categoria 1 — descarte do assistente com transmissão em voo.** Fechada. A
+condição era um transmissor que ignore o token, e ela existe agora
+(`ProvedorControlado.IgnorarCancelamento`). Três testes, controle negativo dos
+dois lados. O número mediu diferente do que eu supus: desligar as duas guardas
+do `Finally` produz **7** notificações, não 2 — escrever `Ocupado` reavalia a
+cadeia inteira de comandos.
+
+**Categoria 2 — troca de sessão durante a expansão da árvore.** Fechada.
+`FakeBroker` ganhou stores e filhas configuráveis com travas; nasceu
+`ArvoreDePastasTests`. Achado: os `Atual(geracao)` são **correntes de
+conferências independentemente suficientes** — remover uma passa, remover todas
+falha. Os testes provam a propriedade da cadeia, e está escrito assim.
+
+**Categoria 3 — guardas de descarte da janela principal.** Três de quatro
+caminhos fechados. A razão real de não haver primeiro teste não era a receita:
+`MainViewModel` **não podia ser construído** numa suíte, porque o construtor
+abria o cache do usuário. O caminho virou parâmetro opcional; produção continua
+sem escolher.
+
+- abertura pendente → **coberto**, controle negativo confirmado
+- restauração de pasta vencida por sessão nova → **coberto**, controle negativo
+  confirmado
+- recarga da árvore concluindo depois do fechamento → **cerca de regressão, não
+  cobertura**. Medi: removendo o `Folders.Clear()` do `Dispose` o teste continua
+  verde, e o estado do broker é idêntico. Quem segura é a cadeia do
+  `FolderTreeViewModel`, já coberta em outro arquivo. Vai para o relatório.
+- recarga de contas pendente → **não isolável** pelo mesmo motivo: depois do
+  `Dispose` a seleção já é `Nothing`, então o `Apontar` não é chamado com ou sem
+  guarda. Vai para o relatório.
+
+Suíte: **816**, 0 falhas, 0 pulados.
