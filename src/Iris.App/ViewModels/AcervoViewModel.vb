@@ -56,6 +56,31 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _broker As IOutlookBroker
         ''' <summary>O arquivo do cache — a varredura abre o dela por aqui.</summary>
         Private ReadOnly _caminho As String
+
+        ''' <summary>
+        ''' <b>Quem executa a varredura.</b> <c>Nothing</c> usa o caminho real.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>ISTO EXISTE PARA UMA GUARDA PODER SER TESTADA</b>
+        '''
+        ''' A guarda que importa aqui é o <c>If _disposed Then Return</c> logo
+        ''' depois do <c>Await</c>: fechar a janela no meio de uma varredura
+        ''' deixava a continuação escrever num <c>_db</c> já descartado. Ela
+        ''' nasceu de um defeito, e o defeito nasceu de <i>outra</i> correção.
+        '''
+        ''' Sem este ponto de injeção, prová-la exigia segurar uma varredura de
+        ''' verdade no meio — e nesta base já se escreveu um teste de
+        ''' concorrência com <c>Barrier</c> que <b>passava com o defeito
+        ''' presente</b>. Ele foi apagado, e a lacuna ficou declarada.
+        '''
+        ''' Com o executor injetável o teste vira determinístico: ele sinaliza
+        ''' que entrou, segura, deixa o <c>Dispose</c> acontecer, libera, e
+        ''' confere que nada foi tocado depois.
+        '''
+        ''' <c>Friend</c>, e não público: é ponto de teste, não configuração.
+        ''' </summary>
+        Friend Property ExecutorDaVarredura _
+            As Func(Of FolderKey, String, StoreInfo, CancellationToken, ResultadoDaVarredura)
         ''' <summary>
         ''' O voo corrente da varredura, para o descarte poder cancelá-lo.
         ''' </summary>
@@ -369,16 +394,9 @@ Namespace Global.Iris.App.ViewModels
             Varrendo = True
             Travado = Nothing
             Try
+                Dim executor = If(ExecutorDaVarredura, AddressOf VarrerDeVerdade)
                 Dim r = Await Task.Run(
-                    Function()
-                        Dim falha As OpenFailure = Nothing
-                        Using db = CacheDatabase.Open(_caminho,
-                                                      CacheSchema.Intended(), falha)
-                            If db Is Nothing Then Return Nothing
-                            Return New VarreduraDaPasta(_broker, db).
-                                   Executar(pasta, nome, store, cts.Token)
-                        End Using
-                    End Function)
+                    Function() executor(pasta, nome, store, cts.Token))
 
                 ' A JANELA FECHOU NO MEIO.
                 '
@@ -422,6 +440,20 @@ Namespace Global.Iris.App.ViewModels
                 ' Num objeto descartado isso e mexer em tela que ja saiu.
                 If Not _disposed Then Varrendo = False
             End Try
+        End Function
+
+        ''' <summary>
+        ''' A varredura de verdade, na conexão dela. Ver o doc de
+        ''' <see cref="ExecutorDaVarredura"/> para por que isto é substituível.
+        ''' </summary>
+        Private Function VarrerDeVerdade(pasta As FolderKey, nome As String,
+                                         store As StoreInfo,
+                                         ct As CancellationToken) As ResultadoDaVarredura
+            Dim falha As OpenFailure = Nothing
+            Using db = CacheDatabase.Open(_caminho, CacheSchema.Intended(), falha)
+                If db Is Nothing Then Return Nothing
+                Return New VarreduraDaPasta(_broker, db).Executar(pasta, nome, store, ct)
+            End Using
         End Function
 
         ''' <summary>

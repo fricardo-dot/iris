@@ -376,6 +376,11 @@ Namespace Global.Iris.App.ViewModels
 
         Private Async Function MarcarAsync(linha As MessageRowViewModel) As Task
             Dim resultado = Await _broker.MarkReadAsync(linha.Key, True, CancellationToken.None)
+            ' A janela fechou enquanto o Outlook marcava. A marcacao pode ter
+            ' valido -- efeito no mundo nao se desfaz por a tela sumir --, mas
+            ' reverter a linha na tela agora seria escrever numa lista que ja
+            ' nao esta em lugar nenhum.
+            If _disposed Then Return
             If resultado.Succeeded Then Return
 
             ' Em falha AMBÍGUA não se reverte: a marcação pode ter sido
@@ -383,7 +388,13 @@ Namespace Global.Iris.App.ViewModels
             ' A reconciliação seguinte resolve.
             If resultado.IsAmbiguous Then Return
 
-            Await _ui.InvokeAsync(Sub() linha.IsUnread = True).Task
+            Await _ui.InvokeAsync(
+                Sub()
+                    ' De novo DENTRO do delegate: entre o agendamento e a
+                    ' execucao no dispatcher cabe um Dispose.
+                    If _disposed Then Return
+                    linha.IsUnread = True
+                End Sub).Task
         End Function
 
         ''' <summary>
@@ -406,8 +417,14 @@ Namespace Global.Iris.App.ViewModels
             Dim resultado = Await _broker.SaveAttachmentAsync(
                 anexo.Key, destino, overwrite:=True, cancel:=CancellationToken.None)
 
+            ' O ARQUIVO PODE TER SIDO GRAVADO, e isso vale: cancelar nao desfaz
+            ' escrita ja comecada. O que nao vale e anunciar o desfecho num
+            ' leitor que ja saiu da tela.
+            If _disposed Then Return
+
             Await _ui.InvokeAsync(
                 Sub()
+                    If _disposed Then Return
                     If resultado.Succeeded Then
                         AttachmentStatus = $"Salvo em {destino}"
                     ElseIf resultado.IsAmbiguous Then

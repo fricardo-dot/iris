@@ -295,8 +295,18 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private Async Function RecarregarERestaurarAsync(anterior As List(Of FolderKey)) As Task
             Await Folders.ReloadAsync()
+            ' DEPOIS DE CADA Await.
+            '
+            ' Nao basta a RecarregarStoresAsync se proteger: o CHAMADOR segue.
+            ' Se a janela fechar durante o ReloadAsync, a recarga de stores
+            ' volta cedo e este metodo continuava ate o TrySelectAsync -- que
+            ' expande no, chama o broker e reinstala selecao numa janela que
+            ' ja saiu.
+            If _disposed Then Return
+
             ' A sessao foi SUBSTITUIDA: a lista de stores da anterior nao vale.
             Await RecarregarStoresAsync()
+            If _disposed Then Return
 
             If anterior Is Nothing OrElse anterior.Count = 0 Then Return
             If Await Folders.TrySelectAsync(anterior) Then Return
@@ -308,6 +318,9 @@ Namespace Global.Iris.App.ViewModels
 
         Public Async Function InitializeAsync() As Task
             Await Connection.InitializeAsync()
+            ' Fechar durante a abertura nao pode disparar recarga de arvore e
+            ' de stores num ViewModel ja descartado. Mesma familia das outras.
+            If _disposed Then Return
             SyncContentWithSession()
         End Function
 
@@ -723,6 +736,20 @@ Namespace Global.Iris.App.ViewModels
             RemoveHandler Composer.PropertyChanged, AddressOf OnComposerChanged
             RemoveHandler Detail.PropertyChanged, AddressOf OnDetailChanged
             RemoveHandler _broker.SessionReplaced, AddressOf OnSessionReplaced
+
+            ' SOBE A GERACAO DA ARVORE E DA LISTA.
+            '
+            ' Nenhuma das duas tem ciclo de vida proprio, e as duas usam
+            ' geracao para descartar resultado de contexto vencido. Sem isto,
+            ' uma recarga iniciada antes do fechamento concluia e escrevia nas
+            ' colecoes de uma janela que ja saiu.
+            '
+            ' Clear() e o que incrementa a geracao nas duas -- e e o mesmo que
+            ' a queda de sessao ja faz. Nao ha banco por tras delas, entao e
+            ' menos grave que o acervo; e a mesma familia mesmo assim.
+            Folders.Clear()
+            Messages.Clear()
+
             _watcher.Dispose()
             Composer.Dispose()
             Detail.Dispose()

@@ -76,6 +76,36 @@ Public Class AcervoViewModelTests
         If erro IsNot Nothing Then Throw erro
     End Sub
 
+    ''' <summary>
+    ''' Como <see cref="NoDispatcher"/>, mas o corpo pode <c>Await</c>.
+    '''
+    ''' Necessário para segurar a varredura no meio: esperar o sinal
+    ''' bloqueando o dispatcher travaria a própria continuação que se quer
+    ''' observar.
+    ''' </summary>
+    Private Shared Sub NoDispatcherAsync(corpo As Func(Of Dispatcher, Task))
+        Dim erro As Exception = Nothing
+        Dim t As New Thread(
+            Sub()
+                Dim d = Dispatcher.CurrentDispatcher
+                d.BeginInvoke(
+                    Async Sub()
+                        Try
+                            Await corpo(d)
+                        Catch ex As Exception
+                            erro = ex
+                        Finally
+                            d.InvokeShutdown()
+                        End Try
+                    End Sub)
+                Dispatcher.Run()
+            End Sub)
+        t.SetApartmentState(ApartmentState.STA)
+        t.Start()
+        Assert.IsTrue(t.Join(TimeSpan.FromSeconds(30)), "a thread STA nao terminou")
+        If erro IsNot Nothing Then Throw erro
+    End Sub
+
     Private Function AbrirVm(d As Dispatcher) As AcervoViewModel
         Dim motivo As String = Nothing
         Dim vm = AcervoViewModel.Abrir(d, 0, motivo, New FakeBroker(), _caminho)
@@ -251,6 +281,90 @@ Public Class AcervoViewModelTests
                 End Using
             Next
         End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Fechar a janela com a varredura EM VOO não toca o que já morreu.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O TESTE QUE FALTAVA, E POR QUE ELE DEMOROU</b>
+    '''
+    ''' Este é o defeito que nasceu de uma correção: o <c>Dispose</c> cancela e
+    ''' <b>não espera</b> — para não travar o dispatcher no fechamento — e o
+    ''' <c>SweepRunner</c> <b>captura</b> o cancelamento e devolve um
+    ''' <c>SweepResult</c>. Então o <c>Await</c> não lança, e a continuação
+    ''' seguia por <c>Recarregar()</c> e <c>Atualizar()</c> sobre um <c>_db</c>
+    ''' já descartado.
+    '''
+    ''' A primeira tentativa de provar isso foi um teste com <c>Barrier</c> e
+    ''' duas <c>Task</c>, que <b>passava com o defeito presente</b> — a janela
+    ''' era curta demais para as duas se cruzarem. Foi apagado, e a lacuna
+    ''' ficou escrita. O executor injetável é o que a torna determinística: a
+    ''' varredura só devolve quando este teste mandar.
+    '''
+    ''' O sinal observado é o <c>Travado</c>. O executor devolve
+    ''' <c>Nothing</c>, que no caminho normal viraria "O cache nao abriu para a
+    ''' varredura" — então, se a guarda falhar, a frase aparece num objeto
+    ''' descartado, e é exatamente isso que se cobra não acontecer.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Fechar_com_a_varredura_EM_VOO_nao_toca_o_que_morreu()
+        NoDispatcherAsync(
+            Async Function(d) As Task
+                Dim entrou As New ManualResetEventSlim(False)
+                Dim liberar As New ManualResetEventSlim(False)
+                Dim vm = AbrirVm(d)
+
+                vm.ExecutorDaVarredura =
+                    Function(pasta, nome, store, ct)
+                        entrou.Set()
+                        liberar.Wait(TimeSpan.FromSeconds(10))
+                        Return Nothing
+                    End Function
+
+                vm.Apontar(New FolderKey("entry-1", "store-1"), "Caixa",
+                           New StoreInfo() With {.StoreId = "store-1"})
+                Assert.IsTrue(vm.PodeVarrer, "controle: da para varrer")
+
+                Dim voo = vm.VarrerCommand.ExecuteAsync(Nothing)
+
+                ' Esperar FORA do dispatcher: bloquear aqui travaria a
+                ' continuacao que se quer observar.
+                Await Task.Run(Sub() entrou.Wait(TimeSpan.FromSeconds(10)))
+                Assert.IsTrue(vm.Varrendo, "controle: o voo esta em andamento")
+
+                vm.Dispose()
+                liberar.Set()
+                Await voo
+
+                Assert.IsNull(vm.Travado,
+                    "a continuacao escreveu na tela depois do Dispose")
+            End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Controle negativo: sem o Dispose, a mesma varredura escreve.</b>
+    '''
+    ''' Sem ele, um <c>Travado</c> que nunca fosse escrito — ou um comando que
+    ''' não rodasse — faria o teste acima passar sem provar nada.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_sem_fechar_a_varredura_ESCREVE_na_tela()
+        NoDispatcherAsync(
+            Async Function(d) As Task
+                Using vm = AbrirVm(d)
+                    vm.ExecutorDaVarredura = Function(pasta, nome, store, ct) Nothing
+
+                    vm.Apontar(New FolderKey("entry-1", "store-1"), "Caixa",
+                               New StoreInfo() With {.StoreId = "store-1"})
+
+                    Await vm.VarrerCommand.ExecuteAsync(Nothing)
+
+                    Assert.IsNotNull(vm.Travado,
+                        "sem Dispose no meio, o desfecho TEM de chegar a tela")
+                    StringAssert.Contains(vm.Travado, "cache")
+                End Using
+            End Function)
     End Sub
 
 End Class
