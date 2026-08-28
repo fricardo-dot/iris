@@ -364,13 +364,18 @@ conferência de registros, e as duas travas rodam e podem acrescentar suas
 próprias violações a um pedido que já ia ser negado. Elas estão exercidas; não
 estão decidindo.
 
-E não é qualquer alargamento que as põe para decidir. Aceitar `Blank` não põe —
-uma `Blank` coerente também tem zero registros. Aceitar `HistoricalOnly` não põe
-— os registros dela são todos inativos, e o ramo de histórico sai antes de
-consultar GUID ou `contentBits`. Quem as põe para decidir é **aceitar
-`Present`**, que é a leitura coerente com registro ativo. É nesse dia que elas
-passam de acessórias a determinantes, e é para esse dia que precisam estar
-certas.
+E não é qualquer alargamento que as põe para decidir — nem as duas ao mesmo
+tempo. Aceitar `Blank` não põe: uma `Blank` coerente também tem zero registros.
+Aceitar `HistoricalOnly` não põe: os registros dela são todos inativos, e o ramo
+de histórico sai antes de consultar GUID ou `contentBits`.
+
+Aceitar `Present` põe **`rótulos`** para decidir, e só ele: com a lista vazia,
+todo registro ativo passa a ser recusado por rótulo não permitido. E é
+justamente por isso que **`contentBits` continua redundante mesmo aí** — ele roda
+e pode somar violação, mas não tem como alterar um "não" que a lista vazia de
+rótulos já impôs. `contentBits` só passa a poder decidir no dia em que
+`leituras` aceitar `Present` **e** `rótulos` admitir algum GUID ativo. São dois
+alargamentos, não um, e é para esse segundo dia que ele precisa estar certo.
 
 **Correção de um erro deste documento:** a versão anterior dizia que
 `politicaCorporativaVerificada = false` fazia com que "só conteúdo sintético
