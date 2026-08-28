@@ -45,6 +45,22 @@ Namespace Global.Iris.Outlook
         Private _disposed As Boolean
 
         ''' <summary>
+        ''' O PORTAO DE ADMISSAO. Protege a janela entre "conferi que nao estou
+        ''' descartado" e "enfileirei o trabalho".
+        '''
+        ''' Sem ele, o dreno do <see cref="Shutdown"/> nao fecha corrida
+        ''' nenhuma, so a estreita: uma thread le <c>_disposed = False</c>, e
+        ''' ANTES de chamar <c>InvokeAsync</c> o encerramento acontece inteiro
+        ''' — dreno, liberacao dos RCW — e so entao ela enfileira. O trabalho
+        ''' entra numa fila que ainda vai rodar, sobre objetos ja liberados.
+        '''
+        ''' E um bloqueio curto e sem risco de impasse: o que ele protege e um
+        ''' <c>InvokeAsync</c>, que <b>enfileira e volta</b>, e nunca um
+        ''' <c>Invoke</c>, que esperaria a STA de dentro do bloqueio.
+        ''' </summary>
+        Private ReadOnly _portao As New Object()
+
+        ''' <summary>
         ''' Sobe a cada aquisição de sessão COM. Ver SessionEpoch no contrato.
         ''' </summary>
         Private _epoca As Long = 0
@@ -227,9 +243,12 @@ Namespace Global.Iris.Outlook
         ' ===================================================================
 
         Private Function InvokeAsync(Of T)(work As Func(Of T)) As Task(Of T)
-            If _disposed Then Throw New ObjectDisposedException(NameOf(OutlookBroker))
-            If _dispatcher Is Nothing Then Throw New InvalidOperationException("Broker não iniciado.")
-            Return _dispatcher.InvokeAsync(Function() GuardResult(work())).Task
+            ' CONFERIR E ENFILEIRAR SAO UMA COISA SO. Ver _portao.
+            SyncLock _portao
+                If _disposed Then Throw New ObjectDisposedException(NameOf(OutlookBroker))
+                If _dispatcher Is Nothing Then Throw New InvalidOperationException("Broker não iniciado.")
+                Return _dispatcher.InvokeAsync(Function() GuardResult(work())).Task
+            End SyncLock
         End Function
 
         ''' <summary>Leitura idempotente: o message filter pode repetir.</summary>
@@ -239,11 +258,6 @@ Namespace Global.Iris.Outlook
             Return Await RunAsync(operation, work, allowRetry:=True, isMutation:=False, cancel:=cancel)
         End Function
 
-        ''' <summary>
-        ''' Mutação: retry DESLIGADO. Criar, Save, Move, Delete e Send não
-        ''' são idempotentes, e a Fase 0 pegou exatamente este erro — todas
-        ''' as mutações do grupo D estavam rodando com retry ligado.
-        ''' </summary>
         ''' <summary>
         ''' Nem leitura nem mutação: opera sobre o item mas não deixa efeito
         ''' que sobreviva à chamada. Sem retry, porque repetir não é
@@ -256,6 +270,15 @@ Namespace Global.Iris.Outlook
             Return Await RunAsync(operation, work, allowRetry:=False, isMutation:=False, cancel:=cancel)
         End Function
 
+        ''' <summary>
+        ''' Mutação: retry DESLIGADO. Criar, Save, Move, Delete e Send não
+        ''' são idempotentes, e a Fase 0 pegou exatamente este erro — todas
+        ''' as mutações do grupo D estavam rodando com retry ligado.
+        '''
+        ''' Este bloco estava, ate 28/08/2026, empilhado sobre
+        ''' <see cref="SemRetryAsync"/> — dois <c>&lt;summary&gt;</c> seguidos na
+        ''' mesma funcao, e o texto da mutacao documentando a que NAO e mutacao.
+        ''' </summary>
         Private Async Function MutateAsync(Of T)(operation As String,
                                                  work As Func(Of OL.Application, OL.NameSpace, OperationResult(Of T)),
                                                  cancel As CancellationToken) As Task(Of OperationResult(Of T))
@@ -987,11 +1010,22 @@ Namespace Global.Iris.Outlook
         ''' fechamento da Fase 2 — "a coordenacao entre o fechamento da janela e
         ''' o descarte efetivo do broker".
         '''
-        ''' O dreno e uma espera vazia em <c>ApplicationIdle</c>, que so retorna
-        ''' depois de tudo o que e mais prioritario ter sido processado. Com
-        ''' metade do orcamento de tempo: se trabalho novo continuar chegando,
-        ''' o dreno desiste e a liberacao acontece assim mesmo, porque
-        ''' <b>OUTLOOK.EXE orfao e pior que um RCW tocado tarde</b> (R7).
+        ''' Sao DUAS coisas, e nesta ordem:
+        '''
+        '''   1. <b>Fechar o portao de admissao</b>, sob o mesmo bloqueio que
+        '''      <c>InvokeAsync</c> usa. Sem isto o dreno so estreita a corrida:
+        '''      uma thread que ja tivesse conferido <c>_disposed</c> ainda
+        '''      enfileiraria depois da liberacao. A revisao externa de 28/08
+        '''      pegou exatamente essa intercalacao.
+        '''   2. <b>Drenar</b>, com uma espera vazia em
+        '''      <c>ApplicationIdle</c>, que so retorna depois de tudo o que e
+        '''      mais prioritario ter sido processado. Com metade do orcamento
+        '''      de tempo: se algo continuar chegando, o dreno desiste e a
+        '''      liberacao acontece assim mesmo, porque <b>OUTLOOK.EXE orfao e
+        '''      pior que um RCW tocado tarde</b> (R7).
+        '''
+        ''' Fechado o portao, o que resta na fila e finito, e o dreno passa a
+        ''' ter um fim garantido em vez de correr atras de trabalho novo.
         '''
         ''' <b>Nao verificado contra o Outlook real.</b> Exercitar este caminho
         ''' exige fechar o Outlook do usuario, e a mudanca foi escrita enquanto
@@ -1002,8 +1036,14 @@ Namespace Global.Iris.Outlook
             If timeout = Nothing Then timeout = TimeSpan.FromSeconds(10)
             If _dispatcher Is Nothing Then Return
 
-            ' 1. DRENAR. Espera vazia na prioridade mais baixa util: ela so
-            '    volta quando nao ha mais nada acima dela na fila.
+            ' 1. FECHAR O PORTAO. Depois daqui, InvokeAsync recusa.
+            SyncLock _portao
+                _disposed = True
+            End SyncLock
+
+            ' 2. DRENAR. Espera vazia na prioridade mais baixa util: ela so
+            '    volta quando nao ha mais nada acima dela na fila -- e agora
+            '    a fila e finita, porque ninguem mais entra.
             Try
                 _dispatcher.Invoke(Sub()
                                    End Sub,
@@ -1046,15 +1086,24 @@ Namespace Global.Iris.Outlook
             End If
         End Sub
 
+        ''' <summary>
+        ''' Descartar duas vezes tem de ser inocuo, e <c>Shutdown</c> ja fecha o
+        ''' portao — entao aqui a conferencia serve para nao repetir o
+        ''' encerramento, e nao para fechar nada.
+        ''' </summary>
         Public Sub Dispose() Implements IDisposable.Dispose
-            If _disposed Then Return
-            _disposed = True
+            SyncLock _portao
+                If _jaEncerrou Then Return
+                _jaEncerrou = True
+            End SyncLock
             Try
                 Shutdown()
             Catch
             End Try
             _ready.Dispose()
         End Sub
+
+        Private _jaEncerrou As Boolean
 
         ' ===================================================================
         ' Leitura defensiva de propriedades COM

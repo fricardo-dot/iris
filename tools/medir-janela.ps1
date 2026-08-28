@@ -17,6 +17,16 @@
     item local mais antigo que hoje menos N -- e o corte aparece em TODAS as
     pastas ao mesmo tempo, porque a janela e do store e nao da pasta.
 
+    O QUE UMA EXECUCAO NAO PROVA
+
+    Uma execucao e um RETRATO. Ela mostra que existe um horizonte comum hoje;
+    nao mostra que ele anda com o tempo, que e o que "janela deslizante"
+    afirma. Migracao de caixa, recriacao do OST, retencao corporativa ou uma
+    operacao em massa naquela data produziriam o mesmo retrato.
+
+    Duas execucoes separadas por alguns dias distinguem: se o corte anda
+    junto, e deslizante; se fica parado, foi um evento.
+
     O QUE DISTINGUE JANELA DE HABITO DO USUARIO
 
     Uma pasta so, cortando em 31 dias, nao prova nada: pode ser so uma caixa
@@ -119,6 +129,12 @@ function Percorrer($pastas, $trilha) {
         } finally {
             if ($filhas) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($filhas) }
         }
+
+        # A PROPRIA PASTA. Ela e um RCW como qualquer outro, e nao liberar
+        # prende o Outlook vivo ate o host do PowerShell morrer. Foi apontado
+        # na revisao de 28/08: o roteiro pregava a R7 no cabecalho e a violava
+        # na travessia.
+        [void][Runtime.InteropServices.Marshal]::ReleaseComObject($f)
     }
 }
 
@@ -127,7 +143,11 @@ try {
     $raizes = $ns.Folders
     Percorrer $raizes ""
 } finally {
+    # ORDEM INVERSA A AQUISICAO, que e a R7 escrita no ESCOPO: colecao,
+    # depois namespace, depois a aplicacao.
     if ($raizes) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($raizes) }
+    if ($ns)     { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($ns) }
+    if ($ol)     { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($ol) }
 }
 
 if ($linhas.Count -eq 0) {
@@ -154,16 +174,28 @@ if ($maior.Count -ge 3 -and $maior.Count -ge ($total / 2)) {
     $dias = [int]([datetime]::Today - $h).TotalDays
     Write-Host ("HORIZONTE COMUM em {0}: {1} de {2} pastas cortam no mesmo dia, {3} dias atras." -f `
         $maior.Name, $maior.Count, $total, $dias) -ForegroundColor Yellow
-    Write-Host "Isso e o efeito da janela. Nao e a configuracao dela, e nao precisa ser."
+    Write-Host ""
+    Write-Host "O QUE UMA MEDICAO SO SUSTENTA:" -ForegroundColor DarkGray
+    Write-Host "  Que HOJE o conjunto exposto pelo OOM tem esse horizonte local." -ForegroundColor DarkGray
+    Write-Host "  NAO sustenta que ele e DESLIZANTE, nem que a causa e a janela." -ForegroundColor DarkGray
+    Write-Host "  Idade da caixa, migracao, recriacao do cache, retencao corporativa" -ForegroundColor DarkGray
+    Write-Host "  ou uma operacao em massa naquela data explicariam o mesmo retrato." -ForegroundColor DarkGray
+    Write-Host ""
+    Write-Host "  O QUE SEPARA: rodar de novo daqui a alguns dias. Se o corte andar" -ForegroundColor DarkGray
+    Write-Host "  junto, e deslizante; se ficar parado em $($maior.Name), foi um evento." -ForegroundColor DarkGray
 } else {
     Write-Host "SEM horizonte comum: as pastas comecam em datas espalhadas." -ForegroundColor Green
     Write-Host "O corte de uma pasta isolada e habito de arquivamento, e nao janela."
 }
 
 Write-Host ""
-Write-Host "O QUE ISTO NAO DIZ:" -ForegroundColor DarkGray
+Write-Host "O QUE ISTO NAO DIZ, EM NENHUMA HIPOTESE:" -ForegroundColor DarkGray
 Write-Host "  Quantos itens existem no servidor alem do horizonte. Isso continua" -ForegroundColor DarkGray
 Write-Host "  inalcancavel pelo OOM, e por isso o Iris nao conclui ausencia." -ForegroundColor DarkGray
+Write-Host "  Tambem nao diz nada sobre pastas com menos de $MinimoDeItens itens," -ForegroundColor DarkGray
+Write-Host "  nem sobre pastas cuja leitura falhou -- essas foram avisadas acima." -ForegroundColor DarkGray
+Write-Host "  E mistura stores, se houver mais de um: a janela e do store, entao" -ForegroundColor DarkGray
+Write-Host "  duas caixas com janelas diferentes apareceriam como ruido." -ForegroundColor DarkGray
 
 if ($Csv) {
     $ordenadas | Export-Csv -Path $Csv -NoTypeInformation -Encoding UTF8

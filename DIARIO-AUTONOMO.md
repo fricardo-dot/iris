@@ -24,15 +24,18 @@ fases novas.
 
 | # | Bloco | Estado |
 |---|---|---|
-| 1 | Nove caminhos de guarda sem teste (4 categorias) | em andamento |
-| 2 | Medir efeito da janela de sincronização | a fazer |
-| 3 | Medir qualidade e utilidade do acervo parcial | a fazer |
-| 4 | Falha rara da suíte: explicar ou encerrar | a fazer |
-| 5 | Dívidas: broker/fechamento, auxiliar `Unico` | a fazer |
+| 1 | Nove caminhos de guarda sem teste (4 categorias) | **fechado**, 8 de 9 cobertos |
+| 2 | Medir efeito da janela de sincronização | **fechado** |
+| 3 | Medir qualidade e utilidade do acervo parcial | **fechado** |
+| 4 | Falha rara da suíte: explicar ou encerrar | **fechado por construção** |
+| 5 | Dívidas: broker/fechamento, auxiliar `Unico` | **fechado** |
 | 6 | Fase 4 — triagem e busca semântica, fechada | a fazer |
 | 7 | Fase 5 — tarefas | a fazer |
 | 8 | Fase 6 — calendário | a fazer |
 | 9 | Fase 7 — contatos | a fazer |
+
+Esta tabela é atualizada a cada bloco. Ela ficou desatualizada uma vez, e o
+Codex pegou — um diário que se contradiz é pior que diário nenhum.
 
 ---
 
@@ -254,3 +257,58 @@ usuário, e ele não está na máquina. Vai para o relatório como pendência de
 medição, não de raciocínio.
 
 Suíte: **823**. **Blocos 1 a 5 encerrados.**
+
+### 28/08 — revisão dos blocos 2–5 com o Codex
+
+Sete achados; três de gravidade alta, e o primeiro é o meu.
+
+1. **O dreno do `Shutdown` não fechava a corrida — só estreitava.** Codex
+   descreveu a intercalação: uma thread lê `_disposed = False`, é interrompida
+   antes de enfileirar, o encerramento inteiro acontece, e só então ela enfileira
+   sobre RCWs já liberados. Corrigido de verdade: `InvokeAsync` passou a
+   **conferir e enfileirar sob o mesmo bloqueio**, e `Shutdown` fecha esse portão
+   antes de drenar. Fechado o portão, a fila é finita e o dreno tem fim
+   garantido. Bloqueio curto e sem risco de impasse — protege um `InvokeAsync`,
+   que enfileira e volta, nunca um `Invoke`.
+
+2. **Uma exceção no descarte da janela pulava o do broker.** Estavam no mesmo
+   `Try` em `Application_Exit`. Separados, cada um com log próprio: o descarte do
+   broker é justamente a proteção contra `OUTLOOK.EXE` órfão, e não pode depender
+   de o outro ter corrido bem.
+
+3. **A regra do paralelismo tinha cinco furos**, e Codex listou todos: não
+   percorria subpastas; comparava texto sensível a maiúsculas; contava ocorrência
+   dentro de comentário; creditava `<DoNotParallelize>` de uma classe a todas as
+   do arquivo; e o teste irmão procurava a substring `"Parallelize"` — que
+   `DoNotParallelize` também contém, então `<Assembly: DoNotParallelize>`
+   passaria. Reescrita: por classe, sem comentários, com subpastas, e casando o
+   atributo do assembly por expressão ancorada. **Dois controles negativos
+   confirmados.**
+
+   E as marcas estavam largas: cobravam `ArchitectureTests`,
+   `BindingsDaJanelaTests` e `ContextoDoOutlookTests`, que só citam os tipos por
+   reflexão ou leem o fonte como texto. Passaram a casar **construção**, não
+   menção. O erro que sobra é o oposto — uma classe que chegue ao banco por um
+   auxiliar novo escapa — e quem alarma é o controle positivo.
+
+4. **"Janela deslizante" era forte demais para uma medição só.** Uma execução é
+   um retrato: mostra horizonte comum hoje, não que ele anda. Migração, recriação
+   do OST, retenção corporativa ou uma operação em massa naquela data produziriam
+   o mesmo. O roteiro passou a dizer isso, e a dizer o que separa — rodar de novo
+   daqui a alguns dias e ver se o corte anda junto.
+
+5. **Achado novo, da mesma família do `message_class`, e NÃO corrigido.** O
+   caminho de paginação transforma ausência e falha de conversão em fato:
+   `Size → 0`, `UnRead → False`, anexo → `False`, texto → `""`. É preexistente e
+   chega ao cache como se fosse medição. Corrigir exige tornar os campos anuláveis
+   e mexer no esquema — decisão de tamanho, não conserto. **Vai para o
+   relatório.**
+
+6. **O roteiro pregava R7 no cabeçalho e a violava na travessia:** não liberava
+   `$f`, `$ns` nem `$ol`. Corrigido, em ordem inversa à aquisição.
+
+7. Tabela do diário desatualizada e um `<summary>` órfão no `OutlookBroker` — o
+   texto da mutação estava empilhado sobre `SemRetryAsync`, documentando
+   justamente a função que **não** é mutação. Remanejado para `MutateAsync`.
+
+Suíte: **823**.

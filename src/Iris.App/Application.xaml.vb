@@ -59,10 +59,20 @@ Class Application
         ' Encerramento ordenado: o broker libera os objetos COM na própria
         ' thread STA, com o message pump ainda vivo. Pular isto é o caminho
         ' para um OUTLOOK.EXE órfão (R7).
+        ' DOIS Try, e nao um. Estavam juntos, e uma excecao no descarte da
+        ' janela pulava o do broker inteiro -- deixando a STA e os RCW vivos,
+        ' que e exatamente o OUTLOOK.EXE orfao que este bloco existe para
+        ' evitar (R7). O descarte do broker nao pode depender de o da janela
+        ' ter corrido bem.
         Try
             _viewModel?.Dispose()
+        Catch ex As Exception
+            _log?.Write(LogLevel.Error, "app.exit", "descarte da janela falhou: " & ex.GetType().Name)
+        End Try
+        Try
             _broker?.Dispose()
-        Catch
+        Catch ex As Exception
+            _log?.Write(LogLevel.Error, "app.exit", "descarte do broker falhou: " & ex.GetType().Name)
         End Try
         _log?.Write(LogLevel.Info, "app.exit", "encerrado")
     End Sub
