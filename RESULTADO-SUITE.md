@@ -10,11 +10,11 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — depois da décima primeira revisão
+## Medição corrente — depois da décima segunda revisão
 
 | | |
 |---|---|
-| **Commit** | `c96be34` — a árvore da solução .NET que foi medida |
+| **Commit** | `23df5ec` — a árvore da solução .NET que foi medida |
 | **Data** | 28 de agosto de 2026, à noite |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
@@ -25,15 +25,29 @@ Passed!  - Failed:     0, Passed:   876, Skipped:     0, Total:   876, Duration:
 ```
 
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
-última antes do commit, e o que mudou depois dela foram documentos — nada da
-solução .NET.
+última antes do commit, e o que mudou depois dela foram documentos **e o roteiro
+`tools/medir-cobertura-calendario.ps1`** — que é executável, e não faz parte da
+solução .NET. Esta frase já tinha dito "documentos e um roteiro de medição" na
+medição anterior e voltou a omitir o roteiro nesta; a revisão externa pegou.
 
 **A conta não fecha por soma, e é de propósito.** A nona passada acrescentou
 três testes e **apagou um** — o `O_acumulador_da_linha_zera_entre_linhas` fazia
 os dois resets com a própria mão e passaria com a correção desfeita. A décima
 acrescentou um, que mede a dívida das duas gerações pendentes com o acervo real.
-A décima primeira acrescentou o da agenda com zero compromissos.
+A décima primeira acrescentou o da agenda com zero compromissos, e a décima
+segunda não acrescentou teste nenhum — reforçou dois que já existiam.
 872 → 874 → 875 → 876.
+
+### Medição da décima primeira revisão
+
+| | |
+|---|---|
+| **Commit** | `c96be34` |
+| **Data** | 28 de agosto de 2026, à noite |
+
+```
+Passed!  - Failed:     0, Passed:   876, Skipped:     0, Total:   876, Duration: 1 m 9 s - Iris.Tests.dll (net10.0)
+```
 
 ### Medição da décima revisão
 

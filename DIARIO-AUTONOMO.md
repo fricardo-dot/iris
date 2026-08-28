@@ -889,3 +889,34 @@ errada nos dois.
 devolvendo *"ainda não foram entregues"*, o da busca cai.
 
 Suíte: **876**.
+
+---
+
+## Décima segunda passada — o meio-conserto, e a forma comum
+
+**Nenhum achado alto.** Dois médios, três baixos — e o primeiro médio é o
+defeito da passada anterior *meio* corrigido.
+
+**Eu qualifiquei o zero e deixei o número positivo.** Ficaram três versões da
+mesma história: o comentário da classe prometendo *"quantos compromissos leu"*, o
+XAML qualificando só o caso zero, e a tela dizendo `12 compromissos` numa pasta
+cuja cobertura ninguém mediu. **É a mesma afirmação que o zero era, só que mais
+difícil de notar** — e eu tinha acabado de escrever, no commit anterior, que
+afirmar ausência é o que este projeto proíbe em todo lugar. Agora é "lido(s)" nos
+dois ramos, e o controle positivo do teste cobra a palavra.
+
+**Os outros três têm uma forma só, e vale nomeá-la:** *tratar "não observei" como
+"observei e não há"*.
+
+- O roteiro do calendário dizia `Calendario vazio. Nada a medir.` quando não
+  achava item — no mesmo arquivo cujo cabeçalho repete que a contagem do servidor
+  é inalcançável pelo OOM.
+- `BuscaNoAcervo` com `dreno = Nothing` devolvia `pendentes = 0`, que é a resposta
+  de "olhei e a fila está limpa". Agora devolve `-1`, que cai na frase que já
+  existia: *"não consegui conferir"*.
+- E a minha quinta proibição só **proibia** a frase antiga: passaria com a
+  abertura simplesmente apagada. **Proibir é barato; exigir é o que prende.**
+  Agora o teste exige `"entrega não confirmada"`.
+
+Suíte: **876** — a única passada que não acrescentou teste nenhum, só reforçou
+dois que já existiam.
