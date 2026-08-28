@@ -61,6 +61,59 @@ Friend NotInheritable Class FakeBroker
     Friend TravaDoPrepare As TaskCompletionSource(Of Boolean)
     Friend TravaDoSend As TaskCompletionSource(Of Boolean)
 
+    ' ---- A ARVORE DE PASTAS, e por que ela chegou tarde ------------------
+    '
+    ' Ate 28/08/2026 este duplo respondia "fora da alcada" para stores e
+    ' filhas, e por isso a familia inteira de guardas de TROCA DE SESSAO
+    ' DURANTE A EXPANSAO nao tinha como ser testada: sem uma fonte que se
+    ' segure no meio, nao da para dizer "a sessao caiu ENQUANTO isto
+    ' carregava". Estava escrito no relatorio da Fase 2 como pendencia, com
+    ' esta receita exata -- "pede um broker que segure o carregamento de
+    ' filhos".
+    '
+    ' As travas sao TaskCompletionSource pelo mesmo motivo das outras: quem
+    ' escreve o teste decide QUANDO a resposta volta, sem relogio.
+
+    ''' <summary>Stores devolvidos por <c>GetStoresAsync</c>.</summary>
+    Friend ReadOnly Stores As New List(Of StoreInfo)()
+
+    ''' <summary>Filhas por pasta-mae. O que nao esta aqui volta vazio.</summary>
+    Friend ReadOnly Filhas As New Dictionary(Of String, List(Of FolderInfo))()
+
+    Friend TravaDosStores As TaskCompletionSource(Of Boolean)
+    Friend TravaDasFilhas As TaskCompletionSource(Of Boolean)
+
+    Friend FalhaAoListarStores As ErrorKind = ErrorKind.None
+    Friend FalhaAoListarFilhas As ErrorKind = ErrorKind.None
+
+    ''' <summary>Quantas vezes cada pasta-mae foi pedida.</summary>
+    Friend ReadOnly PedidosDeFilhas As New List(Of String)()
+
+    ''' <summary>Um store com raiz, do jeito que a arvore espera.</summary>
+    Friend Function ComStore(nome As String, id As String) As FakeBroker
+        Stores.Add(New StoreInfo With {
+            .DisplayName = nome, .StoreId = id,
+            .ExchangeStoreType = "olPrimaryExchangeMailbox",
+            .IsCachedExchange = True,
+            .RootFolder = New FolderKey("raiz", id)})
+        Return Me
+    End Function
+
+    ''' <summary>Uma pasta filha de <paramref name="mae"/>.</summary>
+    Friend Function ComPasta(mae As FolderKey, nome As String, entryId As String,
+                             Optional temFilhas As Boolean = False) As FakeBroker
+        Dim chave = Trilha(mae)
+        If Not Filhas.ContainsKey(chave) Then Filhas(chave) = New List(Of FolderInfo)()
+        Filhas(chave).Add(New FolderInfo With {
+            .Key = New FolderKey(entryId, mae.StoreId), .Name = nome,
+            .ContentKind = FolderContentKind.Mail, .HasChildren = temFilhas})
+        Return Me
+    End Function
+
+    Private Shared Function Trilha(f As FolderKey) As String
+        Return $"{f.StoreId}|{f.EntryId}"
+    End Function
+
     ''' <summary>
     ''' Resposta canônica de <c>GetMessagePageAsync</c>. <c>Nothing</c> mantém o
     ''' padrão "fora da alçada" — só os testes que paginam mexem nisto.
@@ -394,14 +447,40 @@ Friend NotInheritable Class FakeBroker
         Return ForaDaAlcada(Of SessionState)()
     End Function
 
-    Public Function GetStoresAsync(cancel As CancellationToken) _
+    ''' <summary>
+    ''' Sem store configurado continua "fora da alcada", para nao mudar o
+    ''' comportamento dos testes que nunca pediram arvore nenhuma.
+    ''' </summary>
+    Public Async Function GetStoresAsync(cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of StoreInfo))) Implements IOutlookBroker.GetStoresAsync
-        Return ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of StoreInfo)))()
+        Chamadas.Add("GetStores")
+        If Stores.Count = 0 AndAlso FalhaAoListarStores = ErrorKind.None Then
+            Return Await ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of StoreInfo)))()
+        End If
+        If TravaDosStores IsNot Nothing Then Await TravaDosStores.Task
+        If FalhaAoListarStores <> ErrorKind.None Then
+            Return OperationResult(Of IReadOnlyList(Of StoreInfo)).Fail(FalhaAoListarStores, "")
+        End If
+        Return OperationResult(Of IReadOnlyList(Of StoreInfo)).Ok(Stores.ToList())
     End Function
 
-    Public Function GetFolderChildrenAsync(parent As FolderKey, cancel As CancellationToken) _
+    Public Async Function GetFolderChildrenAsync(parent As FolderKey, cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of FolderInfo))) Implements IOutlookBroker.GetFolderChildrenAsync
-        Return ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of FolderInfo)))()
+        If Stores.Count = 0 AndAlso Filhas.Count = 0 AndAlso FalhaAoListarFilhas = ErrorKind.None Then
+            Return Await ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of FolderInfo)))()
+        End If
+        SyncLock PedidosDeFilhas
+            PedidosDeFilhas.Add(Trilha(parent))
+        End SyncLock
+        If TravaDasFilhas IsNot Nothing Then Await TravaDasFilhas.Task
+        If FalhaAoListarFilhas <> ErrorKind.None Then
+            Return OperationResult(Of IReadOnlyList(Of FolderInfo)).Fail(FalhaAoListarFilhas, "")
+        End If
+        Dim lista As List(Of FolderInfo) = Nothing
+        If Not Filhas.TryGetValue(Trilha(parent), lista) Then
+            Return OperationResult(Of IReadOnlyList(Of FolderInfo)).Ok(New List(Of FolderInfo)())
+        End If
+        Return OperationResult(Of IReadOnlyList(Of FolderInfo)).Ok(lista.ToList())
     End Function
 
     Public Function GetMessagePageAsync(query As MessageQuery, continuation As String,

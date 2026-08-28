@@ -91,6 +91,17 @@ Public Class AssistenteViewModelTests
         Friend Chamadas As Integer
 
         ''' <summary>
+        ''' <b>Responde com sucesso mesmo depois de cancelado.</b>
+        '''
+        ''' Não é capricho de teste: é o caso real. Cancelar não desfaz uma
+        ''' requisição HTTP que já saiu, e um provedor que já tem a resposta na
+        ''' mão pode entregá-la. Enquanto este duplo honrava o token, o
+        ''' cancelamento fechava o caminho antes das guardas do ViewModel — e
+        ''' por isso elas passavam sem que nada as exercitasse.
+        ''' </summary>
+        Friend Property IgnorarCancelamento As Boolean
+
+        ''' <summary>
         ''' Quando tem valor, o provedor <b>recusa</b> com este código HTTP —
         ''' como o OpenRouter fez no canário de 26/08/2026, com 404, por causa
         ''' de uma restrição de provedor que não casava com endpoint nenhum.
@@ -126,7 +137,7 @@ Public Class AssistenteViewModelTests
             ' .Invoke() explicito: AoEnviar() o VB le como ACESSO a propriedade.
             If AoEnviar IsNot Nothing Then AoEnviar.Invoke()
             If Trava IsNot Nothing Then Trava.Wait(TimeSpan.FromSeconds(10))
-            If ct.IsCancellationRequested Then
+            If ct.IsCancellationRequested AndAlso Not IgnorarCancelamento Then
                 Return New ProviderOutcome(ProviderStatus.Cancelado, "")
             End If
             If RecusarCom.HasValue Then
@@ -1502,38 +1513,127 @@ Public Class AssistenteViewModelTests
     End Function
 
     ''' <summary>
-    ''' <b>NAO HA TESTE do descarte com pedido em voo, e agora se sabe POR QUE.</b>
+    ''' <b>DESCARTE COM TRANSMISSAO EM VOO — agora com o provedor certo.</b>
     '''
     ''' ------------------------------------------------------------------
-    ''' Eu escrevi um. Ele segurava o provedor, descartava o ViewModel,
-    ''' liberava, e cobrava que Resultado continuasse vazio. Passava.
+    ''' <b>POR QUE ESTE TESTE DEMOROU, E O QUE MUDOU</b>
     '''
-    ''' E passava COM TODAS AS GUARDAS REMOVIDAS. Eu suspeitei de "alguma
-    ''' outra coisa no caminho" e fui MEDIR, com um provedor que responde com
-    ''' sucesso mesmo depois de cancelado -- o caso real, porque cancelar nao
-    ''' para uma chamada HTTP que ja saiu.
+    ''' A primeira versao segurava o provedor, descartava o ViewModel, liberava,
+    ''' e cobrava que <c>Resultado</c> continuasse vazio. Passava — e passava
+    ''' <b>com todas as guardas removidas</b>. Quem fechava o caminho era o
+    ''' CANCELAMENTO, mais fundo que o ViewModel, porque o duplo do provedor
+    ''' honrava o token e devolvia <c>Cancelado</c>.
     '''
-    ''' Resultado da medicao: <b>vazio mesmo sem guarda nenhuma</b>. Quem fecha
-    ''' este caminho e o CANCELAMENTO, mais fundo que o ViewModel: o Dispose
-    ''' cancela o CTS que vai para o AssistTransmitter, e a publicacao nao
-    ''' chega a acontecer.
-    '''
-    ''' Entao as guardas <c>_descartado</c> e <c>_geracao += 1</c> sao defesa
-    ''' em profundidade AQUI, e nao o unico caminho -- ao contrario do que a
-    ''' revisao supos. Elas ficam: um dia alguem pode fazer o transmissor
-    ''' tolerar cancelamento, e dai elas passam a ser o que segura.
-    '''
-    ''' O que continua sem teste e a guarda como UNICA defesa, e prova-lo
-    ''' exige um transmissor que ignore o token. Esta escrito no relatorio.
-    '''
-    ''' Nesta mesma sessao eu ja apaguei um teste de concorrencia com Barrier
-    ''' pelo mesmo motivo. Linha verde que passa com o defeito presente e pior
-    ''' que lacuna, porque gasta a confianca do numero que ela mesma produz.
-    '''
-    ''' O que FICA provado por leitura, e nao por teste: AssistenteViewModel
-    ''' implementa IDisposable, sobe a geracao, cancela o voo e para o pulso;
-    ''' MainViewModel.Dispose o chama. Provar isso pede o mesmo tratamento que
-    ''' o acervo recebeu -- um executor injetavel -- e esta escrito no
-    ''' relatorio como pendencia.
+    ''' O que faltava era o caso <b>real</b>: cancelar nao desfaz uma requisicao
+    ''' que ja saiu, e um provedor que ja tem a resposta na mao pode entrega-la.
+    ''' <c>ProvedorControlado.IgnorarCancelamento</c> e exatamente isso, e com
+    ''' ele o transmissor devolve <c>Respondeu</c> depois do descarte — entao as
+    ''' guardas do ViewModel passam a ser a UNICA defesa, que era a condicao
+    ''' escrita no relatorio para este teste existir.
     ''' </summary>
+    <TestMethod>
+    Public Async Function Descarte_em_voo_NAO_publica_resultado_nem_ficha() As Task
+        Dim p As New ProvedorControlado() With {
+            .Trava = New ManualResetEventSlim(False),
+            .IgnorarCancelamento = True,
+            .Texto = "resposta que chegou depois de a janela fechar",
+            .Custo = 0.0009D,
+            .Tokens = 900
+        }
+        Dim vm = Montar(Ativacao(), p, Pronta())
+
+        Dim t = Pedir(vm)
+        Await Task.Run(Sub() SpinWait.SpinUntil(Function() vm.Ocupado, 5000))
+        Assert.IsTrue(vm.Ocupado, "controle: o voo comecou")
+
+        vm.Dispose()
+        p.Trava.Set()
+        Await t
+
+        Assert.AreEqual(1, p.Chamadas,
+            "controle NEGATIVO do proprio teste: sem chamada, tudo abaixo passa a toa")
+        Assert.AreEqual("", vm.Resultado,
+            "a resposta chegou depois do fechamento e nao pode virar tela")
+        Assert.AreEqual("", vm.Ficha,
+            "a ficha de custo e tempo tambem e tela")
+    End Function
+
+    ''' <summary>
+    ''' <b>E o descartado nao AVISA a tela de mais nada.</b>
+    '''
+    ''' Este e o irmao que prova a outra metade, e a metade que a guarda de
+    ''' geracao <b>nao</b> cobre. No <c>Finally</c>, quem decide limpar o
+    ''' <c>Ocupado</c> e parar o cronometro e a identidade do
+    ''' <c>CancellationTokenSource</c>, e ela continua sendo a nossa depois do
+    ''' <c>Dispose</c> — a geracao nao entra nessa decisao. O que segura ali e
+    ''' so o <c>_descartado</c>.
+    '''
+    ''' Notificacao de propriedade num ViewModel descartado e escrever em tela
+    ''' que ja saiu, e contradiz a intencao do proprio <c>Dispose</c>.
+    '''
+    ''' <b>Controle negativo confirmado, e o numero surpreende:</b> removendo
+    ''' os dois <c>If Not _descartado</c> do <c>Finally</c>, este teste falha
+    ''' com <b>7</b> avisos, e nao com os 2 que eu tinha suposto —
+    ''' <c>Ocupado, PodePedir, PodeRedigir, PodeCancelar, PodeDesfazer,
+    ''' PodeCopiar, Decorrido</c>. Escrever <c>Ocupado</c> reavalia a cadeia
+    ''' inteira de comandos, e cada um avisa. Uma tela ja fechada receberia
+    ''' sete notificacoes.
+    '''
+    ''' O irmao acima continua <b>verde</b> nesse controle, porque quem o
+    ''' segura e a geracao. E o controle simetrico — desligar so a guarda de
+    ''' publicacao — derruba os dois, porque publicar tambem notifica. Sao
+    ''' guardas diferentes para coisas diferentes; esta e a unica que cobre o
+    ''' <c>Finally</c>, onde a decisao e por identidade do CTS e a geracao nao
+    ''' entra.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Descarte_em_voo_NAO_notifica_a_tela() As Task
+        Dim p As New ProvedorControlado() With {
+            .Trava = New ManualResetEventSlim(False),
+            .IgnorarCancelamento = True
+        }
+        Dim vm = Montar(Ativacao(), p, Pronta())
+
+        Dim t = Pedir(vm)
+        Await Task.Run(Sub() SpinWait.SpinUntil(Function() vm.Ocupado, 5000))
+        Assert.IsTrue(vm.Ocupado, "controle: o voo comecou")
+
+        ' so a partir daqui interessa: o que a tela ouviria DEPOIS do fechamento.
+        Dim avisos As New List(Of String)()
+        AddHandler vm.PropertyChanged, Sub(remetente As Object, e As System.ComponentModel.PropertyChangedEventArgs)
+                                           SyncLock avisos
+                                               avisos.Add(e.PropertyName)
+                                           End SyncLock
+                                       End Sub
+
+        vm.Dispose()
+        p.Trava.Set()
+        Await t
+
+        Dim ouvidos As String
+        SyncLock avisos
+            ouvidos = String.Join(", ", avisos)
+        End SyncLock
+        Assert.AreEqual(0, avisos.Count,
+            $"ViewModel descartado avisou a tela: {ouvidos}")
+    End Function
+
+    ''' <summary>
+    ''' <b>Descartar duas vezes nao pode fazer nada acontecer duas vezes.</b>
+    '''
+    ''' <c>Dispose</c> e chamado pelo <c>MainViewModel.Dispose</c> e pode ser
+    ''' chamado de novo por qualquer um — o contrato de <c>IDisposable</c> exige
+    ''' que a segunda chamada seja inocua. A guarda e o <c>If _descartado Then
+    ''' Return</c> na primeira linha; sem ele, a geracao subiria de novo, o que
+    ''' e inofensivo hoje e deixa de ser no dia em que alguem ler a geracao para
+    ''' decidir outra coisa.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Descartar_duas_vezes_e_inocuo()
+        Dim vm = Montar(Ativacao(), New ProvedorControlado(), Pronta())
+        vm.Dispose()
+        vm.Dispose()
+        Assert.AreEqual("", vm.Resultado)
+    End Sub
+
 End Class
