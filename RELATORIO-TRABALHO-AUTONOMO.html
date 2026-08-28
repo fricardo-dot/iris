@@ -1,0 +1,984 @@
+<title>Um dia sem você na máquina</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&family=IBM+Plex+Serif:ital,wght@0,400;0,500;1,400&display=swap">
+
+<style>
+:root {
+  --ground:      #F4F6F8;
+  --surface:     #FFFFFF;
+  --surface-alt: #EBEFF4;
+  --surface-3:   #E1E7EE;
+  --ink:         #131C27;
+  --ink-soft:    #3A4757;
+  --ink-mute:    #6A7787;
+  --rule:        #D6DEE7;
+  --rule-soft:   #E6EBF1;
+  --accent:      #2B4C7E;
+  --accent-soft: #E3EAF5;
+
+  --feito:       #2C6647;
+  --feito-bg:    #E2EFE7;
+  --decidi:      #8A5A0E;
+  --decidi-bg:   #F5EBD9;
+  --travado:     #A03428;
+  --travado-bg:  #F6E3E0;
+
+  --sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --serif: "IBM Plex Serif", Georgia, "Times New Roman", serif;
+  --mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+
+  --measure: 35rem;
+  --wide: 62rem;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --ground:      #0E141B;
+    --surface:     #151D26;
+    --surface-alt: #1B242F;
+    --surface-3:   #223040;
+    --ink:         #E2E8EF;
+    --ink-soft:    #B2BECB;
+    --ink-mute:    #83919F;
+    --rule:        #293544;
+    --rule-soft:   #1F2A36;
+    --accent:      #7FA8DC;
+    --accent-soft: #17273D;
+
+    --feito:       #6FBE8E;
+    --feito-bg:    #152C21;
+    --decidi:      #D8A548;
+    --decidi-bg:   #2E2415;
+    --travado:     #E0796A;
+    --travado-bg:  #331D19;
+  }
+}
+
+:root[data-theme="dark"] {
+  --ground:      #0E141B;
+  --surface:     #151D26;
+  --surface-alt: #1B242F;
+  --surface-3:   #223040;
+  --ink:         #E2E8EF;
+  --ink-soft:    #B2BECB;
+  --ink-mute:    #83919F;
+  --rule:        #293544;
+  --rule-soft:   #1F2A36;
+  --accent:      #7FA8DC;
+  --accent-soft: #17273D;
+
+  --feito:       #6FBE8E;
+  --feito-bg:    #152C21;
+  --decidi:      #D8A548;
+  --decidi-bg:   #2E2415;
+  --travado:     #E0796A;
+  --travado-bg:  #331D19;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  background: var(--ground);
+  color: var(--ink);
+  font-family: var(--serif);
+  font-size: 1.0625rem;
+  line-height: 1.65;
+  margin: 0;
+  padding: 0 1.25rem 6rem;
+  -webkit-font-smoothing: antialiased;
+}
+
+.page {
+  max-width: var(--wide);
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2.25rem;
+}
+.page > * { max-width: var(--measure); }
+.page > .wide { max-width: 100%; width: 100%; }
+
+header.head {
+  max-width: 100%;
+  border-bottom: 2px solid var(--ink);
+  padding: 4rem 0 1.5rem;
+  margin-bottom: .5rem;
+}
+
+.eyebrow {
+  font-family: var(--mono);
+  font-size: .75rem;
+  font-weight: 500;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--accent);
+  margin: 0 0 1.25rem;
+}
+
+h1 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: clamp(2rem, 5.5vw, 3rem);
+  line-height: 1.06;
+  letter-spacing: -.025em;
+  text-wrap: balance;
+  margin: 0 0 1rem;
+}
+
+.dek {
+  font-size: 1.15rem;
+  color: var(--ink-soft);
+  max-width: 40rem;
+  margin: 0 0 2rem;
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 2rem;
+  font-family: var(--mono);
+  font-size: .78rem;
+  color: var(--ink-mute);
+  font-variant-numeric: tabular-nums;
+}
+.meta b { color: var(--ink-soft); font-weight: 500; }
+
+h2 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.5rem;
+  letter-spacing: -.015em;
+  line-height: 1.2;
+  text-wrap: balance;
+  margin: 2rem 0 0;
+  padding-top: 1.75rem;
+  border-top: 1px solid var(--rule);
+  max-width: var(--measure);
+}
+h2 .num {
+  font-family: var(--mono);
+  font-size: .8rem;
+  font-weight: 500;
+  color: var(--accent);
+  display: block;
+  margin-bottom: .5rem;
+  letter-spacing: .08em;
+}
+
+h3 {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: 1.0625rem;
+  letter-spacing: -.005em;
+  margin: 1.5rem 0 0;
+}
+
+p { margin: 0; }
+strong { font-weight: 600; color: var(--ink); }
+em { font-style: italic; }
+
+code, .mono {
+  font-family: var(--mono);
+  font-size: .875em;
+  background: var(--surface-alt);
+  padding: .1em .35em;
+  border-radius: 3px;
+}
+
+a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+a:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 2px; }
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: .4em;
+  font-family: var(--sans);
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  padding: .25em .6em;
+  border-radius: 3px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+.chip::before {
+  content: "";
+  width: .45em; height: .45em;
+  border-radius: 50%;
+  background: currentColor;
+}
+.chip.feito   { color: var(--feito);   background: var(--feito-bg); }
+.chip.decidi  { color: var(--decidi);  background: var(--decidi-bg); }
+.chip.travado { color: var(--travado); background: var(--travado-bg); }
+
+.resumo {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-left: 3px solid var(--accent);
+  border-radius: 4px;
+  padding: 1.5rem 1.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.resumo h2 { border: 0; padding: 0; margin: 0; font-size: 1.1rem; }
+.resumo ul { margin: 0; padding-left: 1.1rem; display: flex; flex-direction: column; gap: .55rem; }
+.resumo li::marker { color: var(--accent); }
+
+.numeros {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.numeros div {
+  background: var(--surface);
+  padding: 1rem 1.1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .2rem;
+}
+.numeros .v {
+  font-family: var(--sans);
+  font-size: 1.75rem;
+  font-weight: 600;
+  letter-spacing: -.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.1;
+}
+.numeros .k {
+  font-family: var(--mono);
+  font-size: .7rem;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+}
+
+.tabela-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  background: var(--surface);
+}
+table {
+  border-collapse: collapse;
+  width: 100%;
+  font-family: var(--sans);
+  font-size: .875rem;
+  font-variant-numeric: tabular-nums;
+}
+caption {
+  caption-side: top;
+  text-align: left;
+  font-family: var(--mono);
+  font-size: .72rem;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  padding: .9rem 1rem .6rem;
+  border-bottom: 1px solid var(--rule-soft);
+}
+th, td {
+  text-align: left;
+  padding: .6rem 1rem;
+  border-bottom: 1px solid var(--rule-soft);
+  vertical-align: top;
+}
+thead th {
+  font-weight: 600;
+  font-size: .72rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--ink-mute);
+  background: var(--surface-alt);
+}
+tbody tr:last-child td { border-bottom: 0; }
+td.num { font-family: var(--mono); text-align: right; white-space: nowrap; }
+
+.nota {
+  background: var(--surface-alt);
+  border-left: 3px solid var(--rule);
+  border-radius: 0 4px 4px 0;
+  padding: 1rem 1.25rem;
+  font-size: .95rem;
+  color: var(--ink-soft);
+  max-width: var(--measure);
+}
+.nota strong { color: var(--ink); }
+
+.livro {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.livro > div {
+  background: var(--surface);
+  padding: 1.15rem 1.35rem;
+  display: grid;
+  grid-template-columns: 10rem 1fr;
+  gap: 1.25rem;
+  align-items: start;
+}
+.livro .lado { display: flex; flex-direction: column; gap: .4rem; }
+.livro .titulo {
+  font-family: var(--sans);
+  font-weight: 600;
+  font-size: .95rem;
+  line-height: 1.3;
+}
+.livro p { font-size: .95rem; color: var(--ink-soft); }
+.livro p + p { margin-top: .6rem; }
+.livro strong { color: var(--ink); }
+
+@media (max-width: 40rem) {
+  .livro > div { grid-template-columns: 1fr; gap: .6rem; }
+}
+
+.acoes {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+  gap: 1px;
+  background: var(--rule);
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  overflow: hidden;
+}
+.acoes > div {
+  background: var(--surface);
+  padding: 1.15rem 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: .45rem;
+}
+.acoes .tempo {
+  font-family: var(--mono);
+  font-size: .68rem;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+.acoes h3 { margin: 0; }
+.acoes p { font-size: .9rem; color: var(--ink-soft); }
+
+footer.fim {
+  max-width: 100%;
+  border-top: 1px solid var(--rule);
+  padding-top: 1.5rem;
+  margin-top: 1rem;
+  font-family: var(--mono);
+  font-size: .75rem;
+  color: var(--ink-mute);
+  line-height: 1.8;
+}
+</style>
+
+<div class="page">
+
+<header class="head">
+  <p class="eyebrow">Iris · trabalho autônomo · 28 de agosto de 2026</p>
+  <h1>Um dia sem você na máquina</h1>
+  <p class="dek">
+    Você pediu para eu fazer as fases restantes sozinho e anotar onde travasse.
+    Duas das fases eu decidi <em>não</em> fazer, e essa é a parte do relatório
+    que importa mais — porque foi decisão minha, tomada no seu lugar, e você
+    pode desfazer qualquer uma delas.
+  </p>
+  <div class="meta">
+    <span><b>860</b> testes · 0 falhas · 0 pulados</span>
+    <span><b>19</b> commits</span>
+    <span><b>5</b> passadas de revisão externa</span>
+    <span><code>b65bc6f</code> → <code>be78490</code></span>
+  </div>
+</header>
+
+<div class="resumo">
+  <h2>Se você ler só isto</h2>
+  <ul>
+    <li><strong>As dívidas da Fase 2 estão fechadas.</strong> Oito dos nove
+    caminhos de guarda que estavam "sustentados por leitura de código" agora têm
+    teste com controle negativo. O nono não é observável por API pública, e isso
+    está dito com esse nome.</li>
+
+    <li><strong>O efeito da janela de sincronização foi medido</strong> — a
+    dívida mais antiga em aberto. Cinco pastas de usos completamente diferentes
+    cortam no <strong>mesmo dia</strong>. É horizonte do store, não hábito de
+    arquivamento.</li>
+
+    <li><strong>O ESCOPO afirmava quatro coisas falsas</strong>, e uma delas era
+    sobre uma entrega que não existia: "busca textual". Corrigi o documento e
+    <strong>entreguei a busca</strong>.</li>
+
+    <li><strong>A Fase 4 eu decidi NÃO executar</strong>, depois de levar as oito
+    decisões dela à revisão externa. O que eu ia entregar seria andaime com nome
+    de entrega.</li>
+
+    <li><strong>As Fases 5, 6 e 7 eu medi antes de escrever</strong>, e a medição
+    reescreveu as três. Contatos tem <strong>zero</strong> itens. Tarefas tem
+    três. Calendário tem 434 — e foi o único que executei.</li>
+
+    <li><strong>Entreguei a agenda inalcançável.</strong> A política de
+    visibilidade escondia a pasta de calendário, os testes contornavam a árvore,
+    e tudo ficava verde. Foi a revisão externa que pegou.</li>
+  </ul>
+</div>
+
+<div class="numeros wide">
+  <div><span class="v">805</span><span class="k">testes ao começar</span></div>
+  <div><span class="v">860</span><span class="k">testes ao terminar</span></div>
+  <div><span class="v">31</span><span class="k">dias de horizonte</span></div>
+  <div><span class="v">65</span><span class="k">fora da janela, na ordem errada</span></div>
+  <div><span class="v">22,7</span><span class="k">ms por busca, 1.127 msgs</span></div>
+  <div><span class="v">3</span><span class="k">decisões que são suas</span></div>
+</div>
+
+<h2><span class="num">§ 1</span>O que eu decidi no seu lugar</h2>
+
+<p>
+  Esta é a seção que eu escreveria primeiro se tivesse de escolher uma. São
+  decisões que mudam o rumo do projeto, tomadas sem você, com o Codex como
+  contraparte — e <strong>todas reversíveis</strong>.
+</p>
+
+<div class="livro wide">
+  <div>
+    <div class="lado">
+      <span class="chip decidi">decisão minha</span>
+      <span class="titulo">Não executar a Fase 4</span>
+    </div>
+    <div>
+      <p>
+        Levei as oito decisões da fase ao Codex <em>antes</em> de escrever
+        código. Ele desmontou o plano, e eu concordo.
+      </p>
+      <p>
+        <strong>Três razões.</strong> Não havia linha de base — o ESCOPO dizia
+        que a Fase 2 entregou busca textual e não tinha, então não havia contra o
+        que comparar busca semântica. Não há corpo para indexar: a regra D1
+        proíbe corpo no cache, e o que sobra é assunto e remetente. E não há
+        oráculo: uma triagem por regras produz <em>sinais sem direção
+        validada</em> — <code>RE:</code> é sintaxe de assunto, não necessidade de
+        ação; o remetente com 22% do volume tanto pode ser o chefe quanto
+        automação. <strong>Só você pode dizer o que exigia ação.</strong>
+      </p>
+      <p>
+        Eu posso definir o protocolo. Não posso fabricar o oráculo.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="lado">
+      <span class="chip decidi">decisão minha</span>
+      <span class="titulo">Adiar a Fase 7 (Contatos)</span>
+    </div>
+    <div>
+      <p>
+        A pasta de Contatos desta conta tem <strong>zero itens</strong>. Numa
+        conta corporativa os contatos vivem no GAL, e o GAL está fora de escopo
+        pela §8.
+      </p>
+      <p>
+        <strong>A ressalva, que o Codex me obrigou a escrever:</strong> isto mede
+        a pasta padrão, agora. Não mede subpastas, outros stores, nem uso futuro.
+        "Adiar" está sustentado; <em>"não tem consumidor"</em> seria forte
+        demais, e eu tinha escrito assim primeiro.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="lado">
+      <span class="chip decidi">decisão minha</span>
+      <span class="titulo">Executar só a leitura da Fase 6</span>
+    </div>
+    <div>
+      <p>
+        Calendário tem 434 compromissos e todas as dez propriedades legíveis —
+        é a única das três com substância. Executei a <strong>leitura</strong> e
+        a agenda na janela.
+      </p>
+      <p>
+        Ficou de fora tudo que é mutação: criar, editar, mover, responder
+        convite. E ficou de fora o cache de calendário, que a medição de
+        <strong>30,9 ms por item</strong> sugere que vai ser preciso.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="lado">
+      <span class="chip decidi">decisão minha</span>
+      <span class="titulo">Alargar a árvore para mostrar calendário</span>
+    </div>
+    <div>
+      <p>
+        A <code>FolderVisibilityPolicy</code> mostrava só correio. Troquei a
+        regra de <code>MailOnly</code> para <code>SoOQueAbre</code>, com uma lista
+        do que o Iris sabe abrir.
+      </p>
+      <p>
+        <strong>O que isso muda na sua tela:</strong> a pasta Calendário passa a
+        aparecer na árvore. Contatos, Tarefas, Observações e Diário continuam de
+        fora — cada um sai da lista no dia em que houver tela, e não no dia em
+        que houver leitura.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="lado">
+      <span class="chip decidi">decisão minha</span>
+      <span class="titulo">Mexer no encerramento do broker</span>
+    </div>
+    <div>
+      <p>
+        É a mudança de produção mais arriscada do dia, e por isso está aqui.
+        Havia uma corrida real: a liberação dos objetos COM roda em prioridade
+        que <strong>fura a fila</strong>, e uma leitura já enfileirada podia
+        correr depois e tocar objeto liberado.
+      </p>
+      <p>
+        Agora o portão de admissão fecha primeiro, sob o mesmo bloqueio, e só
+        então a fila é drenada. <strong>Verificado contra o seu Outlook:</strong>
+        abri e fechei o Iris, encerrou em 0,5 s, e o <code>OUTLOOK.EXE</code>
+        continuou com o mesmo PID.
+      </p>
+    </div>
+  </div>
+</div>
+
+<h2><span class="num">§ 2</span>Onde eu travei</h2>
+
+<p>
+  Três coisas que eu não fiz porque não são minhas para fazer, e uma que não é
+  observável. Nenhuma é falta de tempo.
+</p>
+
+<div class="livro wide">
+  <div>
+    <div class="lado">
+      <span class="chip travado">precisa de você</span>
+      <span class="titulo">Criar tarefa a partir de e-mail</span>
+    </div>
+    <div>
+      <p>
+        É a Fase 5 inteira. A pasta de Tarefas tem três itens: o valor não está
+        em <em>ler</em>, está em <em>criar</em> — e criar é mutação na sua caixa.
+      </p>
+      <p>
+        Eu declarei no começo do dia que só faria mutação em pasta de teste
+        criada por mim, e criar <code>TaskItem</code> não cabe nisso. Não é
+        bloqueio técnico; é de autoridade.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="lado">
+      <span class="chip travado">precisa de você</span>
+      <span class="titulo">A política corporativa</span>
+    </div>
+    <div>
+      <p>
+        Continua sem resposta, e agora sabemos que ela não bloqueia nada
+        sozinha: <code>politicaCorporativaVerificada</code> é aviso de tela, e o
+        portão não o consulta.
+      </p>
+      <p>
+        <strong>O que restringe o alcance da IA hoje é a lista de pastas da
+        cerimônia</strong> — uma pasta, <code>Iris-Teste</code>, quatro itens.
+        Restrição por disciplina, não por código.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="lado">
+      <span class="chip travado">precisa de você</span>
+      <span class="titulo">Ver a tela</span>
+    </div>
+    <div>
+      <p>
+        A faixa da busca e a da agenda foram escritas, os bindings são conferidos
+        contra o XAML de verdade, o aplicativo abre e fecha sem erro. Mas
+        <strong>eu não vi elas desenhadas</strong>: capturar tela exige sua
+        aprovação no monitor.
+      </p>
+      <p>
+        É a única entrega do dia cuja aparência não foi verificada.
+      </p>
+    </div>
+  </div>
+
+  <div>
+    <div class="lado">
+      <span class="chip travado">não observável</span>
+      <span class="titulo">Uma guarda que não dá para testar</span>
+    </div>
+    <div>
+      <p>
+        A recarga de contas pendente durante o fechamento da janela. Depois do
+        <code>Dispose</code> a seleção já é <code>Nothing</code>, então o
+        caminho seguinte não é chamado <em>com ou sem</em> a guarda — os dois
+        mundos são indistinguíveis de fora.
+      </p>
+      <p>
+        O Codex concorda: só por reflexão ou por um <em>seam</em> interno. Fica
+        como decisão, e não como esquecimento.
+      </p>
+    </div>
+  </div>
+</div>
+
+<h2><span class="num">§ 3</span>O que foi entregue</h2>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>Nove blocos, em ordem de execução</caption>
+  <thead>
+    <tr><th>Bloco</th><th>Estado</th><th>O que ficou</th></tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Guardas sem teste<br><span class="mono">4 categorias, 9 caminhos</span></td>
+      <td><span class="chip feito">fechado</span></td>
+      <td>8 de 9 cobertos, todos com controle negativo medido. Nasceram
+          <code>ArvoreDePastasTests</code>, <code>JanelaPrincipalTests</code> e
+          <code>LeitorDeMensagemTests</code> — a primeira suíte do leitor.</td>
+    </tr>
+    <tr>
+      <td>Efeito da janela de sincronização</td>
+      <td><span class="chip feito">medido</span></td>
+      <td><code>tools/medir-janela.ps1</code>. Cinco pastas cortam em
+          <strong>2026-07-28</strong>: Enviados, Excluídos, Spam, uma subpasta
+          manual e a Caixa de Entrada.</td>
+    </tr>
+    <tr>
+      <td>Qualidade do acervo</td>
+      <td><span class="chip feito">medido</span></td>
+      <td>1.123 linhas, zero campos vazios no que importa, 64% de assuntos
+          únicos, 138 remetentes. E a medição achou um defeito.</td>
+    </tr>
+    <tr>
+      <td>Falha rara da suíte</td>
+      <td><span class="chip feito">fechada por construção</span></td>
+      <td>Não reproduzi. Transformei a hipótese em regra imposta: nenhuma classe
+          que toca SQLite pode rodar em paralelo, e um teste verifica isso a cada
+          execução.</td>
+    </tr>
+    <tr>
+      <td>Dívidas assumidas</td>
+      <td><span class="chip feito">fechadas</span></td>
+      <td>Corrida do encerramento do broker, e o auxiliar <code>Unico</code> —
+          que era pior que a dívida dizia: cinco chamadas estavam na posição
+          <em>não</em> única.</td>
+    </tr>
+    <tr>
+      <td>Busca textual no acervo</td>
+      <td><span class="chip feito">entregue</span></td>
+      <td>O ESCOPO dizia que já existia. Agora existe: biblioteca, ViewModel,
+          faixa na janela, 17 testes. <strong>305 achados em 22,7 ms</strong>
+          sobre 1.127 mensagens reais.</td>
+    </tr>
+    <tr>
+      <td>Fase 4 — triagem e busca semântica</td>
+      <td><span class="chip decidi">não executada</span></td>
+      <td>Analisada com o Codex, e deliberadamente não feita. O motivo está no
+          ESCOPO, na seção da fase.</td>
+    </tr>
+    <tr>
+      <td>Fase 6 — calendário</td>
+      <td><span class="chip feito">leitura</span></td>
+      <td><code>CalendarReading</code>, <code>AgendaViewModel</code>, faixa na
+          janela, seis testes contra o Outlook real — todos somente leitura.</td>
+    </tr>
+    <tr>
+      <td>Fases 5 e 7</td>
+      <td><span class="chip travado">medidas</span></td>
+      <td>Tarefas: 3 itens, é feature de escrita. Contatos: 0 itens.
+          <code>tools/medir-grupos.ps1</code> guarda a medição.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">§ 4</span>As três medições que mudaram decisões</h2>
+
+<h3>O horizonte é de 31 dias, e é do store</h3>
+
+<p>
+  A dívida mais antiga em aberto. O ESCOPO já tinha escrito a saída: <em>"não é
+  achar a configuração; é medir o efeito dela"</em>.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>28/08/2026 · somente leitura · pastas com 20 itens ou mais</caption>
+  <thead><tr><th>Pasta</th><th class="num">Itens</th><th>Mais antigo</th><th class="num">Span</th></tr></thead>
+  <tbody>
+    <tr><td>Caixa de Entrada</td><td class="num">1.098</td><td><strong>2026-07-28</strong></td><td class="num">31 d</td></tr>
+    <tr><td>Itens Enviados</td><td class="num">119</td><td><strong>2026-07-28</strong></td><td class="num">31 d</td></tr>
+    <tr><td>Itens Excluídos</td><td class="num">98</td><td><strong>2026-07-28</strong></td><td class="num">30 d</td></tr>
+    <tr><td>Spam</td><td class="num">22</td><td><strong>2026-07-28</strong></td><td class="num">31 d</td></tr>
+    <tr><td>Caixa de Entrada\1. Backup</td><td class="num">37</td><td><strong>2026-07-28</strong></td><td class="num">31 d</td></tr>
+    <tr><td>Lixo Eletrônico</td><td class="num">178</td><td>2026-07-29</td><td class="num">30 d</td></tr>
+    <tr><td>Rascunhos</td><td class="num">68</td><td>2026-07-31</td><td class="num">22 d</td></tr>
+    <tr><td>Problemas de Sincronização</td><td class="num">31</td><td>2026-08-22</td><td class="num">1 d</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Enviados, Excluídos, Spam, uma subpasta manual de arquivamento e a Caixa de
+  Entrada. Volumes de 22 a 1.098, usos completamente diferentes, e o
+  <strong>mesmo primeiro item</strong>. Isso não é hábito; é o horizonte do
+  store.
+</p>
+
+<div class="nota">
+  <strong>O que uma medição só sustenta.</strong> Que <em>hoje</em> existe esse
+  horizonte local. Não que ele é deslizante — migração, recriação do OST ou uma
+  operação em massa naquela data dariam o mesmo retrato. Rodar de novo daqui a
+  alguns dias separa: se o corte andar junto, é janela.
+  <br><br>
+  E uma correção que o Codex me fez: <strong>a janela é do Outlook, não do cache
+  do Iris.</strong> O cache foi desenhado para acumular além dela. Não gravar
+  "um mês" como se fosse permanente.
+</div>
+
+<h3>O cache afirmava uma coisa que não mediu</h3>
+
+<p>
+  Medindo a qualidade do acervo, <code>message_class</code> apareceu com
+  <strong>uma</strong> classe distinta em 1.123 linhas. Número limpo demais para
+  ser medida — e não era: o adaptador jogava fora o valor que o broker havia
+  lido e gravava a constante <code>"IPM.Note"</code>.
+</p>
+
+<p>
+  O efeito era invisível, porque o filtro só deixa passar linha que
+  <em>começa</em> com <code>IPM.Note</code>. Mas isso é prefixo, não valor:
+  <code>IPM.Note.SMIME</code> passava e virava a mesma constante. Corrigido, com
+  teste e controle negativo.
+</p>
+
+<h3>A ordem errada não perde compromisso — ela ignora o filtro</h3>
+
+<p>
+  O OOM exige <code>Sort → IncludeRecurrences → Restrict</code>, nessa ordem, e
+  aceita fora de ordem sem reclamar. Eu esperava que a inversão
+  <em>perdesse</em> ocorrências. Medi:
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>Controle negativo · janela de ±30 dias em torno de agosto</caption>
+  <thead><tr><th>Estado do código</th><th>Teste da expansão</th><th>Teste da janela</th></tr></thead>
+  <tbody>
+    <tr><td>ordem certa</td><td>passa</td><td>passa</td></tr>
+    <tr><td><code>Restrict</code> antes do <code>Include</code></td><td>passa</td><td><strong>falha — 65 fora</strong></td></tr>
+    <tr><td><code>IncludeRecurrences</code> desligado</td><td><strong>falha</strong></td><td><strong>falha — 5 fora</strong></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>
+  Sessenta e cinco compromissos de <em>janeiro</em> aparecendo numa janela de
+  agosto. Uma agenda com sete meses de atraso, sem erro em lugar nenhum. E cada
+  teste guarda uma coisa: um a expansão, outro a ordem. Nenhum guarda os dois, e
+  está escrito assim no código.
+</p>
+
+<h2><span class="num">§ 5</span>Os erros que eu cometi</h2>
+
+<p>
+  Este projeto trata teste verde que passa com o defeito presente como pior que
+  lacuna. Aconteceu comigo cinco vezes hoje, e a revisão externa pegou todas.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>Achados contra mim, por gravidade</caption>
+  <thead><tr><th>O quê</th><th>Como estava errado</th></tr></thead>
+  <tbody>
+    <tr>
+      <td><strong>Entreguei a agenda inalcançável</strong></td>
+      <td>A pasta de calendário não aparecia na árvore. A leitura funcionava, os
+          seis testes contra o Outlook real passavam — e eles achavam o
+          calendário pelo broker, contornando a árvore. <em>Prova de leitura não
+          é prova de alcance.</em></td>
+    </tr>
+    <tr>
+      <td><strong>Dois testes passavam com a guarda removida</strong></td>
+      <td>Um só olhava a segunda tarefa depois de liberar a trava; outro não
+          tinha efeito observável nenhum. O segundo foi apagado — é o terceiro
+          teste que aquele arquivo perde por esse motivo.</td>
+    </tr>
+    <tr>
+      <td><strong>Uma "cerca" que não cercava</strong></td>
+      <td>O teste de fechar durante a recarga da árvore instalava a trava cedo
+          demais e pegava outra leitura. Era outra variação de "fechar durante a
+          abertura", com nome errado.</td>
+    </tr>
+    <tr>
+      <td><strong>Sucesso truncado no calendário</strong></td>
+      <td>Exceção no meio da enumeração virava fim normal da coleção, e o teto do
+          laço virava sucesso silencioso. Lista incompleta apresentada como
+          completa.</td>
+    </tr>
+    <tr>
+      <td><strong>Uma isenção que eu me dei</strong></td>
+      <td>Escrevi que a agenda não carrega ressalva de cobertura "porque lê ao
+          vivo". Ler ao vivo prova frescor, não cobertura — em cached o universo
+          local é o mesmo que a §23 diz que não dá para tratar como a caixa.</td>
+    </tr>
+    <tr>
+      <td><strong>Uma frase factualmente errada</strong></td>
+      <td>A busca dizia que havia publicações "não entregues ao acervo". A
+          publicação já materializou o acervo; o que falta é a entrega ao
+          painel — e a busca podia estar mostrando exatamente a geração que
+          dizia não ter chegado.</td>
+    </tr>
+    <tr>
+      <td>Quatro eclipses de nome em VB</td>
+      <td><code>leitor</code>, <code>linha</code>, <code>Linhas</code> e
+          <code>quando</code>. A tabela do <code>CLAUDE.md</code> tem doze
+          entradas e ganhou companhia.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">§ 6</span>O documento mentia em quatro lugares</h2>
+
+<p>
+  Achado ao planejar a Fase 4, e é o tipo de erro que este projeto persegue nos
+  outros lugares.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <thead><tr><th>O ESCOPO dizia</th><th>A verdade</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>A Fase 2 entregou <strong>busca textual</strong></td>
+      <td>Não existia consulta textual em lugar nenhum do produto. Agora
+          existe.</td>
+    </tr>
+    <tr>
+      <td>"listagem e busca leem <strong>exclusivamente do cache</strong>"</td>
+      <td>A listagem lê ao vivo do Outlook, <strong>de propósito</strong>, e o
+          código diz isso. O documento descrevia uma arquitetura que o projeto
+          decidiu não ter.</td>
+    </tr>
+    <tr>
+      <td><code>politicaCorporativaVerificada</code> bloqueia e-mail real</td>
+      <td>É aviso de tela. O portão não o consulta. Quem restringe é a lista de
+          pastas.</td>
+    </tr>
+    <tr>
+      <td>"e-mail real continua <strong>bloqueado</strong>"</td>
+      <td>Restrito, não bloqueado — e a diferença é quem pode desfazer.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">§ 7</span>O que fica sem correção</h2>
+
+<p>
+  Nenhum achado de produção destas cinco passadas ficou sem correção. O que
+  sobra é dívida assumida, e ela cabe em quatro linhas.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <thead><tr><th>Dívida</th><th>Por que fica</th></tr></thead>
+  <tbody>
+    <tr>
+      <td>A busca contorna o <code>PublicationDrain</code></td>
+      <td>Ela consulta o estado da fila, e consultar não é passar. O
+          <code>AcervoService</code> é de uma pasta, e uma busca entre pastas não
+          cabe nesse formato — encaixá-la é desenho, não conserto.</td>
+    </tr>
+    <tr>
+      <td>Valores fabricados na paginação</td>
+      <td>Falha de leitura vira fato: tamanho <code>0</code>, não lida
+          <code>False</code>, anexo <code>False</code>. Mesma família do
+          <code>message_class</code>, mas corrigir exige campos anuláveis e
+          migração de esquema.</td>
+    </tr>
+    <tr>
+      <td>Cobertura do calendário não medida</td>
+      <td>A agenda diz o que leu e se truncou. Não diz o que existe além do que
+          o Outlook expõe, e ninguém mediu isso.</td>
+    </tr>
+    <tr>
+      <td>A guarda não observável</td>
+      <td>Descrita no §2. Decisão, não esquecimento.</td>
+    </tr>
+  </tbody>
+</table>
+</div>
+
+<h2><span class="num">§ 8</span>O que fazer a seguir</h2>
+
+<div class="acoes wide">
+  <div>
+    <span class="tempo">Cinco minutos</span>
+    <h3>Abrir o Iris e olhar</h3>
+    <p>
+      A faixa da busca embaixo do acervo, e a pasta Calendário na árvore. É a
+      única coisa do dia que eu não consegui verificar.
+    </p>
+  </div>
+  <div>
+    <span class="tempo">Se discordar</span>
+    <h3>Desfazer qualquer decisão do §1</h3>
+    <p>
+      Todas são reversíveis, e todas estão num commit próprio com o motivo
+      escrito. A mais fácil de desfazer é a da árvore — uma linha.
+    </p>
+  </div>
+  <div>
+    <span class="tempo">Quando puder</span>
+    <h3>Rodar a medição da janela de novo</h3>
+    <p>
+      <code>tools/medir-janela.ps1</code>. Se o corte de 28/07 tiver andado
+      junto com o calendário, é janela deslizante. Se ficar parado, foi um
+      evento — e a conclusão muda.
+    </p>
+  </div>
+  <div>
+    <span class="tempo">Quando quiser a Fase 5</span>
+    <h3>Ficar na máquina</h3>
+    <p>
+      Criar tarefa é mutação na sua caixa. Com você presente, é meio dia de
+      trabalho; sem você, não é meu para fazer.
+    </p>
+  </div>
+</div>
+
+<div class="nota">
+  <strong>Sobre o diário.</strong> Cada bloco foi registrado em
+  <code>DIARIO-AUTONOMO.md</code> enquanto acontecia, incluindo os erros e o que
+  a revisão externa derrubou. Este relatório é o resumo dele; o diário tem os
+  números e as tentativas que não deram certo.
+</div>
+
+<footer class="fim">
+  Iris · trabalho autônomo de 28 de agosto de 2026<br>
+  <code>b65bc6f</code> → <code>be78490</code> · 19 commits · 860 testes, 0 falhas, 0 pulados<br>
+  Cinco passadas de revisão externa · nada foi enviado por e-mail · nenhuma cerimônia foi executada
+</footer>
+
+</div>

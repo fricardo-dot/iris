@@ -6,9 +6,14 @@ itens que é a única autorizada — o alcance é **restrito pela lista de pasta
 cerimônia**, e não bloqueado pela política corporativa, que continua não
 verificada e não é consultada pelo portão. As **pendências da Fase 2
 foram fechadas** em 28/08/2026 e o aplicativo varre. A Fase 4 continua **não
-planejada**.
+planejada** — e a decisão de **não** planejá-la agora está registrada na seção
+dela, com o motivo.
+
+Em 28/08 também entrou a **busca textual** (que este documento dizia entregue e
+não estava) e a **leitura do calendário** com a agenda na janela. Suíte em
+**860 testes**.
 **Data:** 2026-08-28
-**Versão:** 6
+**Versão:** 7
 
 ---
 
@@ -442,7 +447,40 @@ mensagens que *parecem* da mesma conversa seria decidir divulgação por
 semelhança. O mecanismo aceita várias mensagens; o que não existe é quem as
 escolha.
 
-### Fase 4 — Triagem e busca semântica (Grupo B) — *NÃO PLANEJADA*
+### Fase 4 — Triagem e busca semântica (Grupo B) — *NÃO EXECUTADA, POR DECISÃO*
+
+> **Em 28/08/2026 esta fase foi analisada e deliberadamente NÃO executada.**
+>
+> As oito decisões abaixo foram levadas à revisão externa antes de qualquer
+> linha de código. O veredito, que eu aceito: o que eu ia entregar seria
+> **andaime com nome de entrega**.
+>
+> **As razões, em ordem de peso:**
+>
+> 1. **Não há linha de base.** Este documento dizia que a Fase 2 entregou busca
+>    textual, e não tinha. Sem busca textual não há contra o que comparar busca
+>    semântica — e uma fase que não pode ser avaliada não pode ser aceita. A
+>    busca textual foi entregue em 28/08; a comparação passou a ser possível.
+> 2. **Não há corpo para indexar.** A regra D1 proíbe corpo e anexo no cache.
+>    O que sobra é assunto e remetente — e mandar isso para fora para indexar
+>    é custo e risco desproporcionais ao ganho.
+> 3. **Não há oráculo.** Uma triagem por regras produz *sinais sem direção
+>    validada*: `RE:`/`RES:` é sintaxe de assunto, não necessidade de ação; um
+>    remetente com 22% do volume tanto pode ser o chefe quanto automação; anexo
+>    tanto pode ser contrato quanto assinatura. **Só o dono da caixa pode dizer
+>    o que exigia ação.** Eu posso definir o protocolo; não posso fabricar o
+>    oráculo.
+> 4. **Três das oito decisões continuam abertas** — retenção, critério de
+>    qualidade e orçamento — e uma quarta está fechada só no desenho.
+>
+> **Quando reavaliar.** Quando existir pelo menos um destes: acervo histórico
+> acumulado; conteúdo semanticamente rico indexável com política definida;
+> consultas reais com julgamento de relevância; ou evidência de que a busca
+> textual normalizada não resolve.
+>
+> **E um cuidado medido:** a janela de ~31 dias é do **Outlook**, não do cache.
+> O cache foi desenhado para acumular além dela, e pode ganhar valor com o
+> tempo. Não gravar "um mês" como se fosse permanente.
 
 Depois de medir qualidade do cache e custo de indexação.
 
@@ -488,15 +526,58 @@ técnico primeiro:
 Enquanto essas oito não tiverem resposta, planejar a fase é escolher a
 implementação antes do requisito.
 
-### Fase 5 — Tarefas
+### Fase 5 — Tarefas — *MEDIDA, NÃO EXECUTADA*
 
 Inclui extração de tarefas a partir de e-mails, em duas etapas distintas:
 a IA **sugere**, você confirma, o Iris cria o `TaskItem`. Nunca criação
 silenciosa em massa.
 
-### Fase 6 — Calendário / Fase 7 — Contatos
+**Medido em 28/08/2026** (`tools/medir-grupos.ps1`, só leitura): a pasta de
+Tarefas tem **3 itens**, e as nove propriedades são legíveis.
 
-Dois marcos distintos, não um.
+**O que a medição mostra:** esta é uma feature de **escrita**. O valor não está
+em ler as três tarefas que existem — está em criar tarefas a partir de e-mail,
+que é o que o parágrafo acima descreve.
+
+**Por que não foi executada:** escrever na caixa do dono exige o dono na
+máquina. Não é bloqueio técnico; é de autoridade.
+
+### Fase 6 — Calendário — *LEITURA EXECUTADA em 28/08/2026*
+
+**Medido antes de escrever:** 434 compromissos, **30,9 ms por item** — quase o
+dobro dos ~16 ms que a Fase 0 mediu por mensagem —, dez de dez propriedades
+legíveis, 4 recorrentes em 100.
+
+**O que entrou:**
+
+- `GetAppointmentsAsync` por **janela de datas**, e não por página: ocorrência
+  de série não existe até ser expandida, e expandir sem data-fim é infinito.
+- `CalendarReading` com a ordem `Sort → IncludeRecurrences → Restrict`, que o
+  OOM aceita fora de ordem e responde **errado sem erro**. Medido: invertê-la
+  devolve **65 compromissos fora da janela**.
+- `AgendaViewModel` e a faixa da agenda, que aparece quando a pasta selecionada
+  é de calendário e exclui o acervo da mesma linha da janela.
+- Seis testes contra o Outlook real, todos **somente leitura**.
+
+**O que NÃO entrou, e é o resto da fase:** criar, editar, mover ou responder
+convite — tudo mutação. Cache de calendário. Visão de mês. Convites recebidos.
+
+**Uma pendência de honestidade:** ninguém mediu a **cobertura** do calendário em
+modo cached. A agenda diz quantos leu e se a leitura foi truncada; ela não diz
+o que existe além do que o Outlook expõe, e não afirma que existe tudo.
+
+### Fase 7 — Contatos — *ADIADA, e a medição explica*
+
+**Medido em 28/08/2026:** a pasta de Contatos tem **0 itens**.
+
+Numa conta corporativa os contatos vivem no GAL, e o GAL está **fora de escopo**
+pela seção 8. Um módulo de contatos sobre esta caixa seria uma tela para uma
+pasta vazia.
+
+**A ressalva, que a revisão externa acrescentou e é justa:** isto mede a pasta
+padrão desta conta, agora. Não mede subpastas, outros stores, uso futuro, nem
+elimina todos os consumidores possíveis de `ContactItem`. **"Adiar" está
+sustentado; "não tem consumidor" seria forte demais.**
 
 ---
 
@@ -876,6 +957,27 @@ Option Infer On
 ---
 
 ## Apêndice — histórico de revisão
+
+**v7 (2026-08-28, à tarde)** — um dia inteiro de trabalho autônomo, com
+revisão externa a cada bloco. As nove categorias de guarda da Fase 2 foram
+cobertas, menos um caminho que não é observável por API pública. O **efeito da
+janela de sincronização** foi medido: horizonte comum de ~31 dias em cinco
+pastas de usos diferentes. A **qualidade do acervo** foi medida, e a medição
+achou um defeito — `message_class` era constante fabricada, não valor lido.
+
+Este documento tinha **quatro afirmações falsas**, e todas foram corrigidas:
+"busca textual" entregue (não estava), "listagem e busca leem exclusivamente do
+cache" (a listagem lê ao vivo, de propósito), e as duas do apêndice v6.
+
+A **busca textual** foi entregue de verdade. A **Fase 4 foi analisada e NÃO
+executada**, por decisão registrada. As Fases 5, 6 e 7 foram **medidas antes de
+serem escritas**, e a medição reescreveu as três: a 7 adiada, a 5 bloqueada por
+autoridade, a 6 executada na parte de leitura.
+
+O achado mais constrangedor do dia: a agenda foi entregue **inalcançável** — a
+política de visibilidade escondia a pasta de calendário, os testes contornavam a
+árvore pelo broker, e tudo ficava verde. *Prova de leitura não é prova de
+alcance.*
 
 **v6 (2026-08-28)** — a IA foi **ativada** em 27/08 e o primeiro egress real
 saiu, com conteúdo sintético; o alcance segue **restrito** — não bloqueado — à

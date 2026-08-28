@@ -587,3 +587,22 @@ não tinha teste nenhum. **Porta estreita não é elegância — é o que decide
 existe teste.**
 
 Suíte: **854**.
+
+### 28/08 — fechamento
+
+`ESCOPO.md` na **v7**: Fase 4 marcada como *não executada por decisão*, com o
+motivo; Fase 5 como *medida, não executada*; Fase 6 com a leitura entregue e o
+que ficou de fora; Fase 7 adiada, com a ressalva de que "não tem consumidor"
+seria forte demais.
+
+`RELATORIO-TRABALHO-AUTONOMO.html` escrito e publicado. A seção que abre não é
+o que foi entregue — é **o que eu decidi no lugar dele**, porque é a parte que
+ele pode querer desfazer.
+
+**Balanço do dia:** 805 → **860** testes. 19 commits. Cinco passadas de revisão
+externa, e todas acharam alguma coisa. Nada foi enviado por e-mail; nenhuma
+cerimônia foi executada; nenhuma mutação na caixa dele.
+
+O achado que eu levo: **prova de leitura não é prova de alcance.** Entreguei a
+agenda inteira funcionando e inalcançável, com seis testes verdes contra o
+Outlook real — porque todos contornavam a árvore.
