@@ -469,6 +469,13 @@ Namespace Global.Iris.Integration
                 ' da ultima varredura. Nao diz que esta atras, nao diz que esta
                 ' a frente, e continua sendo exatamente o que quem procura
                 ' precisa saber antes de concluir do silencio.
+                '
+                ' (5) E A ABERTURA AINDA ERA CATEGORICA. Ela dizia "ainda nao
+                ' foram entregues", e Pendentes() nao significa isso: significa
+                ' drained_at IS NULL. A entrega e AO MENOS UMA VEZ, e ha uma
+                ' janela -- coberta pelo DrenoAposCrashTests, que diz com todas
+                ' as letras "o disco diz que a UI NAO recebeu, e ela recebeu".
+                ' Entrega NAO CONFIRMADA e o que a fila sabe, e e o que ela diz.
                 If DrenoTravadoEm.HasValue Then
                     partes.Add($"A entrega da geração {DrenoTravadoEm.Value} está travada. " &
                                "Enquanto ela não completar, nada aqui pode ser tratado como o " &
@@ -477,8 +484,8 @@ Namespace Global.Iris.Integration
                 ElseIf PublicacoesPendentes < 0 Then
                     partes.Add("Não consegui conferir se há varredura esperando entrega.")
                 ElseIf PublicacoesPendentes > 0 Then
-                    partes.Add($"{PublicacoesPendentes} varredura(s) publicada(s) ainda não foram " &
-                               "entregues. Nada aqui pode ser tratado como o retrato da última " &
+                    partes.Add($"{PublicacoesPendentes} varredura(s) publicada(s) com entrega " &
+                               "não confirmada. Nada aqui pode ser tratado como o retrato da última " &
                                "varredura — nem esta busca, nem o painel do acervo, e os dois " &
                                "podem estar em pontos diferentes.")
                 End If

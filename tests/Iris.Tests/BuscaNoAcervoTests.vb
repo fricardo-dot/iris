@@ -423,6 +423,10 @@ Public Class BuscaNoAcervoTests
             Assert.IsFalse(r.Ressalva.Contains("a busca mostra é o retrato anterior"),
                 "volta 4: a ressalva afirma o estado da BUSCA, e ela nao sabe " &
                 "-- ver Com_DUAS_geracoes_pendentes_a_busca_ve_a_SEGUNDA_cedo")
+            Assert.IsFalse(r.Ressalva.Contains("ainda não foram entregues"),
+                "volta 5: Pendentes() e drained_at IS NULL, e nao 'nao recebeu'. " &
+                "A entrega e ao menos uma vez, e o DrenoAposCrashTests cobre a " &
+                "janela em que o consumidor recebeu e o disco ainda nao sabe")
         End Using
     End Sub
 
@@ -588,8 +592,12 @@ Public Class BuscaNoAcervoTests
     ''' Aqui o acervo é o <b>real</b>, e não um contador: o que se mede é a busca
     ''' de produção achando o que ninguém lhe entregou.
     '''
-    ''' <b>Controle negativo:</b> devolvendo <i>"O que a busca mostra é o retrato
-    ''' anterior a elas"</i> à ressalva, a asserção do final cai.
+    ''' <b>Dois controles.</b> O de <i>causalidade</i> está no corpo: antes de
+    ''' qualquer entrega a busca não acha nada, então o que a torna visível é a
+    ''' entrega da <b>primeira</b> geração — sem essa linha o teste provaria o
+    ''' estado final e não a causa, e a revisão externa cobrou isso. O
+    ''' <i>negativo</i>: devolvendo <i>"O que a busca mostra é o retrato anterior
+    ''' a elas"</i> à ressalva, a asserção do final cai.
     ''' </summary>
     <TestMethod>
     Public Sub Com_DUAS_geracoes_pendentes_a_busca_ve_a_SEGUNDA_cedo()
@@ -608,6 +616,15 @@ Public Class BuscaNoAcervoTests
             Varrer(db, chave, "entrada-10", "Aditivo contratual rarissimo")
             Assert.AreEqual(2, dreno.Pendentes().Count,
                 "controle: as duas geracoes tinham de estar pendentes")
+
+            ' CONTROLE DE CAUSALIDADE, e ele foi cobrado pela revisao externa.
+            '
+            ' Sem esta linha o teste prova o ESTADO FINAL e nao a CAUSA: se um
+            ' dia a publicacao passar a atualizar o acervo por outro caminho, a
+            ' busca acharia "rarissimo" sem entrega nenhuma e o teste ficaria
+            ' verde afirmando uma coisa que deixou de ser verdade.
+            Assert.AreEqual(0, busca.Procurar("rarissimo").Achados.Count,
+                "controle: antes de QUALQUER entrega a busca nao pode ver nada")
 
             ' So a PRIMEIRA e entregue; a segunda falha e continua pendente.
             Assert.ThrowsException(Of InvalidOperationException)(

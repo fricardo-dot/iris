@@ -103,6 +103,41 @@ Public Class AgendaViewModelTests
     End Function
 
     ''' <summary>
+    ''' <b>ZERO COMPROMISSOS NÃO É "NÃO HÁ COMPROMISSOS".</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O CAMINHO INTEIRO QUE A REVISÃO EXTERNA DESENROLOU</b>
+    '''
+    ''' O comentário da classe já reconhecia que a medição de cobertura só
+    ''' alcança o <b>calendário padrão local</b>, e esta agenda abre qualquer
+    ''' pasta classificada como calendário — caixa compartilhada, outro store,
+    ''' ninguém mediu. O XAML, ao lado, continuava dizendo <i>"por isso ela não
+    ''' tem ressalva de cobertura"</i>. E a tela mostrava <c>0 compromisso(s)</c>.
+    '''
+    ''' Ou seja: numa pasta que ninguém mediu, o aplicativo <b>afirmava
+    ''' ausência</b> — que é exatamente o que este projeto proíbe em todo lugar
+    ''' menos aqui, porque aqui ninguém tinha olhado.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo o <c>$"{j.Items.Count}
+    ''' compromisso(s)"</c> incondicional, a asserção do <c>0 compromisso(s)</c>
+    ''' cai.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Zero_compromissos_NAO_afirma_ausencia() As Task
+        Dim b As New BrokerDeAgenda() With {.Resposta = Janela(0)}
+        Dim vm = Montar(b)
+        vm.Apontar(Cal)
+
+        Await vm.CarregarAsync()
+
+        Assert.AreEqual(0, vm.Compromissos.Count, "controle: a janela veio vazia")
+        StringAssert.Contains(vm.Resumo, "nenhum compromisso LIDO")
+        StringAssert.Contains(vm.Resumo, "não é o mesmo que não haver")
+        Assert.IsFalse(vm.Resumo.Contains("0 compromisso(s)"),
+            "a tela afirma ausencia numa pasta cuja cobertura ninguem mediu")
+    End Function
+
+    ''' <summary>
     ''' <b>Lista truncada avisa que está truncada.</b>
     '''
     ''' O campo nasceu em 28/08 porque dois caminhos devolviam sucesso com

@@ -1077,9 +1077,15 @@
                  pasta, e nao por acaso de layout.
 
                  A agenda le AO VIVO do Outlook, como a lista, e ao contrario
-                 do acervo. Por isso ela nao tem ressalva de cobertura: nao ha
-                 retrato guardado para ressalvar. O que ela diz e quantos itens
-                 nao conseguiu ler. -->
+                 do acervo. Nao ha retrato guardado, entao nao ha ressalva de
+                 ACERVO, e isto NAO e o mesmo que cobertura completa.
+
+                 Este comentario dizia "por isso ela nao tem ressalva de
+                 cobertura", e a revisao externa pegou: o horizonte local so foi
+                 medido no calendario PADRAO, e esta agenda abre qualquer pasta
+                 classificada como calendario: caixa compartilhada, outro
+                 store, ninguem mediu. Por isso o resumo com zero itens diz
+                 "nenhum compromisso LIDO", e nao "0 compromisso(s)". -->
             <Border Grid.Row="2"
                     Visibility="{Binding Agenda.TemPasta, Converter={StaticResource BoolToVis},
                                          FallbackValue=Collapsed}"

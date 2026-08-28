@@ -239,7 +239,21 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private Shared Function Descrever(j As AppointmentWindow) As String
             Dim partes As New List(Of String)()
-            partes.Add($"{j.Items.Count} compromisso(s) até {j.Ate.LocalDateTime:dd/MM}")
+
+            ' ZERO NA TELA ERA UMA AFIRMACAO DE AUSENCIA, e o projeto inteiro
+            ' proibe essa. A revisao externa achou o caminho completo: o
+            ' comentario da classe reconheceu que a medicao so alcanca o
+            ' calendario padrao local, o XAML continuava dizendo "por isso ela
+            ' nao tem ressalva de cobertura", e a tela mostrava "0
+            ' compromisso(s)" numa pasta compartilhada sem ressalva nenhuma.
+            '
+            ' "LIDO" e a palavra que faz a diferenca, e ela custa nada.
+            If j.Items.Count = 0 Then
+                partes.Add($"nenhum compromisso LIDO até {j.Ate.LocalDateTime:dd/MM} — " &
+                           "o que não é o mesmo que não haver")
+            Else
+                partes.Add($"{j.Items.Count} compromisso(s) até {j.Ate.LocalDateTime:dd/MM}")
+            End If
 
             If j.FromRecurrence > 0 Then
                 partes.Add($"{j.FromRecurrence} de séries")
