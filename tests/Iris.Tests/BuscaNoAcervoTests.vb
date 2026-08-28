@@ -214,14 +214,20 @@ Public Class BuscaNoAcervoTests
     End Sub
 
     ''' <summary>
-    ''' <b>Pasta nunca varrida não é pasta sem resultado.</b>
+    ''' <b>Pasta sem acervo publicado não é pasta sem resultado.</b>
     '''
     ''' Misturá-las faria o resultado dizer "procurei aqui e não achei" sobre
     ''' um lugar onde ninguém procurou. É a mesma distinção entre
     ''' <c>Nothing</c> e zero que o projeto já faz nas linhas descartadas.
+    '''
+    ''' <b>E o nome do estado mudou em 28/08/2026.</b> Eu chamava estas pastas
+    ''' de "nunca varridas", e a revisão externa mostrou que é mais do que se
+    ''' sabe: sem geração publicada cabe também a tentativa rejeitada pela S6,
+    ''' a cancelada e a que falhou. O cache afirma que <b>não há acervo
+    ''' publicado</b>, e é só isso que a frase pode dizer.
     ''' </summary>
     <TestMethod>
-    Public Sub Pasta_nunca_varrida_fica_SEPARADA_das_consultadas()
+    Public Sub Pasta_SEM_ACERVO_PUBLICADO_fica_SEPARADA_das_consultadas()
         Using db = Abrir()
             Semear(db, "Caixa de Entrada", "entrada", Caixa)
             SoRegistrar(db, "Itens Enviados", "enviados")
@@ -232,7 +238,7 @@ Public Class BuscaNoAcervoTests
             Assert.AreEqual("Caixa de Entrada", r.Consultadas(0).Nome)
             Assert.AreEqual(1, r.SemAcervo.Count, "a nao varrida tem de aparecer, e a parte")
             Assert.AreEqual("Itens Enviados", r.SemAcervo(0).Nome)
-            StringAssert.Contains(r.Ressalva, "nunca foram varridas")
+            StringAssert.Contains(r.Ressalva, "não têm acervo publicado")
             StringAssert.Contains(r.Ressalva, "Itens Enviados")
         End Using
     End Sub

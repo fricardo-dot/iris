@@ -110,6 +110,22 @@ Friend NotInheritable Class FakeBroker
         Return Me
     End Function
 
+    ''' <summary>
+    ''' Marca uma pasta ja registrada como de CALENDARIO.
+    '''
+    ''' O ContentKind vem do broker e a arvore o repassa ao no. Sem isto
+    ''' nao da para exercitar a troca entre pasta de correio e pasta de
+    ''' calendario -- que e a transicao onde o acervo e a agenda poderiam
+    ''' se sobrepor.
+    ''' </summary>
+    Friend Sub MarcarComoCalendario(entryId As String)
+        For Each par In Filhas
+            For Each f In par.Value
+                If f.Key.EntryId = entryId Then f.ContentKind = FolderContentKind.Calendar
+            Next
+        Next
+    End Sub
+
     Private Shared Function Trilha(f As FolderKey) As String
         Return $"{f.StoreId}|{f.EntryId}"
     End Function
@@ -463,7 +479,7 @@ Friend NotInheritable Class FakeBroker
                                          de As DateTimeOffset, ate As DateTimeOffset,
                                          cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentWindow)) _
-        Implements IOutlookBroker.GetAppointmentsAsync
+        Implements IAgendaSource.GetAppointmentsAsync
         Return ForaDaAlcada(Of OperationResult(Of AppointmentWindow))()
     End Function
 

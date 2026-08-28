@@ -130,8 +130,14 @@ Public Class CalendarioRealTests
     ''' agosto. Eu esperava que a ordem errada <i>perdesse</i> ocorrências;
     ''' ela faz a expansão ignorar o filtro.
     '''
-    ''' E os outros quatro testes deste arquivo continuam <b>verdes</b> nesse
-    ''' controle. É este aqui, sozinho, que segura a ordem.
+    ''' <b>Este teste, sozinho, é o que segura a ordem.</b> Todos os outros
+    ''' deste arquivo continuam verdes nesse controle — inclusive o da
+    ''' expansão, e o comentário dele explica por quê.
+    '''
+    ''' Ele também pega <c>IncludeRecurrences</c> desligado, com <b>5</b>
+    ''' fora da janela: sem expansão os mestres voltam nas datas originais,
+    ''' que estão fora. Dois defeitos diferentes, o mesmo sintoma, números
+    ''' diferentes.
     ''' </summary>
     <TestMethod>
     Public Async Function Nenhum_compromisso_cai_fora_da_janela() As Task
@@ -158,50 +164,103 @@ Public Class CalendarioRealTests
     End Function
 
     ''' <summary>
-    ''' <b>A expansão de séries acontece — e a ordem é o que a faz acontecer.</b>
+    ''' <b>A expansão de séries acontece — provada pela mesma série aparecendo
+    ''' em dias diferentes.</b>
     '''
-    ''' Prova por <b>cruzamento</b>, que é a mesma técnica que
-    ''' <c>PagingIntegrationTests</c> usa: uma janela larga tem de conter pelo
-    ''' menos tantas ocorrências quanto a soma de duas metades dela. Se a
-    ''' expansão estivesse desligada, a série apareceria uma vez só na data
-    ''' original, e as metades somariam <b>menos</b> que o todo de um jeito
-    ''' que a conta denuncia.
+    ''' ------------------------------------------------------------------
+    ''' <b>A PRIMEIRA VERSÃO DESTE TESTE NÃO PROVAVA NADA</b>
     '''
-    ''' A medição de 28/08/2026 achou <b>4 recorrentes em 100</b> dos
-    ''' compromissos mais recentes desta caixa — poucos, e suficientes.
+    ''' Ela cobrava <c>metade1 + metade2 &gt;= todo</c>, chamando isso de prova
+    ''' por cruzamento. A revisão externa mostrou que a desigualdade vale
+    ''' <b>com ou sem</b> expansão — e o meu próprio controle negativo já tinha
+    ''' dito isso e eu não vi: invertendo a ordem em <c>CalendarReading</c>,
+    ''' aquele teste ficou <b>verde</b> enquanto o irmão da janela caía com 65
+    ''' compromissos fora do lugar.
     '''
-    ''' <b>Se esta caixa não tiver série nenhuma na janela</b>, o teste diz
-    ''' isso e fica inconclusivo. Ele não vira verde por ausência de matéria.
+    ''' O que separa expansão ligada de desligada é a <b>mesma série aparecendo
+    ''' mais de uma vez</b> na janela. Sem expansão, o mestre aparece uma vez
+    ''' só, na data original, e nenhum assunto se repete em dois dias.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>E A SEGUNDA VERSÃO TAMBÉM NÃO GUARDA A ORDEM. MEDIDO.</b>
+    '''
+    ''' Eu troquei o teste achando que ele passaria a pegar a ordem invertida.
+    ''' Não pega — e o motivo é interessante: <b>com a ordem invertida a
+    ''' expansão continua acontecendo</b>. O que quebra é o filtro. Foi por
+    ''' isso que o controle daquele dia produziu 65 compromissos <i>fora da
+    ''' janela</i> em vez de ocorrências faltando.
+    '''
+    ''' Os três estados, medidos contra a caixa real em 28/08/2026:
+    '''
+    ''' <code>
+    '''                                  este teste   o da janela
+    '''   ordem certa .................... passa ....... passa
+    '''   Restrict antes do Include ...... passa ....... FALHA (65 fora)
+    '''   IncludeRecurrences desligado ... FALHA ....... FALHA (5 fora)
+    ''' </code>
+    '''
+    ''' Então: <b>este</b> teste guarda que a expansão está LIGADA. O
+    ''' <c>Nenhum_compromisso_cai_fora_da_janela</c> guarda a ORDEM. Nenhum dos
+    ''' dois guarda os dois, e dizer o contrário seria a terceira vez que eu
+    ''' afirmo cobertura que não medi neste mesmo arquivo.
+    '''
+    ''' <b>Sem série na janela desta caixa</b>, o teste fica inconclusivo. Ele
+    ''' não vira verde por ausência de matéria.
     ''' </summary>
     <TestMethod>
-    Public Async Function A_janela_inteira_contem_as_duas_metades() As Task
+    Public Async Function A_serie_aparece_MAIS_DE_UMA_VEZ_na_janela() As Task
         Dim b = Await AbrirAsync()
         Using b
             Dim cal = Await CalendarioAsync(b)
             Dim inicio = New DateTimeOffset(DateTimeOffset.Now.Date, DateTimeOffset.Now.Offset).AddDays(-60)
-            Dim meio = inicio.AddDays(30)
-            Dim fim = inicio.AddDays(60)
+            Dim fim = inicio.AddDays(120)
 
-            Dim todo = Await b.GetAppointmentsAsync(cal, inicio, fim, CancellationToken.None)
-            Dim primeira = Await b.GetAppointmentsAsync(cal, inicio, meio, CancellationToken.None)
-            Dim segunda = Await b.GetAppointmentsAsync(cal, meio, fim, CancellationToken.None)
+            Dim r = Await b.GetAppointmentsAsync(cal, inicio, fim, CancellationToken.None)
+            Assert.IsTrue(r.Succeeded, $"a leitura falhou: {r.Kind} / {r.Detail}")
 
-            Assert.IsTrue(todo.Succeeded AndAlso primeira.Succeeded AndAlso segunda.Succeeded,
-                "alguma das tres leituras falhou")
-
-            If todo.Value.FromRecurrence = 0 Then
+            Dim series = r.Value.Items.Where(Function(a) a.IsRecurring).ToList()
+            If series.Count = 0 Then
                 Assert.Inconclusive(
-                    "Nenhuma ocorrencia de serie nesta janela desta caixa. " &
-                    "O teste nao pode ficar verde por falta de materia: sem serie, " &
-                    "ele nao distingue expansao ligada de expansao desligada.")
+                    "Nenhum compromisso de serie nesta janela desta caixa. " &
+                    "Sem serie, o teste nao distingue expansao ligada de desligada.")
             End If
 
-            ' Um compromisso que ATRAVESSA o meio conta nas duas metades, entao
-            ' a soma e >= o todo, e nunca <. A desigualdade estrita seria falsa
-            ' por um motivo legitimo.
-            Assert.IsTrue(primeira.Value.Items.Count + segunda.Value.Items.Count >= todo.Value.Items.Count,
-                $"as metades somam {primeira.Value.Items.Count + segunda.Value.Items.Count} " &
-                $"e o todo tem {todo.Value.Items.Count}: alguma leitura perdeu ocorrencia")
+            ' O SINAL: mesmo assunto, dias diferentes.
+            Dim repetidas = series.
+                GroupBy(Function(a) a.Subject).
+                Where(Function(g) g.Select(Function(a) a.Start.LocalDateTime.Date).
+                                    Distinct().Count() > 1).
+                ToList()
+
+            Assert.IsTrue(repetidas.Count > 0,
+                $"{series.Count} compromisso(s) marcados como serie, e nenhum aparece em " &
+                "mais de um dia da janela: a expansao nao esta acontecendo. " &
+                "Confira a ordem Sort -> IncludeRecurrences -> Restrict.")
+        End Using
+    End Function
+
+    ''' <summary>
+    ''' <b>Leitura truncada NÃO se apresenta como completa.</b>
+    '''
+    ''' Até 28/08/2026 dois caminhos devolviam <c>Ok</c> com lista incompleta:
+    ''' exceção no <c>GetNext</c> virava fim da coleção, e o teto do laço virava
+    ''' sucesso silencioso. Agora existe <c>Truncada</c>, e este teste cobra que
+    ''' o caminho normal <b>não</b> a levante — senão o campo nasceria inútil,
+    ''' ligado sempre, e a tela avisaria "lista incompleta" o tempo todo até
+    ''' alguém aprender a ignorar o aviso.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Leitura_normal_NAO_vem_truncada() As Task
+        Dim b = Await AbrirAsync()
+        Using b
+            Dim cal = Await CalendarioAsync(b)
+            Dim de = DateTimeOffset.Now
+            Dim r = Await b.GetAppointmentsAsync(cal, de, de.AddDays(7), CancellationToken.None)
+
+            Assert.IsTrue(r.Succeeded, $"a leitura falhou: {r.Kind}")
+            Assert.IsFalse(r.Value.Truncada,
+                $"uma janela de sete dias veio truncada: {r.Value.MotivoDoCorte}")
+            Assert.AreEqual("", r.Value.MotivoDoCorte)
         End Using
     End Function
 

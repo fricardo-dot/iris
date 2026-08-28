@@ -305,4 +305,57 @@ Public Class JanelaPrincipalTests
             End Function)
     End Sub
 
+
+    ''' <summary>
+    ''' <b>O ACERVO E A AGENDA NÃO APARECEM JUNTOS — medido no ViewModel, e não
+    ''' no XAML.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' O <c>BindingsDaJanelaTests</c> confere que as duas faixas declaram a
+    ''' mesma linha da grade e que o acervo depende de <c>MostrarAcervo</c>. Isso
+    ''' prova a ligação; não prova a <b>fórmula</b>. A revisão externa de 28/08
+    ''' foi explícita: aquele teste só olhava se a propriedade existia.
+    '''
+    ''' Aqui a transição é exercitada de verdade — selecionar uma pasta de
+    ''' correio, depois uma de calendário, depois nenhuma — porque é a transição
+    ''' que produz a sobreposição, e não a declaração estática.
+    '''
+    ''' E o motivo de isto importar tanto está escrito na história do projeto: a
+    ''' faixa do acervo ficou invisível por dias porque duas bordas dividiam a
+    ''' <c>Grid.Row="2"</c> e ninguém tinha feito a pergunta ENTRE as faixas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Acervo_e_agenda_nunca_aparecem_juntos()
+        NoDispatcherAsync(
+            Async Function(d)
+                Dim b = Broker()
+                b.ComPasta(Raiz, "Calendário", "cal", temFilhas:=False)
+                b.MarcarComoCalendario("cal")
+
+                Using vm = Janela(b, d)
+                    Await vm.InitializeAsync()
+                    Await Assentar(Function() vm.Folders.Roots.Count > 1)
+
+                    Dim correio = vm.Folders.Roots.First(Function(f) f.Name = "Caixa de Entrada")
+                    Dim calendario = vm.Folders.Roots.First(Function(f) f.Name = "Calendário")
+
+                    ''' Nada selecionado: nem um nem outro reivindica a linha.
+                    Assert.IsFalse(vm.Agenda.TemPasta, "controle: agenda comeca vazia")
+
+                    ''' Pasta de CORREIO: o acervo aparece, a agenda nao.
+                    correio.IsSelected = True
+                    Await Assentar(Function() vm.MostrarAcervo)
+                    Assert.IsTrue(vm.MostrarAcervo, "em pasta de correio o acervo aparece")
+                    Assert.IsFalse(vm.Agenda.TemPasta, "em pasta de correio a agenda NAO aparece")
+
+                    ''' Pasta de CALENDARIO: troca de dono, e nunca os dois.
+                    calendario.IsSelected = True
+                    Await Assentar(Function() vm.Agenda.TemPasta)
+                    Assert.IsTrue(vm.Agenda.TemPasta, "em pasta de calendario a agenda aparece")
+                    Assert.IsFalse(vm.MostrarAcervo,
+                        "as duas faixas apareceram juntas na mesma linha da grade")
+                End Using
+            End Function)
+    End Sub
+
 End Class

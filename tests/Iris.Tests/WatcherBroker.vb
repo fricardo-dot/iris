@@ -112,7 +112,7 @@ Friend NotInheritable Class WatcherBroker
                                          de As DateTimeOffset, ate As DateTimeOffset,
                                          cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentWindow)) _
-        Implements IOutlookBroker.GetAppointmentsAsync
+        Implements IAgendaSource.GetAppointmentsAsync
         Throw New NotSupportedException("O watcher não deveria chamar isto.")
     End Function
 

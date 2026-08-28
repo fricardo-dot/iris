@@ -103,9 +103,16 @@ Namespace Global.Iris.Integration
 
                 ' PASTA SEM GERAÇÃO PUBLICADA NÃO É PASTA VAZIA.
                 '
-                ' Ela nunca foi varrida. Misturá-la com as consultadas faria o
-                ' resultado dizer "procurei aqui e não achei" sobre um lugar
-                ' onde ninguém procurou.
+                ' Misturá-la com as consultadas faria o resultado dizer
+                ' "procurei aqui e não achei" sobre um lugar onde ninguém
+                ' procurou.
+                '
+                ' E note o que isto NÃO diz. Até 28/08 eu chamava estas pastas
+                ' de "nunca varridas", e é mais do que se sabe: sem geração
+                ' publicada cabe também a tentativa que foi rejeitada pela S6,
+                ' a que foi cancelada, e a que falhou. O que o cache afirma é
+                ' que não há acervo publicado — e é só isso que o texto pode
+                ' dizer.
                 If manifesto.GenerationKey Is Nothing Then
                     semAcervo.Add(descrita)
                     Continue For
@@ -121,18 +128,22 @@ Namespace Global.Iris.Integration
                 Next
             Next
 
-            ' O ESTADO DO DRENO ENTRA NO RESULTADO.
+            ' O DRENO: UM DESVIO DECLARADO, E NAO UM CUMPRIMENTO.
             '
-            ' A §26.2 diz que nenhuma UI exibe dado do cache sem passar pelo
-            ' PublicationDrain, e a ArchitectureTests proibe a UI de chamar o
-            ' ManifestReader direto -- porque o contorno tentador e ler o
-            ' manifesto e nunca descobrir que a entrega parou.
+            ' A §26.2 exige um CONSUMIDOR ligado ao dreno, e proibe leitura
+            ' direta como substituto. Esta busca le o ManifestReader de cada
+            ' pasta e depois so CONSULTA a fila. A revisao externa de 28/08 foi
+            ' explicita: consultar o estado do dreno nao e passar por ele.
             '
-            ' Uma busca entre pastas nao cabe no formato do AcervoService, que
-            ' e de uma pasta so. O que ela pode fazer, e faz, e CONTAR: se ha
-            ' geracao publicada esperando entrega, o resultado diz. Assim o
-            ' dreno travado aparece na tela por onde o usuario esta olhando,
-            ' em vez de sumir atras de uma lista que parece completa.
+            ' Fica assim, e fica dito com esse nome, por um motivo concreto: o
+            ' AcervoService e de UMA pasta, com Apontar/Atual, e uma busca entre
+            ' pastas nao cabe nesse formato. Encaixa-la exigiria um consumidor
+            ' multi-pasta -- que e trabalho de desenho, nao conserto de linha.
+            '
+            ' O que a consulta compra: o dreno travado APARECE na tela por onde
+            ' o usuario esta olhando, em vez de sumir atras de uma lista que
+            ' parece completa. E menos do que a §26.2 pede, e mais do que
+            ' silencio. Esta no relatorio como divida.
             Dim pendentes As Integer
             Dim travado As Long?
             Try
@@ -373,9 +384,27 @@ Namespace Global.Iris.Integration
                                    "Isso não quer dizer que não exista na caixa.")
                     End If
 
-                    If AlgumaParcial Then
+                    ' DUAS CAUSAS DIFERENTES, DUAS FRASES DIFERENTES.
+                    '
+                    ' Até 28/08 isto tratava cobertura Desconhecida como
+                    ' parcial e depois afirmava a CAUSA da parcial — "o Outlook
+                    ' não expõe tudo". Cobertura desconhecida não tem causa
+                    ' conhecida; dizer a causa da outra é inventar diagnóstico.
+                    ' Count(Of T) do LINQ, e nao a propriedade Count da lista:
+                    ' em VB, `Consultadas.Count(...)` le a PROPRIEDADE e tenta
+                    ' indexa-la. Enumerable.Count explicito resolve.
+                    Dim parciais = Consultadas.Where(
+                        Function(p) p.Cobertura = FolderCoverage.Parcial).Count()
+                    Dim ignotas = Consultadas.Where(
+                        Function(p) p.Cobertura = FolderCoverage.Desconhecida).Count()
+
+                    If parciais > 0 Then
                         partes.Add("O acervo é parcial: o Outlook não expõe tudo o que existe " &
                                    "no servidor, e o Iris não conclui ausência.")
+                    End If
+                    If ignotas > 0 Then
+                        partes.Add($"Em {ignotas} pasta(s) não dá para dizer o quanto o Iris " &
+                                   "enxerga.")
                     End If
                 End If
 
@@ -388,23 +417,52 @@ Namespace Global.Iris.Integration
                            "é guardado no cache, então não é procurável.")
 
                 If SemAcervo.Count > 0 Then
-                    partes.Add($"{SemAcervo.Count} pasta(s) conhecida(s) nunca foram varridas " &
+                    partes.Add($"{SemAcervo.Count} pasta(s) conhecida(s) não têm acervo publicado " &
                                "e ficaram de fora: " &
                                String.Join(", ", SemAcervo.Select(Function(p) p.Nome)) & ".")
+                End If
+
+                ' A RESSALVA DE CADA PASTA NÃO PODE SUMIR.
+                '
+                ' O PastaConsultada carrega a ressalva do manifesto — que
+                ' inclui a CONTRAÇÃO de alcance, quando existe — e até 28/08
+                ' este resumo nunca a lia. Uma pasta cujo alcance ENCOLHEU
+                ' desde a última varredura é a informação mais acionável que
+                ' existe aqui, e ela estava sendo calculada e jogada fora.
+                Dim encolheram = Consultadas.
+                    Where(Function(p) Not String.IsNullOrWhiteSpace(p.Ressalva) AndAlso
+                                      p.Ressalva.Contains("encolheu")).
+                    Select(Function(p) p.Nome).ToList()
+                If encolheram.Count > 0 Then
+                    partes.Add("O alcance do Iris ENCOLHEU em: " &
+                               String.Join(", ", encolheram) &
+                               ". O que ele guardou antes pode não estar mais lá.")
                 End If
 
                 ' O DRENO. Publicação que existe e não foi entregue quer dizer
                 ' que o acervo mostrado está atrás do que já foi varrido — e
                 ' quem procura precisa saber disso antes de concluir do
                 ' silêncio.
+                ' A FRASE ESTAVA FACTUALMENTE ERRADA ATE 28/08.
+                '
+                ' Ela dizia que as publicacoes "ainda nao foram entregues ao
+                ' acervo". Nao e isso: a publicacao JA materializou o acervo, e
+                ' esta busca pode estar mostrando exatamente a geracao que ela
+                ' dizia nao ter chegado. O que esta pendente e a entrega ao
+                ' CONSUMIDOR -- o painel do acervo, que se atualiza pelo dreno.
+                '
+                ' Descrever errado um aviso de inconsistencia e pior que nao
+                ' avisar: quem le conclui a coisa errada com confianca.
                 If DrenoTravadoEm.HasValue Then
-                    partes.Add($"A entrega da geração {DrenoTravadoEm.Value} está travada: " &
-                               "há varredura publicada que ainda não chegou ao acervo.")
+                    partes.Add($"A entrega da geração {DrenoTravadoEm.Value} ao painel do acervo " &
+                               "está travada. A busca já enxerga essa varredura; o painel ao lado " &
+                               "pode estar atrasado.")
                 ElseIf PublicacoesPendentes < 0 Then
-                    partes.Add("Não consegui conferir se há publicação esperando entrega.")
+                    partes.Add("Não consegui conferir se há entrega pendente ao painel do acervo.")
                 ElseIf PublicacoesPendentes > 0 Then
-                    partes.Add($"{PublicacoesPendentes} publicação(ões) ainda não foram entregues " &
-                               "ao acervo, então ele pode estar atrás da última varredura.")
+                    partes.Add($"{PublicacoesPendentes} varredura(s) publicada(s) ainda não foram " &
+                               "entregues ao painel do acervo. A busca já as enxerga; o painel " &
+                               "pode estar atrasado.")
                 End If
 
                 Return String.Join(" ", partes)

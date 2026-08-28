@@ -522,3 +522,68 @@ agenda que precisou dele — apontá-la para a Caixa de Entrada mostraria
 por engano é indistinguível de zero por medida.
 
 Suíte: **846**.
+
+### 28/08 — revisão da Fase 6 e da busca: um bloqueador e seis achados
+
+**O bloqueador é o erro mais comum meu, um nível acima do de costume.** A
+`FolderVisibilityPolicy` tinha `MailOnly = True`, então a pasta de calendário
+**nunca aparecia na árvore**. A leitura funcionava, os cinco testes contra o
+Outlook real passavam — e **o usuário não tinha como chegar nela**: os testes
+achavam o calendário pelo broker, contornando a árvore. Não era o método sem
+chamador; era a funcionalidade inteira sem porta.
+
+`MailOnly` virou `SoOQueAbre`, com uma lista do que o Iris sabe abrir. O nome
+antigo tinha virado mentira: a regra sempre foi "não ofereça porta que não
+abre", e "só correio" era só uma coincidência enquanto isso era verdade.
+
+**Os outros seis:**
+
+1. **A busca contorna o `PublicationDrain`**, e consultar o estado dele não é
+   passar por ele. Fica assim, dito com esse nome: o `AcervoService` é de uma
+   pasta, e uma busca entre pastas não cabe nesse formato. Vai para o relatório
+   como dívida.
+2. **A frase do dreno estava factualmente errada** — dizia que as publicações
+   "não foram entregues ao acervo". A publicação já materializou o acervo; o que
+   falta é a entrega ao **painel**. A busca podia estar mostrando exatamente a
+   geração que dizia não ter chegado.
+3. **`CalendarReading` devolvia sucesso truncado** por dois caminhos: exceção no
+   `GetNext` virava fim da coleção, e o teto do laço virava sucesso silencioso.
+   Agora existe `Truncada` + `MotivoDoCorte`, e a tela diz "LISTA INCOMPLETA".
+4. **A isenção de cobertura da agenda não era honesta.** "Lê ao vivo" prova
+   frescor contra o OOM local, não cobertura do servidor — em cached, o universo
+   local é o mesmo que a §23 diz que não dá para tratar como a caixa. Removida.
+5. **`AgendaViewModel` tinha dois furos de geração**: o `Catch` e o `Finally`
+   conferiam só o descarte. Uma leitura velha que falhasse apagava a lista boa da
+   nova; uma leitura velha que terminasse desligava o indicador da nova. Ambos
+   corrigidos, com `AgendaViewModelTests` novo e controle negativo dos dois.
+6. **A busca afirmava demais em três lugares**: "nunca foram varridas" virou "não
+   têm acervo publicado" (sem geração cabe também a tentativa rejeitada pela S6);
+   a contração de alcance era calculada e jogada fora, agora aparece; e cobertura
+   `Desconhecida` era tratada como parcial e recebia a causa da parcial.
+
+**E dois testes meus passavam por motivo errado.** O da expansão de séries
+cobrava uma desigualdade que vale com ou sem expansão — meu próprio controle
+negativo já tinha dito isso e eu não vi. Reescrito para contar a mesma série em
+dias diferentes. Aí eu **medi os três estados** e descobri que ele ainda não
+guarda a ordem — com a ordem invertida a expansão *acontece*, o que quebra é o
+filtro:
+
+| | teste da expansão | teste da janela |
+|---|---|---|
+| ordem certa | passa | passa |
+| `Restrict` antes do `Include` | passa | **falha** (65 fora) |
+| `IncludeRecurrences` desligado | **falha** | **falha** (5 fora) |
+
+Um guarda a expansão, o outro guarda a ordem. Nenhum guarda os dois, e está
+escrito assim.
+
+O teste da exclusão agenda/acervo só conferia que a propriedade existia.
+`Acervo_e_agenda_nunca_aparecem_juntos` exercita a **transição** — correio,
+calendário, nada — e cai quando a fórmula quebra, enquanto o antigo continua
+verde.
+
+`IAgendaSource` nasceu disso: o ViewModel recebia o broker inteiro, e por isso
+não tinha teste nenhum. **Porta estreita não é elegância — é o que decide se
+existe teste.**
+
+Suíte: **854**.

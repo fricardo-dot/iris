@@ -448,6 +448,28 @@ Namespace Global.Iris.Model
         ''' nada foi recusado.
         ''' </summary>
         Public Property Skipped As Integer?
+
+        ''' <summary>
+        ''' <b>A enumeração terminou antes do fim.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' Existe porque, até a revisão externa de 28/08/2026, dois caminhos
+        ''' devolviam <c>Ok</c> com uma lista <b>plausível e incompleta</b>:
+        ''' uma exceção no <c>GetNext</c> virava fim normal da coleção, e
+        ''' alcançar o teto do laço virava sucesso silencioso.
+        '''
+        ''' Uma agenda que perde os compromissos do fim da semana e não avisa é
+        ''' pior que uma agenda que falha: o usuário não tem como saber que
+        ''' precisa olhar em outro lugar. É a mesma família do descarte que a
+        ''' varredura conta, e da recusa que a busca declara.
+        '''
+        ''' Quem consome <b>tem</b> de dizer isto na tela. O DTO não força — a
+        ''' mesma limitação que o <c>FolderManifest</c> reconhece sobre si.
+        ''' </summary>
+        Public Property Truncada As Boolean
+
+        ''' <summary>Por que a enumeração parou, quando parou cedo.</summary>
+        Public Property MotivoDoCorte As String = ""
     End Class
 
 End Namespace

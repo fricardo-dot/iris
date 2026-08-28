@@ -132,12 +132,29 @@ Namespace Global.Iris.Outlook
                     Dim proximo As Object = Nothing
                     Try
                         proximo = janela.GetNext()
-                    Catch
+                    Catch ex As Exception
+                        ' FALHA NO MEIO DA ENUMERACAO NAO E FIM DA COLECAO.
+                        '
+                        ' Ate 28/08/2026 este Catch devolvia Nothing, e o laco
+                        ' terminava como se a janela tivesse acabado: a leitura
+                        ' saia Ok, com uma lista plausivel e incompleta. Uma
+                        ' agenda que perde o fim da semana sem avisar e pior
+                        ' que uma agenda que falha.
+                        resultado.Truncada = True
+                        resultado.MotivoDoCorte =
+                            "a leitura foi interrompida no meio (" & ex.GetType().Name & ")"
                         proximo = Nothing
                     End Try
                     ComHelpers.Release(atual)
                     atual = proximo
                 End While
+
+                ' TETO ALCANCADO: tambem e truncamento, e tambem era silencioso.
+                If atual IsNot Nothing Then
+                    resultado.Truncada = True
+                    resultado.MotivoDoCorte =
+                        $"a janela tem mais de {TetoDeItens} ocorrencias e a leitura parou no teto"
+                End If
                 ComHelpers.Release(atual)
 
                 resultado.Skipped = recusadas

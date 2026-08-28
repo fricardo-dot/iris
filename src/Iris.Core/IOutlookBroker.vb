@@ -25,7 +25,38 @@ Namespace Global.Iris.Core
     '''   • Falha depois de iniciar uma mutação é <see cref="ErrorKind.Ambiguous"/>,
     '''     nunca um erro comum. Repetir automaticamente é proibido.
     ''' </summary>
+    ''' <summary>
+    ''' <b>A porta que a agenda precisa — e só ela.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>POR QUE UMA INTERFACE DE UM MÉTODO SÓ</b>
+    '''
+    ''' O <c>AgendaViewModel</c> recebia o <see cref="IOutlookBroker"/> inteiro,
+    ''' e com isso o único jeito de testá-lo seria implementar as trinta e
+    ''' tantas operações do broker num duplo — ou afrouxar o <c>FakeBroker</c>,
+    ''' que responde "fora da alçada" de propósito para que uma chamada indevida
+    ''' quebre o teste em vez de passar por sorte.
+    '''
+    ''' O resultado era previsível e a revisão externa de 28/08/2026 o achou:
+    ''' <b>a agenda não tinha teste nenhum</b>, e por isso dois furos de geração
+    ''' sobreviveram — o <c>Catch</c> e o <c>Finally</c> não conferiam de quem
+    ''' era o voo.
+    '''
+    ''' Porta estreita não é elegância: é o que decide se existe teste.
+    '''
+    ''' <see cref="IOutlookBroker"/> herda desta, então o broker real e os
+    ''' duplos existentes continuam servindo sem mudar de forma.
+    ''' </summary>
+    Public Interface IAgendaSource
+        Function GetAppointmentsAsync(folder As FolderKey,
+                                      de As DateTimeOffset, ate As DateTimeOffset,
+                                      cancel As CancellationToken) _
+            As Task(Of OperationResult(Of AppointmentWindow))
+    End Interface
+
     Public Interface IOutlookBroker
+        Inherits IAgendaSource
+
 
         ' ---- Sessão -----------------------------------------------------
 
@@ -145,10 +176,9 @@ Namespace Global.Iris.Core
         ''' </summary>
         ''' <param name="de">Início da janela, inclusivo.</param>
         ''' <param name="ate">Fim da janela, exclusivo.</param>
-        Function GetAppointmentsAsync(folder As FolderKey,
-                                      de As DateTimeOffset, ate As DateTimeOffset,
-                                      cancel As CancellationToken) _
-            As Task(Of OperationResult(Of AppointmentWindow))
+        ''' <remarks>
+        ''' Declarada em <see cref="IAgendaSource"/>, e não aqui. Ver o motivo lá.
+        ''' </remarks>
 
         ''' <summary>
         ''' Salva um anexo num diretório controlado. NÃO abre o arquivo:

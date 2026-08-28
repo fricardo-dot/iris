@@ -734,7 +734,7 @@ Namespace Global.Iris.Outlook
                                                    de As DateTimeOffset, ate As DateTimeOffset,
                                                    cancel As CancellationToken) _
             As Task(Of OperationResult(Of AppointmentWindow)) _
-            Implements IOutlookBroker.GetAppointmentsAsync
+            Implements IAgendaSource.GetAppointmentsAsync
 
             Return Await ReadAsync(Of AppointmentWindow)(
                 "outlook.getAppointments",

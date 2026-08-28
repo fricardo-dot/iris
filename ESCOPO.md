@@ -96,12 +96,28 @@ Três consequências que atravessam todo o documento:
 
 ### Regra de acesso a dados
 
-> **A UI nunca recebe objetos COM nem chama o OOM diretamente.** Na Fase 1,
-> ela recebe DTOs paginados produzidos pelo broker. A partir da Fase 2,
-> listagem e busca leem exclusivamente do cache.
+> **A UI nunca recebe objetos COM nem chama o OOM diretamente.** Ela recebe
+> DTOs produzidos pelo broker, e — quando o dado vem do cache — objetos de
+> leitura produzidos pela camada de integração.
 
-Esta formulação substitui o "a UI lê sempre do cache" da versão 2, que
-contradizia o faseamento.
+**Esta regra já teve duas formulações erradas, e a segunda durou mais que a
+primeira.**
+
+A versão 2 dizia *"a UI lê sempre do cache"*, e contradizia o faseamento. A
+versão 3 corrigiu para *"a partir da Fase 2, listagem e busca leem
+exclusivamente do cache"* — e ficou errada de outro jeito, por três dias, até
+28/08/2026:
+
+- **A listagem nunca passou a ler do cache**, e não vai passar. Ela lê ao vivo
+  do Outlook de propósito, e o `MainViewModel` diz isso com todas as letras: em
+  modo cached o acervo é arquivo histórico conservador, não o estado corrente
+  da caixa (§23). São **duas fontes diferentes, mostradas em lugares
+  diferentes**, e essa separação é uma decisão, não uma pendência.
+- **A busca** — que passou a existir em 28/08 — lê do cache, e só dele. Ela é a
+  única que a frase antiga descrevia certo.
+
+O que vale hoje, e é o que o código faz: **a lista e a agenda leem ao vivo; o
+acervo e a busca leem do cache; nenhuma UI toca em COM.**
 
 ### O broker
 

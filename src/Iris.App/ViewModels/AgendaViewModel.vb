@@ -26,22 +26,30 @@ Namespace Global.Iris.App.ViewModels
     ''' existir sem o cache que a Fase 6 ainda não tem.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>ISTO NÃO É UM CACHE, E A DIFERENÇA IMPORTA</b>
+    ''' <b>ISTO NÃO É UM CACHE — E "AO VIVO" NÃO QUER DIZER "COMPLETO"</b>
     '''
-    ''' A agenda lê <b>ao vivo</b> do Outlook, como a lista de mensagens — e
-    ''' ao contrário do acervo. Então ela não carrega ressalva de cobertura:
-    ''' o que ela mostra é o que o Outlook expõe agora, e não um retrato
-    ''' guardado. Confundir os dois é o que a §23 persegue, e aqui a confusão
-    ''' seria na direção contrária — inventar uma ressalva onde não há acervo.
+    ''' A agenda lê ao vivo do Outlook, como a lista de mensagens e ao contrário
+    ''' do acervo. Ela não carrega a ressalva do <b>acervo histórico</b>, porque
+    ''' não há retrato guardado para ressalvar.
     '''
-    ''' O que ela <b>tem</b> de dizer é o que foi recusado: item que a leitura
-    ''' viu e não conseguiu ler não pode sumir em silêncio.
+    ''' <b>Mas eu escrevi aqui, até a revisão de 28/08/2026, que ela por isso
+    ''' "não carrega ressalva de cobertura". Era isenção que eu me dei.</b>
+    ''' Ler ao vivo prova <i>frescor</i> em relação ao OOM local; não prova
+    ''' nada sobre o servidor. Em Exchange em cache, "o que o Outlook expõe
+    ''' agora" continua sendo o universo local — o mesmo que a §23 diz que não
+    ''' dá para tratar como a caixa inteira. E ninguém mediu a cobertura do
+    ''' calendário; a medição de 28/08 contou itens, não alcance.
+    '''
+    ''' Então a agenda diz o que ela <b>sabe</b>: quantos compromissos leu na
+    ''' janela, quantos vieram de séries, quantos itens recusou, e se a
+    ''' enumeração foi <b>interrompida</b> antes do fim. E diz que não sabe
+    ''' dizer o que existe além do que o Outlook expõe.
     ''' </summary>
     Public NotInheritable Class AgendaViewModel
         Inherits ObservableObject
         Implements IDisposable
 
-        Private ReadOnly _broker As IOutlookBroker
+        Private ReadOnly _fonte As IAgendaSource
         Private ReadOnly _agora As Func(Of DateTimeOffset)
 
         Private _pasta As FolderKey
@@ -66,8 +74,8 @@ Namespace Global.Iris.App.ViewModels
         ''' Um teste de agenda que use <c>Now</c> passa em agosto e falha em
         ''' dezembro por um motivo que não é o código.
         ''' </summary>
-        Public Sub New(broker As IOutlookBroker, Optional agora As Func(Of DateTimeOffset) = Nothing)
-            _broker = broker
+        Public Sub New(fonte As IAgendaSource, Optional agora As Func(Of DateTimeOffset) = Nothing)
+            _fonte = fonte
             _agora = If(agora, Function() DateTimeOffset.Now)
             AtualizarCommand = New AsyncRelayCommand(AddressOf CarregarAsync,
                                                      Function() _pasta IsNot Nothing AndAlso Not _carregando)
@@ -153,7 +161,7 @@ Namespace Global.Iris.App.ViewModels
                 Dim de = _agora()
                 Dim ate = de.AddDays(_dias)
 
-                Dim r = Await _broker.GetAppointmentsAsync(_pasta, de, ate, CancellationToken.None)
+                Dim r = Await _fonte.GetAppointmentsAsync(_pasta, de, ate, CancellationToken.None)
 
                 ' DEPOIS DO AWAIT. A janela pode ter fechado, e a pasta pode ter
                 ' mudado — publicar aqui mostraria a agenda de outro período com
@@ -173,12 +181,28 @@ Namespace Global.Iris.App.ViewModels
                 Next
                 Resumo = Descrever(r.Value)
             Catch ex As Exception
-                If _disposed Then Return
+                ' A GERACAO TAMBEM AQUI, e nao so o descarte.
+                '
+                ' Uma leitura VELHA que falhe depois de uma nova ter terminado
+                ' limparia a lista boa e publicaria erro sobre ela. O caminho
+                ' feliz ja conferia; o de falha nao, e a revisao externa pegou.
+                If _disposed OrElse minha <> Volatile.Read(_geracao) Then Return
                 Erro = "Não consegui ler a agenda agora."
                 Compromissos.Clear()
                 Resumo = ""
             Finally
-                If Not _disposed Then Carregando = False
+                ' E O `Carregando` E DO DONO DO VOO.
+                '
+                ' Apagar o indicador em qualquer geracao faria uma leitura
+                ' velha desligar o "carregando" da nova -- a tela pararia de
+                ' mostrar progresso com trabalho em voo, e o comando voltaria a
+                ' habilitar, permitindo uma terceira leitura concorrente.
+                '
+                ' E a mesma licao do assistente: quem limpa o Ocupado e o dono
+                ' do voo, nao a geracao corrente.
+                If Not _disposed AndAlso minha = Volatile.Read(_geracao) Then
+                    Carregando = False
+                End If
             End Try
         End Function
 
@@ -199,6 +223,14 @@ Namespace Global.Iris.App.ViewModels
 
             If j.Skipped.HasValue AndAlso j.Skipped.Value > 0 Then
                 partes.Add($"{j.Skipped.Value} item(ns) que não consegui ler")
+            End If
+
+            ' TRUNCAMENTO VEM PRIMEIRO NA LEITURA, mesmo vindo por último na
+            ' frase: é a informação que muda o que o usuário conclui da lista.
+            If j.Truncada Then
+                partes.Add("LISTA INCOMPLETA: " &
+                           If(String.IsNullOrEmpty(j.MotivoDoCorte),
+                              "a leitura parou antes do fim", j.MotivoDoCorte))
             End If
 
             Return String.Join(" · ", partes)
