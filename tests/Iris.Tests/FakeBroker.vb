@@ -454,6 +454,19 @@ Friend NotInheritable Class FakeBroker
         Return EstadoDaSessao.Value
     End Function
 
+    ''' <summary>
+    ''' Fora da alcada, como quase tudo aqui: um duplo que respondesse a
+    ''' tudo faria uma chamada indevida passar por sorte em vez de quebrar
+    ''' o teste.
+    ''' </summary>
+    Public Function GetAppointmentsAsync(folder As FolderKey,
+                                         de As DateTimeOffset, ate As DateTimeOffset,
+                                         cancel As CancellationToken) _
+        As Task(Of OperationResult(Of AppointmentWindow)) _
+        Implements IOutlookBroker.GetAppointmentsAsync
+        Return ForaDaAlcada(Of OperationResult(Of AppointmentWindow))()
+    End Function
+
     Public Async Function ProbeAsync(cancel As CancellationToken) As Task(Of SessionState) _
         Implements IOutlookBroker.ProbeAsync
         If Not EstadoDaSessao.HasValue Then Return Await ForaDaAlcada(Of SessionState)()

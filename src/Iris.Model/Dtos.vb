@@ -337,4 +337,117 @@ Namespace Global.Iris.Model
         End Sub
     End Class
 
+
+    ''' <summary>
+    ''' <b>Um compromisso do calendário, já achatado para a UI.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>MEDIDO ANTES DE EXISTIR</b>
+    '''
+    ''' Os campos são os que <c>tools/medir-grupos.ps1</c> mediu legíveis em
+    ''' <b>100 de 100</b> compromissos da caixa real, em 28/08/2026 — e nenhum
+    ''' a mais. Um DTO com campo que ninguém mediu é uma promessa que o
+    ''' provedor não fez.
+    '''
+    ''' O custo medido foi <b>30,9 ms por item</b>, quase o dobro dos ~16 ms
+    ''' que a Fase 0 mediu por mensagem. Os 434 compromissos desta caixa
+    ''' custariam ~13 s numa leitura só, e é por isso que a leitura é sempre
+    ''' por <b>janela de datas</b>, nunca "o calendário inteiro".
+    ''' </summary>
+    Public NotInheritable Class AppointmentInfo
+        Public Property Key As ItemKey
+        Public Property Subject As String = ""
+        Public Property Location As String = ""
+
+        ''' <summary>
+        ''' Início e fim <b>com offset</b>.
+        '''
+        ''' <c>DateTimeOffset</c> e não <c>DateTime</c>, pela mesma razão que
+        ''' <c>MailSummary.ReceivedTime</c>: "DateTime sem Kind" é a origem
+        ''' clássica de compromisso aparecendo na hora errada. Num calendário
+        ''' isso é pior que num e-mail — a hora <b>é</b> o dado.
+        ''' </summary>
+        Public Property Start As DateTimeOffset
+        Public Property [End] As DateTimeOffset
+
+        Public Property AllDayEvent As Boolean
+        Public Property Organizer As String = ""
+        Public Property BusyStatus As AppointmentBusy
+        Public Property ResponseStatus As AppointmentResponse
+
+        ''' <summary>
+        ''' Este item é uma ocorrência de uma série.
+        '''
+        ''' Medido: <b>4 em 100</b> dos compromissos mais recentes desta caixa.
+        ''' O número é pequeno e a consequência não: uma leitura que não expanda
+        ''' a série mostra a primeira ocorrência e esconde as outras, e o
+        ''' usuário não tem como perceber a diferença olhando a tela.
+        ''' </summary>
+        Public Property IsRecurring As Boolean
+
+        Public Property RecipientCount As Integer
+    End Class
+
+    ''' <summary>Como o compromisso ocupa a agenda.</summary>
+    Public Enum AppointmentBusy
+        Livre
+        Provisorio
+        Ocupado
+        ForaDoEscritorio
+        TrabalhandoEmOutroLugar
+        Desconhecido
+    End Enum
+
+    ''' <summary>
+    ''' A resposta a um convite.
+    '''
+    ''' <c>NaoEhReuniao</c> é distinto de <c>NaoRespondeu</c>: um compromisso
+    ''' que o próprio usuário criou não tem resposta pendente, e mostrá-lo como
+    ''' "não respondeu" seria inventar uma pendência.
+    ''' </summary>
+    Public Enum AppointmentResponse
+        NaoEhReuniao
+        Organizador
+        Aceito
+        Provisorio
+        Recusado
+        NaoRespondeu
+        Desconhecido
+    End Enum
+
+    ''' <summary>
+    ''' A janela de datas pedida, e o que a leitura fez com ela.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A JANELA VOLTA JUNTO, E ISSO NÃO É REDUNDÂNCIA</b>
+    '''
+    ''' Quem pede "os próximos sete dias" e recebe uma lista não sabe se a
+    ''' lista está vazia porque não há compromisso ou porque a leitura falhou
+    ''' no meio. A janela efetivamente lida vem no mesmo objeto, pelo mesmo
+    ''' motivo que a cobertura acompanha o manifesto do acervo: é a §23 aplicada
+    ''' a outro grupo.
+    ''' </summary>
+    Public NotInheritable Class AppointmentWindow
+        Public Property De As DateTimeOffset
+        Public Property Ate As DateTimeOffset
+        Public Property Items As New List(Of AppointmentInfo)()
+
+        ''' <summary>
+        ''' Quantas ocorrências vieram da expansão de séries.
+        '''
+        ''' Fica visível pela mesma razão que <c>MessagePage.SkippedCount</c>:
+        ''' "12 compromissos, 5 deles de séries" é diferente de "12
+        ''' compromissos", e a diferença muda o que o usuário conclui de uma
+        ''' agenda cheia.
+        ''' </summary>
+        Public Property FromRecurrence As Integer
+
+        ''' <summary>
+        ''' Quantos itens a leitura viu e recusou por não serem compromisso ou
+        ''' por não dar para ler. <c>Nothing</c> não é zero — zero afirma que
+        ''' nada foi recusado.
+        ''' </summary>
+        Public Property Skipped As Integer?
+    End Class
+
 End Namespace

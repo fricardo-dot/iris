@@ -118,6 +118,39 @@ Namespace Global.Iris.Core
             As Task(Of OperationResult(Of MessageDetail))
 
         ''' <summary>
+        ''' <b>Os compromissos de uma janela de datas.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE JANELA, E NÃO PÁGINA</b>
+        '''
+        ''' Mensagem se lê por página porque a caixa é uma fila e o usuário
+        ''' desce por ela. Calendário não: ninguém pede "os próximos 50
+        ''' compromissos", pede "esta semana". E a diferença não é de gosto —
+        ''' é que <b>ocorrência de série não existe até ser expandida</b>, e
+        ''' expandir sem data-fim é infinito.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A ARMADILHA DO OOM, E ELA É CLÁSSICA</b>
+        '''
+        ''' Com <c>IncludeRecurrences = True</c>, a coleção <b>tem</b> de ser
+        ''' ordenada por <c>[Start]</c> <b>antes</b> do <c>Restrict</c>. Fora
+        ''' dessa ordem o Outlook devolve a expansão errada — e devolve em
+        ''' silêncio, sem erro, com uma lista que parece plausível.
+        '''
+        ''' Isso é responsabilidade da implementação, e está aqui na interface
+        ''' porque quem escrever um segundo adaptador um dia precisa saber.
+        '''
+        ''' Custo medido em 28/08/2026: <b>30,9 ms por item</b>, contra ~16 ms
+        ''' por mensagem na Fase 0. Uma janela larga é cara.
+        ''' </summary>
+        ''' <param name="de">Início da janela, inclusivo.</param>
+        ''' <param name="ate">Fim da janela, exclusivo.</param>
+        Function GetAppointmentsAsync(folder As FolderKey,
+                                      de As DateTimeOffset, ate As DateTimeOffset,
+                                      cancel As CancellationToken) _
+            As Task(Of OperationResult(Of AppointmentWindow))
+
+        ''' <summary>
         ''' Salva um anexo num diretório controlado. NÃO abre o arquivo:
         ''' abrir anexo é executar conteúdo não confiável, e a decisão é da
         ''' UI, com confirmação (F1-J).

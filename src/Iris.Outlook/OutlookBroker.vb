@@ -727,6 +727,21 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        ' Leitura pura: ReadAsync, com retry. Nada aqui escreve, nem
+        ' aceita convite -- responder a reuniao e MUTACAO, e nao entra por
+        ' esta porta.
+        Public Async Function GetAppointmentsAsync(folder As FolderKey,
+                                                   de As DateTimeOffset, ate As DateTimeOffset,
+                                                   cancel As CancellationToken) _
+            As Task(Of OperationResult(Of AppointmentWindow)) _
+            Implements IOutlookBroker.GetAppointmentsAsync
+
+            Return Await ReadAsync(Of AppointmentWindow)(
+                "outlook.getAppointments",
+                Function(app, ns) CalendarReading.Ler(ns, folder, de, ate),
+                cancel)
+        End Function
+
         Public Async Function GetAttachmentPresenceAsync(items As IReadOnlyList(Of ItemKey),
                                                          cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence))) _

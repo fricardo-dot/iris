@@ -103,6 +103,19 @@ Friend NotInheritable Class WatcherBroker
         Return Fora(Of SessionState)()
     End Function
 
+    ''' <summary>
+    ''' Fora da alcada, como quase tudo aqui: um duplo que respondesse a
+    ''' tudo faria uma chamada indevida passar por sorte em vez de quebrar
+    ''' o teste.
+    ''' </summary>
+    Public Function GetAppointmentsAsync(folder As FolderKey,
+                                         de As DateTimeOffset, ate As DateTimeOffset,
+                                         cancel As CancellationToken) _
+        As Task(Of OperationResult(Of AppointmentWindow)) _
+        Implements IOutlookBroker.GetAppointmentsAsync
+        Throw New NotSupportedException("O watcher não deveria chamar isto.")
+    End Function
+
     Public Function GetStoresAsync(cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of StoreInfo))) Implements IOutlookBroker.GetStoresAsync
         Return Fora(Of OperationResult(Of IReadOnlyList(Of StoreInfo)))()
