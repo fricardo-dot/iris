@@ -85,7 +85,6 @@ Namespace Global.Iris.Assist
         Public Const MaxDestinatarios As Integer = 100
         Public Const MaxCorpo As Integer = 200_000
 
-        Private Shared ReadOnly Comentario As New Regex("<!--.*?-->", RegexOptions.Singleline)
         Private Shared ReadOnly Embutido As New Regex("(cid:|data:[a-z]+/)",
                                                       RegexOptions.IgnoreCase)
         Private Shared ReadOnly LinhasDemais As New Regex("(\r?\n){3,}")
@@ -251,25 +250,60 @@ Namespace Global.Iris.Assist
         ''' descarta o resto, e nós não temos como saber o que ficou faltando.
         ''' </summary>
         ''' <summary>
-        ''' <b>Dá para ler este HTML até o fim?</b>
+        ''' <b>Dá para ler este HTML?</b> É o mesmo percurso que produz o texto.
         '''
-        ''' É o mesmo leitor que produz o texto — de propósito. A pergunta
-        ''' "posso interpretar" e a resposta "aqui está o texto" saem do
-        ''' mesmo percurso, então não têm como discordar; e discordar era a
-        ''' raiz de todos os defeitos desta família.
-        '''
-        ''' Recusa só o <b>truncado</b>: HTML que acaba dentro de uma tag, de
-        ''' um comentário ou de um bloco cru. Ali o navegador descarta o resto
-        ''' e nós não sabemos o que ficou faltando.
+        ''' Recusa em dois casos, e os dois são "não sei":
+        ''' <b>truncado</b> — acaba dentro de uma construção — e
+        ''' <b>não modelado</b> — usa uma parte do HTML que este leitor não
+        ''' implementa.
         ''' </summary>
         Private Shared Function DaParaLer(bruto As String) As Boolean
-            Dim truncado = False
-            LerHtml(bruto, truncado)
-            Return Not truncado
+            Dim incerto = False
+            LerHtml(bruto, incerto)
+            Return Not incerto
         End Function
 
-        Friend Shared Function LerHtml(bruto As String, ByRef truncado As Boolean) As String
-            truncado = False
+        ''' <summary>
+        ''' <b>Lê o HTML uma vez e devolve o texto — e diz quando não sabe.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>PRIMEIRO: POR QUE UM LEITOR SÓ</b>
+        '''
+        ''' Antes havia <i>dois</i> códigos: um decidia se o HTML era
+        ''' interpretável e outro limpava, por expressões regulares. Todo defeito
+        ''' desta família foi um desacordo entre os dois, e foram cinco passadas
+        ''' de revisão externa alinhando um caso e deixando um irmão. Um leitor
+        ''' só não tem com quem discordar.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>SEGUNDO, E MAIS IMPORTANTE: ELE NÃO É UM PARSER DE HTML</b>
+        '''
+        ''' A primeira versão deste leitor foi escrita como se fosse, e a revisão
+        ''' seguinte achou cinco estados do HTML real que faltavam —
+        ''' <i>double-escaped script</i>, RCDATA, fechamento abrupto de
+        ''' comentário, espaço não-ASCII no fechamento, estados de atributo. Isso
+        ''' não acaba: HTML é maior do que cabe aqui, e cada passada acharia mais.
+        '''
+        ''' <b>Então ele modela um subconjunto e RECUSA o resto.</b> É a mesma
+        ''' regra que o projeto aplica em todo lugar: recusa declarada é mais
+        ''' forte que conversão pela metade. O que ele modela:
+        '''
+        ''' <list type="bullet">
+        ''' <item>texto, e um <c>&lt;</c> que não abre tag é texto;</item>
+        ''' <item>tag, com atributo com aspas, sem aspas, e sem valor;</item>
+        ''' <item>comentário, incluindo os fechamentos <c>--&gt;</c>,
+        ''' <c>--!&gt;</c> e os abruptos <c>&lt;!--&gt;</c> e
+        ''' <c>&lt;!---&gt;</c>;</item>
+        ''' <item>o texto cru de <c>script</c> e <c>style</c>.</item>
+        ''' </list>
+        '''
+        ''' O que ele <b>recusa por não saber</b> está em
+        ''' <see cref="NaoModelados"/> e no comentário condicional — e o
+        ''' <c>script</c> que contém <c>&lt;!--</c>, que é a porta do estado
+        ''' <i>double-escaped</i>, onde um <c>&lt;/script&gt;</c> não fecha nada.
+        ''' </summary>
+        Friend Shared Function LerHtml(bruto As String, ByRef incerto As Boolean) As String
+            incerto = False
             Dim texto = If(bruto, "")
             Dim sb As New StringBuilder(texto.Length)
             Dim i As Integer = 0
@@ -283,25 +317,21 @@ Namespace Global.Iris.Assist
                     Continue While
                 End If
 
-                ' COMENTARIO: some inteiro, como no navegador.
                 If Casa(texto, i, "<!--") Then
-                    Dim fim = texto.IndexOf("-->", i + 4, StringComparison.Ordinal)
-                    If fim < 0 Then
-                        truncado = True
-                        Return Fechar(sb)
-                    End If
+                    Dim depoisDoComentario = PularComentario(texto, i, incerto)
+                    If incerto Then Return Fechar(sb)
                     sb.Append(" "c)
-                    i = fim + 3
+                    i = depoisDoComentario
                     Continue While
                 End If
 
                 ' Declaracao, instrucao e fechamento sem nome: o navegador
-                ' trata como comentario torto e nao mostra. Some ate o ">".
+                ' trata como comentario torto e nao mostra.
                 If Casa(texto, i, "<!") OrElse Casa(texto, i, "<?") OrElse
                    (Casa(texto, i, "</") AndAlso Not ComecaNome(texto, i + 2)) Then
                     Dim fim = texto.IndexOf(">"c, i)
                     If fim < 0 Then
-                        truncado = True
+                        incerto = True
                         Return Fechar(sb)
                     End If
                     sb.Append(" "c)
@@ -309,8 +339,7 @@ Namespace Global.Iris.Assist
                     Continue While
                 End If
 
-                ' "<" QUE NAO ABRE TAG E TEXTO. E o que o navegador faz, e o
-                ' que a versao anterior nao fazia: ela recusava a mensagem.
+                ' "<" QUE NAO ABRE TAG E TEXTO -- e o navegador faz igual.
                 Dim ehFechamento = Casa(texto, i, "</")
                 Dim inicioDoNome = If(ehFechamento, i + 2, i + 1)
                 If Not ComecaNome(texto, inicioDoNome) Then
@@ -320,28 +349,111 @@ Namespace Global.Iris.Assist
                 End If
 
                 Dim nome = LerNome(texto, inicioDoNome)
-                Dim depois = PularAtributos(texto, inicioDoNome + nome.Length)
-                If depois < 0 Then
-                    truncado = True
+
+                ' NAO MODELADO: recusa em vez de adivinhar.
+                If NaoModelados.Contains(nome) Then
+                    incerto = True
                     Return Fechar(sb)
                 End If
 
-                ' Estrutura vira quebra de linha. O resto da tag some.
+                Dim depois = PularAtributos(texto, inicioDoNome + nome.Length)
+                If depois < 0 Then
+                    incerto = True
+                    Return Fechar(sb)
+                End If
+
                 If EhQuebra(nome, ehFechamento) Then sb.Append(vbLf) Else sb.Append(" "c)
                 i = depois
 
-                ' TEXTO CRU: dentro de script/style nada e marcacao.
                 If Not ehFechamento AndAlso (nome = "script" OrElse nome = "style") Then
-                    Dim fim = AcharFechamento(texto, i, nome)
-                    If fim < 0 Then
-                        truncado = True
-                        Return Fechar(sb)
-                    End If
-                    i = fim
+                    i = PularTextoCru(texto, i, nome, incerto)
+                    If incerto Then Return Fechar(sb)
                 End If
             End While
 
             Return Fechar(sb)
+        End Function
+
+        ''' <summary>
+        ''' Partes do HTML que este leitor <b>não</b> modela, e por isso recusa.
+        '''
+        ''' <c>textarea</c> e <c>title</c> são RCDATA: o conteúdo é texto
+        ''' literal, então tratá-lo como marcação <i>apaga</i> o que o usuário vê.
+        ''' <c>iframe</c>, <c>noscript</c>, <c>noembed</c>, <c>noframes</c> e
+        ''' <c>template</c> guardam conteúdo que o navegador em geral <b>não</b>
+        ''' mostra — tratá-lo como texto o faz <i>vazar</i>. <c>xmp</c> e
+        ''' <c>plaintext</c> mudam a leitura de tudo o que vem depois.
+        '''
+        ''' Os dois erros já aconteceram aqui, em versões anteriores. A lista é
+        ''' curta de propósito: é mais honesto recusar uma mensagem rara do que
+        ''' entregar uma mensagem errada.
+        ''' </summary>
+        Private Shared ReadOnly NaoModelados As New HashSet(Of String)(
+            {"textarea", "title", "iframe", "noscript", "noembed", "noframes",
+             "xmp", "plaintext", "template"}, StringComparer.Ordinal)
+
+        ''' <summary>
+        ''' Do <c>&lt;!--</c> até depois do fechamento. Conhece os quatro
+        ''' fechamentos do HTML, e <b>recusa o comentário condicional</b>.
+        '''
+        ''' O condicional (<c>&lt;!--[if mso]&gt;</c>) é o caso em que o
+        ''' conteúdo do comentário <i>é</i> visível — justamente no Outlook. Um
+        ''' leitor que o apaga perde texto que o usuário viu; um que o mostra
+        ''' inventa texto onde o navegador não mostra nada. Não dá para acertar
+        ''' os dois sem saber quem vai ler, então recusa.
+        ''' </summary>
+        Private Shared Function PularComentario(texto As String, i As Integer,
+                                                ByRef incerto As Boolean) As Integer
+            ' Fechamento abrupto: <!--> e <!--->
+            If Casa(texto, i, "<!-->") Then Return i + 5
+            If Casa(texto, i, "<!--->") Then Return i + 6
+
+            If Casa(texto, i, "<!--[") Then
+                incerto = True
+                Return -1
+            End If
+
+            Dim a = texto.IndexOf("-->", i + 4, StringComparison.Ordinal)
+            Dim b = texto.IndexOf("--!>", i + 4, StringComparison.Ordinal)
+            If a < 0 AndAlso b < 0 Then
+                incerto = True
+                Return -1
+            End If
+            If a < 0 OrElse (b >= 0 AndAlso b < a) Then Return b + 4
+            Return a + 3
+        End Function
+
+        ''' <summary>
+        ''' Do fim da tag de abertura até depois da tag de fechamento do bloco
+        ''' cru, sem emitir nada — o conteúdo não é texto.
+        '''
+        ''' <b>Recusa se houver <c>&lt;!--</c> dentro</b>: é a porta do estado
+        ''' <i>double-escaped</i> do HTML, onde <c>&lt;/script&gt;</c> deixa de
+        ''' fechar o bloco. Modelar aquilo é reimplementar o tokenizador; não
+        ''' modelar e seguir em frente entrega como texto o que estava escondido.
+        ''' </summary>
+        Private Shared Function PularTextoCru(texto As String, i As Integer,
+                                              nome As String,
+                                              ByRef incerto As Boolean) As Integer
+            Dim fim = AcharFechamento(texto, i, nome)
+            If fim < 0 Then
+                incerto = True
+                Return -1
+            End If
+
+            If texto.IndexOf("<!--", i, fim - i, StringComparison.Ordinal) >= 0 Then
+                incerto = True
+                Return -1
+            End If
+
+            ' Consome tambem a tag de fechamento, para o bloco inteiro custar
+            ' UM espaco -- como custava quando era uma expressao regular so.
+            Dim depois = PularAtributos(texto, fim + 2 + nome.Length)
+            If depois < 0 Then
+                incerto = True
+                Return -1
+            End If
+            Return depois
         End Function
 
         Private Shared Function Fechar(sb As StringBuilder) As String
@@ -354,9 +466,9 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
-        ''' Nome de tag começa com letra <b>ASCII</b>. O tokenizador do HTML é
-        ''' assim, e o <c>Char.IsLetter</c> não era: ele aceitava
-        ''' <c>&lt;é&gt;</c> como tag, e a limpeza comia o que vinha junto.
+        ''' Nome de tag começa com letra <b>ASCII</b>. O <c>Char.IsLetter</c>
+        ''' aceitava <c>&lt;é&gt;</c> como tag, e a limpeza comia o que vinha
+        ''' junto.
         ''' </summary>
         Private Shared Function ComecaNome(texto As String, i As Integer) As Boolean
             If i >= texto.Length Then Return False
@@ -366,8 +478,8 @@ Namespace Global.Iris.Assist
 
         ''' <summary>
         ''' O nome em minúsculas. Inclui <c>-</c> e dígito porque
-        ''' <c>&lt;script-note&gt;</c> é um elemento válido, e a versão anterior
-        ''' lia só <c>script</c> nele — e apagava o conteúdo visível inteiro.
+        ''' <c>&lt;script-note&gt;</c> é um elemento válido, e a versão que lia
+        ''' só <c>script</c> nele apagava o conteúdo visível inteiro.
         ''' </summary>
         Private Shared Function LerNome(texto As String, i As Integer) As String
             Dim sb As New StringBuilder()
@@ -386,34 +498,66 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
-        ''' Anda até depois do <c>&gt;</c> da tag, respeitando aspas. Devolve
-        ''' <c>-1</c> se a tag não fecha até o fim do texto — o caso truncado.
+        ''' Anda até depois do <c>&gt;</c> da tag. Devolve <c>-1</c> se ela não
+        ''' fecha até o fim do texto.
+        '''
+        ''' <b>Aspa só delimita valor depois do <c>=</c>.</b> A primeira versão
+        ''' abria aspas onde quer que elas aparecessem, e com isso
+        ''' <c>&lt;p a=x"&gt;VISIVEL"&lt;span&gt;</c> engolia o
+        ''' <c>&lt;span&gt;</c> inteiro como se fosse parte da tag — perdendo
+        ''' texto que o navegador mostra.
         ''' </summary>
         Private Shared Function PularAtributos(texto As String, i As Integer) As Integer
-            Dim j = i
+            Const ForaDeValor = 0
+            Const AntesDoValor = 1
+            Const ValorComAspas = 2
+            Const ValorSemAspas = 3
+
+            Dim estado = ForaDeValor
             Dim aspa As Char = ChrW(0)
+            Dim j = i
+
             While j < texto.Length
                 Dim c = texto(j)
-                If aspa <> ChrW(0) Then
-                    If c = aspa Then aspa = ChrW(0)
-                ElseIf c = ChrW(34) OrElse c = ChrW(39) Then
-                    aspa = c
-                ElseIf c = ">"c Then
-                    Return j + 1
-                End If
+
+                Select Case estado
+                    Case ForaDeValor
+                        If c = ">"c Then Return j + 1
+                        If c = "="c Then estado = AntesDoValor
+
+                    Case AntesDoValor
+                        If c = ">"c Then Return j + 1
+                        If Not EspacoAscii(c) Then
+                            If c = ChrW(34) OrElse c = ChrW(39) Then
+                                aspa = c
+                                estado = ValorComAspas
+                            Else
+                                estado = ValorSemAspas
+                            End If
+                        End If
+
+                    Case ValorComAspas
+                        If c = aspa Then estado = ForaDeValor
+
+                    Case Else   ' ValorSemAspas
+                        If c = ">"c Then Return j + 1
+                        If EspacoAscii(c) Then estado = ForaDeValor
+                End Select
+
                 j += 1
             End While
+
             Return -1
         End Function
 
         ''' <summary>
         ''' Onde começa o fechamento de um bloco cru.
         '''
-        ''' <b>Exige o nome INTEIRO</b> seguido de espaço, <c>/</c> ou
-        ''' <c>&gt;</c> — que é a regra do HTML. Procurar só o prefixo
-        ''' <c>&lt;/script</c> fazia <c>&lt;/scripture&gt;</c> passar por
-        ''' fechamento, e o que vinha depois — invisível no navegador — saía
-        ''' como texto.
+        ''' Exige o nome <b>inteiro</b> seguido de espaço ASCII, <c>/</c> ou
+        ''' <c>&gt;</c>. Procurar só o prefixo fazia <c>&lt;/scripture&gt;</c>
+        ''' passar por fechamento; aceitar <c>Char.IsWhiteSpace</c> fazia um
+        ''' espaço U+00A0 fechar o bloco que o navegador deixa aberto — e nos
+        ''' dois casos o que estava escondido saía como texto.
         ''' </summary>
         Private Shared Function AcharFechamento(texto As String, i As Integer,
                                                 nome As String) As Integer
@@ -425,16 +569,24 @@ Namespace Global.Iris.Assist
                 Dim k = j + alvo.Length
                 If k >= texto.Length Then Return -1
                 Dim c = texto(k)
-                If Char.IsWhiteSpace(c) OrElse c = "/"c OrElse c = ">"c Then Return j
+                If EspacoAscii(c) OrElse c = "/"c OrElse c = ">"c Then Return j
                 j = k
             End While
             Return -1
         End Function
 
         ''' <summary>
-        ''' As tags que viram quebra de linha, como na versão por expressão
-        ''' regular: <c>br</c> abrindo, e <c>p</c>, <c>div</c>, <c>tr</c>,
-        ''' <c>li</c> fechando.
+        ''' O espaço que o HTML reconhece: tab, LF, FF, CR e espaço. Nada mais —
+        ''' um U+00A0 <b>não</b> separa nome de atributo nem fecha tag.
+        ''' </summary>
+        Private Shared Function EspacoAscii(c As Char) As Boolean
+            Return c = " "c OrElse c = ChrW(9) OrElse c = ChrW(10) OrElse
+                   c = ChrW(12) OrElse c = ChrW(13)
+        End Function
+
+        ''' <summary>
+        ''' As tags que viram quebra de linha: <c>br</c> abrindo, e <c>p</c>,
+        ''' <c>div</c>, <c>tr</c>, <c>li</c> fechando.
         ''' </summary>
         Private Shared Function EhQuebra(nome As String, ehFechamento As Boolean) As Boolean
             If Not ehFechamento Then Return nome = "br"

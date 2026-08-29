@@ -407,6 +407,13 @@ Public Class ContentPipelineTests
     ''' </summary>
     <DataTestMethod>
     <DataRow("<p>visivel</p><script>SEGREDO")>
+    <DataRow("<p>VISIVEL</p><span title=""SEGREDO")>
+    <DataRow("<script><!--<script></script>SEGREDO</script><p>x</p>")>
+    <DataRow("<script>SEGREDO</script ><p>VAZOU</p>")>
+    <DataRow("<textarea>A <b>B</b></textarea>")>
+    <DataRow("<iframe>SEGREDO</iframe><p>x</p>")>
+    <DataRow("<p>x</p><title>SEGREDO</title>")>
+    <DataRow("<!--[if mso]><table><tr><td>x</td></tr></table><![endif]--><p>oi</p>")>
     <DataRow("<p>visivel</p><style>SEGREDO")>
     <DataRow("<p>visivel</p><!-- SEGREDO")>
     <DataRow("<script>a</script><script>SEGREDO")>
@@ -562,18 +569,18 @@ Public Class ContentPipelineTests
     ''' <b>o texto visível sai inteiro, e o invisível não sai</b>.
     ''' </summary>
     <DataTestMethod>
-    <DataRow("<p>a < b e c > d</p>", "a < b e c > d", "")>
-    <DataRow("<p>a <é> b</p>", "a <é> b", "")>
-    <DataRow("<p>resultado:</p>2 < 3", "2 < 3", "")>
-    <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>", "VISIVEL", "")>
-    <DataRow("<p>ANTES</p><p title=<script>>VISIVEL</p><p>DEPOIS</p>", "DEPOIS", "")>
-    <DataRow("<script-note>VISIVEL</script-note>", "VISIVEL", "")>
+    <DataRow("<p>a < b e c > d</p>", "a < b e c > d", "SEGREDO")>
+    <DataRow("<p>a <é> b</p>", "a <é> b", "SEGREDO")>
+    <DataRow("<p>resultado:</p>2 < 3", "2 < 3", "SEGREDO")>
+    <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>", "VISIVEL", "script")>
+    <DataRow("<p a=x"">VISIVEL""<span>DEPOIS</span>", "VISIVEL", "span")>
+    <DataRow("<script-note>VISIVEL</script-note>", "VISIVEL", "script-note")>
     <DataRow("<p>VISIVEL</p><script>const lt = ""<"";</script>", "VISIVEL", "const")>
-    <DataRow("<p>VISIVEL</p><script>var x='<!--';</script><p>DEPOIS</p>", "DEPOIS", "var x")>
-    <DataRow("<!--[if mso]><table><tr><td>x</td></tr></table><![endif]--><p>oi</p>", "oi", "endif")>
-    <DataRow("<p>Use a seta --> para continuar.</p>", "Use a seta --> para continuar.", "")>
+    <DataRow("<p>Use a seta --> para continuar.</p>", "Use a seta --> para continuar.", "SEGREDO")>
     <DataRow("<?xml version=""1.0""?><p>oi</p>", "oi", "xml")>
-    <DataRow("<td width=100>VISIVEL</td>", "VISIVEL", "")>
+    <DataRow("<td width=100>VISIVEL</td>", "VISIVEL", "width")>
+    <DataRow("A<!-->B", "B", "SEGREDO")>
+    <DataRow("<p>VISIVEL</p><!-- x --!><p>DEPOIS</p>", "DEPOIS", "x ")>
     Public Sub O_visivel_sobrevive_e_o_invisivel_nao_sai(
             corpo As String, precisaTer As String, naoPodeTer As String)
 
@@ -623,7 +630,6 @@ Public Class ContentPipelineTests
     <DataRow("<p>oi</p><script>var s = 'a > b';</script><p>tchau</p>")>
     <DataRow("<div><span>a</span> &gt; <span>b</span></div>")>
     <DataRow("<p title=""a > b"">com maior dentro do atributo</p>")>
-    <DataRow("<!--[if mso]><table><tr><td>x</td></tr></table><![endif]--><p>oi</p>")>
     <DataRow("<p>oi</p><script>const lt = ""<"";</script><p>tchau</p>")>
     <DataRow("<p>Use a seta --> para continuar.</p>")>
     Public Sub Controle_HTML_comum_continua_passando(corpo As String)
