@@ -543,6 +543,85 @@ Public Class BindingsDaJanelaTests
             "esta mais olhando a grade raiz, e a assercao acima virou fumaca")
     End Sub
 
+    ''' <summary>
+    ''' <b>A RESSALVA DOS CONTATOS TEM LUGAR FIXO NA TELA.</b>
+    '''
+    ''' Nesta caixa a pasta pessoal de Contatos tem zero itens, e a
+    ''' organizacao inteira e enderecavel pelo GAL, que esta fora de escopo.
+    ''' Entao a lista vazia e o caso NORMAL desta faixa -- e uma faixa que
+    ''' mostrasse o vazio e calasse afirmaria ausencia a partir de nao ter
+    ''' olhado, sobre pessoas.
+    '''
+    ''' O ViewModel podia estar perfeito: se o XAML nao alcancasse a
+    ''' ressalva, ela nao existiria para quem usa.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_ressalva_dos_contatos_esta_na_tela()
+        Dim xaml = LerXaml()
+
+        StringAssert.Contains(xaml, "{Binding Contatos.Ressalva}",
+            "a ressalva do GAL nao chegou a tela: a lista vazia passa a " &
+            "significar ausencia de contatos, que e falso nesta caixa")
+        StringAssert.Contains(xaml, "{Binding Contatos.TemRessalva,",
+            "sem a visibilidade a ressalva fica sempre visivel ou nunca; " &
+            "as duas coisas sao piores que a condicional")
+        StringAssert.Contains(xaml, "{Binding Contatos.Aviso}",
+            "o aviso de ficha repetida nao chegou a tela")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Propor e criar contato tambem sao dois botoes.</b>
+    '''
+    ''' Mesma prova da Fase 5, e pelo mesmo motivo -- so que aqui o estrago
+    ''' dura mais: compromisso repetido alguem apaga, ficha repetida fica no
+    ''' catalogo com dados divergentes.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_faixa_de_contatos_tem_propor_E_criar_separados()
+        Dim xaml = LerXaml()
+        Dim botoes = xaml.Split({"<Button"}, StringSplitOptions.None).Skip(1).
+                     Select(Function(t) t.Substring(0, Math.Min(t.Length, 800))).ToList()
+
+        Assert.IsTrue(botoes.Count > 4,
+            "o recorte por <Button achou " & botoes.Count & " botao(oes): ele " &
+            "nao esta olhando a janela, e as assercoes abaixo viraram fumaca")
+
+        Assert.AreEqual(1, botoes.Where(Function(b) b.Contains("{Binding ProporContatoCommand}")).Count(),
+            "a proposta a partir do remetente tem de estar na tela, e uma vez so")
+        Assert.AreEqual(1, botoes.Where(Function(b) b.Contains("{Binding Contatos.CriarCommand}")).Count(),
+            "propor sem criar deixaria o contato preso no formulario")
+
+        Assert.IsFalse(
+            botoes.Any(Function(b) b.Contains("{Binding ProporContatoCommand}") AndAlso
+                                   b.Contains("{Binding Contatos.CriarCommand}")),
+            "propor e criar no MESMO botao: a sugestao viraria ficha sem " &
+            "confirmacao, e ficha repetida nao some sozinha")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A faixa de contatos tem linha propria.</b>
+    '''
+    ''' Mesmo recorte por indentacao do teste das tarefas, e mesmo controle:
+    ''' sem ele, uma mudanca de formatacao esvaziaria a lista e o teste
+    ''' passaria por nao olhar nada.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_faixa_de_contatos_NAO_divide_linha_com_ninguem()
+        Dim raiz = LerXaml().Split(CChar(vbLf)).
+                   Where(Function(l) l.StartsWith("            <") AndAlso
+                                     Not l.StartsWith("             ")).ToList()
+
+        Dim ocupantes = raiz.Where(Function(l) l.Contains("Grid.Row=""5""")).Count()
+
+        Assert.AreEqual(1, ocupantes,
+            "a linha 5 da grade raiz tem " & ocupantes & " ocupante(s) diretos. " &
+            "Duas bordas na mesma linha se empilham e a de cima cobre a de baixo.")
+
+        Assert.AreEqual(1, raiz.Where(Function(l) l.Contains("Grid.Row=""4""")).Count(),
+            "o recorte por indentacao parou de achar a faixa das tarefas: ele " &
+            "nao esta mais olhando a grade raiz, e a assercao acima virou fumaca")
+    End Sub
+
     Private Shared Function LerXaml() As String
         If _xaml IsNot Nothing Then Return _xaml
         Dim d = New DirectoryInfo(AppContext.BaseDirectory)

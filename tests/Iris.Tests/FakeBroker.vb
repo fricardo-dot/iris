@@ -776,6 +776,28 @@ Friend NotInheritable Class FakeBroker
         Return ForaDaAlcada(Of OperationResult(Of TaskInfo))()
     End Function
 
+    ' CONTATOS: fora da alcada deste duplo. Quem testa contato usa o duplo
+    ' proprio, que e o unico lugar onde a pasta pessoal existe.
+    Public Function GetDefaultContactsFolderAsync(cancel As CancellationToken) _
+        As Task(Of OperationResult(Of FolderKey)) _
+        Implements IContatosBroker.GetDefaultContactsFolderAsync
+        Return ForaDaAlcada(Of OperationResult(Of FolderKey))()
+    End Function
+
+    Public Function GetContactsAsync(folder As FolderKey, teto As Integer,
+                                     cancel As CancellationToken) _
+        As Task(Of OperationResult(Of ContactList)) _
+        Implements IContatosBroker.GetContactsAsync
+        Return ForaDaAlcada(Of OperationResult(Of ContactList))()
+    End Function
+
+    Public Function CreateContactAsync(folder As FolderKey, rascunho As ContactDraft,
+                                       cancel As CancellationToken) _
+        As Task(Of OperationResult(Of ContactInfo)) _
+        Implements IContatosBroker.CreateContactAsync
+        Return ForaDaAlcada(Of OperationResult(Of ContactInfo))()
+    End Function
+
     Public Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentInfo)) _

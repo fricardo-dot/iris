@@ -111,6 +111,24 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property ProporTarefaCommand As IRelayCommand
 
         ''' <summary>
+        ''' <b>Os contatos.</b> Faixa própria, como as tarefas: a pasta pessoal
+        ''' de Contatos também fica fora da árvore.
+        '''
+        ''' Nesta caixa ela tem zero itens — os contatos corporativos vivem no
+        ''' GAL, que está fora de escopo. Por isso a faixa carrega ressalva
+        ''' fixa: lista vazia aqui é o caso normal, e não o caso de erro.
+        ''' </summary>
+        Public ReadOnly Property Contatos As ContatosViewModel
+
+        ''' <summary>
+        ''' Copia o remetente da mensagem selecionada para o formulário de
+        ''' contato — e para aí. Mora aqui pelo mesmo motivo do irmão das
+        ''' tarefas: só o <c>MainViewModel</c> sabe qual mensagem está
+        ''' selecionada.
+        ''' </summary>
+        Public ReadOnly Property ProporContatoCommand As IRelayCommand
+
+        ''' <summary>
         ''' <b>O acervo e a agenda dividem a mesma linha da janela, e nunca
         ''' aparecem juntos.</b>
         '''
@@ -207,6 +225,16 @@ Namespace Global.Iris.App.ViewModels
             ProporTarefaCommand = New RelayCommand(
                 Sub() Tarefas.ProporDaMensagem(If(Messages?.Selected?.Subject, "")),
                 Function() Tarefas.TemPasta)
+
+            Contatos = New ContatosViewModel(broker)
+
+            ' PROPOR NAO CRIA, aqui tambem. E o remetente vem do que a lista ja
+            ' leu -- nao ha leitura nova, e nao ha IA no caminho.
+            ProporContatoCommand = New RelayCommand(
+                Sub() Contatos.ProporDoRemetente(
+                    If(Detail?.SenderName, ""),
+                    If(Detail?.SenderAddress, "")),
+                Function() Contatos.TemPasta AndAlso Detail IsNot Nothing AndAlso Detail.HasMessage)
 
             Assistente = MontarAssistente(ui)
 
@@ -883,6 +911,7 @@ Namespace Global.Iris.App.ViewModels
 
             Agenda.Dispose()
             Tarefas.Dispose()
+            Contatos.Dispose()
             _watcher.Dispose()
             Composer.Dispose()
             Detail.Dispose()

@@ -625,18 +625,62 @@ mexe na série, e isso pede desenho próprio.
 modo cached. A agenda diz quantos leu e se a leitura foi truncada; ela não diz
 o que existe além do que o Outlook expõe, e não afirma que existe tudo.
 
-### Fase 7 — Contatos — *ADIADA, e a medição explica*
+### Fase 7 — Contatos — *EXECUTADA em 29/08/2026*
 
-**Medido em 28/08/2026:** a pasta de Contatos tem **0 itens**.
+**Medido em 28/08/2026:** a pasta pessoal de Contatos tem **0 itens**, e a
+organização inteira continua endereçável — porque numa conta corporativa os
+contatos vivem no **GAL**, que está fora de escopo pela seção 8.
 
-Numa conta corporativa os contatos vivem no GAL, e o GAL está **fora de escopo**
-pela seção 8. Um módulo de contatos sobre esta caixa seria uma tela para uma
-pasta vazia.
+**Isto deixou de ser motivo para adiar e passou a ser o assunto da fase.** Uma
+tela de contatos sobre esta caixa mostra uma lista vazia; se ela calar, o
+usuário lê "não há contatos" — que é **afirmar ausência a partir de não ter
+olhado**, desta vez sobre *pessoas*. É a família de defeito que este projeto
+corrigiu em cinco lugares, no pior lugar possível para tê-la.
 
-**A ressalva, que a revisão externa acrescentou e é justa:** isto mede a pasta
-padrão desta conta, agora. Não mede subpastas, outros stores, uso futuro, nem
-elimina todos os consumidores possíveis de `ContactItem`. **"Adiar" está
-sustentado; "não tem consumidor" seria forte demais.**
+**O que entrou:**
+
+- `ContactList.ForaDoAlcance`, preenchido **pelo leitor** e não montado pela
+  tela, e presente em toda leitura — inclusive na que deu certo e veio vazia,
+  que é onde a tela seria mais tentada a calar. A faixa mostra a ressalva
+  **acima** da lista, e ela **sobrevive à falha de leitura**: é justamente
+  quando não há lista para contradizê-la que ela mais importa.
+- `ContactInfo` com campos de texto **anuláveis**. `Nothing` é "não consegui
+  ler"; vazio é "está vazio". A tela diz as duas coisas com palavras
+  diferentes, e a busca por ficha repetida não casa dois contatos ilegíveis
+  entre si.
+- **Aviso de ficha repetida que não bloqueia.** Contato duplicado não some
+  sozinho: o catálogo fica com duas fichas da mesma pessoa e quem completar
+  endereço no Outlook acerta uma por sorte. Mas a busca só enxerga o que a
+  leitura trouxe — nunca o GAL, nem a pasta inteira quando houve truncamento.
+  Recusar com essa base transformaria "não encontrei" em "não existe", que é o
+  erro da fase virado do avesso.
+- `ContactDraft` **sem nota e sem corpo**: o que o Iris grava é o que a
+  mensagem já dizia. Um campo de nota convidaria a pôr no catálogo um texto
+  que o assistente escreveu, e um dado gerado viraria dado de cadastro num
+  lugar que outras ferramentas leem como verdade conferida.
+- **Nenhuma operação de encaminhar.** `ForwardAsVcard()` devolve um `MailItem`
+  e é o único caminho de envio deste objeto; não há operação na porta, e há
+  varredura do fonte do escritor, como a Fase 5 ganhou depois da revisão.
+- Duas etapas, como nas tarefas: "Deste remetente" preenche o formulário, e
+  "Criar" é outro botão. O remetente vem do **detalhe** da mensagem aberta, e
+  não da linha da lista — o endereço só existe onde alguém o leu.
+
+**O que continua fora, e é decisão:**
+
+- **O GAL**, pela §8. Nada nesta fase o toca.
+- **Apagar contato.** Não manda e-mail; é que apagar a ficha de uma pessoa é
+  irreversível de um jeito que criar não é, e nada aqui precisa disso.
+- **O contato não vai para o assistente.** Um contato é dado pessoal de
+  *terceiro* — alguém que não é o usuário e não escolheu nada. A cerimônia de
+  ativação autoriza operações nomeadas sobre pastas de *mensagens* escolhidas;
+  reusá-la para mandar o catálogo de endereços a um provedor externo alargaria
+  uma permissão que ninguém deu.
+
+**O que não foi exercitado contra o Outlook real:** tudo. Não há como ler três
+contatos numa pasta de zero, e criar na caixa do dono exige o dono na máquina —
+não é bloqueio técnico, é de autoridade. **A ressalva de 28/08 continua
+valendo:** a medição é da pasta padrão desta conta, agora; não mede subpastas
+nem outros stores.
 
 ---
 

@@ -199,6 +199,9 @@
                      acervo ou a agenda. Empilhar aqui repetiria o defeito que
                      escondeu a faixa do acervo por dias. -->
                 <RowDefinition Height="Auto" />
+                <!-- Os contatos. Linha propria pelo mesmo motivo das tarefas:
+                     a pasta pessoal de Contatos tambem fica fora da arvore. -->
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- ============ Barra de título ============ -->
@@ -1628,6 +1631,154 @@
                                             Converter={StaticResource BoolToVis},
                                             FallbackValue=Collapsed}"
                                AutomationProperties.Name="Falha nas tarefas" />
+                </StackPanel>
+            </Border>
+
+            <!-- ============ Contatos ============
+                 A FAIXA QUE PRECISA FALAR QUANDO NAO TEM NADA A MOSTRAR.
+
+                 Medido em 28/08/2026: esta pasta tem 0 itens nesta caixa, com
+                 a organizacao inteira endereçavel — porque os contatos
+                 corporativos vivem no GAL, e o GAL esta fora de escopo pela
+                 §8.
+
+                 Entao a lista vazia aqui e o caso NORMAL, e nao o caso de
+                 erro. Uma faixa que mostrasse a lista vazia e calasse estaria
+                 afirmando ausencia a partir de nao ter olhado — sobre
+                 pessoas. Por isso a ressalva tem lugar fixo e proprio, acima
+                 da lista, e nao aparece so quando alguem lembra.
+
+                 As duas etapas sao as mesmas da Fase 5: "Deste remetente"
+                 preenche o formulario, e o "Criar" e outro botao. E o aviso de
+                 ficha repetida AVISA — nao bloqueia: a busca so enxerga o que
+                 esta leitura trouxe, nunca o GAL, e recusar com essa base
+                 seria transformar "nao encontrei" em "nao existe". -->
+            <Border Grid.Row="5"
+                    Background="{DynamicResource Brush.Surface.1}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16,8">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="CONTATOS"
+                                   Style="{DynamicResource Text.Muted}"
+                                   VerticalAlignment="Center" />
+                        <Button Content="Abrir"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Contatos.AbrirCommand}"
+                                Margin="12,0,0,0"
+                                ToolTip="Le a pasta pessoal de Contatos. Ela nao aparece na arvore de pastas."
+                                AutomationProperties.Name="Abrir os contatos" />
+                        <Button Content="Atualizar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Contatos.AtualizarCommand}"
+                                Margin="6,0,0,0"
+                                AutomationProperties.Name="Atualizar os contatos" />
+                        <TextBlock Text="{Binding Contatos.Resumo}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   Margin="12,0,0,0" VerticalAlignment="Center" />
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="90" Height="3" Margin="12,0,0,0"
+                                     BorderThickness="0"
+                                     Background="{DynamicResource Brush.Surface.3}"
+                                     Foreground="{DynamicResource Brush.Accent}"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding Contatos.Carregando,
+                                                  Converter={StaticResource BoolToVis},
+                                                  FallbackValue=Collapsed}"
+                                     AutomationProperties.Name="Lendo os contatos" />
+                    </StackPanel>
+
+                    <!-- A RESSALVA, ACIMA DA LISTA E NAO ABAIXO.
+                         Ela explica o que a lista NAO diz, e quem le de cima
+                         para baixo precisa dela antes de tirar conclusao do
+                         que ve, ou da falta do que ve. -->
+                    <TextBlock Text="{Binding Contatos.Ressalva}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Margin="0,0,0,6"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               Visibility="{Binding Contatos.TemRessalva,
+                                            Converter={StaticResource BoolToVis},
+                                            FallbackValue=Collapsed}"
+                               AutomationProperties.Name="O que esta leitura de contatos nao alcanca" />
+
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                Visibility="{Binding Contatos.TemPasta,
+                                             Converter={StaticResource BoolToVis},
+                                             FallbackValue=Collapsed}">
+                        <TextBox Text="{Binding Contatos.NovoNome, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="170"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Nome do contato"
+                                 AutomationProperties.Name="Nome do novo contato" />
+                        <TextBox Text="{Binding Contatos.NovoEmail, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="190" Margin="6,0,0,0"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Endereco de e-mail"
+                                 AutomationProperties.Name="E-mail do novo contato" />
+                        <TextBox Text="{Binding Contatos.NovaEmpresa, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="140" Margin="6,0,0,0"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Empresa"
+                                 AutomationProperties.Name="Empresa do novo contato" />
+                        <Button Content="Deste remetente"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding ProporContatoCommand}"
+                                Margin="6,0,0,0"
+                                ToolTip="Copia o remetente da mensagem selecionada para o formulario. Nao cria nada, e nao usa a IA."
+                                AutomationProperties.Name="Propor contato deste remetente" />
+                        <Button Content="Criar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Contatos.CriarCommand}"
+                                Margin="6,0,0,0"
+                                ToolTip="Cria o contato na pasta pessoal de Contatos"
+                                AutomationProperties.Name="Criar o contato" />
+                    </StackPanel>
+
+                    <!-- O AVISO DE FICHA REPETIDA. Aviso, e nao recusa: o botao
+                         "Criar" ao lado continua habilitado de proposito. -->
+                    <TextBlock Text="{Binding Contatos.Aviso}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Margin="0,0,0,6"
+                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                               Visibility="{Binding Contatos.TemAviso,
+                                            Converter={StaticResource BoolToVis},
+                                            FallbackValue=Collapsed}"
+                               AutomationProperties.Name="Ja ha ficha com este endereco" />
+
+                    <ItemsControl ItemsSource="{Binding Contatos.Contatos}"
+                                  AutomationProperties.Name="Contatos lidos">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <TextBlock Text="{Binding Nome}"
+                                               Width="170" FontSize="12"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Email}"
+                                               Width="230" FontSize="12"
+                                               TextTrimming="CharacterEllipsis"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                    <TextBlock Text="{Binding Empresa}"
+                                               FontSize="12"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxWidth="200"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <TextBlock Text="{Binding Contatos.Erro}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource Brush.Error}"
+                               Visibility="{Binding Contatos.TemErro,
+                                            Converter={StaticResource BoolToVis},
+                                            FallbackValue=Collapsed}"
+                               AutomationProperties.Name="Falha nos contatos" />
                 </StackPanel>
             </Border>
 

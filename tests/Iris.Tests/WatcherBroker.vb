@@ -265,6 +265,26 @@ Friend NotInheritable Class WatcherBroker
         Throw New NotSupportedException("fora da alcada")
     End Function
 
+    Public Function GetDefaultContactsFolderAsync(cancel As CancellationToken) _
+        As Task(Of OperationResult(Of FolderKey)) _
+        Implements IContatosBroker.GetDefaultContactsFolderAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
+    Public Function GetContactsAsync(folder As FolderKey, teto As Integer,
+                                     cancel As CancellationToken) _
+        As Task(Of OperationResult(Of ContactList)) _
+        Implements IContatosBroker.GetContactsAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
+    Public Function CreateContactAsync(folder As FolderKey, rascunho As ContactDraft,
+                                       cancel As CancellationToken) _
+        As Task(Of OperationResult(Of ContactInfo)) _
+        Implements IContatosBroker.CreateContactAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
     Public Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentInfo)) _

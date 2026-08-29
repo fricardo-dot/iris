@@ -132,8 +132,49 @@ Namespace Global.Iris.Core
         Function CompleteTaskAsync(chave As TaskKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of TaskInfo))
     End Interface
+    ''' <summary>
+    ''' <b>Contatos.</b> Porta estreita, como as outras.
+    '''
+    ''' Não há operação de encaminhar cartão, e a ausência é a
+    ''' funcionalidade: <c>ForwardAsVcard</c> devolve um <c>MailItem</c>, e é
+    ''' o único caminho de envio que um contato tem. Sem operação na porta,
+    ''' não há como chamá-la de fora do módulo.
+    '''
+    ''' Também não há apagar. Apagar contato não manda e-mail; é que apagar a
+    ''' ficha de uma pessoa do catálogo é irreversível de um jeito que criar
+    ''' não é, e nada nesta fase precisa disso. O Outlook apaga.
+    ''' </summary>
+    Public Interface IContatosBroker
+        ''' <summary>
+        ''' A pasta pessoal de Contatos.
+        '''
+        ''' Existe pelo mesmo motivo da porta das tarefas: a
+        ''' <c>FolderVisibilityPolicy</c> mantém Contatos fora da árvore,
+        ''' porque a árvore mostra o que se abre como lista de mensagens.
+        ''' </summary>
+        Function GetDefaultContactsFolderAsync(cancel As CancellationToken) _
+            As Task(Of OperationResult(Of FolderKey))
+
+        ''' <summary>
+        ''' Lê a pasta. O resultado carrega <c>ForaDoAlcance</c> <b>sempre</b>,
+        ''' inclusive quando deu certo e veio vazio: o GAL está fora de
+        ''' escopo, e pasta vazia não é catálogo vazio.
+        ''' </summary>
+        Function GetContactsAsync(folder As FolderKey, teto As Integer,
+                                  cancel As CancellationToken) _
+            As Task(Of OperationResult(Of ContactList))
+
+        ''' <summary>
+        ''' Cria um contato. <see cref="ContactDraft"/> não tem nota nem
+        ''' corpo: o que entra é o que a mensagem já dizia.
+        ''' </summary>
+        Function CreateContactAsync(folder As FolderKey, rascunho As ContactDraft,
+                                    cancel As CancellationToken) _
+            As Task(Of OperationResult(Of ContactInfo))
+    End Interface
+
     Public Interface IOutlookBroker
-        Inherits IAgendaSource, IAgendaWriter, ITarefasBroker
+        Inherits IAgendaSource, IAgendaWriter, ITarefasBroker, IContatosBroker
 
 
         ' ---- Sessão -----------------------------------------------------

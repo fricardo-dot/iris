@@ -865,6 +865,60 @@ Namespace Global.Iris.Outlook
                 Function(app, ns) TaskWriting.Concluir(ns, chave),
                 cancel)
         End Function
+        ''' <summary>
+        ''' A pasta pessoal de Contatos, pelo <c>GetDefaultFolder</c>.
+        '''
+        ''' R7: <c>GetDefaultFolder</c> devolve um objeto COM próprio, e ler
+        ''' <c>EntryID</c> e <c>StoreID</c> encadeado deixaria um RCW sem dono.
+        ''' </summary>
+        Public Async Function GetDefaultContactsFolderAsync(cancel As CancellationToken) _
+            As Task(Of OperationResult(Of FolderKey)) _
+            Implements IContatosBroker.GetDefaultContactsFolderAsync
+
+            Return Await ReadAsync(Of FolderKey)(
+                "outlook.getDefaultContactsFolder",
+                Function(app, ns)
+                    Dim pasta As OL.Folder = Nothing
+                    Try
+                        pasta = TryCast(ns.GetDefaultFolder(
+                            OL.OlDefaultFolders.olFolderContacts), OL.Folder)
+                        If pasta Is Nothing Then
+                            Return OperationResult(Of FolderKey).Fail(
+                                ErrorKind.NotFound, "pasta de contatos")
+                        End If
+                        Return OperationResult(Of FolderKey).Ok(
+                            New FolderKey(pasta.EntryID, pasta.StoreID))
+                    Finally
+                        ComHelpers.Release(pasta)
+                    End Try
+                End Function,
+                cancel)
+        End Function
+
+        ''' <summary>Leitura pura: <c>ReadAsync</c>, com retry.</summary>
+        Public Async Function GetContactsAsync(folder As FolderKey, teto As Integer,
+                                               cancel As CancellationToken) _
+            As Task(Of OperationResult(Of ContactList)) _
+            Implements IContatosBroker.GetContactsAsync
+
+            Return Await ReadAsync(Of ContactList)(
+                "outlook.getContacts",
+                Function(app, ns) ContactWriting.Ler(ns, folder, teto),
+                cancel)
+        End Function
+
+        ''' <summary>MUTAÇÃO: sem retry. Criar não é idempotente.</summary>
+        Public Async Function CreateContactAsync(folder As FolderKey, rascunho As ContactDraft,
+                                                 cancel As CancellationToken) _
+            As Task(Of OperationResult(Of ContactInfo)) _
+            Implements IContatosBroker.CreateContactAsync
+
+            Return Await MutateAsync(Of ContactInfo)(
+                "outlook.createContact",
+                Function(app, ns) ContactWriting.Create(ns, folder, rascunho),
+                cancel)
+        End Function
+
         Public Async Function GetAttachmentPresenceAsync(items As IReadOnlyList(Of ItemKey),
                                                          cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence))) _

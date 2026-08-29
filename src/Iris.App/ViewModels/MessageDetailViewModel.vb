@@ -145,6 +145,27 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' O remetente em duas partes, para quem precisa dos dados e nao
+        ''' da frase. Hoje: a proposta de contato da Fase 7.
+        '''
+        ''' Vem do DETALHE, e nao da linha da lista: o endereco so existe
+        ''' no <c>MessageDetail</c>, porque so a leitura da mensagem aberta
+        ''' o le. Propor a partir de um endereco que ninguem leu seria
+        ''' cadastrar no catalogo um dado que o Iris inventou.
+        ''' </summary>
+        Public ReadOnly Property SenderName As String
+            Get
+                Return If(_detail?.SenderName, "")
+            End Get
+        End Property
+
+        Public ReadOnly Property SenderAddress As String
+            Get
+                Return If(_detail?.SenderAddress, "")
+            End Get
+        End Property
+
         Public ReadOnly Property RecipientLine As String
             Get
                 If _detail Is Nothing OrElse _detail.Recipients.Count = 0 Then Return ""
