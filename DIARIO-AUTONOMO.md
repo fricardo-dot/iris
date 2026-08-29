@@ -1080,3 +1080,27 @@ calado; e os quatro roteiros que restavam da lista — `q8-caca-total`,
 cortadas na profundidade e ramos que falharam em silêncio.
 
 Suíte: **883**.
+
+---
+
+## Décima sétima passada — o fundo da família
+
+**Nenhum achado alto nem médio — pela primeira vez.** Três baixos, todos a mesma
+família, todos em roteiros históricos que eu ainda não tinha aberto:
+
+- `q2-achar-copias` prometia *"TODAS as manifestações"* e terminava com *"TOTAL
+  de cópias deixadas pelo experimento"* — que podia ser zero com ramos não lidos;
+- `q1-protecao` concluía *"nenhuma mensagem protegida nesta amostra"* e depois
+  extrapolava para a caixa, **sem contar as leituras de `Permission` que
+  falharam**: uma amostra em que todas falhassem daria a mesma conclusão;
+- `q2-chaves` prometia *"TODAS as pastas"* e *"a árvore inteira é percorrida"*,
+  cortando em silêncio na profundidade 12. Os zeros da matriz apareciam sob
+  promessa de cobertura completa, que é a forma mais cara de afirmar ausência.
+
+**E entrou a regressão que o revisor pediu:** o contrato do `FakeBroker` de
+**lançar na hora** quando chamam a página fora da alçada. Eu quase o perdi ao
+acrescentar a `TravaDaPagina` — o embrulho `Async` transformava a exceção em
+`Task` com falha, e um teste sem `Await` passaria calado. Controle negativo
+confirmado devolvendo o embrulho.
+
+Suíte: **884**.

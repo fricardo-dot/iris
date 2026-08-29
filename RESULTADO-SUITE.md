@@ -10,22 +10,22 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — depois da décima sexta revisão
+## Medição corrente — depois da décima sétima revisão
 
 | | |
 |---|---|
-| **Commit** | `f61119c` — a árvore da solução .NET que foi medida |
+| **Commit** | `ec575bd` — a árvore da solução .NET que foi medida |
 | **Data** | 28 de agosto de 2026, à noite |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
 
 ```
-Passed!  - Failed:     0, Passed:   883, Skipped:     0, Total:   883, Duration: 1 m 7 s - Iris.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   884, Skipped:     0, Total:   884, Duration: 1 m 8 s - Iris.Tests.dll (net10.0)
 ```
 
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
-última antes do commit `f61119c`, que contém **exatamente** a árvore medida —
+última antes do commit `ec575bd`, que contém **exatamente** a árvore medida —
 `src/`, `tests/` e `tools/` entraram nele; os documentos vieram depois, em
 commit separado.
 
@@ -45,8 +45,20 @@ positivo da pasta legitimamente vazia. A décima quarta acrescentou quatro — a
 contagem que falhou, o total herdado da pasta anterior, os recusados
 desconhecidos da agenda, e a prova de alcance do XAML. A décima quinta
 acrescentou um: a troca de pasta durante uma carga. A décima sexta não
-acrescentou teste — reforçou o mesmo, que passava com a correção desfeita.
-872 → 874 → 875 → 876 → 878 → 882 → 883.
+acrescentou teste — reforçou o mesmo, que passava com a correção desfeita. A
+décima sétima acrescentou um: o contrato do duplo de lançar na hora.
+872 → 874 → 875 → 876 → 878 → 882 → 883 → 884.
+
+### Medição da décima sexta revisão
+
+| | |
+|---|---|
+| **Commit** | `f61119c` |
+| **Data** | 28 de agosto de 2026, à noite |
+
+```
+Passed!  - Failed:     0, Passed:   883, Skipped:     0, Total:   883, Duration: 1 m 11 s - Iris.Tests.dll (net10.0)
+```
 
 ### Medição da décima quinta revisão
 
