@@ -10,11 +10,11 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — depois da vigésima nona revisão
+## Medição corrente — o fechamento da série
 
 | | |
 |---|---|
-| **Commit** | `1ca38a0` — a árvore da solução .NET que foi medida |
+| **Commit** | `f72c90c` — a árvore da solução .NET que foi medida |
 | **Data** | 29 de agosto de 2026, de manhã |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
@@ -24,8 +24,16 @@ dotnet test Iris.slnx
 Passed!  - Failed:     0, Passed:   966, Skipped:     0, Total:   966, Duration: 1 m 8 s - Iris.Tests.dll (net10.0)
 ```
 
+**Medido em `f72c90c`, e não herdado.** Entre `1ca38a0` e ele, o único arquivo
+da solução .NET que mudou foi `ContentPipeline.vb`, e só em linhas de comentário
+— dá para conferir com
+`git diff 1ca38a0..f72c90c -- src/Iris.Assist/ContentPipeline.vb`. Mesmo assim a
+suíte foi rodada de novo depois do commit: um resultado vale para a árvore em
+que foi medido, e "só mudou comentário" é o tipo de premissa que este projeto
+inteiro existe para não usar.
+
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
-última antes do commit `1ca38a0`, que contém **exatamente** a árvore medida —
+última antes do commit `f72c90c`, que contém **exatamente** a árvore medida —
 `src/`, `tests/` e `tools/` entraram nele; os documentos vieram depois, em
 commit separado.
 
