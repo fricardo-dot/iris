@@ -761,6 +761,47 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        ''' <summary>
+        ''' MUTAÇÃO, e por isso <see cref="MutateAsync"/>: sem retry.
+        '''
+        ''' Criar não é idempotente — repetir depois de uma falha ambígua
+        ''' deixaria dois compromissos na agenda, e o segundo ninguém pediu.
+        ''' </summary>
+        Public Async Function CreateAppointmentAsync(folder As FolderKey,
+                                                     rascunho As AppointmentDraft,
+                                                     cancel As CancellationToken) _
+            As Task(Of OperationResult(Of AppointmentInfo)) _
+            Implements IOutlookBroker.CreateAppointmentAsync
+
+            Return Await MutateAsync(Of AppointmentInfo)(
+                "outlook.createAppointment",
+                Function(app, ns) CalendarWriting.Create(ns, folder, rascunho),
+                cancel)
+        End Function
+
+        Public Async Function UpdateAppointmentAsync(chave As AppointmentKey,
+                                                     rascunho As AppointmentDraft,
+                                                     cancel As CancellationToken) _
+            As Task(Of OperationResult(Of AppointmentInfo)) _
+            Implements IOutlookBroker.UpdateAppointmentAsync
+
+            Return Await MutateAsync(Of AppointmentInfo)(
+                "outlook.updateAppointment",
+                Function(app, ns) CalendarWriting.Update(ns, chave, rascunho),
+                cancel)
+        End Function
+
+        Public Async Function DeleteAppointmentAsync(chave As AppointmentKey,
+                                                     cancel As CancellationToken) _
+            As Task(Of OperationResult(Of Boolean)) _
+            Implements IOutlookBroker.DeleteAppointmentAsync
+
+            Return Await MutateAsync(Of Boolean)(
+                "outlook.deleteAppointment",
+                Function(app, ns) CalendarWriting.Delete(ns, chave),
+                cancel)
+        End Function
+
         Public Async Function GetAttachmentPresenceAsync(items As IReadOnlyList(Of ItemKey),
                                                          cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence))) _

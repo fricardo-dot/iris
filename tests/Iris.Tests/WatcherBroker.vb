@@ -231,4 +231,29 @@ Friend NotInheritable Class WatcherBroker
         Return Fora(Of OperationResult(Of Boolean))()
     End Function
 
+    ''' <summary>
+    ''' Escrita no calendário. Fora da alçada por padrão, como o resto: chamada
+    ''' que ninguém configurou QUEBRA o teste, em vez de passar por sorte.
+    ''' </summary>
+    Public Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
+                                           cancel As CancellationToken) _
+        As Task(Of OperationResult(Of AppointmentInfo)) _
+        Implements IOutlookBroker.CreateAppointmentAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
+    Public Function UpdateAppointmentAsync(chave As AppointmentKey, rascunho As AppointmentDraft,
+                                           cancel As CancellationToken) _
+        As Task(Of OperationResult(Of AppointmentInfo)) _
+        Implements IOutlookBroker.UpdateAppointmentAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
+    Public Function DeleteAppointmentAsync(chave As AppointmentKey,
+                                           cancel As CancellationToken) _
+        As Task(Of OperationResult(Of Boolean)) _
+        Implements IOutlookBroker.DeleteAppointmentAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
 End Class

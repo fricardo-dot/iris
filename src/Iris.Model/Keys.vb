@@ -170,6 +170,41 @@ Namespace Global.Iris.Model
     End Class
 
     ''' <summary>
+    ''' Identidade de um compromisso. Tipo próprio pelo mesmo motivo do
+    ''' <see cref="DraftKey"/>: o compilador impede passar uma mensagem para
+    ''' uma operação de calendário — e aqui isso vale mais, porque a operação
+    ''' do outro lado <b>apaga</b>.
+    ''' </summary>
+    Public NotInheritable Class AppointmentKey
+        Implements IEquatable(Of AppointmentKey)
+
+        Public ReadOnly Property Item As ItemKey
+
+        Public Sub New(item As ItemKey)
+            If item Is Nothing Then Throw New ArgumentNullException(NameOf(item))
+            Me.Item = item
+        End Sub
+
+        Public Overrides Function ToString() As String
+            Return "compromisso " & Item.ToString()
+        End Function
+
+        Public Overloads Function Equals(other As AppointmentKey) As Boolean _
+            Implements IEquatable(Of AppointmentKey).Equals
+            If other Is Nothing Then Return False
+            Return Equals(Item, other.Item)
+        End Function
+
+        Public Overrides Function Equals(obj As Object) As Boolean
+            Return Equals(TryCast(obj, AppointmentKey))
+        End Function
+
+        Public Overrides Function GetHashCode() As Integer
+            Return Item.GetHashCode()
+        End Function
+    End Class
+
+    ''' <summary>
     ''' Identidade de um rascunho. Tipo próprio, e não ItemKey, para que o
     ''' compilador impeça passar uma mensagem qualquer para SendDraftAsync.
     ''' </summary>

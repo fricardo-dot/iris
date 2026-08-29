@@ -742,6 +742,34 @@ Friend NotInheritable Class FakeBroker
         RaiseEvent FolderInvalidated(Me, Nothing)
     End Sub
 
+    ''' <summary>
+    ''' Escrita no calendário. Fora da alçada por padrão, como o resto: chamada
+    ''' que ninguém configurou QUEBRA o teste, em vez de passar por sorte.
+    ''' </summary>
+    Public Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
+                                           cancel As CancellationToken) _
+        As Task(Of OperationResult(Of AppointmentInfo)) _
+        Implements IOutlookBroker.CreateAppointmentAsync
+        Chamadas.Add("createAppointment")
+        Return ForaDaAlcada(Of OperationResult(Of AppointmentInfo))()
+    End Function
+
+    Public Function UpdateAppointmentAsync(chave As AppointmentKey, rascunho As AppointmentDraft,
+                                           cancel As CancellationToken) _
+        As Task(Of OperationResult(Of AppointmentInfo)) _
+        Implements IOutlookBroker.UpdateAppointmentAsync
+        Chamadas.Add("updateAppointment")
+        Return ForaDaAlcada(Of OperationResult(Of AppointmentInfo))()
+    End Function
+
+    Public Function DeleteAppointmentAsync(chave As AppointmentKey,
+                                           cancel As CancellationToken) _
+        As Task(Of OperationResult(Of Boolean)) _
+        Implements IOutlookBroker.DeleteAppointmentAsync
+        Chamadas.Add("deleteAppointment")
+        Return ForaDaAlcada(Of OperationResult(Of Boolean))()
+    End Function
+
 End Class
 
 ''' <summary>Gravador de arquivo que não abre diálogo nenhum.</summary>

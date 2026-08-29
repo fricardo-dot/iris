@@ -396,6 +396,34 @@ Namespace Global.Iris.Model
     ''' custariam ~13 s numa leitura só, e é por isso que a leitura é sempre
     ''' por <b>janela de datas</b>, nunca "o calendário inteiro".
     ''' </summary>
+    ''' <summary>
+    ''' <b>O que se quer gravar num compromisso — e o que ele NÃO tem.</b>
+    '''
+    ''' Não há participantes aqui, e a ausência é a funcionalidade. Um
+    ''' compromisso com participante é uma reunião, e salvar reunião manda
+    ''' convite por e-mail. Sem campo para preencher, não há caminho para o
+    ''' Iris criar um por engano: a invariante fica sustentada pelo
+    ''' <b>tipo</b>, e não por alguém lembrar de não preencher.
+    '''
+    ''' Quem quiser convidar alguém faz no Outlook, onde vê a lista.
+    ''' </summary>
+    Public NotInheritable Class AppointmentDraft
+        Public Property Subject As String = ""
+        Public Property Location As String = ""
+        Public Property Body As String = ""
+
+        ''' <summary>
+        ''' Início e fim <b>com offset</b>, pela mesma razão do
+        ''' <see cref="AppointmentInfo.Start"/>: num calendário a hora é o
+        ''' dado, e <c>DateTime</c> sem <c>Kind</c> é a origem clássica do
+        ''' compromisso na hora errada.
+        ''' </summary>
+        Public Property De As DateTimeOffset
+        Public Property Ate As DateTimeOffset
+
+        Public Property AllDayEvent As Boolean
+    End Class
+
     Public NotInheritable Class AppointmentInfo
         Public Property Key As ItemKey
         Public Property Subject As String = ""
