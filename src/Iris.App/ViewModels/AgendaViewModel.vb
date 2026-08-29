@@ -283,6 +283,20 @@ Namespace Global.Iris.App.ViewModels
                            "não eram compromisso")
             End If
 
+            ' AUSENCIA QUE VIROU VALOR, e ela e diferente da recusa.
+            '
+            ' Recusado e "o item inteiro nao entrou"; fabricado e "o item
+            ' entrou com celula inventada" -- AllDayEvent = False, sem
+            ' participante, assunto vazio. A listagem ja mostrava este numero
+            ' desde 28/08 e o calendario nao: eu instrumentei uma superficie e
+            ' nao procurei a irma dela.
+            '
+            ' Campo que ninguem mostra na tela e o mesmo defeito num lugar
+            ' diferente, entao ele sobe aqui.
+            If j.FabricatedCells > 0 Then
+                partes.Add($"{j.FabricatedCells} campo(s) que o Outlook não entregou")
+            End If
+
             ' TRUNCAMENTO VEM PRIMEIRO NA LEITURA, mesmo vindo por último na
             ' frase: é a informação que muda o que o usuário conclui da lista.
             If j.Truncada Then

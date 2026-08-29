@@ -477,6 +477,26 @@ Namespace Global.Iris.Model
         Public Property Skipped As Integer?
 
         ''' <summary>
+        ''' Quantas células ausentes viraram valor nesta leitura.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A MESMA FAMÍLIA DO <c>MessagePage.FabricatedCells</c>, e ela
+        ''' chegou aqui depois.</b>
+        '''
+        ''' O <c>CalendarReading</c> transformava exceção em <c>""</c>,
+        ''' <c>False</c> e <c>0</c> sem contar — <c>AllDayEvent = False</c>,
+        ''' <c>IsRecurring = False</c>, <c>RecipientCount = 0</c>, assunto e
+        ''' organizador vazios. Todas são <b>afirmações</b> que o usuário lê
+        ''' como fato, e nenhuma aparecia em lugar nenhum.
+        '''
+        ''' A listagem foi instrumentada em 28/08 e o calendário ficou de fora:
+        ''' eu corrigi uma superfície e não procurei as irmãs, que é a mesma
+        ''' falha que o <c>ManifestReader</c> e a <c>BuscaNoAcervo</c> já tinham
+        ''' mostrado no mesmo dia.
+        ''' </summary>
+        Public Property FabricatedCells As Integer
+
+        ''' <summary>
         ''' <b>A enumeração terminou antes do fim.</b>
         '''
         ''' ------------------------------------------------------------------

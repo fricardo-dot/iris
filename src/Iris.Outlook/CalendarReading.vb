@@ -118,7 +118,12 @@ Namespace Global.Iris.Outlook
                         ' de 30" viraria mistério sem o número.
                         recusadas += 1
                     Else
-                        Dim dto = Traduzir(compromisso)
+                        ' O contador e da JANELA, e cada item soma no dele.
+                        ' Ver o que a mesma conta ja errou nas duas direcoes
+                        ' em MessagePaging: aqui ela nasce por item, somando.
+                        Dim daqui = 0
+                        Dim dto = Traduzir(compromisso, daqui)
+                        resultado.FabricatedCells += daqui
                         If dto Is Nothing Then
                             recusadas += 1
                         Else
@@ -174,23 +179,24 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
-        Private Function Traduzir(a As OL.AppointmentItem) As AppointmentInfo
+        Private Function Traduzir(a As OL.AppointmentItem, ByRef fabricadas As Integer) As AppointmentInfo
             Try
                 Dim inicio = Safe(Function() a.Start)
                 Dim fim = Safe(Function() a.End)
 
                 Return New AppointmentInfo With {
-                    .Key = New ItemKey(Texto(Function() a.EntryID), StoreDe(a)),
-                    .Subject = Texto(Function() a.Subject),
-                    .Location = Texto(Function() a.Location),
+                    .Key = New ItemKey(TextoDoCompromisso(Function() a.EntryID, fabricadas),
+                                       StoreDe(a, fabricadas)),
+                    .Subject = TextoDoCompromisso(Function() a.Subject, fabricadas),
+                    .Location = TextoDoCompromisso(Function() a.Location, fabricadas),
                     .Start = New DateTimeOffset(inicio),
                     .End = New DateTimeOffset(fim),
-                    .AllDayEvent = Booleano(Function() a.AllDayEvent),
-                    .Organizer = Texto(Function() a.Organizer),
+                    .AllDayEvent = BooleanoDoCompromisso(Function() a.AllDayEvent, fabricadas),
+                    .Organizer = TextoDoCompromisso(Function() a.Organizer, fabricadas),
                     .BusyStatus = DoBusy(a),
                     .ResponseStatus = DaResposta(a),
-                    .IsRecurring = Booleano(Function() a.IsRecurring),
-                    .RecipientCount = Contar(a)
+                    .IsRecurring = BooleanoDoCompromisso(Function() a.IsRecurring, fabricadas),
+                    .RecipientCount = Contar(a, fabricadas)
                 }
             Catch
                 ' Item que não se deixa ler não derruba a janela inteira: ele
@@ -208,19 +214,25 @@ Namespace Global.Iris.Outlook
         ''' ela esconderia um RCW intermediario sem dono, que e a R7 outra vez.
         ''' Aqui o pai recebe nome, tipo, e e liberado.
         ''' </summary>
-        Private Function StoreDe(a As OL.AppointmentItem) As String
+        Private Function StoreDe(a As OL.AppointmentItem, ByRef fabricadas As Integer) As String
             Dim pai As OL.Folder = Nothing
             Try
                 pai = TryCast(a.Parent, OL.Folder)
-                Return If(pai?.StoreID, "")
+                ' StoreID vazio nao e "sem store": e chave que nunca casa, e o
+                ' sintoma aparece longe -- exatamente como o EntryID fabricado
+                ' da paginacao.
+                Dim id = If(pai?.StoreID, "")
+                If id = "" Then fabricadas += 1
+                Return id
             Catch
+                fabricadas += 1
                 Return ""
             Finally
                 ComHelpers.Release(pai)
             End Try
         End Function
 
-        Private Function Contar(a As OL.AppointmentItem) As Integer
+        Private Function Contar(a As OL.AppointmentItem, ByRef fabricadas As Integer) As Integer
             ' a.Recipients é objeto COM PRÓPRIO. `a.Recipients.Count` criaria
             ' um RCW intermediário sem dono — R7, já violado quatro vezes neste
             ' projeto, sempre em código que "só lia uma contagem".
@@ -229,6 +241,9 @@ Namespace Global.Iris.Outlook
                 r = a.Recipients
                 Return r.Count
             Catch
+                ' Zero participante e uma AFIRMACAO, e ela sai igual quando a
+                ' leitura falha. Por isso conta.
+                fabricadas += 1
                 Return 0
             Finally
                 ComHelpers.Release(r)
@@ -266,18 +281,42 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
-        Private Function Texto(f As Func(Of String)) As String
+        ''' <summary>
+        ''' Texto ilegível <b>ou ausente</b> vira vazio — e conta nos dois casos.
+        '''
+        ''' O sufixo <c>-DoCompromisso</c> existe porque estes passaram a ser
+        ''' <c>Friend</c> para ter teste, e <c>Friend</c> em <c>Module</c> vale
+        ''' para o assembly: <c>Texto</c> e <c>Booleano</c> colidiriam com os
+        ''' homônimos de <c>MessageReading</c>, <c>DraftWriting</c> e
+        ''' <c>MessagePaging</c>. É a armadilha que o CLAUDE.md lista doze vezes.
+        ''' </summary>
+        Friend Function TextoDoCompromisso(f As Func(Of String), ByRef fabricadas As Integer) As String
+            Dim lido As String
             Try
-                Return If(f(), "")
+                lido = f()
             Catch
+                fabricadas += 1
                 Return ""
             End Try
+
+            If lido Is Nothing Then
+                fabricadas += 1
+                Return ""
+            End If
+            Return lido
         End Function
 
-        Private Function Booleano(f As Func(Of Boolean)) As Boolean
+        ''' <summary>
+        ''' Booleano ilegível vira <c>False</c> — e conta.
+        '''
+        ''' <c>AllDayEvent = False</c> e <c>IsRecurring = False</c> são
+        ''' afirmações que a tela mostra como fato.
+        ''' </summary>
+        Friend Function BooleanoDoCompromisso(f As Func(Of Boolean), ByRef fabricadas As Integer) As Boolean
             Try
                 Return f()
             Catch
+                fabricadas += 1
                 Return False
             End Try
         End Function

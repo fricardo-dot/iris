@@ -62,11 +62,13 @@ Public Class AgendaViewModelTests
     Private Shared Function Janela(quantos As Integer,
                                    Optional series As Integer = 0,
                                    Optional truncada As Boolean = False,
-                                   Optional recusados As Integer? = 0) _
+                                   Optional recusados As Integer? = 0,
+                                   Optional fabricadas As Integer = 0) _
                                    As OperationResult(Of AppointmentWindow)
         Dim j As New AppointmentWindow With {
             .De = Agora, .Ate = Agora.AddDays(7),
             .FromRecurrence = series, .Skipped = recusados,
+            .FabricatedCells = fabricadas,
             .Truncada = truncada,
             .MotivoDoCorte = If(truncada, "a leitura foi interrompida no meio", "")}
         For i = 1 To quantos
@@ -110,6 +112,50 @@ Public Class AgendaViewModelTests
         StringAssert.Contains(vm.Resumo, "3 compromisso(s) lido(s)")
         Assert.IsFalse(vm.TemErro)
         Assert.IsFalse(vm.Carregando)
+    End Function
+
+    ''' <summary>
+    ''' <b>CÉLULA FABRICADA NA AGENDA APARECE NA TELA.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A LISTAGEM CONTAVA DESDE 28/08; O CALENDÁRIO, NÃO</b>
+    '''
+    ''' O <c>CalendarReading</c> transformava exceção em <c>""</c>,
+    ''' <c>False</c> e <c>0</c> em silêncio: <c>AllDayEvent = False</c>,
+    ''' <c>IsRecurring = False</c>, <c>RecipientCount = 0</c>, assunto e
+    ''' organizador vazios, e um <c>StoreID</c> vazio — que é chave que nunca
+    ''' casa, e cujo sintoma aparece longe.
+    '''
+    ''' É a mesma família do <c>MessagePage.FabricatedCells</c>. Eu instrumentei
+    ''' a listagem naquele dia e <b>não procurei a irmã dela</b>, que é
+    ''' literalmente o que o CLAUDE.md manda fazer.
+    '''
+    ''' <b>Recusado e fabricado são coisas diferentes:</b> recusado é "o item
+    ''' não entrou"; fabricado é "o item entrou com célula inventada". Por isso
+    ''' são dois números, e não um.
+    '''
+    ''' <b>Controle negativo:</b> tirando o ramo do <c>FabricatedCells</c> do
+    ''' <c>Descrever</c>, este teste cai.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Celula_fabricada_APARECE_no_resumo() As Task
+        Dim b As New BrokerDeAgenda() With {.Resposta = Janela(2, fabricadas:=3)}
+        Dim vm = Montar(b)
+        vm.Apontar(Cal)
+
+        Await vm.CarregarAsync()
+
+        StringAssert.Contains(vm.Resumo, "3 campo(s) que o Outlook não entregou")
+
+        ' CONTROLE POSITIVO: zero fica calado. A medicao de 28/08 achou zero
+        ' nulos em 1.109 linhas da listagem, entao esta frase nao deve
+        ' aparecer no dia a dia -- e se aparecer, e informacao de verdade.
+        Dim b2 As New BrokerDeAgenda() With {.Resposta = Janela(2, fabricadas:=0)}
+        Dim vm2 = Montar(b2)
+        vm2.Apontar(Cal)
+        Await vm2.CarregarAsync()
+        Assert.IsFalse(vm2.Resumo.Contains("não entregou"),
+            "zero fabricacoes virou frase na tela")
     End Function
 
     ''' <summary>

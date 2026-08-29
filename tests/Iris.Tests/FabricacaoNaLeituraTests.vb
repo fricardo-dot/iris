@@ -331,6 +331,46 @@ Public Class FabricacaoNaLeituraTests
         Assert.AreEqual(4, n, "valor legivel foi contado como fabricacao")
     End Sub
 
+    ''' <summary>
+    ''' <b>O CALENDÁRIO CONTA — e ele ficou dois dias sem contar.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>EU INSTRUMENTEI UMA SUPERFÍCIE E NÃO PROCUREI A IRMÃ</b>
+    '''
+    ''' A listagem passou a contar célula fabricada em 28/08. O
+    ''' <c>CalendarReading</c> tem exatamente os mesmos auxiliares — exceção
+    ''' vira <c>""</c>, <c>False</c> e <c>0</c> — e ficou de fora. Só apareceu
+    ''' quando eu fui varrer, por conta própria, as áreas que a revisão externa
+    ''' ainda não tinha aberto.
+    '''
+    ''' É a regra do CLAUDE.md que eu já tinha citado num relatório no mesmo
+    ''' dia: <i>ao corrigir uma corrida, procure as irmãs dela antes de declarar
+    ''' a família coberta</i>.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_calendario_conta_a_excecao_E_o_Nothing_calado()
+        Dim n = 0
+
+        ' Controle: valor bom nao e fabricacao.
+        Assert.AreEqual("Reuniao", CalendarReading.TextoDoCompromisso(Function() "Reuniao", n))
+        Assert.AreEqual(0, n, "valor legivel foi contado como fabricacao")
+
+        ' Nothing SEM excecao.
+        Assert.AreEqual("", CalendarReading.TextoDoCompromisso(Function() CType(Nothing, String), n))
+        Assert.AreEqual(1, n, "Nothing sem excecao virou vazio EM SILENCIO")
+
+        ' E a excecao.
+        Assert.AreEqual("", CalendarReading.TextoDoCompromisso(AddressOf TextoQueExplode, n))
+        Assert.AreEqual(2, n)
+
+        ' AllDayEvent = False e uma AFIRMACAO na tela.
+        Assert.IsFalse(CalendarReading.BooleanoDoCompromisso(AddressOf BooleanoQueExplode, n))
+        Assert.AreEqual(3, n)
+
+        Assert.IsTrue(CalendarReading.BooleanoDoCompromisso(Function() True, n))
+        Assert.AreEqual(3, n, "valor legivel foi contado como fabricacao")
+    End Sub
+
     ' Propriedade COM ilegivel, que e o que os auxiliares do legado existem
     ' para sobreviver: item corrompido, offline ou baixado pela metade.
     Private Shared Function TextoQueExplode() As String
