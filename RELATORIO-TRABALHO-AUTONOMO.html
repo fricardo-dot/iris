@@ -394,10 +394,10 @@ footer.fim {
     pode desfazer qualquer uma delas.
   </p>
   <div class="meta">
-    <span><b>882</b> testes · 0 falhas · 0 pulados</span>
-    <span><b>38</b> commits até o <code>e3b44c6</code></span>
-    <span><b>14</b> passadas de revisão externa</span>
-    <span><code>874f223</code> → <code>e3b44c6</code></span>
+    <span><b>883</b> testes · 0 falhas · 0 pulados</span>
+    <span><b>40</b> commits até o <code>a011ae3</code></span>
+    <span><b>15</b> passadas de revisão externa</span>
+    <span><code>874f223</code> → <code>a011ae3</code></span>
   </div>
 </header>
 
@@ -435,7 +435,7 @@ footer.fim {
 
 <div class="numeros wide">
   <div><span class="v">805</span><span class="k">testes ao começar</span></div>
-  <div><span class="v">882</span><span class="k">testes ao terminar</span></div>
+  <div><span class="v">883</span><span class="k">testes ao terminar</span></div>
   <div><span class="v">31</span><span class="k">dias de horizonte</span></div>
   <div><span class="v">65</span><span class="k">fora da janela, na ordem errada</span></div>
   <div><span class="v">22,7</span><span class="k">ms por busca, 1.127 msgs</span></div>
@@ -1178,10 +1178,38 @@ footer.fim {
   teste lê o XAML.
 </p>
 
+<h3>A décima quinta, e o teste que passou duas vezes pelo motivo errado</h3>
+
+<div class="nota">
+  <strong>O nome mudava e os números ficavam.</strong> O despachante da lista
+  tem fila de um: com uma operação em voo, o pedido novo é enfileirado e a
+  chamada volta na hora. Trocar de pasta durante uma carga deixava o nome da
+  pasta nova na tela com as mensagens, o total e o descarte da anterior — e se
+  a operação travasse, para sempre. A limpeza passou a ser síncrona, no instante
+  da troca.
+</div>
+
+<p>
+  <strong>E o meu primeiro teste disso passou com a correção desfeita.</strong>
+  Eu usei um <em>reload</em> como operação em voo — e o reload já limpa a tela
+  no começo dele, então o estado estaria limpo por outro motivo. Tem de ser
+  <em>carregar mais</em>. É a segunda passada seguida em que um controle
+  negativo meu passa quando deveria falhar; da primeira vez o conserto não tinha
+  teste, desta vez o teste não tocava o defeito.
+</p>
+
+<p>
+  Nos roteiros, o achado com dente foi o <code>conferir-mensagem</code>:
+  falha ao ler os anexos virava <em>"não tem anexo"</em> e o roteiro chegava a
+  imprimir <strong>"O IRIS ACEITA"</strong> — enquanto a produção recusa
+  expressamente quando não sabe. Diagnóstico que contradiz a produção é pior que
+  diagnóstico nenhum.
+</p>
+
 <h2><span class="num">§ 8</span>O que fica sem correção</h2>
 
 <p>
-  Nenhum achado de produção destas <strong>quatorze</strong> passadas ficou sem
+  Nenhum achado de produção destas <strong>quinze</strong> passadas ficou sem
   correção. O que sobra é dívida assumida, e agora ela cabe em três linhas —
   e as duas primeiras, que eram só texto, agora têm teste que mede o dano.
 </p>
@@ -1271,8 +1299,8 @@ footer.fim {
 
 <footer class="fim">
   Iris · trabalho autônomo de 28 de agosto de 2026<br>
-  <code>874f223</code> → <code>e3b44c6</code> · 38 commits · 882 testes, 0 falhas, 0 pulados<br>
-  Quatorze passadas de revisão externa · nada foi enviado por e-mail · nenhuma cerimônia foi executada
+  <code>874f223</code> → <code>a011ae3</code> · 40 commits · 883 testes, 0 falhas, 0 pulados<br>
+  Quinze passadas de revisão externa · nada foi enviado por e-mail · nenhuma cerimônia foi executada
 </footer>
 
 </div>

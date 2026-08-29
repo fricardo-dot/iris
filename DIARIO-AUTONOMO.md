@@ -1013,3 +1013,41 @@ roteiros concluíam ausência sobre o que não leram — `medir-grupos`,
 que originou dois testes.
 
 Suíte: **882**.
+
+---
+
+## Décima quinta passada — o teste que passou pelo motivo errado, de novo
+
+Nenhum achado alto. Quatro médios.
+
+**O nome mudava e os números ficavam.** O `Despachar` tem fila de um: com uma
+operação em voo, o pedido novo vira `_pending` e a chamada **volta na hora**. O
+`ShowFolderAsync` terminava com o nome da pasta B na tela e as mensagens, o total
+e o descarte de A — e o `_totalConhecido = False` só chegava quando o pendente
+começasse. Se a operação de A travasse, durava para sempre. A limpeza passou a
+ser síncrona, no instante da troca.
+
+**E o meu primeiro teste disso passou com a correção desfeita.** Usei um
+*reload* como operação em voo — e o reload já limpa a tela no começo dele, então
+o estado estaria limpo por outro motivo. Tem de ser `LoadMore`. É a **segunda
+passada seguida** em que um controle negativo meu passa quando devia falhar: da
+primeira vez o conserto não tinha teste, desta vez o teste não tocava o defeito.
+O `FakeBroker` ganhou `TravaDaPagina` para tornar a fila de um observável.
+
+**Nos roteiros, o achado com dente foi o `conferir-mensagem`:** falha ao ler os
+anexos virava *"não tem anexo"* e o roteiro chegava a imprimir **"O IRIS
+ACEITA"** — enquanto a produção recusa expressamente quando não sabe.
+Diagnóstico que contradiz a produção é pior que diagnóstico nenhum.
+
+O resto: o `q1-nulos-empates` tinha qualificado só a conclusão dos nulos, e as
+outras duas usam o mesmo corpus incompleto; o `inventario-pastas` não contava
+corte por profundidade, falha de store nem `PR_ATTR_HIDDEN` ilegível, e a seção
+dos artefatos imprimia "nenhum" sem consultar os contadores; o `medir-grupos`
+traduzia qualquer exceção de `GetDefaultFolder` como "a pasta não existe"; o
+`medir-janela` concluía "SEM horizonte comum" mesmo com leituras falhas; o
+`q8-caca-contagem` dizia "não encontrada" sobre uma árvore cortada na
+profundidade 6; o `q8-janela` dizia "nenhum" sobre chaves lidas com
+`SilentlyContinue`; e o comentário do `ManifestReader` ainda dizia que nenhuma
+UI consome a ressalva — o `AcervoViewModel` consome e o XAML exibe.
+
+Suíte: **883**.

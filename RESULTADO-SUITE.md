@@ -10,22 +10,22 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — depois da décima quarta revisão
+## Medição corrente — depois da décima quinta revisão
 
 | | |
 |---|---|
-| **Commit** | `e3b44c6` — a árvore da solução .NET que foi medida |
+| **Commit** | `a011ae3` — a árvore da solução .NET que foi medida |
 | **Data** | 28 de agosto de 2026, à noite |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
 
 ```
-Passed!  - Failed:     0, Passed:   882, Skipped:     0, Total:   882, Duration: 1 m 13 s - Iris.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   883, Skipped:     0, Total:   883, Duration: 1 m 7 s - Iris.Tests.dll (net10.0)
 ```
 
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
-última antes do commit `e3b44c6`, que contém **exatamente** a árvore medida —
+última antes do commit `a011ae3`, que contém **exatamente** a árvore medida —
 `src/`, `tests/` e `tools/` entraram nele; os documentos vieram depois, em
 commit separado.
 
@@ -43,8 +43,20 @@ segunda não acrescentou teste nenhum — reforçou dois que já existiam —, e
 décima terceira acrescentou dois: a lista vazia com item ignorado, e o controle
 positivo da pasta legitimamente vazia. A décima quarta acrescentou quatro — a
 contagem que falhou, o total herdado da pasta anterior, os recusados
-desconhecidos da agenda, e a prova de alcance do XAML.
-872 → 874 → 875 → 876 → 878 → 882.
+desconhecidos da agenda, e a prova de alcance do XAML. A décima quinta
+acrescentou um: a troca de pasta durante uma carga.
+872 → 874 → 875 → 876 → 878 → 882 → 883.
+
+### Medição da décima quarta revisão
+
+| | |
+|---|---|
+| **Commit** | `e3b44c6` |
+| **Data** | 28 de agosto de 2026, à noite |
+
+```
+Passed!  - Failed:     0, Passed:   882, Skipped:     0, Total:   882, Duration: 1 m 13 s - Iris.Tests.dll (net10.0)
+```
 
 ### Medição da décima terceira revisão
 
