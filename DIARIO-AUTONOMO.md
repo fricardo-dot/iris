@@ -1227,3 +1227,36 @@ do `try` em dois roteiros; e o `<summary>` novo do `CrashInjection` tinha
 engolido a documentação da constante do dreno.
 
 Suíte: **896**.
+
+---
+
+## Vigésima passada — o mesmo defeito numa operação destrutiva
+
+**Perguntei explicitamente pelos irmãos, e o revisor achou o pior.**
+
+Eu tinha acabado de consertar a guarda de identidade do anexo na *leitura*. O
+caminho dos **rascunhos** tem a mesma guarda decidindo um `Delete()` — e o
+`MesmoArquivo` lia os dois lados com os auxiliares tolerantes, contra uma chave
+montada com os mesmos. Se as leituras falhassem nos dois momentos, `""/0` casava
+com `""/0`, a comparação dizia "é este", e **o anexo errado era apagado**.
+
+**E o sanitizador estava na terceira versão do mesmo conserto** e ainda não
+fechava a família. A contagem procurava a substring `</script`, então um
+fechamento **sem o terminador** contava: o balanço fechava, o HTML passava, o
+padrão de bloco não removia nada, e sobrava `SEGREDO</script` no texto que vai
+para o provedor. Agora os dois lados usam o mesmo critério — o do removedor.
+
+**Duas asserções minhas passavam pelo motivo errado:** usavam uma chave já
+inconclusiva, então a função retornava antes de olhar os argumentos. Apagar as
+duas guardas da leitura atual as deixaria verdes.
+
+**E uma guarda que eu tinha acabado de escrever saiu.** O `MesmoArquivo`
+repetia o teste de confiança, e o controle negativo não derrubou nada — porque o
+`MesmaIdentidade` já o fazia. *Guarda duplicada é guarda que ninguém prova:* a
+cópia sai, e o que fica é a que tem teste.
+
+A igualdade e o hash do `AttachmentKey` passaram a incluir o
+`IdentidadeConhecida`: duas chaves com os mesmos campos e confianças diferentes
+não são a mesma chave.
+
+Suíte: **899**.
