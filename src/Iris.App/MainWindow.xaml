@@ -1128,6 +1128,73 @@
                                      AutomationProperties.Name="Lendo a agenda" />
                     </StackPanel>
 
+                    <!-- CRIAR COMPROMISSO.
+                         So aparece quando a agenda sabe escrever. Sem escritor
+                         a faixa continua inteira, e nao mostra botao que nao
+                         funciona.
+
+                         Nao ha campo de participante, e a ausencia e a
+                         funcionalidade: compromisso com participante e reuniao,
+                         e salvar reuniao manda convite por e-mail. Ver o
+                         comentario do CalendarWriting. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                Visibility="{Binding Agenda.PodeEscrever,
+                                             Converter={StaticResource BoolToVis},
+                                             FallbackValue=Collapsed}">
+                        <TextBox Text="{Binding Agenda.NovoAssunto, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="220"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Assunto do compromisso"
+                                 AutomationProperties.Name="Assunto do novo compromisso" />
+                        <TextBox Text="{Binding Agenda.NovaDuracaoMinutos, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="46" Margin="6,0,0,0"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="Duracao em minutos"
+                                 AutomationProperties.Name="Duracao em minutos" />
+                        <TextBlock Text="min" VerticalAlignment="Center" Margin="4,0,0,0"
+                                   Style="{DynamicResource Text.Muted}" />
+                        <Button Content="Criar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Agenda.CriarCommand}"
+                                Margin="10,0,0,0"
+                                ToolTip="Cria um compromisso neste calendario. Sem participantes: o Iris nao manda convite."
+                                AutomationProperties.Name="Criar compromisso" />
+                        <Button Content="Apagar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Agenda.PedirExclusaoCommand}"
+                                Margin="6,0,0,0"
+                                ToolTip="Pergunta antes de apagar o compromisso selecionado"
+                                AutomationProperties.Name="Apagar o compromisso selecionado" />
+                    </StackPanel>
+
+                    <!-- A PERGUNTA. Apagar nao tem desfazer visivel: o item vai
+                         para os Itens Excluidos e ninguem olha la. Um clique
+                         nao basta, e a pergunta cita o assunto para nao haver
+                         duvida sobre QUAL compromisso. -->
+                    <Border Margin="0,0,0,8" Padding="10,8"
+                            Background="{DynamicResource Brush.Surface.2}"
+                            BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                            BorderThickness="1" CornerRadius="3"
+                            Visibility="{Binding Agenda.EstaConfirmando,
+                                         Converter={StaticResource BoolToVis},
+                                         FallbackValue=Collapsed}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="{Binding Agenda.PerguntaDaExclusao}"
+                                       VerticalAlignment="Center"
+                                       TextWrapping="Wrap" />
+                            <Button Content="Apagar mesmo assim"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Agenda.ApagarCommand}"
+                                    Margin="12,0,0,0"
+                                    AutomationProperties.Name="Confirmar a exclusao do compromisso" />
+                            <Button Content="Cancelar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Agenda.CancelarExclusaoCommand}"
+                                    Margin="6,0,0,0"
+                                    AutomationProperties.Name="Cancelar a exclusao" />
+                        </StackPanel>
+                    </Border>
+
                     <ItemsControl ItemsSource="{Binding Agenda.Compromissos}"
                                   MaxHeight="180">
                         <ItemsControl.Template>

@@ -551,7 +551,7 @@ que é o que o parágrafo acima descreve.
 **Por que não foi executada:** escrever na caixa do dono exige o dono na
 máquina. Não é bloqueio técnico; é de autoridade.
 
-### Fase 6 — Calendário — *LEITURA EXECUTADA em 28/08/2026*
+### Fase 6 — Calendário — *LEITURA em 28/08/2026, ESCRITA em 29/08/2026*
 
 **Medido antes de escrever:** 434 compromissos, **30,9 ms por item** — quase o
 dobro dos ~16 ms que a Fase 0 mediu por mensagem —, dez de dez propriedades
@@ -568,8 +568,28 @@ legíveis, 4 recorrentes em 100.
   é de calendário e exclui o acervo da mesma linha da janela.
 - Seis testes contra o Outlook real, todos **somente leitura**.
 
-**O que NÃO entrou, e é o resto da fase:** criar, editar, mover ou responder
-convite — tudo mutação. Cache de calendário. Visão de mês. Convites recebidos.
+**A escrita entrou em 29/08/2026**, e o desenho dela é a parte que importa:
+
+- `AppointmentDraft` **não tem campo de participante**. Não existe caminho para
+  o Iris criar uma reunião, porque não há onde preencher — a invariante "nada
+  sai por e-mail" fica sustentada pelo **tipo**, e não por alguém lembrar. Há
+  teste por reflexão que cai no dia em que alguém acrescentar `Recipients`.
+- Editar e apagar conferem `MeetingStatus` **antes** de tocar no item, e
+  recusam com `Denied`. Salvar reunião manda convite, atualização ou
+  cancelamento; apagar reunião manda cancelamento a terceiros.
+- `EhReuniao` **falha fechado**: não conseguir ler o status vale como "é".
+- A tela pergunta antes de apagar, e a pergunta **cita o assunto**. Trocar de
+  compromisso ou de pasta cancela a confirmação pendente — sem isso, confirmar
+  apagaria um item que a pergunta não citou.
+
+**O que continua fora, e é decisão:** **responder convite**, porque responder é
+**enviar e-mail**, e o Iris não envia. Isso não é dívida a pagar: é a
+invariante. Quem quiser aceitar ou recusar um convite faz no Outlook, onde vê
+para quem a resposta vai.
+
+**E o que continua fora por não ter sido feito:** mover compromisso entre
+calendários, cache de calendário, visão de mês, e séries — mexer numa ocorrência
+mexe na série, e isso pede desenho próprio.
 
 **Uma pendência de honestidade:** ninguém mediu a **cobertura** do calendário em
 modo cached. A agenda diz quantos leu e se a leitura foi truncada; ela não diz

@@ -394,6 +394,53 @@ Public Class BindingsDaJanelaTests
             "o texto literal voltou ao XAML")
     End Sub
 
+    ''' <summary>
+    ''' <b>A PERGUNTA ANTES DE APAGAR ESTÁ NA TELA.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>PROVA DE ALCANCE, e não de leitura</b>
+    '''
+    ''' Os testes do <c>AgendaViewModel</c> provam que a confirmação existe e
+    ''' que o comando de apagar não executa antes dela. Eles <b>não</b> provam
+    ''' que a tela mostra a pergunta: se o XAML não tivesse o painel, o botão
+    ''' "Apagar" pediria a confirmação e nada apareceria — e o compromisso
+    ''' ficaria sem apagar, sem explicação.
+    '''
+    ''' É a mesma lição do texto da pasta vazia, e a mesma do calendário que a
+    ''' política de visibilidade escondia: <i>prova de leitura não é prova de
+    ''' alcance</i>. Este teste fecha o último metro, lendo o XAML.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_pergunta_antes_de_apagar_esta_na_tela()
+        Dim xaml = LerXaml()
+
+        StringAssert.Contains(xaml, "{Binding Agenda.PerguntaDaExclusao}",
+            "a pergunta nao aparece na tela: o usuario clicaria em Apagar e " &
+            "nada aconteceria")
+        StringAssert.Contains(xaml, "{Binding Agenda.ApagarCommand}",
+            "nao ha como confirmar")
+        StringAssert.Contains(xaml, "{Binding Agenda.CancelarExclusaoCommand}",
+            "nao ha como desistir depois de perguntar")
+
+        ' E o formulario de criar tambem tem de estar ligado.
+        StringAssert.Contains(xaml, "{Binding Agenda.CriarCommand}")
+        StringAssert.Contains(xaml, "Agenda.NovoAssunto")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A FAIXA DE ESCRITA SÓ APARECE SE A AGENDA SOUBER ESCREVER.</b>
+    '''
+    ''' Botão que não funciona é pior que botão ausente: ele promete uma coisa
+    ''' que o objeto não sabe fazer. A visibilidade está presa ao
+    ''' <c>PodeEscrever</c>, que é falso quando não há escritor.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_faixa_de_escrita_depende_de_PodeEscrever()
+        Dim xaml = LerXaml()
+        StringAssert.Contains(xaml, "{Binding Agenda.PodeEscrever,",
+            "a faixa de escrita aparece mesmo quando a agenda nao escreve")
+    End Sub
+
     Private Shared Function LerXaml() As String
         If _xaml IsNot Nothing Then Return _xaml
         Dim d = New DirectoryInfo(AppContext.BaseDirectory)

@@ -172,7 +172,12 @@ Namespace Global.Iris.App.ViewModels
                 Busca = New BuscaViewModel(AddressOf Acervo.Procurar)
             End If
 
-            Agenda = New AgendaViewModel(broker)
+            ' O BROKER ENTRA COMO LEITOR **E** COMO ESCRITOR.
+            '
+            ' Sao dois parametros e nao um porque as portas sao duas: quem so
+            ' le nao precisa implementar escrita para ter um duplo. Aqui o
+            ' mesmo objeto serve as duas, e e o unico lugar onde isso acontece.
+            Agenda = New AgendaViewModel(broker, escritor:=broker)
 
             Assistente = MontarAssistente(ui)
 
