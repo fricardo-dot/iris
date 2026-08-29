@@ -10,33 +10,50 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — depois da décima segunda revisão
+## Medição corrente — depois da décima terceira revisão
 
 | | |
 |---|---|
-| **Commit** | `23df5ec` — a árvore da solução .NET que foi medida |
+| **Commit** | `783b8e2` — a árvore da solução .NET que foi medida |
 | **Data** | 28 de agosto de 2026, à noite |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
 
 ```
-Passed!  - Failed:     0, Passed:   876, Skipped:     0, Total:   876, Duration: 1 m 9 s - Iris.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   878, Skipped:     0, Total:   878, Duration: 1 m 18 s - Iris.Tests.dll (net10.0)
 ```
 
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
-última antes do commit, e o que mudou depois dela foram documentos **e o roteiro
-`tools/medir-cobertura-calendario.ps1`** — que é executável, e não faz parte da
-solução .NET. Esta frase já tinha dito "documentos e um roteiro de medição" na
-medição anterior e voltou a omitir o roteiro nesta; a revisão externa pegou.
+última antes do commit `783b8e2`, que contém **exatamente** a árvore medida —
+`src/`, `tests/` e `tools/` entraram nele; os documentos vieram depois, em
+commit separado.
+
+Esta frase já errou duas vezes, nas duas direções: uma dizendo "só documentos"
+quando um roteiro executável tinha mudado, e a correção seguinte repetindo a
+omissão. Ela agora diz **o que o commit contém**, e não o que eu lembro de ter
+tocado.
 
 **A conta não fecha por soma, e é de propósito.** A nona passada acrescentou
 três testes e **apagou um** — o `O_acumulador_da_linha_zera_entre_linhas` fazia
 os dois resets com a própria mão e passaria com a correção desfeita. A décima
 acrescentou um, que mede a dívida das duas gerações pendentes com o acervo real.
-A décima primeira acrescentou o da agenda com zero compromissos, e a décima
-segunda não acrescentou teste nenhum — reforçou dois que já existiam.
-872 → 874 → 875 → 876.
+A décima primeira acrescentou o da agenda com zero compromissos, a décima
+segunda não acrescentou teste nenhum — reforçou dois que já existiam —, e a
+décima terceira acrescentou dois: a lista vazia com item ignorado, e o controle
+positivo da pasta legitimamente vazia.
+872 → 874 → 875 → 876 → 878.
+
+### Medição da décima segunda revisão
+
+| | |
+|---|---|
+| **Commit** | `23df5ec` |
+| **Data** | 28 de agosto de 2026, à noite |
+
+```
+Passed!  - Failed:     0, Passed:   876, Skipped:     0, Total:   876, Duration: 1 m 9 s - Iris.Tests.dll (net10.0)
+```
 
 ### Medição da décima primeira revisão
 

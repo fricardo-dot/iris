@@ -920,3 +920,52 @@ dois ramos, e o controle positivo do teste cobra a palavra.
 
 Suíte: **876** — a única passada que não acrescentou teste nenhum, só reforçou
 dois que já existiam.
+
+---
+
+## Décima terceira passada — a que estava na tela principal
+
+Sete achados, **nenhum alto**. Mas o segundo estava na tela que ele abre todo
+dia, e é a **terceira instância da mesma família em três passadas**.
+
+**A lista dizia as duas coisas ao mesmo tempo.** O texto do meio era fixo —
+*"Esta pasta está vazia"* — e aparecia sempre que a lista convertida ficava sem
+linha. Com uma página de `TotalAtStart = 1` e `SkippedCount = 1`, a mesma tela
+mostrava *"Esta pasta está vazia"* no meio e *"0 de 1 · 1 item ignorado"* no
+rodapé. Uma das duas mentia, e era a que ocupa a tela inteira.
+
+Agora o texto é calculado, com três casos em ordem de força do que se pode
+afirmar: a leitura perdeu item ⇒ não se afirma nada sobre a pasta; a pasta
+declara N e a leitura trouxe zero ⇒ diz-se o N; a pasta declara zero e nada se
+perdeu ⇒ aí sim, vazia.
+
+**O segundo é pior de outro jeito.** A busca dizia *"Nenhuma pasta foi varrida
+ainda"*, e o comentário do laço **logo acima** já dizia, desde a manhã, que isso
+é mais do que se sabe: sem geração publicada cabe a varredura rejeitada pela S6,
+a cancelada e a que falhou. Eu tinha corrigido o comentário e deixado a frase —
+**e o meu teste exigia a frase errada**. Teste que exige a formulação errada
+transforma o defeito em requisito, e é o pior lugar possível para deixar um.
+
+Os outros cinco são da mesma linhagem, e listá-los junto é o que mostra o
+tamanho do padrão:
+
+- o **segundo zero** do `medir-cobertura-calendario.ps1` — item cuja data não foi
+  lida entra em `$recusados` e não é classificado, então nem *"nenhum antes do
+  horizonte"* se sustenta;
+- o `medir-janela.ps1` engolindo falha de `GetFirst`/`GetLast` e depois
+  afirmando *"nenhuma pasta com N itens"* — a pasta sumia da tabela sem aparecer
+  em lugar nenhum;
+- o `Skipped` nulo colapsado em zero no `Descrever`, **no arquivo cujo
+  comentário imediatamente acima declara que nulo e zero são coisas
+  diferentes**;
+- a **quarta** versão documental do "12 compromissos", no comentário do `Resumo`
+  e no do DTO, depois de a tela e o XAML já concordarem;
+- e um teste meu que exigia `"3 compromisso(s)"` e `"lido(s)"` em asserções
+  soltas, e passaria com o total sem qualificação e o "lido(s)" em outra
+  cláusula.
+
+**Dois controles negativos confirmados desfazendo:** fazendo o `EmptyMessage`
+ignorar o `_skipped`, o teste da lista cai; devolvendo *"Nenhuma pasta foi
+varrida"*, o da busca cai.
+
+Suíte: **878**.
