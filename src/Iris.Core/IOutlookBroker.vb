@@ -91,8 +91,38 @@ Namespace Global.Iris.Core
             As Task(Of OperationResult(Of Boolean))
     End Interface
 
+    ''' <summary>
+    ''' <b>A porta estreita das TAREFAS.</b>
+    '''
+    ''' Leitura e escrita juntas aqui, ao contrário da agenda, e o motivo é
+    ''' concreto: não existe consumidor que só leia tarefa. A separação da
+    ''' agenda nasceu de uma necessidade real — a faixa da agenda foi entregue
+    ''' lendo, um dia antes de existir escrita — e copiar a forma sem a
+    ''' necessidade seria cerimônia.
+    ''' </summary>
+    Public Interface ITarefasBroker
+        Function GetTasksAsync(folder As FolderKey, teto As Integer,
+                               cancel As CancellationToken) _
+            As Task(Of OperationResult(Of TaskList))
+
+        ''' <summary>
+        ''' Cria uma tarefa. <see cref="TaskDraft"/> não tem responsável, e a
+        ''' ausência é a funcionalidade: tarefa atribuída é pedido enviado por
+        ''' e-mail.
+        ''' </summary>
+        Function CreateTaskAsync(folder As FolderKey, rascunho As TaskDraft,
+                                 cancel As CancellationToken) _
+            As Task(Of OperationResult(Of TaskInfo))
+
+        ''' <summary>
+        ''' Conclui uma tarefa. <b>Recusa atribuída</b>: concluir tarefa de
+        ''' outro manda atualização por e-mail.
+        ''' </summary>
+        Function CompleteTaskAsync(chave As TaskKey, cancel As CancellationToken) _
+            As Task(Of OperationResult(Of TaskInfo))
+    End Interface
     Public Interface IOutlookBroker
-        Inherits IAgendaSource, IAgendaWriter
+        Inherits IAgendaSource, IAgendaWriter, ITarefasBroker
 
 
         ' ---- Sessão -----------------------------------------------------

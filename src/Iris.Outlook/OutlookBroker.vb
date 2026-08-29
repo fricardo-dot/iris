@@ -802,6 +802,40 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        ''' <summary>Leitura pura: <c>ReadAsync</c>, com retry.</summary>
+        Public Async Function GetTasksAsync(folder As FolderKey, teto As Integer,
+                                            cancel As CancellationToken) _
+            As Task(Of OperationResult(Of TaskList)) _
+            Implements ITarefasBroker.GetTasksAsync
+
+            Return Await ReadAsync(Of TaskList)(
+                "outlook.getTasks",
+                Function(app, ns) TaskWriting.Ler(ns, folder, teto),
+                cancel)
+        End Function
+
+        ''' <summary>MUTAÇÃO: sem retry. Criar não é idempotente.</summary>
+        Public Async Function CreateTaskAsync(folder As FolderKey, rascunho As TaskDraft,
+                                              cancel As CancellationToken) _
+            As Task(Of OperationResult(Of TaskInfo)) _
+            Implements ITarefasBroker.CreateTaskAsync
+
+            Return Await MutateAsync(Of TaskInfo)(
+                "outlook.createTask",
+                Function(app, ns) TaskWriting.Create(ns, folder, rascunho),
+                cancel)
+        End Function
+
+        Public Async Function CompleteTaskAsync(chave As TaskKey,
+                                                cancel As CancellationToken) _
+            As Task(Of OperationResult(Of TaskInfo)) _
+            Implements ITarefasBroker.CompleteTaskAsync
+
+            Return Await MutateAsync(Of TaskInfo)(
+                "outlook.completeTask",
+                Function(app, ns) TaskWriting.Concluir(ns, chave),
+                cancel)
+        End Function
         Public Async Function GetAttachmentPresenceAsync(items As IReadOnlyList(Of ItemKey),
                                                          cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of AttachmentPresence))) _

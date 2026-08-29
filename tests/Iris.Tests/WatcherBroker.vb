@@ -235,6 +235,30 @@ Friend NotInheritable Class WatcherBroker
     ''' Escrita no calendário. Fora da alçada por padrão, como o resto: chamada
     ''' que ninguém configurou QUEBRA o teste, em vez de passar por sorte.
     ''' </summary>
+    ''' <summary>
+    ''' Tarefas. Fora da alçada por padrão, como o resto: chamada que ninguém
+    ''' configurou QUEBRA o teste, em vez de passar por sorte.
+    ''' </summary>
+    Public Function GetTasksAsync(folder As FolderKey, teto As Integer,
+                                  cancel As CancellationToken) _
+        As Task(Of OperationResult(Of TaskList)) _
+        Implements ITarefasBroker.GetTasksAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
+    Public Function CreateTaskAsync(folder As FolderKey, rascunho As TaskDraft,
+                                    cancel As CancellationToken) _
+        As Task(Of OperationResult(Of TaskInfo)) _
+        Implements ITarefasBroker.CreateTaskAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
+    Public Function CompleteTaskAsync(chave As TaskKey, cancel As CancellationToken) _
+        As Task(Of OperationResult(Of TaskInfo)) _
+        Implements ITarefasBroker.CompleteTaskAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
     Public Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentInfo)) _
