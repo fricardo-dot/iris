@@ -394,10 +394,10 @@ footer.fim {
     pode desfazer qualquer uma delas.
   </p>
   <div class="meta">
-    <span><b>899</b> testes · 0 falhas · 0 pulados</span>
-    <span><b>56</b> commits até o <code>8162120</code></span>
-    <span><b>20</b> passadas de revisão externa</span>
-    <span><code>874f223</code> → <code>8162120</code></span>
+    <span><b>903</b> testes · 0 falhas · 0 pulados</span>
+    <span><b>59</b> commits até o <code>92259de</code></span>
+    <span><b>21</b> passadas de revisão externa</span>
+    <span><code>874f223</code> → <code>92259de</code></span>
   </div>
 </header>
 
@@ -435,7 +435,7 @@ footer.fim {
 
 <div class="numeros wide">
   <div><span class="v">805</span><span class="k">testes ao começar</span></div>
-  <div><span class="v">899</span><span class="k">testes ao terminar</span></div>
+  <div><span class="v">903</span><span class="k">testes ao terminar</span></div>
   <div><span class="v">31</span><span class="k">dias de horizonte</span></div>
   <div><span class="v">65</span><span class="k">fora da janela, na ordem errada</span></div>
   <div><span class="v">22,7</span><span class="k">ms por busca, 1.127 msgs</span></div>
@@ -1357,6 +1357,35 @@ footer.fim {
   é guarda que ninguém prova.</em>
 </p>
 
+<h3>A vigésima primeira: contar era a abordagem errada</h3>
+
+<div class="nota">
+  <strong>Quatro versões do mesmo conserto, e na terceira eu abri um caso
+  novo.</strong> O teste de &quot;dá para interpretar este HTML?&quot; era
+  contar aberturas e fechamentos — e contagem aceita fechamento falso vindo de
+  comentário ou de atributo. A minha correção anterior fez o fechamento dentro
+  de um comentário <em>equilibrar</em> a abertura real, e um caso que a versão
+  antiga recusava passou a ser aceito.
+</div>
+
+<p>
+  A pergunta certa não era &quot;está balanceado&quot;. Era <strong>&quot;sobrou
+  alguma coisa que eu não soube remover&quot;</strong> — e é isso que o código
+  faz agora: tira o comentário, tira o bloco, e recusa se ainda restar
+  <code>&lt;script</code> em qualquer forma. Recusa também um atributo que
+  contenha <code>&lt;/script&gt;</code>, que é HTML esquisito e legítimo; é o
+  lado certo de errar.
+</p>
+
+<p>
+  Os outros dois: a <strong>remoção de anexo validava um objeto e apagava
+  outro</strong> — as duas passadas guardavam o índice e soltavam o objeto, e o
+  índice pode envelhecer entre elas; e <strong>identidade fabricada ainda
+  deixava enviar</strong>, porque o anexo não conferido contava como obtido e a
+  lista fechava como completa. A confirmação de envio passou a olhar o estado
+  dos anexos, que ela ignorava.
+</p>
+
 <h2><span class="num">§ 8</span>O que fica sem correção</h2>
 
 <p>
@@ -1450,7 +1479,7 @@ footer.fim {
 
 <footer class="fim">
   Iris · trabalho autônomo de 28 de agosto de 2026<br>
-  <code>874f223</code> → <code>8162120</code> · 56 commits · 899 testes, 0 falhas, 0 pulados<br>
+  <code>874f223</code> → <code>92259de</code> · 59 commits · 903 testes, 0 falhas, 0 pulados<br>
   Vinte e uma passadas de revisão externa, mais uma varredura própria · nada foi enviado por e-mail · nenhuma cerimônia foi executada
 </footer>
 

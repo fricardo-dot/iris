@@ -1260,3 +1260,41 @@ A igualdade e o hash do `AttachmentKey` passaram a incluir o
 não são a mesma chave.
 
 Suíte: **899**.
+
+---
+
+## Vigésima primeira passada — contar era a abordagem errada
+
+Três médios, e o primeiro é a **quarta** versão do mesmo conserto — com um caso
+que **eu** abri.
+
+**O sanitizador.** Contar aberturas e fechamentos no HTML bruto aceita
+fechamento falso vindo de comentário ou de atributo:
+`<!-- </script> --><script>SEGREDO` equilibra e passa. E a minha correção
+anterior — contar só fechamento *terminado* — fez
+`<!-- </script> --><script>SEGREDO</script` passar a ser aceito, porque o
+fechamento de dentro do comentário equilibrava a abertura real. **A contagem
+antiga recusava esse.**
+
+Consertar contagem com contagem estava sempre a um contraexemplo de distância.
+A pergunta certa não é *"está balanceado"*, é ***"sobrou alguma coisa que eu não
+soube remover"*** — e é isso que o código faz agora: tira comentário, tira
+bloco, e recusa se ainda restar `<script` em qualquer forma.
+
+**A remoção validava um objeto e apagava outro.** As duas passadas — achar quem
+é, e só então apagar — guardavam o **índice** e soltavam o objeto. Se a coleção
+mudasse entre elas, o índice apontava para outro anexo: o defeito que as duas
+passadas existem para impedir, sobrevivendo dentro delas.
+
+**Identidade fabricada ainda deixava enviar.** O anexo com identidade não
+conferida contava como *obtido*, a lista fechava como **completa**, e é a
+completude que a tela consulta antes de encaminhar e de enviar. Agora não conta
+— e a confirmação de envio passou a conferir o `AttachmentsStatus`, que o
+`PrepareSend` já entregava e ela ignorava.
+
+**E o roteiro novo mentia sobre si mesmo:** dizia atualizar três documentos e não
+toca no diário; um argumento não era usado; duas substituições podiam trocar zero
+ocorrências em silêncio; e o `git` rodava sem `check=True`, então uma falha
+gravaria contagem vazia como se fosse medida.
+
+Suíte: **903**.
