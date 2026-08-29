@@ -655,4 +655,41 @@ Public Class JanelaPrincipalTests
             End Function)
     End Sub
 
+    ''' <summary>
+    ''' <b>O DUPLO QUEBRA NA HORA quando chamam a página fora da alçada.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>UMA TRAVA NOVA QUASE CUSTOU ESSA PROPRIEDADE</b>
+    '''
+    ''' Ao acrescentar a <c>TravaDaPagina</c>, eu embrulhei todo o
+    ''' <c>GetMessagePageAsync</c> num método <c>Async</c> — e com isso a
+    ''' chamada não configurada deixou de lançar e passou a devolver uma
+    ''' <c>Task</c> com falha. Teste que esquecesse o <c>Await</c> passaria em
+    ''' silêncio, que é exatamente o contrário do que este duplo existe para
+    ''' fazer. A revisão externa pegou e pediu regressão; é esta.
+    '''
+    ''' <b>Controle negativo:</b> voltando o embrulho <c>Async</c>, a exceção
+    ''' vira <c>Task</c> com falha e este teste cai.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_duplo_lanca_NA_HORA_para_pagina_fora_da_alcada()
+        Dim b As New FakeBroker()
+
+        ' Sem RespostaDaPagina configurada: e chamada fora da alcada.
+        Dim explodiu = False
+        Try
+            ' De proposito SEM Await: o que se cobra e a excecao SINCRONA.
+            Dim ignorado = b.GetMessagePageAsync(
+                New MessageQuery(New FolderKey("entry-1", "store-1"),
+                                 MessageSort.ReceivedDesc, 1),
+                Nothing, 50, CancellationToken.None)
+        Catch ex As NotSupportedException
+            explodiu = True
+        End Try
+
+        Assert.IsTrue(explodiu,
+            "a chamada fora da alcada devolveu Task com falha em vez de lancar: " &
+            "um teste que esquecesse o Await passaria em silencio")
+    End Sub
+
 End Class

@@ -50,6 +50,7 @@ $itens = $pasta.Items
 $itens.Sort("[ReceivedTime]", $true)
 $comPermissao = 0
 $abertos = 0
+$ilegiveis = 0
 for ($i = 1; $i -le [Math]::Min(30, $itens.Count); $i++) {
     $m = $itens.Item($i)
     if ($m.MessageClass -like "IPM.Note*") {
@@ -60,6 +61,9 @@ for ($i = 1; $i -le [Math]::Min(30, $itens.Count); $i++) {
             }
             $abertos++
         } catch {
+            # LEITURA QUE FALHOU NAO E "NAO PROTEGIDO". Sem contar, uma
+            # amostra em que TODAS falhassem concluiria "nenhuma protegida".
+            $ilegiveis++
             Write-Output "  falhou ao ler Permission: $($_.Exception.Message.Substring(0,40))"
         }
     }
@@ -67,12 +71,17 @@ for ($i = 1; $i -le [Math]::Min(30, $itens.Count); $i++) {
 }
 [void][Runtime.InteropServices.Marshal]::ReleaseComObject($itens)
 
-Write-Output "  $abertos itens abertos, $comPermissao com Permission <> 0"
+Write-Output "  $abertos itens abertos, $comPermissao com Permission <> 0, $ilegiveis ilegiveis"
 Write-Output ""
 if ($comPermissao -eq 0) {
-    Write-Output "CONCLUSAO PARCIAL: nenhuma mensagem protegida nesta amostra."
-    Write-Output "Nao da para provar que MessageClass detecta protecao usando"
-    Write-Output "uma caixa que nao tem mensagem protegida. Fica NAO VALIDADO."
+    Write-Output "CONCLUSAO PARCIAL: nenhuma protecao LIDA nos $abertos itens desta"
+    Write-Output "amostra de ate 30, na pasta padrao."
+    if ($ilegiveis -gt 0) {
+        Write-Output "  E $ilegiveis leitura(s) falharam: qualquer uma delas pode ser protegida."
+    }
+    Write-Output "Isso NAO diz que a caixa nao tem mensagem protegida -- diz que esta"
+    Write-Output "amostra nao mostrou nenhuma. De qualquer forma, nao da para provar"
+    Write-Output "que MessageClass detecta protecao sem um caso positivo. NAO VALIDADO."
 }
 
 [void][Runtime.InteropServices.Marshal]::ReleaseComObject($pasta)

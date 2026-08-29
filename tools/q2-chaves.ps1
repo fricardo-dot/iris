@@ -1,4 +1,10 @@
-﻿# Q2, rodada 2: TODAS as pastas, TODAS as chaves candidatas.
+﻿# Q2, rodada 2: as pastas ALCANCADAS, todas as chaves candidatas.
+#
+# O cabecalho dizia "TODAS as pastas" e "a arvore inteira e percorrida", e
+# nao e verdade: a travessia corta na profundidade 12 e podia perder um ramo
+# em silencio. Os zeros da matriz apareciam sob promessa de cobertura
+# completa, que e a forma mais cara de afirmar ausencia. Agora os dois casos
+# sao contados e saem no rodape.
 #
 # SOMENTE LEITURA.
 #
@@ -6,7 +12,7 @@
 #
 #   1. Olhava so as 4 pastas padrao e eu chamei o resultado de "a caixa".
 #      Subpasta, Lixo Eletronico, Caixa de Saida e pasta do usuario ficaram
-#      de fora. Agora a arvore inteira e percorrida, em todos os stores.
+#      de fora. Agora a travessia cobre todos os stores, ATE a profundidade 12.
 #   2. $grupos.Count sem @() em volta le a propriedade do GroupInfo quando
 #      ha UM grupo so. Eu ja tinha DOCUMENTADO esse erro e deixei ele no
 #      codigo que gerou a tabela publicada.
@@ -68,9 +74,11 @@ function Normalizar($v, [string]$nome) {
 $itens = New-Object System.Collections.ArrayList
 $pastasVistas = 0
 $pastasComErro = New-Object System.Collections.ArrayList
+$script:cortados = 0
+$script:ramosCegos = 0
 
 function Varrer($pasta, [string]$caminho, [int]$profundidade) {
-    if ($profundidade -gt 12) { return }
+    if ($profundidade -gt 12) { $script:cortados++; return }
     $script:pastasVistas++
 
     $t = $null
@@ -109,7 +117,7 @@ function Varrer($pasta, [string]$caminho, [int]$profundidade) {
     }
 
     $filhas = $null
-    try { $filhas = $pasta.Folders } catch { return }
+    try { $filhas = $pasta.Folders } catch { $script:ramosCegos++; return }
     try {
         for ($k = 1; $k -le $filhas.Count; $k++) {
             $f = $filhas.Item($k)
@@ -140,6 +148,11 @@ for ($s = 1; $s -le $stores.Count; $s++) {
 
 Write-Host ""
 Write-Host "pastas percorridas: $pastasVistas"
+if ($script:cortados -gt 0 -or $script:ramosCegos -gt 0) {
+    Write-Host ("O QUE NAO FOI PERCORRIDO: {0} ramo(s) cortados na profundidade 12," -f $script:cortados) -ForegroundColor DarkYellow
+    Write-Host ("  {0} ramo(s) cujo Folders falhou. Os zeros da matriz sao sobre o" -f $script:ramosCegos) -ForegroundColor DarkYellow
+    Write-Host "  que foi lido, e nao sobre a caixa." -ForegroundColor DarkYellow
+}
 Write-Host "itens: $($itens.Count)"
 if ($pastasComErro.Count -gt 0) {
     Write-Host "pastas com erro: $($pastasComErro.Count)"

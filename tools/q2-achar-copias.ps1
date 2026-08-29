@@ -1,4 +1,10 @@
-﻿# Q2: onde estao TODAS as manifestacoes dos dois itens do experimento.
+﻿# Q2: onde estao as manifestacoes dos dois itens do experimento, ENTRE AS
+# PASTAS QUE ESTE ROTEIRO CONSEGUIU PERCORRER.
+#
+# O cabecalho dizia "TODAS as manifestacoes", e a travessia corta na
+# profundidade 12 e podia perder um ramo em silencio -- entao o "TOTAL de
+# copias" do fim seria zero sobre o que nao foi lido. Agora os dois casos
+# sao contados e aparecem na conclusao.
 #
 # SOMENTE LEITURA.
 #
@@ -27,8 +33,11 @@ $ns = $ol.GetNamespace("MAPI")
 $achados = @{}
 foreach ($k in $alvos.Keys) { $achados[$k] = @() }
 
+$script:cortados = 0
+$script:ramosCegos = 0
+
 function Varrer($pasta, [string]$caminho, [int]$prof) {
-    if ($prof -gt 12) { return }
+    if ($prof -gt 12) { $script:cortados++; return }
     $t = $null
     try {
         $t = $pasta.GetTable()
@@ -65,7 +74,7 @@ function Varrer($pasta, [string]$caminho, [int]$prof) {
     }
 
     $filhas = $null
-    try { $filhas = $pasta.Folders } catch { return }
+    try { $filhas = $pasta.Folders } catch { $script:ramosCegos++; return }
     try {
         for ($k = 1; $k -le $filhas.Count; $k++) {
             $f = $filhas.Item($k)
@@ -107,4 +116,8 @@ foreach ($k in $alvos.Keys) {
     Write-Host ""
 }
 
-Write-Host ("TOTAL de copias deixadas pelo experimento: {0}" -f $sobra)
+Write-Host ("TOTAL de copias deixadas pelo experimento, ENTRE O QUE FOI LIDO: {0}" -f $sobra)
+if ($script:cortados -gt 0 -or $script:ramosCegos -gt 0) {
+    Write-Host ("  RESSALVA: {0} ramo(s) cortados na profundidade 12 e {1} que nao" -f $script:cortados, $script:ramosCegos) -ForegroundColor DarkYellow
+    Write-Host "  consegui abrir. Zero aqui nao prova que nao sobrou copia."
+}
