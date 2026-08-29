@@ -111,6 +111,38 @@ Namespace Global.Iris.App.ViewModels
         ''' Procurou e não achou — que <b>não</b> é o mesmo que não existir, e
         ''' é por isso que a ressalva fica visível junto.
         ''' </summary>
+        ''' <summary>
+        ''' Quantos dos achados vieram do segundo passe.
+        '''
+        ''' A tela diz o número, e não só marca as linhas, porque a pergunta
+        ''' que o usuário faz é sobre o conjunto: "isto que eu estou vendo é o
+        ''' que eu pedi, ou é o que se pareceu com o que eu pedi?".
+        ''' </summary>
+        Public Property Aproximados As Integer
+
+        Public ReadOnly Property TemAproximados As Boolean
+            Get
+                Return Aproximados > 0
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>A frase que impede o palpite de passar por achado.</b>
+        '''
+        ''' Diz o que a aproximação é — mesma raiz, ou uma letra — para o
+        ''' usuário poder julgar sozinho se aquilo responde a pergunta dele.
+        ''' "Resultados aproximados", sem dizer aproximados COMO, seria
+        ''' ressalva decorativa.
+        ''' </summary>
+        Public ReadOnly Property FraseDosAproximados As String
+            Get
+                If Aproximados <= 0 Then Return ""
+                Return $"{Aproximados} destes casaram por aproximação — mesma " &
+                       "raiz de palavra, ou uma letra de diferença. Estão " &
+                       "marcados, e vêm depois dos exatos."
+            End Get
+        End Property
+
         Public ReadOnly Property SemAchados As Boolean
             Get
                 Return _procurou AndAlso Achados.Count = 0
@@ -135,14 +167,28 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End Try
 
+            ''' EXATOS PRIMEIRO, E NÃO POR ESTÉTICA.
+            '''
+            ''' A busca ganhou um segundo passe tolerante a erro de digitação e
+            ''' a flexão (medido em 29/08: 0,4% para 93,8%, e 0% para 100%). Um
+            ''' achado aproximado é um palpite bom, e palpite no topo da lista
+            ''' empurra a certeza para baixo da dobra: quem olha os três
+            ''' primeiros resultados veria três palpites.
+            '''
+            ''' Estável dentro de cada grupo — a ordem das pastas e do
+            ''' manifesto continua valendo, e não é esta linha que a decide.
             Achados.Clear()
-            For Each a In r.Achados
+            For Each a In r.Achados.OrderBy(Function(x) If(x.Grau = GrauDoAchado.Exato, 0, 1))
                 Achados.Add(New LinhaAchada(a))
             Next
 
             Procurou = True
             Ressalva = r.Ressalva
+            Aproximados = r.Achados.Where(Function(x) x.Grau <> GrauDoAchado.Exato).Count()
             OnPropertyChanged(NameOf(SemAchados))
+            OnPropertyChanged(NameOf(Aproximados))
+            OnPropertyChanged(NameOf(TemAproximados))
+            OnPropertyChanged(NameOf(FraseDosAproximados))
         End Sub
 
         Private Sub Limpar()
@@ -176,7 +222,17 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property Aviso As String
 
+        ''' <summary>
+        ''' <b>Esta linha casou por aproximação.</b>
+        '''
+        ''' Marca na própria linha, e não só no rodapé: quem lê uma lista lê
+        ''' linha a linha, e um contador no rodapé não diz <i>qual</i> das
+        ''' quinze é o palpite.
+        ''' </summary>
+        Public ReadOnly Property Aproximado As Boolean
+
         Friend Sub New(a As AchadoDaBusca)
+            Aproximado = a.Grau <> GrauDoAchado.Exato
             Assunto = If(String.IsNullOrWhiteSpace(a.Item.Subject), "(sem assunto)", a.Item.Subject)
             Remetente = If(a.Item.SenderName, "")
             Pasta = If(a.NomeDaPasta, "")

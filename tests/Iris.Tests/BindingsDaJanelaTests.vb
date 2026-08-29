@@ -622,6 +622,37 @@ Public Class BindingsDaJanelaTests
             "nao esta mais olhando a grade raiz, e a assercao acima virou fumaca")
     End Sub
 
+    ''' <summary>
+    ''' <b>O GRAU DO ACHADO CHEGA NA TELA — nos dois lugares.</b>
+    '''
+    ''' A busca ganhou um segundo passe tolerante a erro de digitação e a
+    ''' flexão. Medido em 29/08 sobre o acervo real: erro de digitação foi de
+    ''' 0,4% para 93,8%, e flexão de 0% para 100%.
+    '''
+    ''' O ganho tem preço, e o preço é ruído. Um achado aproximado é um palpite
+    ''' bom, e palpite misturado com certeza é a família de defeito que este
+    ''' projeto passou uma série de revisões corrigindo — aqui ela apareceria
+    ''' como "a busca achou", quando o certo é "a busca achou algo parecido".
+    '''
+    ''' <b>Dois lugares, e os dois são necessários.</b> O rodapé diz quantos
+    ''' são palpite; a marca na linha diz <i>quais</i>. Só o rodapé deixaria o
+    ''' usuário sabendo que há três palpites entre quinze linhas, sem saber
+    ''' onde eles estão.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_grau_do_achado_chega_na_tela()
+        Dim xaml = LerXaml()
+
+        StringAssert.Contains(xaml, "{Binding Busca.FraseDosAproximados}",
+            "a tela nao diz quantos achados sao aproximados: palpite e achado " &
+            "ficam indistinguiveis na mesma lista")
+        StringAssert.Contains(xaml, "{Binding Busca.TemAproximados,",
+            "sem a visibilidade a frase fica sempre visivel ou nunca")
+        StringAssert.Contains(xaml, "{Binding Aproximado,",
+            "a marca nao chegou na LINHA: o rodape diz quantos sao palpite e " &
+            "nao diz quais")
+    End Sub
+
     Private Shared Function LerXaml() As String
         If _xaml IsNot Nothing Then Return _xaml
         Dim d = New DirectoryInfo(AppContext.BaseDirectory)

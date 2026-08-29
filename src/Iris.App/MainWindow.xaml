@@ -1409,6 +1409,26 @@
                                                     FallbackValue=Collapsed}" />
                         </StackPanel>
 
+                        <!-- QUANTOS DESTES SAO PALPITE.
+                             A busca ganhou um segundo passe tolerante a erro
+                             de digitacao e a flexao. Medido em 29/08 sobre o
+                             acervo real: erro de digitacao subiu de 0,4% para
+                             93,8%, e flexao de 0% para 100%.
+                             O ganho tem preco, e o preco e ruido. Uma lista
+                             que misturasse os dois diria "a busca achou"
+                             quando o certo e "a busca achou algo parecido":
+                             a mesma familia de defeito que este projeto passou
+                             uma serie de revisoes corrigindo. -->
+                        <TextBlock Text="{Binding Busca.FraseDosAproximados}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Margin="0,6,0,0"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   Visibility="{Binding Busca.TemAproximados,
+                                                Converter={StaticResource BoolToVis},
+                                                FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="Quantos achados sao aproximados" />
+
                         <!-- Altura limitada: o acervo tem mil linhas, e uma
                              lista sem teto empurraria a lista de mensagens
                              para fora da tela. -->
@@ -1443,6 +1463,18 @@
                                                 <!-- "pode ja ter sido apagada": e o
                                                      que impede o resultado de parecer
                                                      o estado corrente da caixa. -->
+                                                <!-- A MARCA NA LINHA, e nao so no rodape:
+                                                     quem le uma lista le linha a linha,
+                                                     e um contador no rodape nao diz QUAL
+                                                     das quinze e o palpite. -->
+                                                <TextBlock Text=" · aproximado"
+                                                           FontSize="11"
+                                                           FontStyle="Italic"
+                                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                           Visibility="{Binding Aproximado,
+                                                                        Converter={StaticResource BoolToVis},
+                                                                        FallbackValue=Collapsed}"
+                                                           AutomationProperties.Name="Este achado casou por aproximacao" />
                                                 <TextBlock Text="{Binding Aviso, StringFormat={} · {0}}"
                                                            FontSize="11"
                                                            Foreground="{DynamicResource Brush.Error}"

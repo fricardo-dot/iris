@@ -29,7 +29,7 @@ Public Class BuscaViewModelTests
     Private Shared Function Resultado(quantos As Integer) As ResultadoDaBusca
         Dim achados = Enumerable.Range(1, quantos).
                       Select(Function(i) New AchadoDaBusca(1, "Caixa de Entrada",
-                                                           Item($"assunto {i}", "Quem"))).
+                                                           Item($"assunto {i}", "Quem"), GrauDoAchado.Exato)).
                       ToList()
         Return New ResultadoDaBusca(New TermoDeBusca("assunto"), achados,
                                     {Consultada()}, Array.Empty(Of PastaConsultada)())
@@ -179,7 +179,7 @@ Public Class BuscaViewModelTests
                                          New DateTimeOffset(2026, 8, 20, 9, 0, 0, TimeSpan.Zero).ToString("o"),
                                          False, Iris.Sync.PresenceState.Suspeito)
         Dim r As New ResultadoDaBusca(New TermoDeBusca("sumido"),
-                                      {New AchadoDaBusca(1, "Caixa de Entrada", suspeita)},
+                                      {New AchadoDaBusca(1, "Caixa de Entrada", suspeita, GrauDoAchado.Exato)},
                                       {Consultada()}, Array.Empty(Of PastaConsultada)())
 
         Dim vm As New BuscaViewModel(Function(t) r)
@@ -199,7 +199,7 @@ Public Class BuscaViewModelTests
     <TestMethod>
     Public Sub Assunto_vazio_vira_texto_explicito()
         Dim r As New ResultadoDaBusca(New TermoDeBusca("quem"),
-                                      {New AchadoDaBusca(1, "Caixa de Entrada", Item("", "Quem"))},
+                                      {New AchadoDaBusca(1, "Caixa de Entrada", Item("", "Quem"), GrauDoAchado.Exato)},
                                       {Consultada()}, Array.Empty(Of PastaConsultada)())
         Dim vm As New BuscaViewModel(Function(t) r)
         vm.Termo = "quem"

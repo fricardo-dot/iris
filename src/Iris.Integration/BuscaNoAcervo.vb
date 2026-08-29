@@ -65,6 +65,28 @@ Namespace Global.Iris.Integration
     ''' Zero achados sobre uma caixa cujo acervo é parcial não é informação
     ''' sobre a caixa; é informação sobre o acervo.
     ''' </summary>
+    ''' <summary>
+    ''' <b>Quanto se sabe sobre este achado.</b>
+    '''
+    ''' Existe porque a busca ganhou um segundo passe, tolerante a erro de
+    ''' digitação e a flexão — e um achado por aproximação é um palpite bom,
+    ''' não um achado. Misturar os dois na mesma lista seria dizer "a busca
+    ''' achou" quando o certo é "a busca achou algo parecido".
+    ''' </summary>
+    Public Enum GrauDoAchado
+        ''' <summary>Não casou de jeito nenhum.</summary>
+        Nenhum = 0
+
+        ''' <summary>Todas as palavras estão ali, como foram digitadas.</summary>
+        Exato = 1
+
+        ''' <summary>
+        ''' Casou por radical ou por uma letra de diferença. Provavelmente é
+        ''' isto — e "provavelmente" é uma palavra que a tela tem de dizer.
+        ''' </summary>
+        Aproximado = 2
+    End Enum
+
     Public NotInheritable Class BuscaNoAcervo
 
         Private ReadOnly _acervo As AcervoDeTodasAsPastas
@@ -131,8 +153,9 @@ Namespace Global.Iris.Integration
                 If t.Vazio Then Continue For
 
                 For Each item In manifesto.Items
-                    If t.Casa(item) Then
-                        achados.Add(New AchadoDaBusca(pasta.Chave, pasta.Nome, item))
+                    Dim grau = t.Grau(item)
+                    If grau <> GrauDoAchado.Nenhum Then
+                        achados.Add(New AchadoDaBusca(pasta.Chave, pasta.Nome, item, grau))
                     End If
                 Next
             Next
@@ -238,9 +261,162 @@ Namespace Global.Iris.Integration
         ''' não tem como adivinhar.
         ''' </summary>
         Public Function Casa(item As ManifestItem) As Boolean
-            If item Is Nothing OrElse Vazio Then Return False
+            Return Grau(item) = GrauDoAchado.Exato
+        End Function
+
+        ''' <summary>
+        ''' <b>Exato, aproximado, ou nada.</b>
+        '''
+        ''' ------------------------------------------------------------
+        ''' <b>POR QUE HÁ UM SEGUNDO PASSE, E O NÚMERO QUE O JUSTIFICA</b>
+        '''
+        ''' Medido em 29/08/2026 (<c>tools/medir-busca.py</c>, 300 mensagens
+        ''' do acervo real, consultas derivadas do próprio assunto de cada
+        ''' uma). Tudo o que esta busca <i>promete</i> vale 100%: palavra
+        ''' exata, sem acento, caixa trocada, fora de ordem, pedaço de
+        ''' palavra, assunto junto com remetente.
+        '''
+        ''' O que ela não prometia:
+        '''
+        ''' <list type="bullet">
+        ''' <item><b>erro de digitação — 0,4%</b> de 242 consultas;</item>
+        ''' <item><b>flexão de número — 0%</b> de 64.</item>
+        ''' </list>
+        '''
+        ''' Numa caixa em português, "reuniões" não acha "reunião" porque o
+        ''' singular não é subcadeia do plural. E uma letra trocada zera a
+        ''' busca. Eram as duas falhas mecânicas que sobravam, e nenhuma
+        ''' delas precisa de significado para ser consertada.
+        '''
+        ''' ------------------------------------------------------------
+        ''' <b>ADITIVO, E NUNCA SUBSTITUTIVO</b>
+        '''
+        ''' O primeiro passe é <b>exatamente</b> o que existia. Nada que
+        ''' achava antes deixa de achar: o segundo passe só roda quando o
+        ''' primeiro falha. Foi assim de propósito — os seis casos de 100%
+        ''' são a linha de base, e mexer neles para consertar os outros dois
+        ''' seria trocar defeito por defeito.
+        '''
+        ''' ------------------------------------------------------------
+        ''' <b>E O APROXIMADO SE DECLARA</b>
+        '''
+        ''' O grau sai no resultado, e a tela separa. Um achado por
+        ''' aproximação é um palpite bom, e palpite misturado com certeza é
+        ''' a mesma família de defeito que este projeto passou uma série de
+        ''' revisões corrigindo — aqui ela apareceria como "a busca achou",
+        ''' quando o certo é "a busca achou algo parecido".
+        '''
+        ''' O custo tem número também: o segundo passe é mais frouxo, e
+        ''' frouxidão é ruído. A medição de 29/08 já mostrava 67,7% das
+        ''' buscas por pedaço de palavra casando com mais de dez mensagens.
+        ''' Separar os graus é o que impede o ruído novo de contaminar o
+        ''' resultado bom.
+        ''' </summary>
+        Public Function Grau(item As ManifestItem) As GrauDoAchado
+            If item Is Nothing OrElse Vazio Then Return GrauDoAchado.Nenhum
+
             Dim alvo = Normalizar($"{item.Subject} {item.SenderName}")
-            Return Palavras.All(Function(p) alvo.Contains(p))
+            If Palavras.All(Function(p) alvo.Contains(p)) Then
+                Return GrauDoAchado.Exato
+            End If
+
+            Dim doAlvo = alvo.Split({" "c}, StringSplitOptions.RemoveEmptyEntries)
+            If doAlvo.Length = 0 Then Return GrauDoAchado.Nenhum
+
+            If Palavras.All(Function(p) doAlvo.Any(Function(a) Parecidas(p, a))) Then
+                Return GrauDoAchado.Aproximado
+            End If
+
+            Return GrauDoAchado.Nenhum
+        End Function
+
+        ''' <summary>
+        ''' Duas palavras são "a mesma coisa mal digitada ou flexionada".
+        '''
+        ''' A ordem importa: radical antes de distância. Radical é barato e
+        ''' explica o caso comum; a distância é o resto.
+        ''' </summary>
+        Friend Shared Function Parecidas(consulta As String, doAlvo As String) As Boolean
+            If String.IsNullOrEmpty(consulta) OrElse String.IsNullOrEmpty(doAlvo) Then Return False
+            If doAlvo.Contains(consulta) Then Return True
+
+            ''' Radical dos dois lados, e não só de um: quem digita o plural
+            ''' procurando o singular e quem faz o contrário têm o mesmo
+            ''' direito de achar.
+            Dim rc = Radical(consulta)
+            Dim ra = Radical(doAlvo)
+            If rc.Length >= 4 AndAlso ra.Contains(rc) Then Return True
+
+            ''' UMA LETRA, E SÓ EM PALAVRA LONGA. Distância 1 sobre palavra
+            ''' de quatro letras casa metade do dicionário -- e "aproximado"
+            ''' que casa com tudo não é aproximado, é lixo.
+            If consulta.Length >= 5 AndAlso Math.Abs(consulta.Length - doAlvo.Length) <= 1 Then
+                Return DistanciaAte1(consulta, doAlvo)
+            End If
+
+            Return False
+        End Function
+
+        ''' <summary>
+        ''' <b>Radical pobre, de propósito.</b>
+        '''
+        ''' Não é um stemmer de português — é a lista curta de terminações em
+        ''' que o singular <b>não é subcadeia</b> do plural, que são
+        ''' exatamente as que a busca por subcadeia já não resolvia. Onde o
+        ''' singular É subcadeia ("contratos" contém "contrato"), o primeiro
+        ''' passe já achava e não há o que consertar.
+        '''
+        ''' Só a partir de cinco letras. "mais" viraria "mal" com a mesma
+        ''' regra que conserta "contratuais", e um radical que inventa
+        ''' palavra curta gera ruído em cima de ruído.
+        ''' </summary>
+        Friend Shared Function Radical(p As String) As String
+            If String.IsNullOrEmpty(p) OrElse p.Length < 5 Then Return If(p, "")
+
+            If p.EndsWith("oes") Then Return p.Substring(0, p.Length - 3) & "ao"
+            If p.EndsWith("aes") Then Return p.Substring(0, p.Length - 3) & "ao"
+            If p.EndsWith("ais") Then Return p.Substring(0, p.Length - 3) & "al"
+            If p.EndsWith("eis") Then Return p.Substring(0, p.Length - 3) & "el"
+            If p.EndsWith("ois") Then Return p.Substring(0, p.Length - 3) & "ol"
+            If p.EndsWith("uis") Then Return p.Substring(0, p.Length - 3) & "ul"
+            If p.EndsWith("ns") Then Return p.Substring(0, p.Length - 2) & "m"
+            If p.EndsWith("es") Then Return p.Substring(0, p.Length - 2)
+            If p.EndsWith("s") Then Return p.Substring(0, p.Length - 1)
+            Return p
+        End Function
+
+        ''' <summary>
+        ''' Distância de edição <b>até 1</b>, e nunca o valor exato.
+        '''
+        ''' Não é economia: é a pergunta certa. Ninguém aqui quer saber
+        ''' "quão diferentes", quer saber "é a mesma palavra mal digitada".
+        ''' Parar no primeiro segundo erro é O(n) em vez da matriz inteira.
+        ''' </summary>
+        Friend Shared Function DistanciaAte1(a As String, b As String) As Boolean
+            If a = b Then Return True
+
+            Dim ia = 0, ib = 0, erros = 0
+            While ia < a.Length AndAlso ib < b.Length
+                If a(ia) = b(ib) Then
+                    ia += 1 : ib += 1
+                    Continue While
+                End If
+
+                erros += 1
+                If erros > 1 Then Return False
+
+                If a.Length = b.Length Then
+                    ia += 1 : ib += 1        ' substituicao
+                ElseIf a.Length > b.Length Then
+                    ia += 1                  ' sobra em a
+                Else
+                    ib += 1                  ' sobra em b
+                End If
+            End While
+
+            ''' O que sobrou no fim conta: "abc" e "abcd" saem do laço com
+            ''' zero erros e uma letra pendente.
+            Return erros + (a.Length - ia) + (b.Length - ib) <= 1
         End Function
 
     End Class
@@ -251,10 +427,19 @@ Namespace Global.Iris.Integration
         Public ReadOnly Property NomeDaPasta As String
         Public ReadOnly Property Item As ManifestItem
 
-        Friend Sub New(folderKey As Long, nome As String, item As ManifestItem)
+        ''' <summary>
+        ''' Exato ou aproximado. Viaja <b>com</b> o achado, e não numa lista
+        ''' paralela: lista paralela é onde um resultado perde a ressalva no
+        ''' caminho até a tela.
+        ''' </summary>
+        Public ReadOnly Property Grau As GrauDoAchado
+
+        Friend Sub New(folderKey As Long, nome As String, item As ManifestItem,
+                       grau As GrauDoAchado)
             Me.FolderKey = folderKey
             NomeDaPasta = nome
             Me.Item = item
+            Me.Grau = grau
         End Sub
     End Class
 

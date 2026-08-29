@@ -456,84 +456,93 @@ mensagens que *parecem* da mesma conversa seria decidir divulgação por
 semelhança. O mecanismo aceita várias mensagens; o que não existe é quem as
 escolha.
 
-### Fase 4 — Triagem e busca semântica (Grupo B) — *NÃO EXECUTADA, POR DECISÃO*
+### Fase 4 — Triagem e busca semântica (Grupo B) — *DECIDIDA em 29/08/2026, COM MEDIÇÃO*
 
-> **Em 28/08/2026 esta fase foi analisada e deliberadamente NÃO executada.**
+> **A condição que esta seção mesma nomeou foi cumprida, e o resultado aponta
+> para o outro lado.**
 >
-> As oito decisões abaixo foram levadas à revisão externa antes de qualquer
-> linha de código. O veredito, que eu aceito: o que eu ia entregar seria
-> **andaime com nome de entrega**.
+> Em 28/08 a fase ficou parada com oito decisões abertas, e o documento
+> registrou quando reavaliar. Um dos gatilhos era **"evidência de que a busca
+> textual normalizada não resolve"**. Ninguém tinha produzido essa evidência —
+> a fase estava parada por falta de *medição*, não por falta de opinião.
 >
-> **As razões, em ordem de peso:**
->
-> 1. **Não há linha de base.** Este documento dizia que a Fase 2 entregou busca
->    textual, e não tinha. Sem busca textual não há contra o que comparar busca
->    semântica — e uma fase que não pode ser avaliada não pode ser aceita. A
->    busca textual foi entregue em 28/08; a comparação passou a ser possível.
-> 2. **Não há corpo para indexar.** A regra D1 proíbe corpo e anexo no cache.
->    O que sobra é assunto e remetente — e mandar isso para fora para indexar
->    é custo e risco desproporcionais ao ganho.
-> 3. **Não há oráculo.** Uma triagem por regras produz *sinais sem direção
->    validada*: `RE:`/`RES:` é sintaxe de assunto, não necessidade de ação; um
->    remetente com 22% do volume tanto pode ser o chefe quanto automação; anexo
->    tanto pode ser contrato quanto assinatura. **Só o dono da caixa pode dizer
->    o que exigia ação.** Eu posso definir o protocolo; não posso fabricar o
->    oráculo.
-> 4. **Três das oito decisões continuam abertas** — retenção, critério de
->    qualidade e orçamento — e uma quarta está fechada só no desenho.
->
-> **Quando reavaliar.** Quando existir pelo menos um destes: acervo histórico
-> acumulado; conteúdo semanticamente rico indexável com política definida;
-> consultas reais com julgamento de relevância; ou evidência de que a busca
-> textual normalizada não resolve.
->
-> **E um cuidado medido:** a janela de ~31 dias é do **Outlook**, não do cache.
-> O cache foi desenhado para acumular além dela, e pode ganhar valor com o
-> tempo. Não gravar "um mês" como se fosse permanente.
+> **A medição existe agora** (`tools/medir-busca.py`, 29/08/2026). Ela contorna
+> o obstáculo declarado — não haver oráculo — usando a classe de consulta que
+> se mede sozinha: *se você digitar três palavras do próprio assunto de uma
+> mensagem, a busca tem de achar aquela mensagem*. A resposta certa é a própria
+> mensagem, por construção. 300 mensagens do acervo real, semente fixa, nada
+> saindo da máquina, relatório só com agregados.
 
-Depois de medir qualidade do cache e custo de indexação.
+**O que ela achou:**
 
-**A pré-condição mudou de estado em 28/08/2026.** Antes não havia como medir
-qualidade do cache, porque o cache só tinha o que uma importação manual de teste
-tivesse posto nele. Agora ele tem uma caixa de verdade — 1.123 mensagens, com a
-conta do S6 fechando — e a medição passou a ser possível.
+| caso | antes | depois |
+|---|---|---|
+| palavras exatas | 100,0% | 100,0% |
+| sem acento | 100,0% | 100,0% |
+| caixa trocada | 100,0% | 100,0% |
+| fora de ordem | 100,0% | 100,0% |
+| pedaço da palavra | 100,0% | 100,0% |
+| assunto + remetente | 100,0% | 100,0% |
+| **erro de digitação** | **0,4%** | **93,8%** |
+| **flexão de número** | **0,0%** | **100,0%** |
 
-O que precisa ser decidido antes de planejar esta fase, e nenhum deles é
-técnico primeiro:
+**Tudo o que a busca textual prometia já valia.** As duas falhas eram
+**mecânicas** — numa caixa em português, "reuniões" não acha "reunião" porque o
+singular não é subcadeia do plural; e uma letra trocada zerava a busca.
 
-1. **O que a triagem faz com a cobertura parcial.** Em cache, o acervo é arquivo
-   histórico conservador. Uma triagem que trate ausência do índice como ausência
-   da caixa reintroduz exatamente a conclusão que a §23 proíbe.
-2. **Quanto conteúdo sai da máquina, e por quanto tempo.** O Grupo A manda uma
-   mensagem por clique. Indexação semântica manda *tudo*, e a cerimônia de
-   ativação atual não cobre isso — ela autoriza operações sobre pastas
-   escolhidas, e não um varredor contínuo.
-3. **Confirmar ou reabrir "o índice mora local".** A §6 e a §4 já decidiram:
-   embeddings armazenados localmente, no SQLite. A decisão é confirmá-la
-   sabendo o custo, ou reabri-la — índice remoto muda o modelo de ameaça, e o
-   diário de divulgação teria de registrar uma ordem de grandeza diferente de
-   eventos. O que não vale é tratá-la como nunca tomada.
-4. **Quem autoriza indexação em massa, e por qual ato.** A autorização do Grupo
-   B já está decidida em princípio na §6 — habilitação separada, pastas
-   explícitas, orçamento, interrupção. O que não existe é o **ato**: a cerimônia
-   de hoje autoriza operações sobre pastas escolhidas, por clique, e reusá-la
-   para um varredor contínuo alargaria uma autorização sem que ninguém tivesse
-   concordado com o alargamento.
-5. **Retenção, exclusão e reindexação.** O que acontece com o índice quando a
-   mensagem sai da caixa, a pasta muda, a política muda ou o modelo muda. Índice
-   que não sabe esquecer é cópia sensível com outro nome.
-6. **Identidade e versão do índice.** Modelo, fatiamento, idioma, dimensões — e
-   como migrar quando qualquer um deles mudar. Sem isso, "reindexar" vira
-   "recomeçar".
-7. **O que é qualidade aceitável, e como medi-la** antes de escolher provedor ou
-   modelo de embedding. Escolher primeiro e medir depois é como este projeto
-   errou o slug de roteamento na Fase 3.
-8. **O número do orçamento, e o comportamento em falha.** Que exista limite já
-   está decidido na §6; quanto ele vale, não. E falta dizer o que o Iris faz
-   quando o índice está fora — parar, degradar para busca textual, ou enfileirar.
+**E nenhuma das duas precisa de significado para ser consertada.** O conserto
+entrou no mesmo dia: um radical pobre e uma distância de edição até 1, num
+segundo passe que só roda quando o primeiro falha. Custo: zero egress, zero
+cerimônia, zero orçamento, zero política de retenção — **nenhuma das oito
+decisões se aplica**.
 
-Enquanto essas oito não tiverem resposta, planejar a fase é escolher a
-implementação antes do requisito.
+**Por isso a Fase 4 como especificada fecha: o ganho que ela prometia, na
+metade que dava para medir, já foi entregue por outro caminho e mais barato.**
+
+#### O que continua aberto, e é uma coisa só
+
+**Consulta por sinônimo ou paráfrase** — "cobrança" achando "fatura". É onde
+embeddings ganhariam de verdade, e é exatamente o que a medição **não** cobre,
+porque decidir que uma responde à outra é julgamento. Só o dono da caixa pode
+dizer.
+
+Isso não são mais oito decisões abertas. **É um artefato:** uma lista curta de
+consultas reais em que você sabe qual mensagem queria e a busca textual erra.
+Com ela, a pergunta "vale a pena indexar?" vira medível. Sem ela, qualquer
+resposta é palpite — inclusive a minha.
+
+#### As decisões que eram de desenho, fechadas
+
+1. **Cobertura parcial.** Fechada por construção, e já valia: a busca carrega
+   pastas consultadas, cobertura, geração e as que não têm acervo nenhum. Zero
+   achados sobre acervo parcial é informação sobre o acervo, não sobre a caixa.
+2. **Quanto conteúdo sai da máquina.** Fechada por consequência: a D1 proíbe
+   corpo e anexo no cache, e o que sobra — assunto e remetente — já é buscável
+   sem sair. **Nada sai.** A medição foi feita inteira contra `127.0.0.1` de
+   fato: leitura local, relatório local, nenhum provedor no caminho.
+3. **"O índice mora local".** Confirmada, e agora barata: não há índice a
+   armazenar. O radical e a distância são função pura sobre o que já está no
+   SQLite.
+8. **Comportamento em falha.** Fechado: **degrada, e diz que degradou.** O
+   achado carrega o grau — exato ou aproximado —, a linha se marca, e o rodapé
+   diz quantos são palpite. Um segundo passe silencioso teria transformado "a
+   busca achou" em "a busca achou algo parecido" sem ninguém notar, que é a
+   família de defeito que este projeto passou uma série de revisões corrigindo.
+
+**Continuam abertas, e são suas:** 4 (qual ato autoriza indexação em massa),
+5 (retenção — o *mecanismo* de esquecer é meu e não existe porque não há índice;
+o *prazo* seria seu), 6 (identidade e versão do índice) e 7 (o número do
+orçamento). **Todas elas só passam a valer se o artefato acima disser que a
+metade semântica compensa.** Antes disso, decidi-las é escolher a implementação
+antes do requisito — que foi o veredito de 28/08, e continua de pé.
+
+#### O preço que o conserto tem, medido também
+
+O segundo passe é mais frouxo, e frouxidão é ruído. Na mesma medição, consultas
+que casam com **mais de dez mensagens**: 18,8% no caso exato, **68,7%** na busca
+por pedaço de palavra (que já era assim antes), e 55,4% nas consultas com erro
+de digitação. É por isso que os graus são separados na tela em vez de somados
+numa lista só.
 
 ### Fase 5 — Tarefas — *EXECUTADA em 29/08/2026*
 
