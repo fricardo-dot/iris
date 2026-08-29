@@ -461,9 +461,11 @@ Namespace Global.Iris.Model
         ''' Quantas ocorrências vieram da expansão de séries.
         '''
         ''' Fica visível pela mesma razão que <c>MessagePage.SkippedCount</c>:
-        ''' "12 compromissos, 5 deles de séries" é diferente de "12
+        ''' "12 compromissos lidos, 5 deles de séries" é diferente de "12
         ''' compromissos", e a diferença muda o que o usuário conclui de uma
-        ''' agenda cheia.
+        ''' agenda cheia. O "lidos" não é enfeite: número apresentado como
+        ''' <i>total</i> é afirmação sobre o que existe, e esta leitura só sabe
+        ''' o que trouxe.
         ''' </summary>
         Public Property FromRecurrence As Integer
 

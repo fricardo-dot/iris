@@ -165,7 +165,17 @@ try {
 
     Write-Host ""
     if ($antesDoHorizonte -eq 0) {
-        Write-Host "NENHUM COMPROMISSO ANTES DO HORIZONTE DO CORREIO." -ForegroundColor Yellow
+        # O SEGUNDO ZERO DESTE ROTEIRO, e ele escapou da correcao do primeiro.
+        # Item cuja data nao foi lida entra em $recusados e NAO e classificado
+        # -- qualquer um deles pode ser anterior ao horizonte. Com recusados,
+        # nem "nenhum antes" se sustenta.
+        if ($recusados -gt 0) {
+            Write-Host ("NENHUM COMPROMISSO LEGIVEL ANTES DO HORIZONTE -- e {0} item(ns) nao" -f $recusados) -ForegroundColor Yellow
+            Write-Host "  tiveram a data lida. Qualquer um deles pode ser anterior, entao"
+            Write-Host "  nem 'nenhum antes' se sustenta aqui."
+        } else {
+            Write-Host "NENHUM COMPROMISSO ANTES DO HORIZONTE DO CORREIO." -ForegroundColor Yellow
+        }
         Write-Host "  Isso NAO prova que o calendario corta ali: um calendario que so"
         Write-Host "  tenha compromissos recentes da exatamente este retrato. E os dois"
         Write-Host "  roteiros nao correlacionam StoreID, entao a comparacao e por data"

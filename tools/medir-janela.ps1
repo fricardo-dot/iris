@@ -96,6 +96,12 @@ $ns = $ol.GetNamespace('MAPI')
 
 $linhas = New-Object System.Collections.ArrayList
 
+# PASTA QUE ENTROU NA CONTA E NAO SAIU NA TABELA.
+# GetFirst/GetLast podem falhar item a item, e a pasta some da tabela sem
+# aparecer em lugar nenhum -- e o rodape ainda diz "nenhuma pasta com N
+# itens", que e afirmacao de ausencia sobre o que nao foi lido.
+$semDatas = New-Object System.Collections.ArrayList
+
 # Percorre a arvore. Nao encadeia expressao COM: cada colecao intermediaria
 # recebe nome, pela R7 do ESCOPO.
 function Percorrer($pastas, $trilha) {
@@ -127,6 +133,10 @@ function Percorrer($pastas, $trilha) {
                         $ultimo = $itens.GetLast()
                         if ($ultimo) { $maisNovo = $ultimo.ReceivedTime }
                     } catch { }
+
+                    if (-not ($maisAntigo -and $maisNovo)) {
+                        $null = $semDatas.Add($caminho)
+                    }
 
                     if ($maisAntigo -and $maisNovo) {
                         $dias = [int]([datetime]$maisNovo - [datetime]$maisAntigo).TotalDays
@@ -178,8 +188,21 @@ try {
     if ($ol)     { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($ol) }
 }
 
+if ($semDatas.Count -gt 0) {
+    Write-Host ""
+    Write-Host ("{0} pasta(s) com itens suficientes ficaram FORA da tabela porque nao" -f $semDatas.Count) -ForegroundColor DarkYellow
+    Write-Host "  consegui ler a data do primeiro ou do ultimo item:"
+    foreach ($p in $semDatas) { Write-Host ("    {0}" -f $p) }
+}
+
 if ($linhas.Count -eq 0) {
-    Write-Host "Nenhuma pasta de correio com $MinimoDeItens itens ou mais." -ForegroundColor Yellow
+    if ($semDatas.Count -gt 0) {
+        Write-Host ("Nenhuma pasta MEDIVEL: as {0} que tinham itens suficientes nao" -f $semDatas.Count) -ForegroundColor Yellow
+        Write-Host "  tiveram data legivel. Isso NAO quer dizer que nao ha pastas com"
+        Write-Host "  $MinimoDeItens itens -- quer dizer que nao consegui medir nenhuma."
+    } else {
+        Write-Host "Nenhuma pasta de correio com $MinimoDeItens itens ou mais." -ForegroundColor Yellow
+    }
     exit 0
 }
 

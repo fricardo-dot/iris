@@ -268,9 +268,56 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' <b>Lista vazia na tela não é pasta vazia.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A TELA DIZIA AS DUAS COISAS AO MESMO TEMPO</b>
+        '''
+        ''' O texto era fixo — "Esta pasta está vazia" —, e saía sempre que a
+        ''' lista convertida ficava sem linha. Com uma página de
+        ''' <c>TotalAtStart = 1</c> e <c>SkippedCount = 1</c>, a mesma tela
+        ''' mostrava <i>"Esta pasta está vazia"</i> no meio e
+        ''' <i>"0 de 1 · 1 item ignorado"</i> no rodapé. Uma das duas frases
+        ''' estava mentindo, e era a de cima — a que ocupa a tela inteira.
+        '''
+        ''' É a mesma família do <c>0 compromisso(s)</c> da agenda e do
+        ''' <i>"calendário vazio"</i> do roteiro: <b>tratar "não observei" como
+        ''' "observei e não há"</b>. Três instâncias, três superfícies, o mesmo
+        ''' erro — e este é o único que estava na tela principal.
+        '''
+        ''' Os três casos, em ordem de força do que se pode afirmar:
+        ''' <list type="bullet">
+        ''' <item>a leitura perdeu item ⇒ não se afirma nada sobre a pasta;</item>
+        ''' <item>a pasta declara N e a leitura trouxe zero ⇒ diz-se o N;</item>
+        ''' <item>a pasta declara zero e nada foi perdido ⇒ aí sim, vazia.</item>
+        ''' </list>
+        ''' </summary>
+        Public ReadOnly Property EmptyMessage As String
+            Get
+                If _skipped > 0 Then
+                    Return $"Nenhuma mensagem para mostrar — {_skipped} item(ns) desta " &
+                           "pasta a leitura não conseguiu trazer."
+                End If
+                If _fabricadas > 0 Then
+                    Return "Nenhuma mensagem para mostrar, e a leitura teve campos que o " &
+                           "Outlook não entregou."
+                End If
+                If _total > 0 Then
+                    Return $"Nenhuma mensagem para mostrar, e a pasta declara {_total} " &
+                           "item(ns). A leitura não trouxe nenhum."
+                End If
+                Return "Esta pasta está vazia."
+            End Get
+        End Property
+
         Private Sub AtualizarEstados()
             OnPropertyChanged(NameOf(ShowSelectPrompt))
             OnPropertyChanged(NameOf(ShowEmptyFolder))
+            ' A MENSAGEM MUDA COM _skipped E _total, que mudam pagina a pagina.
+            ' Sem esta linha o texto ficaria correto por acaso -- o da primeira
+            ' pagina, mostrado para sempre.
+            OnPropertyChanged(NameOf(EmptyMessage))
             OnPropertyChanged(NameOf(StatusLine))
         End Sub
 

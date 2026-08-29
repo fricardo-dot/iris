@@ -358,4 +358,94 @@ Public Class JanelaPrincipalTests
             End Function)
     End Sub
 
+    ''' <summary>
+    ''' <b>LISTA VAZIA NA TELA NÃO É PASTA VAZIA.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A TELA DIZIA AS DUAS COISAS AO MESMO TEMPO</b>
+    '''
+    ''' O texto do meio era fixo — <i>"Esta pasta está vazia"</i> — e aparecia
+    ''' sempre que a lista convertida ficava sem linha. Com uma página de
+    ''' <c>TotalAtStart = 1</c> e <c>SkippedCount = 1</c>, a mesma tela mostrava
+    ''' <i>"Esta pasta está vazia"</i> no meio e <i>"0 de 1 · 1 item
+    ''' ignorado"</i> no rodapé. Uma das duas estava mentindo, e era a que ocupa
+    ''' a tela inteira.
+    '''
+    ''' É a terceira instância da mesma família em três passadas — o
+    ''' <c>0 compromisso(s)</c> da agenda, o <i>"calendário vazio"</i> do
+    ''' roteiro, e esta. <b>Tratar "não observei" como "observei e não há".</b>
+    ''' Esta é a única que estava na tela principal.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo o texto fixo ao XAML — ou fazendo o
+    ''' <c>EmptyMessage</c> ignorar <c>_skipped</c> —, a asserção do meio cai.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Lista_vazia_com_item_ignorado_NAO_diz_que_a_pasta_esta_vazia()
+        NoDispatcherAsync(
+            Async Function(d) As Task
+                Dim b As New FakeBroker()
+                b.EstadoDaSessao = SessionState.Connected
+                ' A GERACAO IMPORTA: o ExecutarAsync descarta a pagina cuja
+                ' Generation nao bate com a do pedido, e o primeiro
+                ' ShowFolderAsync incrementa para 1. Sem isso o teste ve
+                ' "0 de 0" e a pagina nunca chega -- foi o que aconteceu na
+                ' primeira versao deste teste, e o sintoma nao aponta para ca.
+                b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                    New MessagePage With {
+                        .Generation = 1,
+                        .Items = New List(Of MailSummary)(),
+                        .TotalAtStart = 1,
+                        .SkippedCount = 1})
+
+                Dim painel As New MessageListViewModel(b, d, Sub(t, nome)
+                                                             End Sub)
+                Await painel.ShowFolderAsync(New FolderKey("entry-1", "store-1"), "Caixa de Entrada")
+
+                Assert.AreEqual(0, painel.Messages.Count, "controle: a pagina veio sem linha")
+                Assert.IsTrue(painel.ShowEmptyFolder, "controle: a faixa do vazio tinha de aparecer")
+                StringAssert.Contains(painel.StatusLine, "1 item(ns) ignorado(s)",
+                    "controle: o rodape ja dizia que perdeu um item")
+
+                ' O CONSERTO.
+                Assert.IsFalse(painel.EmptyMessage.Contains("Esta pasta está vazia"),
+                    "a tela afirma que a pasta esta vazia enquanto o rodape diz " &
+                    "que a leitura perdeu um item")
+                StringAssert.Contains(painel.EmptyMessage, "não conseguiu trazer")
+            End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>CONTROLE POSITIVO: pasta que declara zero e não perdeu nada É vazia.</b>
+    '''
+    ''' Sem ele, um <c>EmptyMessage</c> que nunca dissesse "vazia" passaria no
+    ''' teste de cima — que é o bloqueio sem controle negativo que o CLAUDE.md
+    ''' descreve.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_pasta_que_declara_zero_e_dita_vazia()
+        NoDispatcherAsync(
+            Async Function(d) As Task
+                Dim b As New FakeBroker()
+                b.EstadoDaSessao = SessionState.Connected
+                ' A GERACAO IMPORTA: o ExecutarAsync descarta a pagina cuja
+                ' Generation nao bate com a do pedido, e o primeiro
+                ' ShowFolderAsync incrementa para 1. Sem isso o teste ve
+                ' "0 de 0" e a pagina nunca chega -- foi o que aconteceu na
+                ' primeira versao deste teste, e o sintoma nao aponta para ca.
+                b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                    New MessagePage With {
+                        .Generation = 1,
+                        .Items = New List(Of MailSummary)(),
+                        .TotalAtStart = 0,
+                        .SkippedCount = 0})
+
+                Dim painel As New MessageListViewModel(b, d, Sub(t, nome)
+                                                             End Sub)
+                Await painel.ShowFolderAsync(New FolderKey("entry-1", "store-1"), "Caixa de Entrada")
+
+                Assert.IsTrue(painel.ShowEmptyFolder)
+                StringAssert.Contains(painel.EmptyMessage, "Esta pasta está vazia")
+            End Function)
+    End Sub
+
 End Class

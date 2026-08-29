@@ -102,7 +102,11 @@ Public Class AgendaViewModelTests
         ' E O NUMERO POSITIVO TAMBEM E "LIDO". A primeira correcao qualificou
         ' so o zero, e sobrou "12 compromissos" numa pasta cuja cobertura
         ' ninguem mediu -- a mesma afirmacao, mais dificil de notar.
-        StringAssert.Contains(vm.Resumo, "lido(s)")
+        '
+        ' A SEQUENCIA, e nao as duas peças soltas: exigir "3 compromisso(s)" e
+        ' "lido(s)" em asserções separadas passa com o total sem qualificacao e
+        ' o "lido(s)" em outra clausula da frase.
+        StringAssert.Contains(vm.Resumo, "3 compromisso(s) lido(s)")
         Assert.IsFalse(vm.TemErro)
         Assert.IsFalse(vm.Carregando)
     End Function

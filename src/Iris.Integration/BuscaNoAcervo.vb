@@ -157,8 +157,8 @@ Namespace Global.Iris.Integration
                 ' SEM DRENO NAO E FILA LIMPA, E SIM FILA NAO OBSERVADA.
                 '
                 ' Isto devolvia 0 -- a mesma resposta de "olhei e nao ha nada
-                ' pendente". Os dois chamadores de producao passam um dreno
-                ' real, entao a tela nunca chegou nesse estado; mas a classe
+                ' pendente". O unico chamador de producao passa um dreno real,
+                ' entao a tela nunca chegou nesse estado; mas a classe
                 ' aceita Nothing, e "aceita e mente" e pior que "nao aceita".
                 ' O -1 e o mesmo caminho do banco travado, e cai na frase que
                 ' ja existe: "nao consegui conferir".
@@ -368,7 +368,15 @@ Namespace Global.Iris.Integration
                 Dim partes As New List(Of String)()
 
                 If Consultadas.Count = 0 Then
-                    partes.Add("Nenhuma pasta foi varrida ainda, então não há acervo onde procurar.")
+                    ' "FOI VARRIDA" E MAIS DO QUE SE SABE, e o comentario do
+                    ' laco la em cima ja dizia isso desde 28/08: sem geracao
+                    ' publicada cabe tambem a varredura rejeitada pela S6, a
+                    ' cancelada e a que falhou. Eu corrigi o comentario e nao
+                    ' corrigi a FRASE -- e o teste cobrava a frase errada, o
+                    ' que e pior: um teste prendendo o comportamento que a
+                    ' revisao tinha mandado tirar.
+                    partes.Add("Nenhuma pasta tem acervo publicado, então não há acervo " &
+                               "onde procurar. Isso não quer dizer que ninguém tentou varrer.")
                 Else
                     Dim onde = $"Procurei em {Consultadas.Count} pasta(s) varrida(s), " &
                                $"sobre {TotalNoAcervo} mensagem(ns) guardada(s)."

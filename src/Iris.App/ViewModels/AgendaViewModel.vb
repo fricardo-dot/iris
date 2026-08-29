@@ -145,8 +145,11 @@ Namespace Global.Iris.App.ViewModels
         ''' <summary>
         ''' O que a leitura viu, incluindo o que ela recusou.
         '''
-        ''' "12 compromissos, 5 de séries" é diferente de "12 compromissos", e
-        ''' a diferença muda o que o usuário conclui de uma agenda cheia.
+        ''' "12 compromissos lidos, 5 de séries" é diferente de "12
+        ''' compromissos", e a diferença muda o que o usuário conclui de uma
+        ''' agenda cheia. <b>O exemplo aqui dizia "12 compromissos"</b>, sem o
+        ''' "lidos" — a quarta versão da mesma história, achada pela revisão
+        ''' depois de a tela e o XAML já concordarem.
         ''' </summary>
         Public Property Resumo As String
             Get
@@ -267,8 +270,17 @@ Namespace Global.Iris.App.ViewModels
                 partes.Add($"{j.FromRecurrence} de séries")
             End If
 
-            If j.Skipped.HasValue AndAlso j.Skipped.Value > 0 Then
-                partes.Add($"{j.Skipped.Value} item(ns) que não consegui ler")
+            ' NULO E ZERO SAO COISAS DIFERENTES, e este If colapsava as duas
+            ' -- no arquivo cujo comentário de cima declara justamente que elas
+            ' não são a mesma coisa. Hoje o CalendarReading sempre atribui o
+            ' contador, então é dívida latente; mas latente é o estado em que
+            ' todos os outros defeitos desta família estavam quando chegaram à
+            ' tela.
+            If Not j.Skipped.HasValue Then
+                partes.Add("não sei quantos itens foram recusados nesta leitura")
+            ElseIf j.Skipped.Value > 0 Then
+                partes.Add($"{j.Skipped.Value} item(ns) que não consegui ler ou que " &
+                           "não eram compromisso")
             End If
 
             ' TRUNCAMENTO VEM PRIMEIRO NA LEITURA, mesmo vindo por último na

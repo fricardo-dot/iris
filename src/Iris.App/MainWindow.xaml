@@ -373,8 +373,14 @@
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                Visibility="{Binding Messages.ShowSelectPrompt, Converter={StaticResource BoolToVis}}" />
 
-                    <TextBlock Grid.Row="1" Text="Esta pasta está vazia"
+                    <!-- O TEXTO E CALCULADO, e nao fixo. Ele dizia sempre
+                         "Esta pasta esta vazia", inclusive quando a leitura
+                         tinha PERDIDO itens: a mesma tela mostrava "Esta pasta
+                         esta vazia" no meio e "0 de 1 - 1 item ignorado" no
+                         rodape. Ver EmptyMessage. -->
+                    <TextBlock Grid.Row="1" Text="{Binding Messages.EmptyMessage}"
                                Style="{StaticResource Text.Muted}"
+                               TextWrapping="Wrap" TextAlignment="Center" MaxWidth="420"
                                HorizontalAlignment="Center" VerticalAlignment="Center"
                                Visibility="{Binding Messages.ShowEmptyFolder, Converter={StaticResource BoolToVis}}" />
 

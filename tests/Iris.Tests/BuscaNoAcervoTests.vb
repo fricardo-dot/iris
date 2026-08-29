@@ -316,7 +316,20 @@ Public Class BuscaNoAcervoTests
     End Sub
 
     ''' <summary>
-    ''' <b>Sem acervo nenhum, a busca diz isso — e não "não achei".</b>
+    ''' <b>Sem acervo nenhum, a busca diz isso — e não "não achei", nem
+    ''' "ninguém varreu".</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ESTE TESTE PRENDIA O COMPORTAMENTO ERRADO</b>
+    '''
+    ''' Ele exigia a frase <i>"Nenhuma pasta foi varrida"</i> — e o comentário do
+    ''' laço que separa as pastas sem acervo já dizia, desde 28/08, que isso é
+    ''' mais do que se sabe: sem geração publicada cabe também a varredura
+    ''' <b>rejeitada pela S6</b>, a cancelada e a que falhou. Eu tinha corrigido
+    ''' o comentário e deixado a frase, e o teste travava a frase.
+    '''
+    ''' Teste que exige a formulação errada é pior que teste ausente: ele
+    ''' transforma o defeito em requisito.
     ''' </summary>
     <TestMethod>
     Public Sub Sem_pasta_varrida_a_ressalva_diz_que_nao_ha_onde_procurar()
@@ -327,7 +340,11 @@ Public Class BuscaNoAcervoTests
 
             Assert.AreEqual(0, r.Achados.Count)
             Assert.AreEqual(0, r.Consultadas.Count)
-            StringAssert.Contains(r.Ressalva, "Nenhuma pasta foi varrida")
+            StringAssert.Contains(r.Ressalva, "Nenhuma pasta tem acervo publicado")
+            Assert.IsFalse(r.Ressalva.Contains("foi varrida"),
+                "a ressalva afirma que ninguem varreu, e o cache so sabe que " &
+                "nao ha geracao publicada -- cabe varredura rejeitada, " &
+                "cancelada ou falha")
         End Using
     End Sub
 
