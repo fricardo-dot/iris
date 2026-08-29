@@ -32,6 +32,13 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' português, "reuniões" não acha "reunião" porque o singular não é subcadeia
 ''' do plural; e uma letra trocada zera a busca.
 '''
+''' <b>ATENÇÃO AO QUE ISTO NÃO DIZ.</b> A primeira versão deste comentário
+''' concluía "as falhas eram mecânicas, não semânticas", e a revisão externa
+''' derrubou: o gerador só produz consulta por transformação LITERAL do
+''' assunto, então ele não consegue nem produzir consulta por sinônimo, quanto
+''' mais achar falha nela. O que os números sustentam é "as falhas que este
+''' gerador enxerga eram mecânicas".
+'''
 ''' Isso é o oposto de "a busca textual não resolve, precisamos de embeddings".
 ''' É "a busca textual resolve o que promete, e o que falta custa um radical
 ''' pobre e uma distância de edição".
@@ -306,6 +313,70 @@ Public Class BuscaToleranteTests
             "a frase nao diz que sao aproximados")
         StringAssert.Contains(com_palpite.FraseDosAproximados, "letra",
             "a frase nao diz aproximados COMO -- ressalva decorativa")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Limpar apaga a ressalva de aproximação junto.</b>
+    '''
+    ''' Sem isto, limpar uma busca que tinha palpites deixava na tela "3 destes
+    ''' casaram por aproximação" sobre uma lista vazia — verdadeira ontem,
+    ''' falsa agora. Ressalva parece inofensiva, e é justamente por isso que
+    ''' ninguém confere se ela ainda vale.
+    '''
+    ''' <b>Controle negativo:</b> tirando o <c>Aproximados = 0</c> do
+    ''' <c>Limpar</c>, este teste cai.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Limpar_apaga_a_ressalva_de_aproximacao()
+        Dim vm = Procurar("contrado", {Item("Contrato aditivo", "")})
+        Assert.IsTrue(vm.TemAproximados, "controle: a busca tinha de deixar um palpite")
+
+        vm.LimparCommand.Execute(Nothing)
+
+        Assert.AreEqual(0, vm.Aproximados)
+        Assert.IsFalse(vm.TemAproximados,
+            "a tela continuou dizendo que há aproximados sobre uma lista vazia")
+        Assert.AreEqual("", vm.FraseDosAproximados)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Pontuação colada não derruba o segundo passe.</b>
+    '''
+    ''' Assunto de e-mail vem cheio dela: "[Contrato]", "contrato/fornecedor",
+    ''' "RES:contrato". Partindo o alvo só por espaço, o token fica
+    ''' "[contrato]" e a distância até "contrado" passa de um — o palpite
+    ''' falharia por um motivo que nada tem a ver com o que ele mede.
+    '''
+    ''' O primeiro passe nunca precisou disto: subcadeia atravessa pontuação
+    ''' sozinha. É só o segundo, que compara palavra com palavra.
+    ''' </summary>
+    <DataTestMethod>
+    <DataRow("contrado", "[Contrato] urgente")>
+    <DataRow("contrado", "contrato/fornecedor")>
+    <DataRow("contrado", "RES:contrato")>
+    Public Sub Pontuacao_colada_nao_derruba_a_aproximacao(termo As String, assunto As String)
+        Assert.AreEqual(GrauDoAchado.Aproximado, Grau(termo, assunto, remetente:=""),
+            $"'{termo}' não achou '{assunto}': a pontuação virou parte da palavra")
+    End Sub
+
+    ''' <summary>
+    ''' <b>TRANSPOSIÇÃO NÃO É ACHADA, e o teste existe para dizer isso.</b>
+    '''
+    ''' Trocar duas letras de lugar é distância <b>2</b> para este algoritmo.
+    ''' Medido em 29/08: <b>0% de 237 consultas</b> — o único dos quatro tipos
+    ''' de erro de digitação que o conserto não alcança (os outros três ficaram
+    ''' em 98,8%, 98,8% e 89,8%).
+    '''
+    ''' Este teste não pede o conserto. Ele impede o limite de virar surpresa:
+    ''' quem for mexer aqui descobre pelo teste, e não pela reclamação de quem
+    ''' digitou "conttaro" e não achou nada.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Transposicao_NAO_e_achada_e_isso_esta_medido()
+        Assert.AreEqual(GrauDoAchado.Nenhum,
+                        Grau("conttaro", "Contrato aditivo", remetente:=""),
+            "a transposição passou a ser achada. Se foi de propósito, o " &
+            "número da medição e o comentário do Grau precisam mudar junto")
     End Sub
 
 End Class

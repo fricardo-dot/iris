@@ -22,3 +22,7 @@ TestResults/
 # %LOCALAPPDATA%\Iris\, nao aqui. Esta linha existe porque o arquivo ja foi
 # parar aqui uma vez.
 ativacao.json
+
+# Bytecode do Python das ferramentas.
+__pycache__/
+*.pyc

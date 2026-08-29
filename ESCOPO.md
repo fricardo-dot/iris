@@ -456,93 +456,105 @@ mensagens que *parecem* da mesma conversa seria decidir divulgação por
 semelhança. O mecanismo aceita várias mensagens; o que não existe é quem as
 escolha.
 
-### Fase 4 — Triagem e busca semântica (Grupo B) — *DECIDIDA em 29/08/2026, COM MEDIÇÃO*
+### Fase 4 — Triagem e busca semântica (Grupo B) — *NÃO EXECUTADA. A METADE MECÂNICA FOI MEDIDA E CONSERTADA; A SEMÂNTICA CONTINUA SEM MEDIÇÃO*
 
-> **A condição que esta seção mesma nomeou foi cumprida, e o resultado aponta
-> para o outro lado.**
+> **Esta seção já teve um título mais forte, e a revisão externa derrubou.**
 >
-> Em 28/08 a fase ficou parada com oito decisões abertas, e o documento
-> registrou quando reavaliar. Um dos gatilhos era **"evidência de que a busca
-> textual normalizada não resolve"**. Ninguém tinha produzido essa evidência —
-> a fase estava parada por falta de *medição*, não por falta de opinião.
+> Em 29/08 eu escrevi *"Fase 4 decidida"* e *"as falhas eram mecânicas, não
+> semânticas"*. A segunda frase não se sustenta, e o motivo é simples: o
+> harness só gera consultas por **transformação literal do próprio assunto**.
+> Por construção ele não consegue produzir consulta por sinônimo — logo não
+> consegue *achar* falha semântica, e portanto não pode demonstrar que ela não
+> existe. Fechar a fase semântica com um experimento incapaz de observá-la é
+> circular.
 >
-> **A medição existe agora** (`tools/medir-busca.py`, 29/08/2026). Ela contorna
-> o obstáculo declarado — não haver oráculo — usando a classe de consulta que
-> se mede sozinha: *se você digitar três palavras do próprio assunto de uma
-> mensagem, a busca tem de achar aquela mensagem*. A resposta certa é a própria
-> mensagem, por construção. 300 mensagens do acervo real, semente fixa, nada
-> saindo da máquina, relatório só com agregados.
+> O que os dados sustentam é isto, e só isto:
+>
+> **"As falhas que este gerador consegue enxergar eram mecânicas, e foram
+> consertadas."**
 
-**O que ela achou:**
+#### A medição, e o que ela alcança
+
+`tools/medir-busca.py`, 29/08/2026. Contorna a falta de oráculo usando a classe
+de consulta que se mede sozinha: *se você digitar três palavras do próprio
+assunto de uma mensagem, a busca tem de achar aquela mensagem* — a resposta
+certa é a própria mensagem, por construção. 300 mensagens, semente fixa, mesmo
+corpus que a busca percorre (manifesto publicado), nada saindo da máquina,
+relatório só com agregados.
 
 | caso | antes | depois |
-|---|---|---|
-| palavras exatas | 100,0% | 100,0% |
-| sem acento | 100,0% | 100,0% |
-| caixa trocada | 100,0% | 100,0% |
-| fora de ordem | 100,0% | 100,0% |
-| pedaço da palavra | 100,0% | 100,0% |
-| assunto + remetente | 100,0% | 100,0% |
-| **erro de digitação** | **0,4%** | **93,8%** |
-| **flexão de número** | **0,0%** | **100,0%** |
+|---|---:|---:|
+| palavras exatas, sem acento, caixa trocada | 100,0% | 100,0% |
+| fora de ordem, pedaço da palavra, assunto+remetente | 100,0% | 100,0% |
+| erro — substituição | 0,4% | **98,8%** |
+| erro — inserção | 0,0% | **98,8%** |
+| erro — remoção | 0,0% | **89,8%** |
+| erro — **transposição** | 0,0% | **0,0%** |
+| flexão de número (famílias cobertas) | 0,0% | **100,0%** |
+| flexão **fora** do radical (diminutivo) | 0,0% | **0,0%** |
 
-**Tudo o que a busca textual prometia já valia.** As duas falhas eram
-**mecânicas** — numa caixa em português, "reuniões" não acha "reunião" porque o
-singular não é subcadeia do plural; e uma letra trocada zerava a busca.
+**As duas últimas linhas são as que a primeira versão desta seção não tinha**, e
+elas mudam a leitura. Transposição é distância 2 para este algoritmo — 237
+consultas, nenhuma achada. Diminutivo não cabe num radical de nove linhas — 140
+consultas, nenhuma achada. **O conserto tem borda, e a borda está medida.**
 
-**E nenhuma das duas precisa de significado para ser consertada.** O conserto
-entrou no mesmo dia: um radical pobre e uma distância de edição até 1, num
-segundo passe que só roda quando o primeiro falha. Custo: zero egress, zero
-cerimônia, zero orçamento, zero política de retenção — **nenhuma das oito
-decisões se aplica**.
+#### O conserto, e o que ele custou
 
-**Por isso a Fase 4 como especificada fecha: o ganho que ela prometia, na
-metade que dava para medir, já foi entregue por outro caminho e mais barato.**
+Segundo passe que só roda quando o primeiro falha: radical pobre (as
+terminações em que o singular não é subcadeia do plural) e distância de edição
+até 1. Zero egress, zero cerimônia, zero orçamento, zero política de retenção —
+**nenhuma das oito decisões da fase se aplica a ele.**
 
-#### O que continua aberto, e é uma coisa só
+O preço é ruído, e ele está medido também: consultas que casam com mais de dez
+mensagens são 18,1% no caso exato, 70,7% na busca por pedaço de palavra (que já
+era assim antes), **59,0%** nas consultas com erro de digitação e **82,0%** nas
+de flexão. É por isso que os graus não são somados: o achado carrega se foi
+exato ou aproximado, a linha se marca, e o rodapé conta.
 
-**Consulta por sinônimo ou paráfrase** — "cobrança" achando "fatura". É onde
-embeddings ganhariam de verdade, e é exatamente o que a medição **não** cobre,
-porque decidir que uma responde à outra é julgamento. Só o dono da caixa pode
-dizer.
+#### O que isto muda na fase, e o que não muda
 
-Isso não são mais oito decisões abertas. **É um artefato:** uma lista curta de
-consultas reais em que você sabe qual mensagem queria e a busca textual erra.
-Com ela, a pergunta "vale a pena indexar?" vira medível. Sem ela, qualquer
-resposta é palpite — inclusive a minha.
+**Muda:** a busca textual agora resolve a robustez lexical que faltava, e
+resolveu sem tocar em nenhuma das oito decisões. Se o motivo para querer
+embeddings fosse *"eu digito errado e não acho"*, esse motivo acabou.
 
-#### As decisões que eram de desenho, fechadas
+**Não muda:** ninguém mediu consulta por **sinônimo ou paráfrase** — "cobrança"
+achando "fatura". É onde embeddings ganhariam de verdade, e continua **sem
+evidência nos dois sentidos**. O gatilho de reavaliação que esta seção nomeou
+em 28/08 *não* foi cumprido para essa metade; foi cumprido para a outra.
 
-1. **Cobertura parcial.** Fechada por construção, e já valia: a busca carrega
-   pastas consultadas, cobertura, geração e as que não têm acervo nenhum. Zero
-   achados sobre acervo parcial é informação sobre o acervo, não sobre a caixa.
-2. **Quanto conteúdo sai da máquina.** Fechada por consequência: a D1 proíbe
-   corpo e anexo no cache, e o que sobra — assunto e remetente — já é buscável
-   sem sair. **Nada sai.** A medição foi feita inteira contra `127.0.0.1` de
-   fato: leitura local, relatório local, nenhum provedor no caminho.
-3. **"O índice mora local".** Confirmada, e agora barata: não há índice a
-   armazenar. O radical e a distância são função pura sobre o que já está no
-   SQLite.
-8. **Comportamento em falha.** Fechado: **degrada, e diz que degradou.** O
-   achado carrega o grau — exato ou aproximado —, a linha se marca, e o rodapé
-   diz quantos são palpite. Um segundo passe silencioso teria transformado "a
-   busca achou" em "a busca achou algo parecido" sem ninguém notar, que é a
-   família de defeito que este projeto passou uma série de revisões corrigindo.
+#### O que falta, e é uma coisa só
 
-**Continuam abertas, e são suas:** 4 (qual ato autoriza indexação em massa),
-5 (retenção — o *mecanismo* de esquecer é meu e não existe porque não há índice;
-o *prazo* seria seu), 6 (identidade e versão do índice) e 7 (o número do
-orçamento). **Todas elas só passam a valer se o artefato acima disser que a
-metade semântica compensa.** Antes disso, decidi-las é escolher a implementação
-antes do requisito — que foi o veredito de 28/08, e continua de pé.
+**Uma lista curta de consultas reais em que você sabe qual mensagem queria e a
+busca erra por sentido, não por letra.** Dez ou quinze bastam. É o oráculo que
+esta seção sempre disse que só o dono da caixa pode dar, e com ele a pergunta
+"vale a pena indexar?" vira medível.
 
-#### O preço que o conserto tem, medido também
+As decisões 4, 5, 6 e 7 — qual ato autoriza indexação em massa, retenção,
+identidade do índice, orçamento — continuam abertas e **só passam a valer se
+esse artefato disser que a metade semântica compensa**. Decidi-las antes é
+escolher a implementação antes do requisito, que foi o veredito de 28/08 e
+continua de pé.
 
-O segundo passe é mais frouxo, e frouxidão é ruído. Na mesma medição, consultas
-que casam com **mais de dez mensagens**: 18,8% no caso exato, **68,7%** na busca
-por pedaço de palavra (que já era assim antes), e 55,4% nas consultas com erro
-de digitação. É por isso que os graus são separados na tela em vez de somados
-numa lista só.
+#### As decisões de desenho que fecharam mesmo assim
+
+1. **Cobertura parcial.** Já valia por construção: a busca carrega pastas
+   consultadas, cobertura, geração e as que não têm acervo nenhum.
+2. **Quanto conteúdo sai da máquina.** Nada sai. A D1 proíbe corpo e anexo no
+   cache; o que sobra já é buscável localmente. A medição inteira foi local.
+3. **"O índice mora local".** Confirmada, e hoje barata: não há índice a
+   armazenar — o radical e a distância são função pura sobre o SQLite.
+8. **Comportamento em falha.** Degrada, e **diz** que degradou: o grau viaja
+   com o achado até a tela. Um segundo passe silencioso teria trocado "a busca
+   achou" por "a busca achou algo parecido" sem ninguém notar.
+
+#### Uma nota sobre a própria medição
+
+O harness reimplementa em Python a regra do `TermoDeBusca`. Um comentário dele
+afirmava que havia teste comparando as duas implementações; **não havia**, e a
+revisão externa pegou. Agora há: `tools/casos-de-busca.json` é conferido pelos
+dois lados (`BuscaMedidaTests` e `--conferir`). A proteção é real e é parcial —
+ela não obriga ninguém a rodar o lado Python —, e dizer *qual das duas* ela é
+foi exatamente o que faltou da primeira vez.
 
 ### Fase 5 — Tarefas — *EXECUTADA em 29/08/2026*
 

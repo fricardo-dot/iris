@@ -217,6 +217,16 @@ Namespace Global.Iris.Integration
     ''' </summary>
     Public NotInheritable Class TermoDeBusca
 
+        ''' <summary>
+        ''' Tudo o que separa palavra no <b>alvo</b> do segundo passe.
+        '''
+        ''' Não inclui letra acentuada porque a normalização já as tirou, e não
+        ''' inclui dígito porque número faz parte de assunto ("contrato 2026").
+        ''' </summary>
+        Private Shared ReadOnly Separadores As Char() =
+            " ,.;:!?/\|()[]{}<>""'-_+*=@#$%&~^`".ToCharArray().
+            Concat({ChrW(9), ChrW(10), ChrW(13)}).ToArray()
+
         Public ReadOnly Property Original As String
         Public ReadOnly Property Palavras As IReadOnlyList(Of String)
 
@@ -320,7 +330,17 @@ Namespace Global.Iris.Integration
                 Return GrauDoAchado.Exato
             End If
 
-            Dim doAlvo = alvo.Split({" "c}, StringSplitOptions.RemoveEmptyEntries)
+            ''' PARTE POR TUDO QUE NÃO É LETRA OU DÍGITO, e não só por espaço.
+            '''
+            ''' Assunto de e-mail vem cheio de pontuação colada: "[Contrato]",
+            ''' "contrato/fornecedor", "RES:contrato". Partindo só por espaço, o
+            ''' token fica "[contrato]" e a distância até "contrado" passa de
+            ''' um — o segundo passe falharia por um motivo que nada tem a ver
+            ''' com o que ele quer medir.
+            '''
+            ''' O primeiro passe não precisa disto: ele casa por subcadeia, e
+            ''' subcadeia atravessa pontuação sozinha.
+            Dim doAlvo = alvo.Split(Separadores, StringSplitOptions.RemoveEmptyEntries)
             If doAlvo.Length = 0 Then Return GrauDoAchado.Nenhum
 
             If Palavras.All(Function(p) doAlvo.Any(Function(a) Parecidas(p, a))) Then
@@ -370,6 +390,16 @@ Namespace Global.Iris.Integration
         ''' regra que conserta "contratuais", e um radical que inventa
         ''' palavra curta gera ruído em cima de ruído.
         ''' </summary>
+        ''' <b>E o piso hoje NAO e observavel pelo <c>Grau</c>.</b> A guarda
+        ''' <c>rc.Length >= 4</c> do <see cref="Parecidas"/> ja rejeita tudo o
+        ''' que sairia daqui com menos de cinco letras, entao tirar o piso nao
+        ''' muda nenhum resultado de busca -- foi medido, desfazendo-o, e a
+        ''' tabela compartilhada continuou passando.
+        '''
+        ''' Ele fica por dois motivos: e observavel por quem chama
+        ''' <c>Radical</c> direto (e ha teste), e a guarda do <c>Parecidas</c>
+        ''' pode mudar. Guarda redundante e barata; guarda redundante que
+        ''' ninguem sabe que e redundante e armadilha.
         Friend Shared Function Radical(p As String) As String
             If String.IsNullOrEmpty(p) OrElse p.Length < 5 Then Return If(p, "")
 

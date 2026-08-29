@@ -1,0 +1,46 @@
+{
+  "_": [
+    "CASOS COMPARTILHADOS ENTRE AS DUAS IMPLEMENTACOES DA BUSCA.",
+    "",
+    "O TermoDeBusca (VB) e o medir-busca.py (Python) implementam a mesma",
+    "regra, e a duplicacao e inevitavel: a medicao precisa rodar sobre o",
+    "SQLite sem subir a aplicacao.",
+    "",
+    "O comentario do medir-busca.py afirmava que havia um teste comparando",
+    "as duas. NAO HAVIA -- a revisao externa de 29/08 pegou. O comentario",
+    "prometia uma garantia inexistente, que e pior que nao ter garantia,",
+    "porque quem le para de procurar.",
+    "",
+    "Este arquivo E a garantia. Os dois lados conferem os mesmos casos:",
+    "  VB      -> BuscaMedidaTests.As_duas_implementacoes_concordam",
+    "  Python  -> python tools/medir-busca.py --conferir",
+    "Se um deles divergir, o lado que divergiu falha sozinho.",
+    "",
+    "grau: 0 = nenhum, 1 = exato, 2 = aproximado."
+  ],
+  "casos": [
+    {"consulta": "contrato",    "assunto": "Contrato aditivo",        "remetente": "",          "grau": 1},
+    {"consulta": "CONTRATO",    "assunto": "Contrato aditivo",        "remetente": "",          "grau": 1},
+    {"consulta": "regulatorio", "assunto": "Assunto Regulatório",     "remetente": "",          "grau": 1},
+    {"consulta": "regulat",     "assunto": "Regulatório",             "remetente": "",          "grau": 1},
+    {"consulta": "aditivo contrato", "assunto": "Contrato aditivo",   "remetente": "",          "grau": 1},
+    {"consulta": "contrato kate",  "assunto": "Contrato aditivo",     "remetente": "Kate Lima", "grau": 1},
+
+    {"consulta": "contrado",    "assunto": "Contrato aditivo",        "remetente": "",          "grau": 2},
+    {"consulta": "contrto",     "assunto": "Contrato aditivo",        "remetente": "",          "grau": 2},
+    {"consulta": "contratto",   "assunto": "Contrato aditivo",        "remetente": "",          "grau": 2},
+    {"consulta": "reunioes",    "assunto": "Reunião de diretoria",    "remetente": "",          "grau": 2},
+    {"consulta": "reuniao",     "assunto": "Pauta das reuniões",      "remetente": "",          "grau": 2},
+    {"consulta": "contratuais", "assunto": "Cláusula contratual",     "remetente": "",          "grau": 2},
+    {"consulta": "armazens",    "assunto": "Armazém central",         "remetente": "",          "grau": 2},
+    {"consulta": "contrado",    "assunto": "[Contrato] urgente",      "remetente": "",          "grau": 2},
+
+    {"consulta": "conttaro",    "assunto": "Contrato aditivo",        "remetente": "",          "grau": 0},
+    {"consulta": "contratinho", "assunto": "Contrato aditivo",        "remetente": "",          "grau": 0},
+    {"consulta": "nota",        "assunto": "Nata fresca",             "remetente": "",          "grau": 0},
+    {"consulta": "contrado",    "assunto": "Contrabando apreendido",  "remetente": "",          "grau": 0},
+    {"consulta": "jacare",      "assunto": "Contrato aditivo",        "remetente": "",          "grau": 0},
+    {"consulta": "contrado jacare", "assunto": "Contrato aditivo",    "remetente": "",          "grau": 0},
+    {"consulta": "",            "assunto": "Contrato aditivo",        "remetente": "",          "grau": 0}
+  ]
+}

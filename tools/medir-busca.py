@@ -44,6 +44,7 @@ remetente, nenhum EntryID e impresso ou gravado.
 
 Uso:  python tools/medir-busca.py [caminho-do-cache.db]
 """
+import io
 import os
 import random
 import re
@@ -60,10 +61,20 @@ AMOSTRA = 300
 # ==========================================================================
 # A BUSCA, COMO O IRIS A FAZ HOJE
 #
-# Reimplementada aqui de proposito, e a duplicacao e o ponto: se um dia o
-# BuscaNoAcervo mudar e esta copia nao, a medicao passa a medir outra coisa.
-# Por isso ha um teste na suite (BuscaMedidaTests) que compara as duas
-# contra os mesmos casos -- ele quebra no dia em que divergirem.
+# Reimplementada aqui de proposito: a medicao precisa rodar sobre o SQLite
+# sem subir a aplicacao. A duplicacao e um risco real -- se o BuscaNoAcervo
+# mudar e esta copia nao, a medicao passa a medir outra coisa.
+#
+# ESTE COMENTARIO JA AFIRMOU UMA GARANTIA QUE NAO EXISTIA. Ele dizia que
+# havia um teste comparando as duas implementacoes, e nao havia; a revisao
+# externa de 29/08 pegou. Comentario que promete protecao inexistente e pior
+# que nenhum comentario, porque quem le para de procurar.
+#
+# Agora existe, e e um arquivo de casos que os DOIS lados conferem:
+#   tools/casos-de-busca.json
+#   VB      -> BuscaMedidaTests.As_duas_implementacoes_concordam
+#   Python  -> python tools/medir-busca.py --conferir
+# Quem divergir falha sozinho.
 # ==========================================================================
 
 def normalizar(s):
@@ -116,6 +127,13 @@ def distancia_ate_1(a, b):
     return erros + (len(a) - ia) + (len(b) - ib) <= 1
 
 
+# Espelha TermoDeBusca.Separadores: pontuacao, e nao so espaco. Montado
+# por codigo em vez de literal para o caractere de escape nao virar
+# problema de citacao aqui dentro.
+SEPARADORES = (" ,.;:!?/|()[]{}<>-_+*=@#$%&~^`" + chr(92) + chr(34) +
+               chr(39) + chr(9) + chr(10) + chr(13))
+
+
 def parecidas(consulta, do_alvo):
     if not consulta or not do_alvo:
         return False
@@ -147,7 +165,10 @@ def grau(consulta, assunto, remetente):
         return 1
     if not TOLERANCIA:
         return 0
-    do_alvo = alvo.split()
+    # Espelha Separadores do TermoDeBusca: pontuacao colada derrubava o
+    # segundo passe por um motivo que nada tem a ver com o que ele mede.
+    import re as _re
+    do_alvo = [t for t in _re.split("[" + _re.escape(SEPARADORES) + "]", alvo) if t]
     if do_alvo and all(any(parecidas(p, a) for a in do_alvo) for p in palavras):
         return 2
     return 0
@@ -179,15 +200,39 @@ def palavras_uteis(assunto):
     return [p for p in NAO_LETRA.split(limpo) if len(p) >= 3]
 
 
-def com_erro_de_digitacao(palavra, rnd):
-    """Troca UMA letra do meio. Nao a primeira: ninguem erra a inicial e
-    continua achando que digitou certo."""
+ERROS = ("substituicao", "insercao", "remocao", "transposicao")
+
+
+def com_erro_de_digitacao(palavra, rnd, tipo):
+    """UM erro de digitacao, do tipo pedido.
+
+    A PRIMEIRA VERSAO SO FAZIA SUBSTITUICAO INTERNA, e a revisao externa
+    mostrou por que isso e um numero inflado: substituicao interna em palavra
+    longa e exatamente o caminho mais simples do DistanciaAte1. Medir so ela e
+    perguntar ao algoritmo aquilo que ele responde melhor.
+
+    Os quatro tipos cobrem o que uma pessoa faz de verdade -- e a transposicao
+    esta aqui de proposito, porque ela e distancia DOIS para este algoritmo.
+    Ela vai falhar, e falhar medido e melhor que passar por nao ter sido
+    perguntado."""
     if len(palavra) < 5:
         return None
-    i = rnd.randrange(1, len(palavra) - 1)
+
     alfabeto = "abcdefghijklmnopqrstuvwxyz"
-    trocada = rnd.choice([c for c in alfabeto if c != palavra[i].lower()])
-    return palavra[:i] + trocada + palavra[i + 1:]
+    i = rnd.randrange(1, len(palavra) - 1)
+
+    if tipo == "substituicao":
+        c = rnd.choice([c for c in alfabeto if c != palavra[i].lower()])
+        return palavra[:i] + c + palavra[i + 1:]
+    if tipo == "insercao":
+        return palavra[:i] + rnd.choice(alfabeto) + palavra[i:]
+    if tipo == "remocao":
+        return palavra[:i] + palavra[i + 1:]
+    if tipo == "transposicao":
+        if palavra[i] == palavra[i + 1]:
+            return None
+        return palavra[:i] + palavra[i + 1] + palavra[i] + palavra[i + 2:]
+    return None
 
 
 def flexionar(palavra):
@@ -216,6 +261,25 @@ def flexionar(palavra):
         return p[:-1] + "ns"
     if p.endswith("r") or p.endswith("z"):
         return p + "es"           # senhor -> senhores
+    return None
+
+
+def flexao_fora_do_radical(palavra):
+    """Uma variacao morfologica que o radical NAO cobre, de proposito.
+
+    Diminutivo: "contrato" -> "contratinho". Nenhuma regra do radical alcanca
+    isso, e o primeiro passe tambem nao (o singular nao e subcadeia). Ela esta
+    aqui para o relatorio nao poder dizer "flexao: 100%" sobre uma medida que
+    so contem o que o conserto ja resolve.
+
+    E o numero que ela produzir e o comeco honesto da conversa sobre a metade
+    semantica -- porque morfologia de verdade tambem nao cabe num radical de
+    nove linhas."""
+    p = normalizar(palavra)
+    if len(p) < 6 or p.endswith("s"):
+        return None
+    if p.endswith("o") or p.endswith("a"):
+        return p[:-1] + "inh" + p[-1]
     return None
 
 
@@ -253,23 +317,71 @@ def consultas(assunto, remetente, rnd):
         if primeiro:
             saida.append(("assunto_mais_remetente", ps[0] + " " + primeiro))
 
-    # 7. ERRO DE DIGITACAO. Nada promete isto -- e por isso ele esta aqui.
-    errada = com_erro_de_digitacao(ps[0], rnd)
-    if errada:
-        saida.append(("erro_de_digitacao", errada))
+    # 7. ERRO DE DIGITACAO, nos quatro tipos, cada um contado a parte.
+    #    Somados num numero so, a transposicao -- que e distancia 2 e nao pode
+    #    ser achada -- ficaria escondida atras das outras tres.
+    for tipo in ERROS:
+        errada = com_erro_de_digitacao(ps[0], rnd, tipo)
+        if errada:
+            saida.append(("erro_" + tipo, errada))
 
-    # 8. FLEXAO. Idem: uma caixa em portugues flexiona, e subcadeia nao cobre.
+    # 8. FLEXAO DE NUMERO, separada em DUAS medidas.
+    #
+    #    A revisao externa mostrou que somar as duas era quase tautologia: o
+    #    gerador produzia exatamente as cinco terminacoes que o radical
+    #    implementa, entao "100% em flexao" queria dizer "100% no que eu
+    #    escolhi medir". Separado, o numero passa a dizer o que e:
+    #
+    #      flexao_de_numero        -- as familias que o radical cobre
+    #      flexao_NAO_coberta      -- as que ele nao cobre, e nao esconde
     flex = flexionar(ps[0])
     if flex:
         saida.append(("flexao_de_numero", flex))
+
+    fora = flexao_fora_do_radical(ps[0])
+    if fora:
+        saida.append(("flexao_NAO_coberta", fora))
 
     return saida
 
 
 # ==========================================================================
 
+def conferir():
+    """Roda os casos compartilhados contra ESTA implementacao.
+
+    A outra metade da mesma conferencia mora na suite VB. As duas leem o
+    mesmo arquivo, entao divergencia aparece no lado que divergiu."""
+    import json
+    casos = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "casos-de-busca.json")
+    with io.open(casos, encoding="utf-8") as f:
+        dados = json.load(f)
+
+    erros = []
+    for c in dados["casos"]:
+        obtido = grau(c["consulta"], c["assunto"], c["remetente"])
+        if obtido != c["grau"]:
+            erros.append("  %-22r vs %-26r  esperado %d, obtido %d"
+                         % (c["consulta"], c["assunto"], c["grau"], obtido))
+
+    if erros:
+        print("DIVERGIU em %d de %d casos:" % (len(erros), len(dados["casos"])))
+        for e in erros:
+            print(e)
+        raise SystemExit(1)
+
+    print("as %d regras conferem com tools/casos-de-busca.json"
+          % len(dados["casos"]))
+
+
 def main():
     global TOLERANCIA
+
+    if "--conferir" in sys.argv:
+        conferir()
+        return
+
     argumentos = [a for a in sys.argv[1:] if a != "--sem-tolerancia"]
     TOLERANCIA = "--sem-tolerancia" not in sys.argv
 
@@ -280,8 +392,23 @@ def main():
         raise SystemExit("cache nao encontrado em %s" % caminho)
 
     con = sqlite3.connect("file:%s?mode=ro" % caminho.replace("\\", "/"), uri=True)
+
+    # O MESMO CORPUS QUE A BUSCA PERCORRE, e nao a tabela inteira.
+    #
+    # A primeira versao lia metadata_observation direto, e a revisao externa
+    # pegou: a busca le o MANIFESTO PUBLICADO -- associacoes com
+    # generation_key nao nulo. Observacao de uma varredura ainda em curso, ou
+    # de encarnacao sem associacao visivel, existe na tabela e NAO existe para
+    # quem procura. Medir um corpus e concluir sobre o outro e o defeito que
+    # esta ferramenta foi feita para nao cometer.
+    #
+    # A consulta espelha ManifestReader.LerManifesto.
     linhas = con.execute(
-        "SELECT subject, sender_name FROM metadata_observation").fetchall()
+        "SELECT m.subject, m.sender_name "
+        "FROM association a "
+        "JOIN incarnation i ON i.item_key = a.item_key AND i.folder_key = a.folder_key "
+        "LEFT JOIN metadata_observation m ON m.incarnation_key = i.incarnation_key "
+        "WHERE a.generation_key IS NOT NULL").fetchall()
     con.close()
 
     corpus = [(s or "", r or "") for s, r in linhas]
@@ -312,9 +439,10 @@ def main():
             if quantas > 10:
                 p["ruido"] += 1
 
-    ordem = ["exato", "sem_acento", "caixa_alta", "fora_de_ordem",
-             "prefixo_da_palavra", "assunto_mais_remetente",
-             "erro_de_digitacao", "flexao_de_numero"]
+    ordem = (["exato", "sem_acento", "caixa_alta", "fora_de_ordem",
+              "prefixo_da_palavra", "assunto_mais_remetente"] +
+             ["erro_" + t for t in ERROS] +
+             ["flexao_de_numero", "flexao_NAO_coberta"])
 
     print("MEDICAO DA BUSCA TEXTUAL -- round-trip sobre o acervo local")
     print("segundo passe (tolerancia): %s" % ("LIGADO" if TOLERANCIA else "DESLIGADO"))

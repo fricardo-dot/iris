@@ -196,7 +196,19 @@ Namespace Global.Iris.App.ViewModels
             Achados.Clear()
             Procurou = False
             Ressalva = ""
+
+            ''' A CONTAGEM DE APROXIMADOS TAMBÉM, e ela tinha sido esquecida.
+            '''
+            ''' Sem esta linha, limpar uma busca que tinha palpites deixava na
+            ''' tela "3 destes casaram por aproximação" sobre uma lista vazia —
+            ''' uma ressalva verdadeira ontem, falsa agora, e do tipo que
+            ''' ninguém confere porque ressalva parece inofensiva.
+            Aproximados = 0
+
             OnPropertyChanged(NameOf(SemAchados))
+            OnPropertyChanged(NameOf(Aproximados))
+            OnPropertyChanged(NameOf(TemAproximados))
+            OnPropertyChanged(NameOf(FraseDosAproximados))
         End Sub
 
     End Class
