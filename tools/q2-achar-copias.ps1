@@ -35,6 +35,8 @@ foreach ($k in $alvos.Keys) { $achados[$k] = @() }
 
 $script:cortados = 0
 $script:ramosCegos = 0
+$script:semTabela = 0   # GetTable falhou: a pasta nao entrou no corpus
+$script:semStore = 0    # um store inteiro nao foi percorrido
 
 function Varrer($pasta, [string]$caminho, [int]$prof) {
     if ($prof -gt 12) { $script:cortados++; return }
@@ -68,6 +70,7 @@ function Varrer($pasta, [string]$caminho, [int]$prof) {
             }
         }
     } catch {
+        $script:semTabela++
         Write-Host "  FALHOU $caminho : $($_.Exception.Message)"
     } finally {
         if ($t) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($t) }
@@ -89,7 +92,10 @@ for ($s = 1; $s -le $stores.Count; $s++) {
     $store = $stores.Item($s)
     $raiz = $null
     try { $raiz = $store.GetRootFolder(); Varrer $raiz $store.DisplayName 0 }
-    catch { Write-Host "store inacessivel: $($_.Exception.Message)" }
+    catch {
+        $script:semStore++
+        Write-Host "store inacessivel: $($_.Exception.Message)"
+    }
     finally {
         if ($raiz) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($raiz) }
         [void][Runtime.InteropServices.Marshal]::ReleaseComObject($store)
@@ -117,7 +123,12 @@ foreach ($k in $alvos.Keys) {
 }
 
 Write-Host ("TOTAL de copias deixadas pelo experimento, ENTRE O QUE FOI LIDO: {0}" -f $sobra)
-if ($script:cortados -gt 0 -or $script:ramosCegos -gt 0) {
-    Write-Host ("  RESSALVA: {0} ramo(s) cortados na profundidade 12 e {1} que nao" -f $script:cortados, $script:ramosCegos) -ForegroundColor DarkYellow
-    Write-Host "  consegui abrir. Zero aqui nao prova que nao sobrou copia."
+$script:cego = $script:cortados + $script:ramosCegos + $script:semTabela + $script:semStore
+if ($script:cego -gt 0) {
+    Write-Host "  RESSALVA -- o que esta busca NAO viu:" -ForegroundColor DarkYellow
+    if ($script:cortados -gt 0)  { Write-Host ("    {0} ramo(s) cortados na profundidade 12" -f $script:cortados) }
+    if ($script:ramosCegos -gt 0) { Write-Host ("    {0} ramo(s) cujo Folders falhou" -f $script:ramosCegos) }
+    if ($script:semTabela -gt 0) { Write-Host ("    {0} pasta(s) cujo GetTable falhou" -f $script:semTabela) }
+    if ($script:semStore -gt 0)  { Write-Host ("    {0} store(s) que nao consegui percorrer" -f $script:semStore) }
+    Write-Host "  Zero aqui nao prova que nao sobrou copia."
 }

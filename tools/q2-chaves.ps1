@@ -96,7 +96,9 @@ function Varrer($pasta, [string]$caminho, [int]$profundidade) {
         } finally {
             [void][Runtime.InteropServices.Marshal]::ReleaseComObject($colunas)
         }
-        if (-not $mapa.ContainsKey("EntryID")) { return }
+        # RETURN AQUI PULA AS FILHAS TAMBEM. Pasta sem coluna EntryID nao
+        # entra no corpus E leva o ramo inteiro junto, sem contar.
+        if (-not $mapa.ContainsKey("EntryID")) { $script:ramosCegos++; return }
 
         while (-not $t.EndOfTable) {
             $a = $t.GetArray(200)
@@ -193,8 +195,15 @@ Write-Host "grupos de SearchKey repetida -> o Message-ID dentro bate?"
 $gsk = @($itens | Where-Object { $null -ne $_.SearchKey } | Group-Object SearchKey |
         Where-Object { $_.Count -gt 1 })
 $mesmoMid = 0; $midDif = 0; $midFalta = 0
+# -ExpandProperty DESCARTA $null DO PIPELINE, e isso mentia na matriz.
+#
+# Um grupo com um Message-ID presente e outro AUSENTE saia do ExpandProperty
+# com um unico valor -- e caia em "igual" em vez de "falta". O numero que
+# decide o desenho da correlacao estava contando ausencia como acordo. O laco
+# abaixo le a propriedade item a item, que preserva o $null.
 foreach ($g in $gsk) {
-    $mids = @($g.Group | Select-Object -ExpandProperty MessageID)
+    $mids = @()
+    foreach ($it in $g.Group) { $mids += ,$it.MessageID }
     if ($mids -contains $null) { $midFalta++ }
     elseif (@($mids | Sort-Object -Unique).Count -eq 1) { $mesmoMid++ }
     else { $midDif++ }
@@ -208,14 +217,20 @@ Write-Host ""
 Write-Host "grupos de Message-ID repetido -> a SearchKey dentro bate?"
 $gmid = @($itens | Where-Object { $null -ne $_.MessageID } | Group-Object MessageID |
          Where-Object { $_.Count -gt 1 })
-$skIgual = 0; $skDif = 0
+$skIgual = 0; $skDif = 0; $skFalta = 0
 foreach ($g in $gmid) {
-    $sks = @($g.Group | Select-Object -ExpandProperty SearchKey | Sort-Object -Unique)
-    if ($sks.Count -eq 1) { $skIgual++ } else { $skDif++ }
+    # Mesmo motivo do bloco acima: o ExpandProperty engolia o $null e um
+    # grupo com uma SearchKey ausente virava "igual".
+    $sks = @()
+    foreach ($it in $g.Group) { $sks += ,$it.SearchKey }
+    if ($sks -contains $null) { $skFalta++ }
+    elseif (@($sks | Sort-Object -Unique).Count -eq 1) { $skIgual++ }
+    else { $skDif++ }
 }
 Write-Host ("   grupos                     : {0}" -f $gmid.Count)
 Write-Host ("      SearchKey igual         : {0}" -f $skIgual)
 Write-Host ("      SearchKey DIFERENTE     : {0}  <- SearchKey SEPARA o que o MID une" -f $skDif)
+Write-Host ("      SearchKey ausente       : {0}  <- nao e acordo nem divergencia" -f $skFalta)
 
 $saida = Join-Path $env:TEMP "q2-corpus.csv"
 $itens | Export-Csv -Path $saida -NoTypeInformation -Encoding UTF8

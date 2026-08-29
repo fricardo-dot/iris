@@ -52,8 +52,14 @@ $comPermissao = 0
 $abertos = 0
 $ilegiveis = 0
 for ($i = 1; $i -le [Math]::Min(30, $itens.Count); $i++) {
-    $m = $itens.Item($i)
-    if ($m.MessageClass -like "IPM.Note*") {
+    # PEGAR O ITEM E LER A CLASSE TAMBEM PODEM FALHAR, e isso ficava fora da
+    # contabilidade: uma falha aqui saia da amostra sem aparecer em lugar
+    # nenhum, e a conclusao seguia como se o item nao existisse.
+    $m = $null
+    try { $m = $itens.Item($i) } catch { $ilegiveis++; continue }
+    $classe = $null
+    try { $classe = [string]$m.MessageClass } catch { $ilegiveis++ }
+    if ($null -ne $classe -and $classe -like "IPM.Note*") {
         try {
             if ([int]$m.Permission -ne 0) {
                 $comPermissao++
