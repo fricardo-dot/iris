@@ -1051,3 +1051,32 @@ profundidade 6; o `q8-janela` dizia "nenhum" sobre chaves lidas com
 UI consome a ressalva — o `AcervoViewModel` consome e o XAML exibe.
 
 Suíte: **883**.
+
+---
+
+## Décima sexta passada — o defeito que eu introduzi consertando
+
+Nenhum achado alto, e **o único médio fui eu**, na passada anterior: o
+`$script:cego` do `inventario-pastas` era somado **depois** da seção que o
+consulta, então "PASTAS DO USUARIO" lia `$null` e imprimia "nenhuma" mesmo com
+falha de leitura. Consertar o inventário de cegueiras e deixar a primeira
+consulta cega.
+
+**E o meu controle negativo passou de novo — terceira vez em três passadas.** A
+duração da última página também vazava para a pasta nova; mas no meu teste a
+página de A custava zero milissegundo, então `0 ms` valia com e sem a correção.
+Agora a página de A é segurada de propósito, o teste exige que ela custe tempo,
+e só então exige que B não a herde.
+
+O padrão das três: **eu escrevo a asserção olhando para o código que acabei de
+escrever, e não para o estado que ela precisa distinguir.** Uma asserção só vale
+se existir um mundo em que ela falha.
+
+O resto: o `$semStore` descrevia como "não consegui abrir a raiz" um `catch` que
+pega a recursão inteira; o `FakeBroker` tinha perdido o fail-fast síncrono do
+"fora da alçada" — virava `Task` com falha, e um teste sem `Await` passaria
+calado; e os quatro roteiros que restavam da lista — `q8-caca-total`,
+`q8-caca-contagem`, `q2-pares` e `q2-quase` — afirmavam ausência sobre árvores
+cortadas na profundidade e ramos que falharam em silêncio.
+
+Suíte: **883**.
