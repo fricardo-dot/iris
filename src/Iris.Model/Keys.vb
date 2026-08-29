@@ -108,11 +108,32 @@ Namespace Global.Iris.Model
         Public ReadOnly Property FileName As String
         Public ReadOnly Property SizeBytes As Integer
 
-        Public Sub New(owner As ItemKey, index As Integer, fileName As String, sizeBytes As Integer)
+        ''' <summary>
+        ''' Se <see cref="FileName"/> e <see cref="SizeBytes"/> foram <b>lidos</b>,
+        ''' ou se são o vazio e o zero de quem não conseguiu ler.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A GUARDA DE IDENTIDADE OLHAVA SÓ UM DOS DOIS LADOS</b>
+        '''
+        ''' Antes de gravar um anexo, o leitor confere nome e tamanho, porque o
+        ''' índice é instável. A conferência passou a fechar quando a leitura
+        ''' <i>de agora</i> falha — e continuava cega para a leitura <i>de
+        ''' antes</i>, gravada aqui: uma chave montada com <c>""/0</c> por falha
+        ''' casava com qualquer anexo que hoje leia <c>""/0</c>, e com um que
+        ''' leia <c>"x.dat"/0</c> se o nome tiver sido o único lido.
+        '''
+        ''' Sem este campo, "identidade conferida" queria dizer "os dois valores
+        ''' batem", e não "os dois valores são conhecidos e batem".
+        ''' </summary>
+        Public ReadOnly Property IdentidadeConhecida As Boolean
+
+        Public Sub New(owner As ItemKey, index As Integer, fileName As String, sizeBytes As Integer,
+                       Optional identidadeConhecida As Boolean = True)
             Me.Owner = owner
             Me.Index = index
             Me.FileName = If(fileName, String.Empty)
             Me.SizeBytes = sizeBytes
+            Me.IdentidadeConhecida = identidadeConhecida
         End Sub
 
         ''' <summary>

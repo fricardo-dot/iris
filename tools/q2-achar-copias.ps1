@@ -89,7 +89,9 @@ function Varrer($pasta, [string]$caminho, [int]$prof) {
 
 $stores = $ns.Stores
 for ($s = 1; $s -le $stores.Count; $s++) {
-    $store = $stores.Item($s)
+    # Mesma fresta do q2-chaves: pegar o store estava fora do try.
+    $store = $null
+    try { $store = $stores.Item($s) } catch { $script:semStore++; continue }
     $raiz = $null
     try { $raiz = $store.GetRootFolder(); Varrer $raiz $store.DisplayName 0 }
     catch {

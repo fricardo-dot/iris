@@ -219,13 +219,29 @@ Namespace Global.Iris.Outlook
                     Dim a As OL.Attachment = Nothing
                     Try
                         a = anexos.Item(i)
-                        Dim nome = Texto(Function() a.FileName)
-                        Dim tamanho = Numero(Function() a.Size)
+
+                        ' A IDENTIDADE DA CHAVE PRECISA SABER SE FOI LIDA.
+                        ' Texto() e Numero() devolvem "" e 0 na falha, e esses
+                        ' valores entravam na chave como se fossem conhecidos.
+                        ' Depois, na hora de gravar, a conferencia comparava
+                        ' fabricado com fabricado e passava.
+                        Dim nome As String = Nothing
+                        Dim tamanho As Integer? = Nothing
+                        Try
+                            nome = a.FileName
+                        Catch
+                        End Try
+                        Try
+                            tamanho = a.Size
+                        Catch
+                        End Try
+                        Dim identidadeLida = nome IsNot Nothing AndAlso tamanho.HasValue
 
                         destino.Add(New AttachmentInfo With {
-                            .Key = New AttachmentKey(dono, i, nome, tamanho),
-                            .FileName = nome,
-                            .SizeBytes = tamanho,
+                            .Key = New AttachmentKey(dono, i, If(nome, ""), If(tamanho, 0),
+                                                     identidadeLida),
+                            .FileName = If(nome, ""),
+                            .SizeBytes = If(tamanho, 0),
                             .AttachmentType = Texto(Function() a.Type.ToString()),
                             .ContentId = "",
                             .IsInline = False
@@ -380,12 +396,17 @@ Namespace Global.Iris.Outlook
         ''' <b>O anexo que está lá é o mesmo que foi indexado?</b>
         '''
         ''' ------------------------------------------------------------------
-        ''' <b>FALHA DE LEITURA NÃO PODE VIRAR "IGUAL"</b>
+        ''' <b>FALHA DE LEITURA NÃO PODE VIRAR "IGUAL", NOS DOIS LADOS</b>
         '''
-        ''' <c>Nothing</c> em qualquer um dos dois quer dizer que a leitura de
-        ''' agora não concluiu — e sem os dois valores não dá para afirmar
-        ''' identidade. A conferência então <b>fecha</b>: recusar é barato,
-        ''' gravar o anexo errado com o nome certo não é.
+        ''' <c>Nothing</c> em qualquer um dos dois valores de agora quer dizer
+        ''' que a leitura atual não concluiu. E
+        ''' <see cref="AttachmentKey.IdentidadeConhecida"/> falso quer dizer que
+        ''' a leitura <i>da indexação</i> não concluiu — que era o lado cego da
+        ''' primeira versão desta função.
+        '''
+        ''' Sem os quatro, não dá para afirmar identidade, e a conferência
+        ''' <b>fecha</b>: recusar é barato, gravar o anexo errado com o nome
+        ''' certo não é.
         '''
         ''' Existe separada de <see cref="SaveAttachment"/> porque é a única
         ''' parte desta guarda que dá para provar sem um <c>Attachment</c> real
@@ -394,6 +415,11 @@ Namespace Global.Iris.Outlook
         Friend Function MesmaIdentidade(nomeAgora As String, tamanhoAgora As Integer?,
                                         key As AttachmentKey) As Boolean
             If key Is Nothing Then Return False
+
+            ' OS DOIS LADOS PRECISAM SER CONCLUSIVOS. A primeira versao olhava
+            ' so a leitura de agora, e uma chave fabricada na indexacao casava
+            ' com qualquer anexo que hoje leia o mesmo vazio.
+            If Not key.IdentidadeConhecida Then Return False
             If nomeAgora Is Nothing Then Return False
             If Not tamanhoAgora.HasValue Then Return False
             Return String.Equals(nomeAgora, key.FileName, StringComparison.Ordinal) AndAlso

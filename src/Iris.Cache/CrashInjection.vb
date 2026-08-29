@@ -40,6 +40,11 @@ Namespace Global.Iris.Cache
         Public Const EntreAsDuasReconciliacoes As String =
             "entre-as-duas-reconciliacoes"
 
+        ''' <summary>
+        ''' A janela que torna a entrega do dreno <b>ao menos uma vez</b>: morrer
+        ''' aqui deixa a UI já tendo agido e o disco ainda dizendo que ela não
+        ''' recebeu.
+        ''' </summary>
         Public Const DepoisDeReceberAntesDeMarcarDrenada As String =
             "depois-de-receber-antes-de-marcar-drenada"
 

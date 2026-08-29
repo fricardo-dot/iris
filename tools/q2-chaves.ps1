@@ -76,6 +76,8 @@ $pastasVistas = 0
 $pastasComErro = New-Object System.Collections.ArrayList
 $script:cortados = 0
 $script:ramosCegos = 0
+$script:semColunaChave = 0   # a pasta nao expoe EntryID: ela E o ramo perdido
+$script:semStore = 0         # nem cheguei a abrir o store
 
 function Varrer($pasta, [string]$caminho, [int]$profundidade) {
     if ($profundidade -gt 12) { $script:cortados++; return }
@@ -98,7 +100,10 @@ function Varrer($pasta, [string]$caminho, [int]$profundidade) {
         }
         # RETURN AQUI PULA AS FILHAS TAMBEM. Pasta sem coluna EntryID nao
         # entra no corpus E leva o ramo inteiro junto, sem contar.
-        if (-not $mapa.ContainsKey("EntryID")) { $script:ramosCegos++; return }
+        # CAUSA DIFERENTE, CONTADOR DIFERENTE. Isto e "a pasta nao expoe a
+        # coluna", e nao "o Folders falhou" -- somar os dois num contador so
+        # faz a ressalva explicar a causa errada.
+        if (-not $mapa.ContainsKey("EntryID")) { $script:semColunaChave++; return }
 
         while (-not $t.EndOfTable) {
             $a = $t.GetArray(200)
@@ -132,14 +137,20 @@ function Varrer($pasta, [string]$caminho, [int]$profundidade) {
 $stores = $ns.Stores
 Write-Host "stores: $($stores.Count)"
 for ($s = 1; $s -le $stores.Count; $s++) {
-    $store = $stores.Item($s)
-    $nome = $store.DisplayName
+    # PEGAR O STORE E LER O NOME TAMBEM PODEM FALHAR, e estavam fora do try:
+    # o roteiro abortava sem contar nada, e a matriz saia sobre um universo
+    # menor do que ela dizia.
+    $store = $null
+    try { $store = $stores.Item($s) } catch { $script:semStore++; continue }
+    $nome = "(store $s)"
+    try { $nome = [string]$store.DisplayName } catch { }
     Write-Host ("  [{0}] {1}" -f $s, $nome)
     $raiz = $null
     try {
         $raiz = $store.GetRootFolder()
         Varrer $raiz $nome 0
     } catch {
+        $script:semStore++
         Write-Host "      (sem acesso: $($_.Exception.Message))"
     } finally {
         if ($raiz) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($raiz) }
@@ -150,10 +161,14 @@ for ($s = 1; $s -le $stores.Count; $s++) {
 
 Write-Host ""
 Write-Host "pastas percorridas: $pastasVistas"
-if ($script:cortados -gt 0 -or $script:ramosCegos -gt 0) {
-    Write-Host ("O QUE NAO FOI PERCORRIDO: {0} ramo(s) cortados na profundidade 12," -f $script:cortados) -ForegroundColor DarkYellow
-    Write-Host ("  {0} ramo(s) cujo Folders falhou. Os zeros da matriz sao sobre o" -f $script:ramosCegos) -ForegroundColor DarkYellow
-    Write-Host "  que foi lido, e nao sobre a caixa." -ForegroundColor DarkYellow
+$script:cego = $script:cortados + $script:ramosCegos + $script:semColunaChave + $script:semStore
+if ($script:cego -gt 0) {
+    Write-Host "O QUE NAO FOI PERCORRIDO:" -ForegroundColor DarkYellow
+    if ($script:cortados -gt 0)      { Write-Host ("  {0} ramo(s) cortados na profundidade 12" -f $script:cortados) }
+    if ($script:ramosCegos -gt 0)    { Write-Host ("  {0} ramo(s) cujo Folders falhou" -f $script:ramosCegos) }
+    if ($script:semColunaChave -gt 0) { Write-Host ("  {0} pasta(s) sem a coluna EntryID -- e o ramo abaixo delas" -f $script:semColunaChave) }
+    if ($script:semStore -gt 0)      { Write-Host ("  {0} store(s) que nao consegui abrir" -f $script:semStore) }
+    Write-Host "  Os zeros da matriz sao sobre o que foi lido, e nao sobre a caixa." -ForegroundColor DarkYellow
 }
 Write-Host "itens: $($itens.Count)"
 if ($pastasComErro.Count -gt 0) {

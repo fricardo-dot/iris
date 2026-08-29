@@ -238,21 +238,25 @@ Public Class DiarioTests
     ''' ambíguas e perdia o aviso na abertura seguinte.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>O QUE ESTE TESTE NÃO PROVA, E EU IA DIZER QUE PROVAVA</b>
+    ''' <b>DUAS PROPRIEDADES, E EU HAVIA DESISTIDO DE UMA</b>
     '''
-    ''' Eu tinha escrito aqui que o controle negativo era <i>tirar a
-    ''' transação</i>. <b>Tirei, e o teste continuou verde.</b> Faz sentido: com
-    ''' a conta baseada no ESTADO, a linha ambígua é achada na reabertura tendo
-    ''' a primeira atualização sobrevivido à queda ou não — e a segunda
-    ''' atualização roda na reabertura de qualquer jeito.
+    ''' <b>A primeira:</b> a queda não faz o aviso sumir. Quem segura isso é a
+    ''' contagem por <i>estado</i> — o controle negativo dela é o teste acima.
     '''
-    ''' Ou seja: <b>quem segura o aviso é a contagem por estado, não a
-    ''' transação.</b> A transação continua certa — duas escritas que descrevem
-    ''' um evento só —, mas ela é <b>guarda não observável pela API pública</b>,
-    ''' e fica declarada com esse nome, como a outra do §2 do relatório.
+    ''' <b>A segunda: a atomicidade.</b> Eu tinha escrito aqui que tirar a
+    ''' transação não derrubava nada, e concluí que ela era "guarda não
+    ''' observável". <b>Estava errado, e a revisão externa mostrou a observação
+    ''' que eu não tinha visto:</b> logo depois da queda, antes de qualquer nova
+    ''' reconciliação, o <c>Ler</c> mostra a diferença. Com transação houve
+    ''' <i>rollback</i> e a primeira continua <c>EmVoo</c>; sem transação ela já
+    ''' está <c>Ambigua</c>, com a segunda ainda <c>Intencionada</c> — metade do
+    ''' evento gravada.
     '''
-    ''' O que este teste prova, e é o que importa: uma queda no meio não faz o
-    ''' aviso sumir.
+    ''' Declarar "não dá para testar" transforma uma lacuna em decisão
+    ''' permanente. Esta dava.
+    '''
+    ''' <b>Controle negativo:</b> tirando a transação, a asserção do
+    ''' <c>EmVoo</c> logo após a queda cai.
     ''' </summary>
     <TestMethod>
     Public Sub Morrer_no_meio_da_reconciliacao_NAO_perde_o_aviso()
@@ -281,6 +285,21 @@ Public Class DiarioTests
             Finally
                 CrashInjection.Desarmar()
             End Try
+        End Using
+
+        ' A ATOMICIDADE, OBSERVADA PELA API PUBLICA.
+        '
+        ' Sem transacao, a primeira atualizacao ja teria commitado e esta
+        ' linha estaria Ambigua -- metade do evento gravada. Com transacao,
+        ' houve rollback e ela continua EmVoo.
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim antes = j.Ler(10)
+            Assert.IsTrue(antes.Any(Function(x) x.Estagio = DisclosureStage.EmVoo),
+                "a queda deixou METADE do evento gravada: a transicao para " &
+                "Ambigua sobreviveu sem a segunda atualizacao")
+            Assert.IsFalse(antes.Any(Function(x) x.Estagio = DisclosureStage.Ambigua),
+                "a queda gravou a ambigua sem completar a reconciliacao")
         End Using
 
         ' A ABERTURA SEGUINTE: nada ficou pela metade.

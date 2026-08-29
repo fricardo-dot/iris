@@ -86,16 +86,21 @@ Namespace Global.Iris.Assist
         Public Const MaxCorpo As Integer = 200_000
 
         Private Shared ReadOnly Comentario As New Regex("<!--.*?-->", RegexOptions.Singleline)
-        ' O FECHAMENTO ACEITA ESPACO, e o HtmlInterpretavel sempre aceitou.
+        ' O QUE A CONTAGEM ACEITA COMO FECHAMENTO, ESTE PADRAO TEM DE REMOVER.
         '
-        ' Este padrao exigia "</script>" EXATO, enquanto a conferencia de
-        ' interpretabilidade conta "</script" -- sem o ">". Entao
-        ' "<script>segredo()</script >" passava como interpretavel, o bloco
-        ' NAO era removido, e a limpeza generica de tags deixava o segredo()
-        ' no texto que vai para o provedor: exatamente o conteudo que o
-        ' usuario NAO viu na tela.
+        ' O HtmlInterpretavel conta "</script" -- sem o ">" -- entao qualquer
+        ' coisa que comece assim conta como fechamento e o HTML passa. Este
+        ' padrao exigia "</script>" EXATO, e depois "</script\s*>": as duas
+        ' versoes deixavam frestas que a contagem aceita e o parser HTML
+        ' tambem trata como fechamento -- "</script >", "</script x>",
+        ' "</script/>". Em todas elas o bloco NAO era removido, a limpeza
+        ' generica comia so as tags, e o conteudo do script ia para o provedor
+        ' COMO SE FOSSE A MENSAGEM.
+        '
+        ' Agora os dois usam o mesmo criterio: "</nome" seguido de qualquer
+        ' coisa que nao seja ">", ate o ">".
         Private Shared ReadOnly ScriptOuEstilo As New Regex(
-            "<(script|style)\b[^>]*>.*?</\1\s*>",
+            "<(script|style)\b[^>]*>.*?</\1[^>]*>",
             RegexOptions.Singleline Or RegexOptions.IgnoreCase)
         Private Shared ReadOnly Quebra As New Regex("<(br|/p|/div|/tr|/li)\b[^>]*>",
                                                     RegexOptions.IgnoreCase)

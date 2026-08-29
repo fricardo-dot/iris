@@ -15,7 +15,7 @@ dotnet test Iris.slnx
 | | |
 |---|---|
 | **Commit** | `9b18122` — a árvore da solução .NET que foi medida |
-| **Data** | 28 de agosto de 2026, à noite |
+| **Data** | 29 de agosto de 2026, de manhã |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |

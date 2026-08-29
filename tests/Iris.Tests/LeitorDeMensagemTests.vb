@@ -322,12 +322,23 @@ Public Class LeitorDeMensagemTests
 
         ' A CHAVE FABRICADA: nome vazio e tamanho zero, que e o que os
         ' auxiliares tolerantes produzem quando a leitura falha.
-        Dim fabricada As New AttachmentKey(dono, 1, "", 0)
+        Dim fabricada As New AttachmentKey(dono, 1, "", 0, identidadeConhecida:=False)
 
         Assert.IsFalse(MessageReading.MesmaIdentidade(Nothing, 0, fabricada),
             "nome ilegivel casou com a chave fabricada -- o anexo errado seria gravado")
         Assert.IsFalse(MessageReading.MesmaIdentidade("", Nothing, fabricada),
             "tamanho ilegivel casou com a chave fabricada")
+
+        ' O OUTRO LADO, e ele escapou da primeira versao desta guarda: a
+        ' leitura de AGORA conclui, e a chave e que foi fabricada. Sem o
+        ' IdentidadeConhecida, ""/0 de hoje casava com ""/0 de ontem -- e
+        ' "x.dat"/0 casava com uma chave em que so o nome tinha sido lido.
+        Assert.IsFalse(MessageReading.MesmaIdentidade("", 0, fabricada),
+            "leitura conclusiva casou com uma chave que nunca foi conclusiva")
+
+        Dim soONome As New AttachmentKey(dono, 1, "x.dat", 0, identidadeConhecida:=False)
+        Assert.IsFalse(MessageReading.MesmaIdentidade("x.dat", 0, soONome),
+            "o tamanho da chave era o zero de quem nao leu, e passou")
 
         ' CONTROLE POSITIVO: leitura conclusiva e igual continua casando,
         ' senao nenhum anexo seria salvo nunca.

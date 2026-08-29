@@ -48,6 +48,11 @@ Namespace Global.Iris.App.ViewModels
             ContentKind = info.ContentKind
             _unreadCount = info.UnreadCount
             _itemCount = info.ItemCount
+            ' CARREGA O "EU SEI" JUNTO COM O NUMERO. Copiar so o ItemCount
+            ' fazia o flag morrer na fronteira, e o proximo consumidor da
+            ' arvore leria o zero como fato -- que e como este defeito nasceu
+            ' na listagem e na agenda.
+            ItemCountConhecido = info.ItemCountConhecido
             _hasUnrealizedChildren = info.HasChildren
         End Sub
 
@@ -130,6 +135,12 @@ Namespace Global.Iris.App.ViewModels
                 SetProperty(_itemCount, value)
             End Set
         End Property
+
+        ''' <summary>
+        ''' Se <see cref="ItemCount"/> foi lido, ou é o zero de quem não contou.
+        ''' Ver <c>FolderInfo.ItemCountConhecido</c>.
+        ''' </summary>
+        Public Property ItemCountConhecido As Boolean = True
 
         Public ReadOnly Property HasUnread As Boolean
             Get

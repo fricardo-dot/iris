@@ -317,14 +317,27 @@ Public Class ContentPipelineTests
     ''' então isto era latente. <b>Latente é o estado em que todos os outros
     ''' desta família estavam</b> quando chegaram à tela.
     '''
-    ''' <b>Controle negativo:</b> devolvendo <c>&lt;/&gt;</c> ao padrão de
-    ''' bloco, este teste cai.
+    ''' <b>E as três últimas linhas vieram da revisão seguinte:</b> eu tinha
+    ''' trocado <c>&lt;/&gt;</c> por <c>&lt;/\s*&gt;</c>, que fecha o
+    ''' espaço e <b>não</b> fecha a família. A contagem aceita <i>qualquer
+    ''' coisa</i> que comece com <c>&lt;/script</c>, e o parser HTML também
+    ''' trata <c>&lt;/script x&gt;</c> e <c>&lt;/script/&gt;</c> como
+    ''' fechamento. Consertar o caso que o revisor citou e deixar os irmãos é
+    ''' o erro que este projeto já cometeu quatro vezes; agora os dois lados
+    ''' usam o mesmo critério.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo <c>&lt;/&gt;</c> — ou o
+    ''' <c>&lt;/\s*&gt;</c> intermediário — ao padrão de bloco, este teste
+    ''' cai.
     ''' </summary>
     <DataTestMethod>
     <DataRow("<p>visivel</p><script>SEGREDO</script >")>
     <DataRow("<p>visivel</p><script>SEGREDO</script  >")>
     <DataRow("<p>visivel</p><style>SEGREDO</style >")>
     <DataRow("<p>visivel</p><SCRIPT>SEGREDO</SCRIPT >")>
+    <DataRow("<p>visivel</p><script>SEGREDO</script x>")>
+    <DataRow("<p>visivel</p><script>SEGREDO</script/>")>
+    <DataRow("<p>visivel</p><style>SEGREDO</style tipo=1>")>
     Public Sub Fechamento_com_ESPACO_remove_o_bloco(corpo As String)
         Dim r = Preparar(corpo, html:=True)
 

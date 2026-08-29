@@ -649,9 +649,13 @@ que este ESCOPO carregava.
   e um egresso ambíguo não deixa de ser ambíguo. Construir o reconhecimento é
   trabalho de desenho: precisa de um passo deliberado do usuário, gravado, que
   distinga "eu li e entendi" de "sumiu sozinho". Fica aqui até então.
-  A transação que envolve as duas escritas é **guarda não observável pela API
-  pública** — com a conta por estado, o desfecho é o mesmo com ela e sem ela —,
-  e está dita com esse nome no teste.
+  A transação que envolve as duas escritas **é observável**, e eu tinha escrito
+  aqui que não era. A revisão seguinte mostrou a observação que eu não vi: logo
+  depois de uma queda no meio, o `Ler` mostra a diferença — com transação houve
+  *rollback* e a primeira continua `EmVoo`; sem ela, já está `Ambigua` com a
+  segunda ainda `Intencionada`, metade do evento gravada. O teste passou a
+  cobrar isso. **Declarar "não dá para testar" transforma uma lacuna em decisão
+  permanente**, e esta dava.
 - **Valores fabricados na paginação** — *medido, e a decisão está tomada.*
   `tools/medir-nulos-da-table.ps1` contou **zero nulos nas oito colunas, em
   1.109 linhas** da Caixa de Entrada. O defeito existe no contrato e não se
