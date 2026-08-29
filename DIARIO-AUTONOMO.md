@@ -1104,3 +1104,37 @@ acrescentar a `TravaDaPagina` — o embrulho `Async` transformava a exceção em
 confirmado devolvendo o embrulho.
 
 Suíte: **884**.
+
+---
+
+## Varredura própria — o Codex sem cota, e a irmã que eu não tinha procurado
+
+O revisor externo bateu no limite de uso da conta (volta em 29/08, 01:44). Em vez
+de parar, varri sozinho as áreas que ele ainda não tinha aberto, com a lente das
+últimas passadas: `Catch` que engole e devolve um padrão que a tela lê como fato.
+
+**Achei uma, e é da família inteira.** O `CalendarReading` tem *exatamente* os
+mesmos auxiliares da paginação legada — `Texto` devolve `""` na exceção e no
+`Nothing`, `Booleano` devolve `False`, `Contar` devolve `0` — e **nenhum
+contava**. Na tela isso vira `AllDayEvent = False`, `IsRecurring = False`, "sem
+participantes", assunto e organizador vazios. E o `StoreDe` devolvia `""` calado:
+`StoreID` vazio é chave que nunca casa, com sintoma longe daqui — é o `EntryID`
+fabricado da paginação outra vez.
+
+Eu instrumentei a listagem na manhã do mesmo dia e **não procurei a irmã dela**,
+que é literalmente a regra do `CLAUDE.md` que eu tinha citado num relatório horas
+antes.
+
+`AppointmentWindow` ganhou `FabricatedCells`; os auxiliares contam por `ByRef`,
+com sufixo `-DoCompromisso` porque `Friend` em `Module` vale para o assembly e
+`Texto`/`Booleano` colidiriam com quatro homônimos; e o número **sobe para a
+tela** no resumo da agenda.
+
+O resto da varredura deu limpo: `Duravel` (grava ou não grava), o marcador do
+rascunho e o `AnexosPresentes` já falham fechado ou preservam `Nothing`; as
+frases de ausência que sobraram em `src/` são sobre o esquema do próprio banco e
+sobre o arquivo de ativação, que são coisas que o código acabou de ler.
+
+Dois controles negativos confirmados desfazendo.
+
+Suíte: **886**.
