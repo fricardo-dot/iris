@@ -636,6 +636,21 @@ que este ESCOPO carregava.
   E nenhuma das duas é "entrega atômica", que era o que eu tinha escrito.
   **A entrega parcial passou a ter teste em 28/08** — antes ela estava só
   descrita aqui, e a ressalva da busca chegava a afirmar o contrário dela.
+- **O leitor de HTML não sabe o que está visível na tela** — *risco residual
+  declarado em 29/08/2026, e ele não some por enumeração.*
+  O que vai para o provedor é o **texto do documento**: o que está escrito no
+  HTML, menos o conteúdo de `script`, `style` e comentário. **Não é o texto que
+  o usuário viu.** Visibilidade é renderização, e um
+  `<style>.x{display:none}</style><p class=x>SEGREDO</p>` é HTML comum que o
+  leitor aceita e cujo `SEGREDO` sai.
+  Eu afirmei, em dois commits e no relatório, que a propriedade era *"o texto
+  visível sai inteiro e o invisível não sai"*. Era falso, e a revisão externa
+  mostrou por quê: para prometer isso seria preciso aplicar CSS, e isso é um
+  navegador.
+  **O que se faz no lugar:** o leitor modela um subconjunto pequeno e **recusa**
+  o que não modela — nove elementos, as duas formas de comentário condicional,
+  nome de tag com sufixo estranho, `=` antes do nome de atributo, e `script`
+  com `<!--`. Fechar o resto exigiria interpretar CSS, e isso é outro projeto.
 - **O aviso de egresso ambíguo não desaparece sozinho** — *dívida assumida em
   29/08/2026, e o preço de um conserto de gravidade alta.*
   A reconciliação da abertura devolvia **quantas transitaram naquela chamada**.

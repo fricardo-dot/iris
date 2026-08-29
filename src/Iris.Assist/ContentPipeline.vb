@@ -245,9 +245,11 @@ Namespace Global.Iris.Assist
         ''' fechamento exige o nome inteiro seguido de espaço, <c>/</c> ou
         ''' <c>&gt;</c>.
         '''
-        ''' <b>O único desfecho que recusa é o TRUNCADO</b> — acabar dentro de
-        ''' uma tag, de um comentário ou de um bloco cru. Ali o navegador
-        ''' descarta o resto, e nós não temos como saber o que ficou faltando.
+        ''' <b>Recusa em dois casos, e os dois são "não sei":</b> o
+        ''' <i>truncado</i> — acabar dentro de uma tag, de um comentário ou de
+        ''' um bloco cru — e o <i>não modelado</i>. Esta frase já disse "o único
+        ''' desfecho que recusa é o truncado", e ficou falsa no mesmo commit em
+        ''' que a lista de não modelados nasceu.
         ''' </summary>
         ''' <summary>
         ''' <b>Dá para ler este HTML?</b> É o mesmo percurso que produz o texto.
@@ -298,9 +300,34 @@ Namespace Global.Iris.Assist
         ''' </list>
         '''
         ''' O que ele <b>recusa por não saber</b> está em
-        ''' <see cref="NaoModelados"/> e no comentário condicional — e o
-        ''' <c>script</c> que contém <c>&lt;!--</c>, que é a porta do estado
-        ''' <i>double-escaped</i>, onde um <c>&lt;/script&gt;</c> não fecha nada.
+        ''' <see cref="NaoModelados"/>, no comentário condicional nas duas
+        ''' formas, no nome de tag com sufixo estranho, no <c>=</c> antes do
+        ''' nome do atributo — e no <c>script</c> que contém <c>&lt;!--</c>, que
+        ''' é a porta do estado <i>double-escaped</i>, onde um
+        ''' <c>&lt;/script&gt;</c> não fecha nada.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>TERCEIRO: O QUE ELE NÃO PROMETE, E EU PROMETI POR DUAS PASSADAS</b>
+        '''
+        ''' Eu escrevi, no commit e no relatório, que a propriedade era <i>"o
+        ''' texto visível sai inteiro, e o invisível não sai"</i>. <b>Isso é
+        ''' falso, e não dá para consertar por enumeração.</b> Visibilidade é
+        ''' renderização:
+        '''
+        ''' <code>&lt;style&gt;.x{display:none}&lt;/style&gt;&lt;p class=x&gt;SEGREDO&lt;/p&gt;</code>
+        '''
+        ''' é HTML perfeitamente comum, o leitor o aceita, e o <c>SEGREDO</c>
+        ''' sai — sem que ninguém o tenha visto na tela. Para prometer o que eu
+        ''' prometi seria preciso aplicar CSS, e isso é um navegador.
+        '''
+        ''' <b>O que ele entrega é o TEXTO DO DOCUMENTO</b>: o texto que está
+        ''' escrito no HTML, menos o conteúdo das construções que não são texto
+        ''' — <c>script</c>, <c>style</c> e comentário. Nada sobre o que a tela
+        ''' mostra.
+        '''
+        ''' Isso deixa um risco residual real, e ele está declarado no ESCOPO:
+        ''' texto escondido por CSS pode ir para o provedor. Declarar é o que dá
+        ''' para fazer aqui; consertar seria outro projeto.
         ''' </summary>
         Friend Shared Function LerHtml(bruto As String, ByRef incerto As Boolean) As String
             incerto = False
@@ -327,6 +354,15 @@ Namespace Global.Iris.Assist
 
                 ' Declaracao, instrucao e fechamento sem nome: o navegador
                 ' trata como comentario torto e nao mostra.
+                ' CONDICIONAL REVELADO: "<![if !mso]>...<![endif]>". A mesma
+                ' ambiguidade do "<!--[if mso]>" -- o conteudo aparece num
+                ' leitor e some no outro -- e eu tinha recusado so a outra
+                ' forma.
+                If Casa(texto, i, "<![") Then
+                    incerto = True
+                    Return Fechar(sb)
+                End If
+
                 If Casa(texto, i, "<!") OrElse Casa(texto, i, "<?") OrElse
                    (Casa(texto, i, "</") AndAlso Not ComecaNome(texto, i + 2)) Then
                     Dim fim = texto.IndexOf(">"c, i)
@@ -356,7 +392,21 @@ Namespace Global.Iris.Assist
                     Return Fechar(sb)
                 End If
 
-                Dim depois = PularAtributos(texto, inicioDoNome + nome.Length)
+                ' O NOME TEM DE TERMINAR EM SEPARADOR.
+                '
+                ' Sem isto, "<script.foo>" era lido como "script" com um
+                ' atributo ".foo" -- e o conteudo visivel do elemento
+                ' desconhecido script.foo era apagado como se fosse texto cru.
+                ' Um prefixo reconhecido nao e o nome.
+                Dim depoisDoNome = inicioDoNome + nome.Length
+                If Not TerminaNome(texto, depoisDoNome) Then
+                    incerto = True
+                    Return Fechar(sb)
+                End If
+
+                ' -1 = tag que nao fecha (truncado); -2 = estado de atributo
+                ' que eu nao modelo. Os dois recusam, e por motivos distintos.
+                Dim depois = PularAtributos(texto, depoisDoNome)
                 If depois < 0 Then
                     incerto = True
                     Return Fechar(sb)
@@ -383,6 +433,9 @@ Namespace Global.Iris.Assist
         ''' <c>template</c> guardam conteúdo que o navegador em geral <b>não</b>
         ''' mostra — tratá-lo como texto o faz <i>vazar</i>. <c>xmp</c> e
         ''' <c>plaintext</c> mudam a leitura de tudo o que vem depois.
+        ''' <c>svg</c> e <c>math</c> são <i>conteúdo estrangeiro</i>: dentro
+        ''' deles o HTML muda de regras — <c>CDATA</c> passa a valer, e o texto
+        ''' de um <c>&lt;text&gt;</c> é desenhado na tela.
         '''
         ''' Os dois erros já aconteceram aqui, em versões anteriores. A lista é
         ''' curta de propósito: é mais honesto recusar uma mensagem rara do que
@@ -390,7 +443,7 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Private Shared ReadOnly NaoModelados As New HashSet(Of String)(
             {"textarea", "title", "iframe", "noscript", "noembed", "noframes",
-             "xmp", "plaintext", "template"}, StringComparer.Ordinal)
+             "xmp", "plaintext", "template", "svg", "math"}, StringComparer.Ordinal)
 
         ''' <summary>
         ''' Do <c>&lt;!--</c> até depois do fechamento. Conhece os quatro
@@ -441,7 +494,12 @@ Namespace Global.Iris.Assist
                 Return -1
             End If
 
-            If texto.IndexOf("<!--", i, fim - i, StringComparison.Ordinal) >= 0 Then
+            ' SO NO SCRIPT. O estado double-escaped nao existe em style: la
+            ' "<!--" e texto cru como qualquer outro, e "<style><!-- .x{} --></style>"
+            ' e CSS comum e antigo. Eu aplicava aos dois e recusava e-mail
+            ' legitimo -- o comentario ao lado dizia "script" e o codigo nao.
+            If nome = "script" AndAlso
+               texto.IndexOf("<!--", i, fim - i, StringComparison.Ordinal) >= 0 Then
                 incerto = True
                 Return -1
             End If
@@ -481,6 +539,17 @@ Namespace Global.Iris.Assist
         ''' <c>&lt;script-note&gt;</c> é um elemento válido, e a versão que lia
         ''' só <c>script</c> nele apagava o conteúdo visível inteiro.
         ''' </summary>
+        ''' <summary>
+        ''' Depois do nome tem de vir separador — espaço ASCII, <c>/</c> ou
+        ''' <c>&gt;</c>. Qualquer outra coisa quer dizer que o nome não é o que
+        ''' eu li, e aí eu não sei que elemento é este.
+        ''' </summary>
+        Private Shared Function TerminaNome(texto As String, i As Integer) As Boolean
+            If i >= texto.Length Then Return False
+            Dim c = texto(i)
+            Return EspacoAscii(c) OrElse c = "/"c OrElse c = ">"c
+        End Function
+
         Private Shared Function LerNome(texto As String, i As Integer) As String
             Dim sb As New StringBuilder()
             Dim j = i
@@ -508,12 +577,13 @@ Namespace Global.Iris.Assist
         ''' texto que o navegador mostra.
         ''' </summary>
         Private Shared Function PularAtributos(texto As String, i As Integer) As Integer
-            Const ForaDeValor = 0
-            Const AntesDoValor = 1
-            Const ValorComAspas = 2
-            Const ValorSemAspas = 3
+            Const EsperandoNome = 0
+            Const NoNome = 1
+            Const AntesDoValor = 2
+            Const ValorComAspas = 3
+            Const ValorSemAspas = 4
 
-            Dim estado = ForaDeValor
+            Dim estado = EsperandoNome
             Dim aspa As Char = ChrW(0)
             Dim j = i
 
@@ -521,9 +591,20 @@ Namespace Global.Iris.Assist
                 Dim c = texto(j)
 
                 Select Case estado
-                    Case ForaDeValor
+                    Case EsperandoNome
+                        ' "=" AQUI NAO ABRE VALOR. No HTML ele comeca um
+                        ' atributo cujo NOME comeca com "=", e a aspa seguinte
+                        ' nao delimita nada -- entao "<p =">VISIVEL</p>" mostra
+                        ' VISIVEL. Eu lia como valor com aspas e engolia a
+                        ' tag seguinte inteira. Nao modelo isso: recuso.
+                        If c = "="c Then Return -2
+                        If c = ">"c Then Return j + 1
+                        If Not EspacoAscii(c) AndAlso c <> "/"c Then estado = NoNome
+
+                    Case NoNome
                         If c = ">"c Then Return j + 1
                         If c = "="c Then estado = AntesDoValor
+                        If EspacoAscii(c) Then estado = EsperandoNome
 
                     Case AntesDoValor
                         If c = ">"c Then Return j + 1
@@ -537,11 +618,11 @@ Namespace Global.Iris.Assist
                         End If
 
                     Case ValorComAspas
-                        If c = aspa Then estado = ForaDeValor
+                        If c = aspa Then estado = EsperandoNome
 
                     Case Else   ' ValorSemAspas
                         If c = ">"c Then Return j + 1
-                        If EspacoAscii(c) Then estado = ForaDeValor
+                        If EspacoAscii(c) Then estado = EsperandoNome
                 End Select
 
                 j += 1

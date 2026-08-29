@@ -408,6 +408,11 @@ Public Class ContentPipelineTests
     <DataTestMethod>
     <DataRow("<p>visivel</p><script>SEGREDO")>
     <DataRow("<p>VISIVEL</p><span title=""SEGREDO")>
+    <DataRow("<![if !mso]><p>NAO-MSO</p><![endif]>")>
+    <DataRow("<p ="">VISIVEL</p><span a=""x"">DEPOIS</span>")>
+    <DataRow("<script.foo>VISIVEL</script><p>DEPOIS</p>")>
+    <DataRow("<svg><text>VISIVEL</text></svg><p>DEPOIS</p>")>
+    <DataRow("<math><mi>x</mi></math><p>DEPOIS</p>")>
     <DataRow("<script><!--<script></script>SEGREDO</script><p>x</p>")>
     <DataRow("<script>SEGREDO</script ><p>VAZOU</p>")>
     <DataRow("<textarea>A <b>B</b></textarea>")>
@@ -424,7 +429,7 @@ Public Class ContentPipelineTests
     <DataRow("<!-- </script> --><script>SEGREDO</script")>
     <DataRow("<p title=""</script>"">visivel</p><script>SEGREDO")>
     <DataRow("<p>VISIVEL</p>--><!-- marcador >SEGREDO")>
-    Public Sub Bloco_sem_fechar_RECUSA(corpo As String)
+    Public Sub Html_que_nao_da_para_ler_RECUSA(corpo As String)
         Dim r = Preparar(corpo, html:=True)
 
         Assert.IsFalse(r.Ok, "passou, e o segredo teria virado texto: " & corpo)
@@ -572,8 +577,10 @@ Public Class ContentPipelineTests
     <DataRow("<p>a < b e c > d</p>", "a < b e c > d", "SEGREDO")>
     <DataRow("<p>a <é> b</p>", "a <é> b", "SEGREDO")>
     <DataRow("<p>resultado:</p>2 < 3", "2 < 3", "SEGREDO")>
-    <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>", "VISIVEL", "script")>
-    <DataRow("<p a=x"">VISIVEL""<span>DEPOIS</span>", "VISIVEL", "span")>
+    <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>", "VISIVEL;FIM", "script")>
+    <DataRow("<p a=x"">VISIVEL""<span>DEPOIS</span>", "VISIVEL;DEPOIS", "span")>
+    <DataRow("<style><!-- .x { color:red } --></style><p>oi</p>", "oi", "color")>
+    <DataRow("A<!--->B", "A;B", "SEGREDO")>
     <DataRow("<script-note>VISIVEL</script-note>", "VISIVEL", "script-note")>
     <DataRow("<p>VISIVEL</p><script>const lt = ""<"";</script>", "VISIVEL", "const")>
     <DataRow("<p>Use a seta --> para continuar.</p>", "Use a seta --> para continuar.", "SEGREDO")>
@@ -587,8 +594,14 @@ Public Class ContentPipelineTests
         Dim r = Preparar(corpo, html:=True)
 
         Assert.IsTrue(r.Ok, $"recusou por {r.Recusa}: " & corpo)
-        StringAssert.Contains(r.Parte.Corpo, precisaTer,
-            "texto que o usuario VE sumiu: " & r.Parte.Corpo)
+
+        ' TODOS os pedacos, e nao um. A versao anterior cobrava so o primeiro,
+        ' entao uma linha podia ficar verde perdendo metade do texto -- a
+        ' revisao externa apontou.
+        For Each pedaco In precisaTer.Split(";"c)
+            StringAssert.Contains(r.Parte.Corpo, pedaco,
+                $"texto do documento sumiu ({pedaco}): " & r.Parte.Corpo)
+        Next
         If naoPodeTer.Length > 0 Then
             Assert.IsFalse(r.Parte.Corpo.Contains(naoPodeTer),
                 "texto que o usuario NAO ve saiu: " & r.Parte.Corpo)
