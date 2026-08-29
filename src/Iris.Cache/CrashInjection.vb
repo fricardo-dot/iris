@@ -29,6 +29,17 @@ Namespace Global.Iris.Cache
         ''' recebeu. Na reabertura, a mesma geração é entregue de novo — e é por
         ''' isso que o consumidor tem de ser idempotente.
         ''' </summary>
+        ''' <summary>
+        ''' Entre as duas atualizações da reconciliação do diário de divulgação.
+        '''
+        ''' Existe porque ali havia <b>duas escritas independentes</b>: morrer no
+        ''' meio deixava as ambíguas gravadas e o aviso perdido para sempre — na
+        ''' abertura seguinte a transição não pegava mais nada, e o usuário
+        ''' nunca ficava sabendo que pode ter saído conteúdo.
+        ''' </summary>
+        Public Const EntreAsDuasReconciliacoes As String =
+            "entre-as-duas-reconciliacoes"
+
         Public Const DepoisDeReceberAntesDeMarcarDrenada As String =
             "depois-de-receber-antes-de-marcar-drenada"
 

@@ -159,26 +159,66 @@ Namespace Global.Iris.Integration
         ''' bytes podem ter chegado, e ninguém vai saber. O que ficou só como
         ''' intenção vira não-enviada, porque ali a transmissão não tinha
         ''' começado.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>DUAS COISAS ESTAVAM ERRADAS AQUI, E AS DUAS APAGAVAM O AVISO</b>
+        '''
+        ''' <b>1. As duas escritas não eram atômicas.</b> Morrer entre elas —
+        ''' ou a segunda falhar — deixava as ambíguas <i>gravadas</i> e a
+        ''' abertura falhava. Na abertura seguinte a primeira instrução não
+        ''' pegava mais nada, então a conta dava zero, o aviso sumia e o egresso
+        ''' voltava a funcionar. <b>O usuário nunca ficava sabendo que pode ter
+        ''' saído conteúdo dele.</b> Agora as duas vão numa transação.
+        '''
+        ''' <b>2. A conta era da TRANSIÇÃO, e não do ESTADO.</b> Essa é a parte
+        ''' que importa mais: mesmo com transação, morrer <i>depois</i> do
+        ''' commit e antes de a tela mostrar o aviso teria o mesmo efeito.
+        ''' Contar quantas <b>estão</b> ambíguas não depende de qual execução
+        ''' fez a transição — e é a pergunta que o usuário faz.
+        '''
+        ''' O preço, declarado: o aviso <b>não desaparece sozinho</b>, porque não
+        ''' existe reconhecimento. Um egresso ambíguo não deixa de ser ambíguo, e
+        ''' eu prefiro um aviso que fica a um aviso que some. Está no ESCOPO como
+        ''' dívida.
         ''' </summary>
         Public Function Reconciliar(quando As DateTimeOffset) As Integer _
                                     Implements IDisclosureJournal.Reconciliar
-            Dim ambiguas = Executar(
-                "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
-                "WHERE stage = $velho",
-                ("$novo", CObj(DisclosureStage.Ambigua.ToString())),
-                ("$velho", CObj(DisclosureStage.EmVoo.ToString())),
-                ("$t", CObj(Instante(quando))),
-                ("$nota", CObj(DisclosureNote.ProcessoMorreuEmVoo.ToString())))
+            Using tx = _db.Connection.BeginTransaction()
+                Executar(tx,
+                    "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
+                    "WHERE stage = $velho",
+                    ("$novo", CObj(DisclosureStage.Ambigua.ToString())),
+                    ("$velho", CObj(DisclosureStage.EmVoo.ToString())),
+                    ("$t", CObj(Instante(quando))),
+                    ("$nota", CObj(DisclosureNote.ProcessoMorreuEmVoo.ToString())))
 
-            Executar(
-                "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
-                "WHERE stage = $velho",
-                ("$novo", CObj(DisclosureStage.NaoEnviada.ToString())),
-                ("$velho", CObj(DisclosureStage.Intencionada.ToString())),
-                ("$t", CObj(Instante(quando))),
-                ("$nota", CObj(DisclosureNote.ProcessoMorreuAntesDeTransmitir.ToString())))
+                CrashInjection.Talvez(CrashInjection.EntreAsDuasReconciliacoes)
 
-            Return ambiguas
+                Executar(tx,
+                    "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
+                    "WHERE stage = $velho",
+                    ("$novo", CObj(DisclosureStage.NaoEnviada.ToString())),
+                    ("$velho", CObj(DisclosureStage.Intencionada.ToString())),
+                    ("$t", CObj(Instante(quando))),
+                    ("$nota", CObj(DisclosureNote.ProcessoMorreuAntesDeTransmitir.ToString())))
+
+                ' O ESTADO, e nao a transicao.
+                Dim pendentes = ContarAmbiguas(tx)
+                tx.Commit()
+                Return pendentes
+            End Using
+        End Function
+
+        ''' <summary>
+        ''' Quantas divulgações <b>estão</b> ambíguas — de qualquer execução.
+        ''' </summary>
+        Private Function ContarAmbiguas(tx As SqliteTransaction) As Integer
+            Using cmd = _db.Connection.CreateCommand()
+                cmd.Transaction = tx
+                cmd.CommandText = "SELECT COUNT(*) FROM disclosure_log WHERE stage = $s"
+                cmd.Parameters.AddWithValue("$s", DisclosureStage.Ambigua.ToString())
+                Return Convert.ToInt32(cmd.ExecuteScalar(), CultureInfo.InvariantCulture)
+            End Using
         End Function
 
         ''' <summary>
@@ -257,6 +297,18 @@ Namespace Global.Iris.Integration
                 ("$gr", CObj(portao.ToString())),
                 ("$http", If(codigo.HasValue, CObj(codigo.Value), CObj(DBNull.Value))),
                 ("$r", CObj(requestId.ToString("D")))) = 1
+        End Function
+
+        Private Function Executar(tx As SqliteTransaction, sql As String,
+                                  ParamArray p As (Nome As String, Valor As Object)()) As Integer
+            Using cmd = _db.Connection.CreateCommand()
+                cmd.Transaction = tx
+                cmd.CommandText = sql
+                For Each par In p
+                    cmd.Parameters.AddWithValue(par.Nome, par.Valor)
+                Next
+                Return cmd.ExecuteNonQuery()
+            End Using
         End Function
 
         Private Function Executar(sql As String,

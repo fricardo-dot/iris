@@ -998,7 +998,14 @@ Namespace Global.Iris.App.ViewModels
     Public NotInheritable Class ReconciliationResult
 
         Public ReadOnly Property Terminou As Boolean
-        ''' <summary>Quantas divulgações viraram ambíguas.</summary>
+        ''' <summary>
+        ''' Quantas divulgações <b>estão</b> ambíguas — não quantas viraram
+        ''' ambíguas nesta abertura.
+        '''
+        ''' A diferença apagava o aviso: contar a transição fazia a segunda
+        ''' abertura depois de uma queda devolver zero, com as ambíguas
+        ''' gravadas no banco e o egresso religado em silêncio.
+        ''' </summary>
         Public ReadOnly Property Ambiguas As Integer
 
         Private Sub New(terminou As Boolean, ambiguas As Integer)
@@ -1034,10 +1041,12 @@ Namespace Global.Iris.App.ViewModels
                 If Ambiguas = 0 Then Return ""
                 If Ambiguas = 1 Then
                     Return "Um envio à IA ficou sem desfecho conhecido numa execução " &
-                           "anterior. Pode ter saído conteúdo, e não dá para saber."
+                           "anterior. Pode ter saído conteúdo, e não dá para saber. " &
+                           "Este aviso não desaparece sozinho."
                 End If
-                Return $"{Ambiguas} envios à IA ficaram sem desfecho conhecido numa " &
-                       "execução anterior. Pode ter saído conteúdo, e não dá para saber."
+                Return $"{Ambiguas} envios à IA ficaram sem desfecho conhecido em " &
+                       "execuções anteriores. Pode ter saído conteúdo, e não dá para " &
+                       "saber. Este aviso não desaparece sozinho."
             End Get
         End Property
 

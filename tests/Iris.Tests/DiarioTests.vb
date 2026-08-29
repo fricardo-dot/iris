@@ -186,6 +186,120 @@ Public Class DiarioTests
     End Sub
 
     ''' <summary>
+    ''' <b>A SEGUNDA ABERTURA CONTINUA AVISANDO — e a primeira versão não
+    ''' avisava.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O AVISO DE EGRESSO AMBÍGUO PODIA SUMIR PARA SEMPRE</b>
+    '''
+    ''' A <c>Reconciliar</c> devolvia <b>quantas transitaram nesta chamada</b>.
+    ''' Numa segunda abertura, as ambíguas já estavam gravadas, a transição não
+    ''' pegava mais nada, a conta dava zero — e o <c>Aviso</c> ficava vazio. O
+    ''' egresso religava e <b>o usuário nunca ficava sabendo que pode ter saído
+    ''' conteúdo dele</b>.
+    '''
+    ''' Bastava a segunda instrução falhar, ou o processo morrer entre as duas,
+    ''' para chegar nesse estado. Agora a conta é do <b>estado</b>: quantas
+    ''' ESTÃO ambíguas, de qualquer execução.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo a contagem da transição, este teste
+    ''' cai na segunda reconciliação.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_SEGUNDA_abertura_continua_avisando_da_ambigua()
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
+        End Using
+
+        ' PRIMEIRA abertura: a transicao acontece e o aviso sai.
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Assert.AreEqual(1, j.Reconciliar(Agora.AddHours(1)),
+                            "controle: a primeira abertura tinha de achar a ambigua")
+        End Using
+
+        ' SEGUNDA abertura: nada transita, e o aviso NAO pode sumir.
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            Assert.AreEqual(1, j.Reconciliar(Agora.AddHours(2)),
+                            "a segunda abertura deixou de avisar sobre uma ambigua " &
+                            "que continua no banco -- o egresso religa em silencio")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>MORRER NO MEIO DA RECONCILIAÇÃO NÃO PERDE O AVISO.</b>
+    '''
+    ''' Este é o caminho por <i>queda</i> para o mesmo estado do teste acima: as
+    ''' duas atualizações eram independentes, e morrer entre elas gravava as
+    ''' ambíguas e perdia o aviso na abertura seguinte.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O QUE ESTE TESTE NÃO PROVA, E EU IA DIZER QUE PROVAVA</b>
+    '''
+    ''' Eu tinha escrito aqui que o controle negativo era <i>tirar a
+    ''' transação</i>. <b>Tirei, e o teste continuou verde.</b> Faz sentido: com
+    ''' a conta baseada no ESTADO, a linha ambígua é achada na reabertura tendo
+    ''' a primeira atualização sobrevivido à queda ou não — e a segunda
+    ''' atualização roda na reabertura de qualquer jeito.
+    '''
+    ''' Ou seja: <b>quem segura o aviso é a contagem por estado, não a
+    ''' transação.</b> A transação continua certa — duas escritas que descrevem
+    ''' um evento só —, mas ela é <b>guarda não observável pela API pública</b>,
+    ''' e fica declarada com esse nome, como a outra do §2 do relatório.
+    '''
+    ''' O que este teste prova, e é o que importa: uma queda no meio não faz o
+    ''' aviso sumir.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Morrer_no_meio_da_reconciliacao_NAO_perde_o_aviso()
+        Dim intencaoSozinha As Guid
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            ' Uma que morreu EM VOO, e outra que ficou so na INTENCAO.
+            Dim a = Autorizada()
+            j.Intencao(a.Cap, Agora)
+            j.Iniciando(a.Cap.RequestId, Agora.AddSeconds(1))
+
+            Dim b = Autorizada()
+            intencaoSozinha = b.Cap.RequestId
+            j.Intencao(b.Cap, Agora.AddSeconds(2))
+        End Using
+
+        ' A ABERTURA QUE MORRE NO MEIO.
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+            CrashInjection.Armar(CrashInjection.EntreAsDuasReconciliacoes,
+                                 Sub() Throw New InvalidOperationException("morri no meio"))
+            Try
+                Assert.ThrowsException(Of InvalidOperationException)(
+                    Sub() j.Reconciliar(Agora.AddHours(1)))
+            Finally
+                CrashInjection.Desarmar()
+            End Try
+        End Using
+
+        ' A ABERTURA SEGUINTE: nada ficou pela metade.
+        Using db = Abrir()
+            Dim j As New SqliteDisclosureJournal(db)
+
+            Assert.AreEqual(1, j.Reconciliar(Agora.AddHours(2)),
+                            "a ambigua sumiu do aviso depois de uma queda no meio")
+
+            ' E a reabertura termina o servico: a intencao sozinha vira
+            ' nao-enviada, tenha a queda acontecido antes ou depois dela.
+            Dim tudo = j.Ler(10)
+            Dim so = tudo.First(Function(x) x.RequestId = intencaoSozinha)
+            Assert.AreEqual(DisclosureStage.NaoEnviada, so.Estagio,
+                            "a segunda atualizacao nao aconteceu na reabertura")
+        End Using
+    End Sub
+
+    ''' <summary>
     ''' <b>Morrer só com a INTENÇÃO vira não-enviada.</b>
     '''
     ''' O contraponto, e o que dá sentido ao de cima: se todo crash virasse
