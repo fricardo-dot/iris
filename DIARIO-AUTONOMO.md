@@ -1403,3 +1403,43 @@ invisível não sai. Doze casos, incluindo os cinco da revisão.
 Saíram quatro expressões regulares, um autômato e dois auxiliares.
 
 Suíte: **927**.
+
+---
+
+## Vigésima quinta passada — ele não é um parser de HTML, e agora diz isso
+
+Cinco médios de novo, e todos da mesma forma: *"faltou o estado X do HTML"* —
+`script` double-escaped, RCDATA, fechamento abrupto de comentário, espaço
+não-ASCII no fechamento, estados de atributo.
+
+**Isso não acaba.** Trocar o desenho na passada anterior estava certo, mas eu
+escrevi o leitor novo *como se fosse um tokenizador de HTML*. HTML é maior do que
+cabe aqui: cada passada acharia mais estados, e continuar seria remendar de novo,
+só que num arquivo maior.
+
+**Então ele passou a modelar um subconjunto e recusar o resto.** Modela texto,
+tag com atributo (com aspas, sem aspas, sem valor), comentário com os quatro
+fechamentos, e o texto cru de `script`/`style`. Recusa: `textarea`, `title`,
+`iframe`, `noscript`, `noembed`, `noframes`, `xmp`, `plaintext`, `template`, o
+comentário condicional, e o `script` que contém `<!--` — a porta do estado
+*double-escaped*, onde `</script>` não fecha nada.
+
+Os cinco casos ficam certos: `</scripture>` e o espaço U+00A0 deixam de fechar
+bloco cru; a aspa só delimita valor depois do `=`, então
+`<p a=x">VISIVEL"<span>` não engole mais o `span`; e `A<!-->B` deixa de ser lido
+como truncado.
+
+**A decisão mais difícil foi o comentário condicional.** No Outlook o conteúdo de
+`[if mso]` **é** visível: apagá-lo perde texto que o usuário viu, mostrá-lo
+inventa texto onde outro leitor não mostra nada. Não dá para acertar os dois sem
+saber quem vai ler — e o meu teste anterior *afirmava* que apagar era o certo.
+
+E dois restos meus: a regex `Comentario` tinha ficado morta no arquivo, enquanto
+o commit anterior dizia que ela havia saído; e o bloco cru voltou a custar **um**
+espaço, porque eu tinha passado a emitir dois.
+
+**Três controles negativos — e o terceiro só depois de eu refazer a mutação**,
+porque a primeira que escrevi não reproduzia o defeito. Controle negativo que não
+reproduz o defeito é controle que não controla nada.
+
+Suíte: **933**.
