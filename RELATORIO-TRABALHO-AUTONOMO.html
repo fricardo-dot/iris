@@ -394,10 +394,10 @@ footer.fim {
     pode desfazer qualquer uma delas.
   </p>
   <div class="meta">
-    <span><b>940</b> testes · 0 falhas · 0 pulados</span>
-    <span><b>71</b> commits até o <code>349056f</code></span>
-    <span><b>26</b> passadas de revisão externa</span>
-    <span><code>874f223</code> → <code>349056f</code></span>
+    <span><b>946</b> testes · 0 falhas · 0 pulados</span>
+    <span><b>73</b> commits até o <code>1214fa9</code></span>
+    <span><b>27</b> passadas de revisão externa</span>
+    <span><code>874f223</code> → <code>1214fa9</code></span>
   </div>
 </header>
 
@@ -435,7 +435,7 @@ footer.fim {
 
 <div class="numeros wide">
   <div><span class="v">805</span><span class="k">testes ao começar</span></div>
-  <div><span class="v">940</span><span class="k">testes ao terminar</span></div>
+  <div><span class="v">946</span><span class="k">testes ao terminar</span></div>
   <div><span class="v">31</span><span class="k">dias de horizonte</span></div>
   <div><span class="v">65</span><span class="k">fora da janela, na ordem errada</span></div>
   <div><span class="v">22,7</span><span class="k">ms por busca, 1.127 msgs</span></div>
@@ -1495,10 +1495,42 @@ footer.fim {
   linha podia ficar verde perdendo metade.
 </p>
 
+<h3>A vigésima sétima: a régua nova mostrou o que a antiga escondia</h3>
+
+<p>
+  Trocar a promessa para <em>texto do documento</em> não foi só honestidade — a
+  régua nova <strong>encontra defeito</strong>. Quatro, todos apagando ou
+  inventando texto, e nenhum deles visível sob a promessa antiga.
+</p>
+
+<div class="nota">
+  <strong>O juntor de emoji sumia.</strong> A limpeza derrubava toda a categoria
+  <em>Format</em>, e ali dentro moram os caracteres que <em>ligam</em> em vez de
+  reordenar: 👩‍💻 virava duas pessoas. E o teste que dizia preservar emoji
+  passava, porque usava um emoji sem junção — <strong>ele cobria o nome da
+  propriedade, não a propriedade</strong>.
+</div>
+
+<p>
+  <strong>Tag inventava espaço:</strong> cada uma acrescentava um, e
+  <code>co&lt;strong&gt;ntra&lt;/strong&gt;to</code> saía
+  <code>co ntra to</code>. <strong>DOCTYPE com aspas vazava</strong> o resto da
+  declaração como se fosse texto. <strong>E o euro sumia</strong>:
+  <code>&amp;#128;</code> é o símbolo do euro no HTML, e o decodificador do
+  .NET devolve um caractere de controle que a limpeza apaga.
+</p>
+
+<p>
+  E uma fronteira que <em>recusava o caso comum</em>: a regra do nome derrubava
+  <code>&lt;o:p&gt;</code> e <code>&lt;v:shape&gt;</code> — quase toda mensagem
+  gerada pelo próprio Outlook. Fronteira que recusa o caso comum não é
+  conservadora, é inútil.
+</p>
+
 <h2><span class="num">§ 8</span>O que fica sem correção</h2>
 
 <p>
-  Nenhum achado de produção destas <strong>vinte e seis</strong> passadas ficou sem
+  Nenhum achado de produção destas <strong>vinte e sete</strong> passadas ficou sem
   correção. O que sobra é dívida assumida, e agora ela cabe em três linhas —
   e as duas primeiras, que eram só texto, agora têm teste que mede o dano.
 </p>
@@ -1588,8 +1620,8 @@ footer.fim {
 
 <footer class="fim">
   Iris · trabalho autônomo de 28 de agosto de 2026<br>
-  <code>874f223</code> → <code>349056f</code> · 71 commits · 940 testes, 0 falhas, 0 pulados<br>
-  Vinte e seis passadas de revisão externa, mais uma varredura própria · nada foi enviado por e-mail · nenhuma cerimônia foi executada
+  <code>874f223</code> → <code>1214fa9</code> · 73 commits · 946 testes, 0 falhas, 0 pulados<br>
+  Vinte e sete passadas de revisão externa, mais uma varredura própria · nada foi enviado por e-mail · nenhuma cerimônia foi executada
 </footer>
 
 </div>

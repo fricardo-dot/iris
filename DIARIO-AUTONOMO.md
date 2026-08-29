@@ -1479,3 +1479,36 @@ O teste de propriedade passou a exigir **todos** os pedaços de texto, e não o
 primeiro: uma linha podia ficar verde perdendo metade.
 
 Suíte: **940**.
+
+---
+
+## Vigésima sétima passada — a régua nova mostrou o que a antiga escondia
+
+Trocar a promessa para *"texto do documento"* não foi só honestidade: a régua
+nova **encontra defeito**. Quatro, todos apagando ou inventando texto, e nenhum
+deles visível sob a promessa antiga.
+
+**O juntor de emoji sumia.** A limpeza derrubava toda a categoria `Format`, e ali
+dentro moram o ZWJ e o ZWNJ — que **ligam** caracteres em vez de reordená-los:
+`👩‍💻` virava `👩💻`, duas pessoas onde havia uma. **E o teste que dizia preservar
+emoji passava**, porque usava um emoji sem junção. Ele cobria o *nome* da
+propriedade, não a propriedade.
+
+**Tag inventava espaço.** Cada tag acrescentava um `" "`, e isso **parte
+palavra**: `co<strong>ntra</strong>to` saía `co ntra to`. Não é normalização de
+apresentação — é texto diferente do que está escrito. Agora tag não vira nada, e
+`td`/`th` entraram no conjunto de quebra para `<td>a</td><td>b</td>` não virar
+`ab`.
+
+**DOCTYPE com aspas vazava.** A declaração era pulada até o primeiro `>`, e um
+`<!DOCTYPE html PUBLIC "A>B">` deixava o resto sair como texto.
+
+**E o euro sumia.** `&#128;` é o símbolo do euro no HTML; o decodificador do .NET
+devolve `U+0080`, que a limpeza apaga como controle. Entrou a tabela legada C1 do
+padrão.
+
+**E uma fronteira que recusava o caso comum:** a regra do separador no nome
+derrubava `<o:p>` e `<v:shape>` — quase toda mensagem gerada pelo próprio
+Outlook. *Fronteira que recusa o caso comum não é conservadora, é inútil.*
+
+Suíte: **946**.
