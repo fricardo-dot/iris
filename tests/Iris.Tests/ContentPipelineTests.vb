@@ -545,4 +545,69 @@ Public Class ContentPipelineTests
                                    "um corpo qualquer", False, True, temAnexo)
     End Function
 
+    ''' <summary>
+    ''' <b>O AUTÔMATO DAS ASPAS, caso a caso.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ELE RECUSA, ENTÃO ERRAR PARA O LADO ERRADO CUSTA CARO</b>
+    '''
+    ''' <c>MarcadorDentroDeAtributo</c> é o que decide se um HTML é recusado
+    ''' por conter <c>&lt;</c> dentro de um valor de atributo. Um falso
+    ''' positivo recusa mensagem legítima; um falso negativo deixa o removedor
+    ''' comer texto visível. Os dois lados doem, então cada estado tem caso.
+    '''
+    ''' Estes casos são os que a revisão externa ia pedir e eu escrevi antes:
+    ''' aspas simples dentro de duplas, <c>&gt;</c> dentro de aspas, tag não
+    ''' fechada no fim, <c>&lt;</c> solto no texto, e aspas fora de tag.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_automato_das_aspas_caso_a_caso()
+        ' ACHA: < dentro de valor de atributo, nas duas aspas.
+        Assert.IsTrue(ContentPipeline.MarcadorDentroDeAtributo("<p title=""<script>"">x</p>"))
+        Assert.IsTrue(ContentPipeline.MarcadorDentroDeAtributo("<p title='<script>'>x</p>"))
+
+        ' ASPA SIMPLES DENTRO DE DUPLA nao fecha a dupla: o < depois dela
+        ' continua sendo dentro do atributo.
+        Assert.IsTrue(ContentPipeline.MarcadorDentroDeAtributo("<p t=""ele's <b"">x</p>"))
+
+        ' NAO ACHA -- e cada um destes seria um falso positivo caro:
+        '
+        ' aspas fora de tag sao texto comum.
+        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo("ele disse ""oi"" e foi <p>x</p>"))
+        ' > dentro de aspas nao termina a tag, mas tambem nao e marcador.
+        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo("<p title=""a > b"">x</p>"))
+        ' < solto no texto (comparacao) nao esta dentro de atributo nenhum.
+        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo("<p>a < b e c > d</p>"))
+        ' HTML comum, com atributo depois de atributo.
+        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo(
+            "<a href=""http://x.invalido/?a=1&b=2"" title='dois'>ok</a>"))
+        ' Tag que nao fecha ate o fim do texto: sem < dentro de aspas, nada a
+        ' declarar -- quem recusa isso, se for o caso, e a regra da sobra.
+        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo("<p title=""aberto"))
+        ' Vazio e nulo nao explodem nem acusam.
+        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo(""))
+        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo(Nothing))
+    End Sub
+
+    ''' <summary>
+    ''' <b>CONTROLE POSITIVO DA REGRA NOVA: HTML comum continua passando.</b>
+    '''
+    ''' Sem isto, um pipeline que recusasse todo HTML passaria em todos os
+    ''' testes de recusa acima — que é o bloqueio sem controle negativo que o
+    ''' CLAUDE.md descreve, e que eu já cometi quatro vezes nesta série.
+    '''
+    ''' Inclui o comentário, porque a regra do comentário também mudou nesta
+    ''' passada e é a que tinha mais risco de recusar demais.
+    ''' </summary>
+    <DataTestMethod>
+    <DataRow("<p>oi</p><a href=""http://x.invalido"" title='t'>link</a>")>
+    <DataRow("<!-- comentario normal --><p>oi</p>")>
+    <DataRow("<p>oi</p><script>var s = 'a > b';</script><p>tchau</p>")>
+    <DataRow("<div><span>a</span> &gt; <span>b</span></div>")>
+    <DataRow("<p title=""a > b"">com maior dentro do atributo</p>")>
+    Public Sub Controle_HTML_comum_continua_passando(corpo As String)
+        Dim r = Preparar(corpo, html:=True)
+        Assert.IsTrue(r.Ok, $"recusou HTML comum por {r.Recusa}: " & corpo)
+    End Sub
+
 End Class
