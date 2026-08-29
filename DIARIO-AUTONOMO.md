@@ -1192,3 +1192,38 @@ da correlação.
 Cinco controles negativos confirmados.
 
 Suíte: **893**.
+
+---
+
+## Décima nona passada — eu declarei impossível uma coisa que dava
+
+**O achado que mais ensina:** eu tinha classificado a transação da reconciliação
+como *guarda não observável pela API pública*, porque o meu controle negativo
+passou. A revisão mostrou a observação que eu não tinha visto: logo depois da
+queda injetada, **antes** de qualquer nova reconciliação, basta `Ler`. Com
+transação houve *rollback* e a primeira continua `EmVoo`; sem ela, já está
+`Ambigua` com a segunda ainda `Intencionada` — metade do evento gravada.
+
+**Declarar "não dá para testar" transforma uma lacuna em decisão permanente.**
+Corrigido no teste, no ESCOPO e no comentário.
+
+**E dois consertos meus estavam pela metade:**
+
+- A guarda de identidade do anexo fechava quando a leitura de *agora* falhava e
+  continuava cega para a leitura *de antes*, gravada na chave. Uma chave montada
+  com `""/0` por falha casava com qualquer anexo que hoje leia `""/0` — e
+  `"x.dat"/0` casava com uma chave em que só o nome tinha sido lido.
+  `AttachmentKey.IdentidadeConhecida`, e a indexação parou de fabricar calada.
+- O sanitizador: eu tinha trocado `</\1>` por `</\1\s*>`, que fecha o espaço e
+  **não** fecha a família. A contagem aceita qualquer coisa que comece com
+  `</script`, e o parser HTML também trata `</script x>` e `</script/>` como
+  fechamento. **Consertar o caso citado e deixar os irmãos é o erro que este
+  projeto já cometeu quatro vezes** — e eu o cometi enquanto o citava.
+
+O resto: o `ItemCountConhecido` morria na fronteira do `FolderNodeViewModel`,
+então não protegia o próximo consumidor; o `q2-chaves` somava duas causas
+diferentes num contador só e explicava a causa errada; pegar o store estava fora
+do `try` em dois roteiros; e o `<summary>` novo do `CrashInjection` tinha
+engolido a documentação da constante do dreno.
+
+Suíte: **896**.

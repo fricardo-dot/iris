@@ -10,22 +10,22 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — depois da décima oitava revisão
+## Medição corrente — depois da décima nona revisão
 
 | | |
 |---|---|
-| **Commit** | `9b18122` — a árvore da solução .NET que foi medida |
+| **Commit** | `46b9d04` — a árvore da solução .NET que foi medida |
 | **Data** | 29 de agosto de 2026, de manhã |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
 
 ```
-Passed!  - Failed:     0, Passed:   893, Skipped:     0, Total:   893, Duration: 1 m 13 s - Iris.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   896, Skipped:     0, Total:   896, Duration: 1 m 16 s - Iris.Tests.dll (net10.0)
 ```
 
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
-última antes do commit `9b18122`, que contém **exatamente** a árvore medida —
+última antes do commit `46b9d04`, que contém **exatamente** a árvore medida —
 `src/`, `tests/` e `tools/` entraram nele; os documentos vieram depois, em
 commit separado.
 
@@ -49,8 +49,20 @@ acrescentou teste — reforçou o mesmo, que passava com a correção desfeita. 
 décima sétima acrescentou um: o contrato do duplo de lançar na hora. A
 varredura própria acrescentou dois, do calendário que fabricava calado. A
 décima oitava acrescentou sete: dois da reconciliação do diário de divulgação,
-quatro do fechamento de bloco com espaço, e um da identidade do anexo.
-872 → 874 → 875 → 876 → 878 → 882 → 883 → 884 → 886 → 893.
+quatro do fechamento de bloco com espaço, e um da identidade do anexo. A
+décima nona acrescentou três casos aos irmãos do fechamento.
+872 → 874 → 875 → 876 → 878 → 882 → 883 → 884 → 886 → 893 → 896.
+
+### Medição da décima oitava revisão
+
+| | |
+|---|---|
+| **Commit** | `9b18122` |
+| **Data** | 29 de agosto de 2026, de manhã |
+
+```
+Passed!  - Failed:     0, Passed:   893, Skipped:     0, Total:   893, Duration: 1 m 13 s - Iris.Tests.dll (net10.0)
+```
 
 ### Medição da varredura própria
 
