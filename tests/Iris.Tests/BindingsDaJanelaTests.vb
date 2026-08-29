@@ -461,10 +461,44 @@ Public Class BindingsDaJanelaTests
 
         StringAssert.Contains(xaml, "{Binding Tarefas.AbrirCommand}",
             "nao ha como abrir as tarefas: a pasta delas nao aparece na arvore")
-        StringAssert.Contains(xaml, "{Binding ProporTarefaCommand}",
-            "a proposta a partir da mensagem nao chegou a tela")
-        StringAssert.Contains(xaml, "{Binding Tarefas.CriarCommand}",
-            "propor sem criar deixaria a tarefa presa no formulario")
+        ' DOIS ELEMENTOS <Button>, e nao duas strings no arquivo.
+        '
+        ' A revisao externa pegou a diferenca: procurar os dois bindings no
+        ' texto passaria com os dois no MESMO controle, ou com o botao "Desta
+        ' mensagem" ligado ao criar e o ProporTarefaCommand sobrevivendo num
+        ' elemento morto em outro canto. O comentario prometia "dois comandos
+        ' ligados a dois botoes" e o teste provava bem menos que isso.
+        '
+        ' O recorte por "<Button" e um proxy -- e por isso a assercao de
+        ' controle logo abaixo confere que ele achou botoes de verdade.
+        ' Split simples, e nao Regex: a primeira versao usava um padrao com
+        ' borda de palavra, e o escape virou um BACKSPACE de verdade no
+        ' fonte -- o padrao nunca casava e o recorte achava zero botoes.
+        ' So nao passou em silencio porque a assercao de controle existe.
+        Dim botoes = xaml.Split({"<Button"}, StringSplitOptions.None).Skip(1).
+                     Select(Function(t) t.Substring(0, Math.Min(t.Length, 800))).ToList()
+
+        Assert.IsTrue(botoes.Count > 4,
+            "o recorte por <Button achou " & botoes.Count & " botao(oes): ele " &
+            "nao esta olhando a janela, e as assercoes abaixo viraram fumaca")
+
+        Dim propoe = botoes.Where(Function(b) b.Contains("{Binding ProporTarefaCommand}")).Count()
+        Dim cria = botoes.Where(Function(b) b.Contains("{Binding Tarefas.CriarCommand}")).Count()
+
+        Assert.AreEqual(1, propoe,
+            "achei " & propoe & " botao(oes) de propor; a proposta a partir da " &
+            "mensagem tem de estar na tela, e uma vez so")
+        Assert.AreEqual(1, cria,
+            "achei " & cria & " botao(oes) de criar; propor sem criar deixaria " &
+            "a tarefa presa no formulario")
+
+        ' E O QUE IMPORTA: nao sao o mesmo botao. Um controle que fizesse as
+        ' duas coisas juntaria as duas etapas que a Fase 5 separa de proposito.
+        Assert.IsFalse(
+            botoes.Any(Function(b) b.Contains("{Binding ProporTarefaCommand}") AndAlso
+                                   b.Contains("{Binding Tarefas.CriarCommand}")),
+            "propor e criar no MESMO botao: a sugestao viraria tarefa sem " &
+            "confirmacao, que e a unica coisa que esta fase existe para impedir")
         StringAssert.Contains(xaml, "{Binding Tarefas.AvisoDaSelecionada}",
             "o botao de concluir pode ficar desabilitado sem a tela dizer por que")
     End Sub

@@ -1,3 +1,4 @@
+Imports System.IO
 Imports System.Linq
 Imports Iris.Core
 Imports Iris.Model
@@ -136,6 +137,92 @@ Public Class TarefasTests
     ''' uma negociação da qual o Iris não participa — e é o campo que a tela usa
     ''' para não oferecer um botão que vai ser recusado.
     ''' </summary>
+    ''' <summary>
+    ''' <b>O CÓDIGO QUE ESCREVE NÃO CHAMA Assign NEM Send.</b>
+    '''
+    ''' Este teste lê o <b>fonte</b> do <c>TaskWriting</c>, e é feio de
+    ''' propósito. A revisão externa apontou o buraco exato: os testes por
+    ''' reflexão provam que o <c>TaskDraft</c> não tem campo de responsável, e
+    ''' não provam nada sobre o que o escritor faz. Alguém que acrescentasse
+    ''' <c>t.Assign()</c> e <c>t.Send()</c> direto, sem tocar no rascunho,
+    ''' passaria em toda a suíte e mandaria um pedido de tarefa por e-mail.
+    '''
+    ''' A alternativa honesta seria um duplo de <c>TaskItem</c>, e não existe:
+    ''' <c>OL.TaskItem</c> é uma interface COM que o teste não instancia. Entre
+    ''' uma varredura de texto e nenhuma prova, a varredura é melhor — e este
+    ''' comentário é a ressalva de que ela é um proxy.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_escritor_de_tarefas_NAO_chama_Assign_nem_Send()
+        Dim fonte = LerFonteDoTaskWriting()
+
+        Assert.IsFalse(fonte.Contains(".Assign("),
+            "TaskWriting chama Assign: atribuir tarefa manda pedido por e-mail, " &
+            "e o Iris não envia. Leia o comentário do módulo antes de mexer nisto.")
+        Assert.IsFalse(fonte.Contains(".Send("),
+            "TaskWriting chama Send: nada sai por e-mail sem o usuário mandar.")
+
+        ' CONTROLE: a varredura acha o que existe. Sem isto, um caminho de
+        ' arquivo errado deixaria as duas asserções passarem por lerem vazio --
+        ' o bloqueio que nunca bloqueia.
+        StringAssert.Contains(fonte, ".Save()",
+            "a varredura não está lendo o TaskWriting: as asserções acima " &
+            "estariam passando por não olhar nada")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A guarda de atribuição vem ANTES do Save, e não depois.</b>
+    '''
+    ''' Ordem é a coisa inteira. Conferir <c>DelegationState</c> depois de
+    ''' <c>Complete = True</c> e <c>Save()</c> seria conferir depois de o
+    ''' e-mail já ter saído — e o teste de recusa continuaria verde, porque a
+    ''' função ainda devolveria <c>Denied</c>.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_guarda_de_atribuicao_vem_antes_do_Save()
+        Dim fonte = LerFonteDoTaskWriting()
+        Dim concluir = fonte.Substring(fonte.IndexOf("Public Function Concluir"))
+        concluir = concluir.Substring(0, concluir.IndexOf("End Function"))
+
+        Dim ondeConfere = concluir.IndexOf("EhAtribuida")
+        Dim ondeGrava = concluir.IndexOf(".Save()")
+
+        Assert.IsTrue(ondeConfere >= 0, "Concluir parou de conferir EhAtribuida")
+        Assert.IsTrue(ondeGrava >= 0, "não achei o Save em Concluir: a varredura errou o recorte")
+        Assert.IsTrue(ondeConfere < ondeGrava,
+            "a conferência de atribuição ficou DEPOIS do Save -- conferir " &
+            "depois de o e-mail sair não é conferir")
+    End Sub
+
+    ''' <summary>
+    ''' O fonte do <c>TaskWriting</c> <b>sem os comentários</b>.
+    '''
+    ''' O primeiro corte destes testes falhou aqui, e a falha ensinou: o
+    ''' comentário do módulo <i>menciona</i> <c>Assign</c> e <c>Send</c>,
+    ''' justamente para explicar por que eles não podem aparecer. Uma
+    ''' varredura que lê o comentário acusa o texto que a protege.
+    '''
+    ''' É a mesma lição do recorte de linha do XAML: um teste que acusa onde
+    ''' não há é um teste que alguém desliga na primeira vez que atrapalha.
+    ''' </summary>
+    Private Shared Function LerFonteDoTaskWriting() As String
+        Dim inteiro = LerArquivoDoTaskWriting()
+        Dim linhas = inteiro.Split(CChar(vbLf)).
+                     Where(Function(l) Not l.TrimStart().StartsWith("'"))
+        Return String.Join(vbLf, linhas)
+    End Function
+
+    Private Shared Function LerArquivoDoTaskWriting() As String
+        Dim d = New DirectoryInfo(AppContext.BaseDirectory)
+        While d IsNot Nothing AndAlso Not File.Exists(Path.Combine(d.FullName, "Iris.slnx"))
+            d = d.Parent
+        End While
+        Assert.IsNotNull(d, "não achei a raiz do repositório")
+        Dim caminho = Path.Combine(d.FullName, "src", "Iris.Outlook", "TaskWriting.vb")
+        Assert.IsTrue(File.Exists(caminho), "TaskWriting.vb não encontrado em " & caminho)
+        Return File.ReadAllText(caminho)
+    End Function
+
     <TestMethod>
     Public Sub A_tarefa_lida_carrega_o_estado_de_atribuicao()
         Dim campos = GetType(TaskInfo).GetProperties().

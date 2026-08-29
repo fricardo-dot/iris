@@ -214,11 +214,39 @@ Namespace Global.Iris.App.ViewModels
             Erro = ""
         End Sub
 
+        ''' <summary>
+        ''' Descobre a pasta de Tarefas e lê. Botão próprio porque a política de
+        ''' visibilidade mantém essa pasta <b>fora</b> da árvore: não há o que
+        ''' selecionar.
+        '''
+        ''' <b>O <c>_carregando</c> sobe ANTES da descoberta</b>, e não só no
+        ''' <c>CarregarAsync</c>. Antes disso o <c>CanExecute</c> do botão ficava
+        ''' verdadeiro durante toda a primeira espera, e dois cliques
+        ''' disparavam duas descobertas que atribuíam <c>_pasta</c> em corrida.
+        ''' A geração protege os carregamentos; ela não protegia esta atribuição.
+        ''' </summary>
         Public Async Function AbrirAsync() As Task
-            If _disposed Then Return
+            If _disposed OrElse _carregando Then Return
 
             Erro = ""
-            Dim r = Await _broker.GetDefaultTasksFolderAsync(CancellationToken.None)
+            _carregando = True
+            OnPropertyChanged(NameOf(Carregando))
+            AvisarComandos()
+
+            Dim r As OperationResult(Of FolderKey)
+            Try
+                r = Await _broker.GetDefaultTasksFolderAsync(CancellationToken.None)
+            Finally
+                _carregando = False
+                OnPropertyChanged(NameOf(Carregando))
+                AvisarComandos()
+            End Try
+
+            ' DEPOIS DA ESPERA, DE NOVO. Descarte durante a descoberta
+            ' ressuscitaria a tela: instalaria _pasta, notificaria propriedades
+            ' e entraria num carregamento que ninguém pediu.
+            If _disposed Then Return
+
             If Not r.Succeeded Then
                 Erro = "não consegui achar a pasta de Tarefas (" & r.Kind.ToString() & ")."
                 Return
@@ -300,7 +328,14 @@ Namespace Global.Iris.App.ViewModels
         ''' <b>ETAPA DOIS: criar.</b> Uma tarefa, deste formulário, com este
         ''' clique. Nunca em lote.
         ''' </summary>
-        Private Async Function CriarAsync() As Task
+        ''' <b>Pública, e não privada.</b> O <c>AsyncRelayCommand</c> serializa
+        ''' as execuções que passam por ele — o que significa que a guarda
+        ''' interna só é alcançável por quem <i>não</i> passa pelo comando.
+        ''' Deixá-la privada tornaria a guarda intestável, e um teste que só
+        ''' consegue clicar no botão prova o comportamento do toolkit, e não o
+        ''' desta classe. Foi exatamente isso que o primeiro corte destes testes
+        ''' fez: passou com a guarda removida.
+        Public Async Function CriarAsync() As Task
             If Not PodeCriar OrElse _disposed Then Return
 
             Dim rascunho As New TaskDraft With {
@@ -314,6 +349,12 @@ Namespace Global.Iris.App.ViewModels
 
             Try
                 Dim r = Await _broker.CreateTaskAsync(_pasta, rascunho, CancellationToken.None)
+
+                ' DESCARTE DURANTE A GRAVAÇÃO. A tarefa foi criada -- isso não
+                ' se desfaz, e nem deve. O que não pode é a continuação mexer
+                ' numa tela que já foi embora.
+                If _disposed Then Return
+
                 If Not r.Succeeded Then
                     Erro = If(String.IsNullOrWhiteSpace(r.Detail),
                               "não consegui criar a tarefa (" & r.Kind.ToString() & ").",
@@ -333,9 +374,25 @@ Namespace Global.Iris.App.ViewModels
             Await CarregarAsync()
         End Function
 
-        Private Async Function ConcluirAsync() As Task
+        ''' <summary>
+        ''' Conclui a tarefa selecionada.
+        '''
+        ''' <b>A guarda é a mesma do <c>CanExecute</c>, repetida aqui de
+        ''' propósito.</b> O <c>CanExecute</c> governa o botão; ele não governa
+        ''' quem chama <c>ExecuteAsync</c> direto — automação, teste, ou a
+        ''' janela entre dois eventos de comando. Sem esta linha, uma segunda
+        ''' execução chegaria ao broker com <c>_gravando</c> já verdadeiro.
+        '''
+        ''' O <c>TaskWriting</c> ainda recusaria tarefa atribuída, e é ele a
+        ''' barreira que impede o e-mail. Mas uma tela que promete uma condição
+        ''' e não a sustenta deixa a barreira sozinha, e barreira sozinha é
+        ''' exatamente o que esta base evita.
+        ''' </summary>
+        Public Async Function ConcluirAsync() As Task
+            If Not PodeConcluir OrElse _disposed Then Return
+
             Dim alvo = Selecionada
-            If alvo Is Nothing OrElse _disposed Then Return
+            If alvo Is Nothing Then Return
 
             _gravando = True
             AvisarComandos()
@@ -344,6 +401,8 @@ Namespace Global.Iris.App.ViewModels
             Try
                 Dim r = Await _broker.CompleteTaskAsync(New TaskKey(alvo.Chave),
                                                         CancellationToken.None)
+                If _disposed Then Return
+
                 If Not r.Succeeded Then
                     Erro = If(String.IsNullOrWhiteSpace(r.Detail),
                               "não consegui concluir a tarefa (" & r.Kind.ToString() & ").",

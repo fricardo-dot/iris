@@ -34,17 +34,29 @@ Public Class TarefasViewModelTests
         Friend UltimaPasta As FolderKey
         Friend UltimaChave As TaskKey
         Friend Trava As TaskCompletionSource(Of Boolean)
+
+        ''' <summary>
+        ''' Trava da DESCOBERTA da pasta, separada da trava da gravação.
+        '''
+        ''' Sem ela não há corrida para testar: <c>Task.FromResult</c> completa
+        ''' na hora, a primeira execução termina inteira antes de a segunda
+        ''' começar, e um teste de dois cliques passaria sem nunca ter havido
+        ''' dois cliques simultâneos.
+        ''' </summary>
+        Friend TravaDaPasta As TaskCompletionSource(Of Boolean)
+
         Friend SemPasta As Boolean
 
-        Public Function GetDefaultTasksFolderAsync(cancel As CancellationToken) _
+        Public Async Function GetDefaultTasksFolderAsync(cancel As CancellationToken) _
             As Task(Of OperationResult(Of FolderKey)) _
             Implements ITarefasBroker.GetDefaultTasksFolderAsync
 
             Chamadas.Add("pasta")
+            If TravaDaPasta IsNot Nothing Then Await TravaDaPasta.Task
             If SemPasta Then
-                Return Task.FromResult(OperationResult(Of FolderKey).Fail(ErrorKind.NotFound, "sem pasta"))
+                Return OperationResult(Of FolderKey).Fail(ErrorKind.NotFound, "sem pasta")
             End If
-            Return Task.FromResult(OperationResult(Of FolderKey).Ok(Pasta))
+            Return OperationResult(Of FolderKey).Ok(Pasta)
         End Function
 
         Public Function GetTasksAsync(folder As FolderKey, teto As Integer,
@@ -75,16 +87,25 @@ Public Class TarefasViewModelTests
                                    .Subject = rascunho.Subject})
         End Function
 
-        Public Function CompleteTaskAsync(chave As TaskKey, cancel As CancellationToken) _
+        ''' <summary>
+        ''' Concluir TAMBEM espera na trava.
+        '''
+        ''' Sem isso nao ha sobreposicao: a primeira execucao terminava inteira
+        ''' -- recarregamento incluso, que limpa a selecao -- antes de a segunda
+        ''' comecar, e a segunda saia pela falta de selecao em vez de sair pela
+        ''' guarda. O teste passava sem nunca ter testado a guarda.
+        ''' </summary>
+        Public Async Function CompleteTaskAsync(chave As TaskKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of TaskInfo)) _
             Implements ITarefasBroker.CompleteTaskAsync
 
             Chamadas.Add("concluir")
             UltimaChave = chave
+            If Trava IsNot Nothing Then Await Trava.Task
             If Recusa IsNot Nothing Then
-                Return Task.FromResult(OperationResult(Of TaskInfo).Fail(ErrorKind.Denied, Recusa))
+                Return OperationResult(Of TaskInfo).Fail(ErrorKind.Denied, Recusa)
             End If
-            Return Task.FromResult(OperationResult(Of TaskInfo).Ok(New TaskInfo()))
+            Return OperationResult(Of TaskInfo).Ok(New TaskInfo())
         End Function
     End Class
 
@@ -223,10 +244,103 @@ Public Class TarefasViewModelTests
 
         Assert.IsFalse(vm.PodeCriar, "o botao continuou habilitado com gravacao em voo")
 
+        ' A SEGUNDA CHAMADA VAI DIRETO AO METODO, e nao pelo comando.
+        '
+        ' Pelo comando ela nao provaria nada desta classe: o AsyncRelayCommand
+        ' ja serializa por conta propria, e o teste passaria com a guarda
+        ' interna REMOVIDA -- foi o que o controle negativo mostrou no irmao
+        ' deste teste. O caminho que interessa e o de quem nao passa pelo
+        ' botao: automacao, script, ou a janela entre dois eventos de comando.
+        Dim segundo = vm.CriarAsync()
+
+        b.Trava.SetResult(True)
+        Await emVoo
+        Await segundo
+
+        Assert.AreEqual(1, b.Chamadas.Where(Function(c) c = "criar").Count(),
+                        "o segundo clique criou uma segunda tarefa")
+    End Function
+
+    ''' <summary>
+    ''' <b>E o mesmo vale para concluir.</b>
+    '''
+    ''' O <c>ConcluirAsync</c> tinha guarda mais fraca que a do criar: conferia
+    ''' seleção e descarte, e não a condição que o botão anuncia. Chamar
+    ''' <c>ExecuteAsync</c> direto atravessava.
+    '''
+    ''' <b>Controle negativo:</b> trocando a primeira linha de
+    ''' <c>ConcluirAsync</c> de volta para a checagem antiga, a contagem vira
+    ''' dois.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function O_segundo_clique_nao_conclui_de_novo() As Task
+        Dim b As New BrokerDeTarefas() With {.Trava = New TaskCompletionSource(Of Boolean)()}
+        b.Itens.Add(Tarefa("minha"))
+        Dim vm = Await Aberta(b)
+        vm.Selecionada = vm.Tarefas.First()
+
+        Dim emVoo = vm.ConcluirCommand.ExecuteAsync(Nothing)
+        Dim segundo = vm.ConcluirAsync()   ' direto, sem passar pelo comando
+
+        b.Trava.SetResult(True)
+        Await emVoo
+        Await segundo
+
+        Assert.AreEqual(1, b.Chamadas.Where(Function(c) c = "concluir").Count(),
+                        "concluiu duas vezes: mutacao nao tem retry, e a tela " &
+                        "desfez a garantia por fora")
+    End Function
+
+    ''' <summary>
+    ''' <b>Descartar durante a gravação não ressuscita a tela.</b>
+    '''
+    ''' A tarefa criada não se desfaz — nem deve. O que não pode é a
+    ''' continuação escrever numa tela que já foi embora: limpar o formulário,
+    ''' pôr recado de erro, recarregar uma lista que ninguém está vendo.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Descartar_durante_a_gravacao_nao_recarrega() As Task
+        Dim b As New BrokerDeTarefas() With {.Trava = New TaskCompletionSource(Of Boolean)()}
+        Dim vm = Await Aberta(b)
+        Dim lidasAntes = b.Chamadas.Where(Function(c) c = "ler").Count()
+
+        vm.ProporDaMensagem("some no meio")
+        Dim emVoo = vm.CriarCommand.ExecuteAsync(Nothing)
+
+        vm.Dispose()
         b.Trava.SetResult(True)
         Await emVoo
 
-        Assert.AreEqual(1, b.Chamadas.Where(Function(c) c = "criar").Count())
+        Assert.AreEqual(lidasAntes, b.Chamadas.Where(Function(c) c = "ler").Count(),
+                        "recarregou depois do Dispose")
+        Assert.AreEqual("some no meio", vm.NovoAssunto,
+                        "mexeu no formulario de uma tela ja descartada")
+    End Function
+
+    ''' <summary>
+    ''' <b>Dois cliques em "Abrir" não descobrem a pasta duas vezes.</b>
+    '''
+    ''' O <c>CanExecute</c> do abrir olhava <c>_carregando</c>, e
+    ''' <c>_carregando</c> só subia <i>depois</i> da descoberta da pasta.
+    ''' Durante toda a primeira espera o botão ficava habilitado, e duas
+    ''' descobertas concorrentes atribuíam <c>_pasta</c> em corrida. A geração
+    ''' protege os carregamentos; não protegia essa atribuição.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Dois_cliques_em_abrir_descobrem_a_pasta_uma_vez() As Task
+        Dim b As New BrokerDeTarefas() With {
+            .TravaDaPasta = New TaskCompletionSource(Of Boolean)()}
+        Dim vm As New TarefasViewModel(b)
+
+        Dim um = vm.AbrirCommand.ExecuteAsync(Nothing)
+        Dim dois = vm.AbrirCommand.ExecuteAsync(Nothing)
+
+        b.TravaDaPasta.SetResult(True)
+        Await um
+        Await dois
+
+        Assert.AreEqual(1, b.Chamadas.Where(Function(c) c = "pasta").Count(),
+                        "duas descobertas concorrentes atribuindo _pasta em corrida")
     End Function
 
     ''' <summary>
