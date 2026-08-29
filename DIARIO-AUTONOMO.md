@@ -1512,3 +1512,37 @@ derrubava `<o:p>` e `<v:shape>` — quase toda mensagem gerada pelo próprio
 Outlook. *Fronteira que recusa o caso comum não é conservadora, é inútil.*
 
 Suíte: **946**.
+
+---
+
+## Vigésima oitava passada — a invariante dizia uma coisa e o código dizia outra
+
+**Achado alto, e no caminho do egresso.** A regra do projeto é *nunca sai uma
+data URI*, e o padrão que a implementava era `data:[a-z]+/` — ou seja, "nunca
+data URI **com tipo**". `data:,SEGREDO` e `data:;base64,U0VHUkVETw==` são as duas
+formas válidas **sem** tipo, e passavam direto.
+
+Alargar para `data:` seco era fácil e errado: em português **"Data:"** é a
+palavra mais comum de um cabeçalho de mensagem. O que distingue a URI é não haver
+espaço depois dos dois-pontos, e agora há controle dos dois lados — inclusive
+`Data: 12/03/2026, às 10h`.
+
+**E eu fechei um lado e abri o outro na primeira tentativa:** exigi a vírgula
+sempre, e deixei de recusar `data:text/x`, que um teste já cobrava desde o
+início. Desta vez foi o teste antigo que pegou, antes da revisão.
+
+**Os outros três vieram todos do conserto da passada anterior.** Tirar o espaço
+por tag colou blocos: `<h1>Resumo</h1><p>Agora</p>` virava `ResumoAgora`, e
+`<li>um<li>dois` — com o fechamento omitido, que o HTML permite — virava
+`umdois`. Quebrar só no fechamento não basta, porque **o fechamento é opcional**:
+agora abrir e fechar quebram, e o conjunto de blocos ficou completo.
+
+A tabela do euro pegava só `80`–`8F` no hexadecimal, porque eu tinha embutido a
+faixa na expressão regular. **Faixa em regex é fácil de escrever pela metade** —
+a conferência foi para o código. E a aspa do DOCTYPE protegia em qualquer
+declaração, quando só o DOCTYPE tem identificador entre aspas.
+
+**E o teste das células passava pelo motivo errado:** exigia `a` e `b`
+separadamente, e `"ab"` contém os dois. Agora proíbe `ab`.
+
+Suíte: **958**.

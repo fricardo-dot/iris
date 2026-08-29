@@ -394,10 +394,10 @@ footer.fim {
     pode desfazer qualquer uma delas.
   </p>
   <div class="meta">
-    <span><b>946</b> testes · 0 falhas · 0 pulados</span>
-    <span><b>73</b> commits até o <code>1214fa9</code></span>
-    <span><b>27</b> passadas de revisão externa</span>
-    <span><code>874f223</code> → <code>1214fa9</code></span>
+    <span><b>958</b> testes · 0 falhas · 0 pulados</span>
+    <span><b>75</b> commits até o <code>c078f31</code></span>
+    <span><b>28</b> passadas de revisão externa</span>
+    <span><code>874f223</code> → <code>c078f31</code></span>
   </div>
 </header>
 
@@ -435,7 +435,7 @@ footer.fim {
 
 <div class="numeros wide">
   <div><span class="v">805</span><span class="k">testes ao começar</span></div>
-  <div><span class="v">946</span><span class="k">testes ao terminar</span></div>
+  <div><span class="v">958</span><span class="k">testes ao terminar</span></div>
   <div><span class="v">31</span><span class="k">dias de horizonte</span></div>
   <div><span class="v">65</span><span class="k">fora da janela, na ordem errada</span></div>
   <div><span class="v">22,7</span><span class="k">ms por busca, 1.127 msgs</span></div>
@@ -1527,10 +1527,39 @@ footer.fim {
   conservadora, é inútil.
 </p>
 
+<h3>A vigésima oitava: a invariante dizia uma coisa e o código dizia outra</h3>
+
+<div class="nota">
+  <strong>Achado alto, e no caminho do egresso.</strong> A regra do projeto é
+  <em>nunca sai uma data URI</em> — e o padrão que a implementava exigia um
+  tipo (<code>data:image/png</code>). Um <code>data:,SEGREDO</code> ou um
+  <code>data:;base64,…</code> — as duas formas válidas <em>sem</em> tipo —
+  passavam direto. A invariante dizia uma coisa e o código dizia
+  &quot;com tipo&quot;.
+</div>
+
+<p>
+  Alargar era fácil e errado: em português <strong>&quot;Data:&quot;</strong> é
+  a palavra mais comum de um cabeçalho, e recusar toda mensagem que a contenha
+  seria trocar um buraco por outro. O que distingue a URI é não haver espaço
+  depois dos dois-pontos — e agora há controle dos dois lados. <strong>Eu ainda
+  fechei um lado e abri o outro na primeira tentativa</strong>, e desta vez foi
+  um teste antigo que pegou, antes da revisão.
+</p>
+
+<p>
+  Os outros três vieram todos do conserto anterior: tirar o espaço por tag
+  <em>colou blocos</em> — <code>&lt;h1&gt;Resumo&lt;/h1&gt;&lt;p&gt;Agora&lt;/p&gt;</code>
+  virava <code>ResumoAgora</code>, porque quebrar só no fechamento não basta:
+  o fechamento é opcional no HTML. E a tabela do euro pegava metade da faixa,
+  porque eu tinha embutido o intervalo na expressão regular — <em>faixa em
+  regex é fácil de escrever pela metade</em>.
+</p>
+
 <h2><span class="num">§ 8</span>O que fica sem correção</h2>
 
 <p>
-  Nenhum achado de produção destas <strong>vinte e sete</strong> passadas ficou sem
+  Nenhum achado de produção destas <strong>vinte e oito</strong> passadas ficou sem
   correção. O que sobra é dívida assumida, e agora ela cabe em três linhas —
   e as duas primeiras, que eram só texto, agora têm teste que mede o dano.
 </p>
@@ -1620,8 +1649,8 @@ footer.fim {
 
 <footer class="fim">
   Iris · trabalho autônomo de 28 de agosto de 2026<br>
-  <code>874f223</code> → <code>1214fa9</code> · 73 commits · 946 testes, 0 falhas, 0 pulados<br>
-  Vinte e sete passadas de revisão externa, mais uma varredura própria · nada foi enviado por e-mail · nenhuma cerimônia foi executada
+  <code>874f223</code> → <code>c078f31</code> · 75 commits · 958 testes, 0 falhas, 0 pulados<br>
+  Vinte e oito passadas de revisão externa, mais uma varredura própria · nada foi enviado por e-mail · nenhuma cerimônia foi executada
 </footer>
 
 </div>
