@@ -336,10 +336,32 @@ Namespace Global.Iris.Outlook
                         ' antes de gravar: salvar o anexo errado com o nome
                         ' certo seria pior que falhar. A versao anterior
                         ' prometia os dois no comentario e conferia so o nome.
-                        If Not String.Equals(Texto(Function() a.FileName), key.FileName,
-                                             StringComparison.Ordinal) OrElse
-                           Numero(Function() a.Size) <> key.SizeBytes Then
-                            Return OperationResult(Of String).Fail(ErrorKind.Stale, "anexo mudou")
+                        '
+                        ' E LER COM OS AUXILIARES TOLERANTES ANULAVA A GUARDA.
+                        '
+                        ' Texto() devolve "" e Numero() devolve 0 quando a
+                        ' leitura falha -- e a chave tambem foi montada com
+                        ' eles. Se as duas leituras falhassem, ""/0 casava com
+                        ' ""/0, a conferencia passava e o ANEXO ERRADO era
+                        ' gravado com o nome certo. Que e exatamente o dano que
+                        ' esta guarda existe para impedir.
+                        '
+                        ' Aqui a leitura tem de ser CONCLUSIVA, e falha fecha.
+                        Dim nomeAgora As String = Nothing
+                        Dim tamanhoAgora As Integer? = Nothing
+                        Try
+                            nomeAgora = a.FileName
+                        Catch
+                        End Try
+                        Try
+                            tamanhoAgora = a.Size
+                        Catch
+                        End Try
+
+                        If Not MesmaIdentidade(nomeAgora, tamanhoAgora, key) Then
+                            Return OperationResult(Of String).Fail(
+                                ErrorKind.Stale,
+                                "o anexo mudou, ou nao deu para conferir a identidade dele")
                         End If
 
                         Return GravarComTemporario(a, destino, overwrite)
@@ -352,6 +374,30 @@ Namespace Global.Iris.Outlook
             Finally
                 ComHelpers.Release(mail)
             End Try
+        End Function
+
+        ''' <summary>
+        ''' <b>O anexo que está lá é o mesmo que foi indexado?</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>FALHA DE LEITURA NÃO PODE VIRAR "IGUAL"</b>
+        '''
+        ''' <c>Nothing</c> em qualquer um dos dois quer dizer que a leitura de
+        ''' agora não concluiu — e sem os dois valores não dá para afirmar
+        ''' identidade. A conferência então <b>fecha</b>: recusar é barato,
+        ''' gravar o anexo errado com o nome certo não é.
+        '''
+        ''' Existe separada de <see cref="SaveAttachment"/> porque é a única
+        ''' parte desta guarda que dá para provar sem um <c>Attachment</c> real
+        ''' — e é a parte que tinha o defeito.
+        ''' </summary>
+        Friend Function MesmaIdentidade(nomeAgora As String, tamanhoAgora As Integer?,
+                                        key As AttachmentKey) As Boolean
+            If key Is Nothing Then Return False
+            If nomeAgora Is Nothing Then Return False
+            If Not tamanhoAgora.HasValue Then Return False
+            Return String.Equals(nomeAgora, key.FileName, StringComparison.Ordinal) AndAlso
+                   tamanhoAgora.Value = key.SizeBytes
         End Function
 
         ''' <summary>

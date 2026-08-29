@@ -655,7 +655,22 @@ Namespace Global.Iris.Outlook
                                     ' ja violei duas vezes antes desta. E aqui o
                                     ' vazamento se repetiria a cada pasta
                                     ' expandida na arvore.
-                                    Dim netos = 0
+                                    ' NAO CONSEGUI CONTAR NAO E "NAO TEM".
+                                    '
+                                    ' Estes dois Catch eram mudos e devolviam
+                                    ' zero. O de baixo virava "0 itens" numa
+                                    ' pasta cheia; o de cima era pior: netos = 0
+                                    ' vira HasChildren = False, a pasta perde o
+                                    ' triangulo de expandir e o RAMO INTEIRO
+                                    ' some da arvore. Correio que existe deixa
+                                    ' de ter como ser alcancado, e nada na tela
+                                    ' diz por que.
+                                    '
+                                    ' O lado seguro dos dois e OPOSTO: para as
+                                    ' filhas, deixar expandir (quem tentar ve o
+                                    ' erro de verdade); para a contagem, dizer
+                                    ' que nao sabe.
+                                    Dim netos As Integer? = Nothing
                                     Dim subpastas As OL.Folders = Nothing
                                     Try
                                         subpastas = f.Folders
@@ -665,7 +680,7 @@ Namespace Global.Iris.Outlook
                                         ComHelpers.Release(subpastas)
                                     End Try
 
-                                    Dim total = 0
+                                    Dim total As Integer? = Nothing
                                     Dim itens As OL.Items = Nothing
                                     Try
                                         itens = f.Items
@@ -675,13 +690,17 @@ Namespace Global.Iris.Outlook
                                         ComHelpers.Release(itens)
                                     End Try
 
+                                    ' HasChildren sem saber = DEIXA EXPANDIR:
+                                    ' um ramo escondido nao tem como ser
+                                    ' descoberto pelo usuario.
                                     lista.Add(New FolderInfo With {
                                         .Key = New FolderKey(Safe(Function() f.EntryID), Safe(Function() f.StoreID)),
                                         .Name = Safe(Function() f.Name),
                                         .ContentKind = TipoDeConteudo(f),
-                                        .ItemCount = total,
+                                        .ItemCount = If(total, 0),
+                                        .ItemCountConhecido = total.HasValue,
                                         .UnreadCount = SafeInt(Function() f.UnReadItemCount),
-                                        .HasChildren = netos > 0,
+                                        .HasChildren = If(netos, 1) > 0,
                                         .IsHidden = PastaOculta(f)
                                     })
                                 Finally
@@ -1155,6 +1174,16 @@ Namespace Global.Iris.Outlook
         ''' PR_ATTR_HIDDEN via PropertyAccessor. O PropertyAccessor e um
         ''' objeto COM proprio e precisa ser liberado — encadear
         ''' f.PropertyAccessor.GetProperty(...) seria o R7 mais uma vez.
+        '''
+        ''' <b>Ausente e ilegível são coisas diferentes, e aqui as duas viram
+        ''' "visível" — de propósito.</b> Uma pasta que o Iris não consegue
+        ''' classificar tem de <i>aparecer</i>: esconder o que não se entendeu é
+        ''' a mesma família de "não observei virou não há", e do lado caro. A
+        ''' pasta some da árvore e nada diz por quê.
+        '''
+        ''' Quem decide o que fazer com pasta oculta é a política de
+        ''' visibilidade, e ela recebe um <c>False</c> que quer dizer
+        ''' "não me deram motivo para esconder".
         ''' </summary>
         Private Shared Function PastaOculta(f As OL.MAPIFolder) As Boolean
             Const TagOculta As String = "http://schemas.microsoft.com/mapi/proptag/0x10F4000B"
@@ -1164,7 +1193,7 @@ Namespace Global.Iris.Outlook
                 Dim valor = acessor.GetProperty(TagOculta)
                 Return TypeOf valor Is Boolean AndAlso CBool(valor)
             Catch
-                ' Pasta sem a propriedade: tratar como visivel.
+                ' Sem a propriedade, ou sem conseguir ler: NAO esconder.
                 Return False
             Finally
                 ComHelpers.Release(acessor)

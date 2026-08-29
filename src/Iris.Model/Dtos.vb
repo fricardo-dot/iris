@@ -15,6 +15,23 @@ Namespace Global.Iris.Model
         Public Property Name As String = ""
         Public Property ContentKind As FolderContentKind = FolderContentKind.Unknown
         Public Property ItemCount As Integer
+
+        ''' <summary>
+        ''' Se a contagem acima foi <b>lida</b>, ou se é só o zero de quem não
+        ''' conseguiu contar.
+        '''
+        ''' O <c>Items.Count</c> do Outlook falha por sessão ocupada, permissão
+        ''' e store desconectado, e o <c>Catch</c> devolvia zero calado: uma
+        ''' pasta cheia aparecia com "0" na árvore. É a mesma distinção que o
+        ''' <c>MessagePage.TotalAtStart</c> faz sendo anulável, e que a lista já
+        ''' mostra como <c>"0 de ?"</c>.
+        '''
+        ''' <b>Sem consumidor hoje, e dito com esse nome:</b> a árvore não
+        ''' exibe a contagem, então não há tela afirmando o zero. O campo
+        ''' existe para que o próximo consumidor não leia o zero como fato —
+        ''' que é como este defeito nasceu na listagem e na agenda.
+        ''' </summary>
+        Public Property ItemCountConhecido As Boolean = True
         ''' <summary>
         ''' Eventualmente consistente por desenho: o Outlook atualiza isto
         ''' de forma assíncrona, e o Iris não vai bloquear para conferir.

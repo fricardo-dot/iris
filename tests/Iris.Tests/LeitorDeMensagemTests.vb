@@ -5,6 +5,7 @@ Imports System.Windows.Threading
 Imports Iris.App.ViewModels
 Imports Iris.Core
 Imports Iris.Model
+Imports Iris.Outlook
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
 
 ''' <summary>
@@ -293,6 +294,49 @@ Public Class LeitorDeMensagemTests
                         "controle: falha dura sem fechamento tinha de reverter o negrito")
                 End Using
             End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>FALHA AO CONFERIR A IDENTIDADE DO ANEXO NÃO PODE VIRAR "É O MESMO".</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>OS AUXILIARES TOLERANTES ANULAVAM A GUARDA</b>
+    '''
+    ''' O índice de um anexo é instável, então antes de gravar o
+    ''' <c>SaveAttachment</c> confere nome <b>e</b> tamanho. Só que os dois
+    ''' lados da comparação eram lidos com os auxiliares tolerantes: exceção
+    ''' vira <c>""</c> e <c>0</c>. Se a leitura falhasse nos dois momentos —
+    ''' ao indexar e ao gravar — <c>""/0</c> casava com <c>""/0</c>, a guarda
+    ''' passava e <b>o anexo errado era gravado com o nome certo</b>.
+    '''
+    ''' É o dano exato que essa guarda existe para impedir, chegando por dentro
+    ''' dela. Agora a leitura precisa ser conclusiva: <c>Nothing</c> em qualquer
+    ''' dos dois fecha.
+    '''
+    ''' <b>Controle negativo:</b> fazendo a função aceitar <c>Nothing</c> como
+    ''' vazio/zero, as duas primeiras linhas caem.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Identidade_de_anexo_ILEGIVEL_nao_casa()
+        Dim dono As New ItemKey("E-1", "store-1")
+
+        ' A CHAVE FABRICADA: nome vazio e tamanho zero, que e o que os
+        ' auxiliares tolerantes produzem quando a leitura falha.
+        Dim fabricada As New AttachmentKey(dono, 1, "", 0)
+
+        Assert.IsFalse(MessageReading.MesmaIdentidade(Nothing, 0, fabricada),
+            "nome ilegivel casou com a chave fabricada -- o anexo errado seria gravado")
+        Assert.IsFalse(MessageReading.MesmaIdentidade("", Nothing, fabricada),
+            "tamanho ilegivel casou com a chave fabricada")
+
+        ' CONTROLE POSITIVO: leitura conclusiva e igual continua casando,
+        ' senao nenhum anexo seria salvo nunca.
+        Dim boa As New AttachmentKey(dono, 1, "contrato.pdf", 4096)
+        Assert.IsTrue(MessageReading.MesmaIdentidade("contrato.pdf", 4096, boa))
+
+        ' E diferente continua nao casando, nos dois campos.
+        Assert.IsFalse(MessageReading.MesmaIdentidade("outro.pdf", 4096, boa))
+        Assert.IsFalse(MessageReading.MesmaIdentidade("contrato.pdf", 4095, boa))
     End Sub
 
 End Class
