@@ -1443,3 +1443,39 @@ porque a primeira que escrevi não reproduzia o defeito. Controle negativo que n
 reproduz o defeito é controle que não controla nada.
 
 Suíte: **933**.
+
+---
+
+## Vigésima sexta passada — a promessa estava errada
+
+**O achado que importa não é um bug: é a afirmação.** Eu escrevi, em dois commits
+e no relatório, que a propriedade era *"o texto visível sai inteiro e o invisível
+não sai"*. É falso, e não dá para consertar por enumeração:
+
+```html
+<style>.x{display:none}</style><p class=x>SEGREDO</p>
+```
+
+é HTML comum, o leitor aceita, e o `SEGREDO` sai sem ninguém ter visto.
+**Visibilidade é renderização** — para prometer aquilo seria preciso aplicar CSS,
+e isso é um navegador.
+
+A promessa mudou para o que se sustenta: o que sai é o **texto do documento** — o
+que está escrito no HTML, menos o conteúdo de `script`, `style` e comentário.
+Nada sobre o que a tela mostra. O risco residual entrou no ESCOPO com esse nome.
+
+**Cinco defeitos dentro do subconjunto**, todos fechados por recusa:
+`<script.foo>` era lido como `script` e apagava o conteúdo visível; `<p =">`
+engolia a tag seguinte, porque no HTML o `=` antes do nome começa um atributo
+chamado `=`; `<![if !mso]>` é a outra forma do condicional, com a mesma
+ambiguidade que me fez recusar a primeira; `svg` e `math` são conteúdo
+estrangeiro, onde o HTML muda de regras.
+
+**E uma recusa a mais que eu tinha criado:** o `<!--` derrubava também `style`,
+onde o estado *double-escaped* não existe — `<style><!-- .x{} --></style>` é CSS
+comum e antigo. O comentário ao lado dizia "script" e o código não.
+
+O teste de propriedade passou a exigir **todos** os pedaços de texto, e não o
+primeiro: uma linha podia ficar verde perdendo metade.
+
+Suíte: **940**.
