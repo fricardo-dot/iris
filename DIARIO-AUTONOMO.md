@@ -1583,3 +1583,38 @@ E o terceiro controle negativo só derrubou **depois** de eu acrescentar o caso 
 `<!doctype` minúsculo: sem ele, não havia o que derrubar.
 
 Suíte: **966**.
+
+---
+
+## Fechamento — o leitor de HTML fica congelado, e a série para aqui
+
+Vinte e nove passadas de revisão externa, **872 → 966** testes, três achados de
+gravidade alta. Parei por decisão dele, e os números sustentam o motivo.
+
+**Sete das oito últimas passadas foram no mesmo arquivo** — o leitor de HTML.
+Não é o projeto que estava ruim: é aquele problema. Transformar HTML em texto
+sem escrever um parser é uma tarefa em que cada correção revela um irmão, e foi
+exatamente o que aconteceu, passada após passada.
+
+**E ele não roda.** A captura lê `mail.Body` — texto puro — e monta o snapshot
+com `ehHtml:=False`. Nenhum defeito dele alcança a tela nem o provedor.
+Continuar seria **endurecer código morto**.
+
+Fica congelado, com a condição de reabrir escrita em três lugares — no ESCOPO,
+no comentário do próprio leitor e no relatório: **no dia em que alguém ligar o
+caminho HTML, ele precisa de revisão nova antes do primeiro byte sair.**
+
+**O que valeu a série:** o aviso de egresso ambíguo que podia sumir para sempre,
+e duas formas de `data:` URI que atravessavam a invariante — uma delas partida
+por uma quebra de linha que o navegador remonta.
+
+**O que eu levo sobre o meu próprio trabalho:** três vezes um controle negativo
+meu passou quando devia falhar, e duas vezes eu declarei uma propriedade que o
+código não cumpria. Não foi o código que estava ruim nessas horas — fui eu
+afirmando mais do que tinha provado.
+
+**Onde olhar da próxima vez:** `Iris.Sync`, `Iris.Cache`, a reconciliação e o
+broker. O revisor mal os abriu, porque as passadas foram sendo puxadas para onde
+já havia achado.
+
+Suíte: **966**.

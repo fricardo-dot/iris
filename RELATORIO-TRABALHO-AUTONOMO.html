@@ -1618,7 +1618,75 @@ footer.fim {
 </table>
 </div>
 
-<h2><span class="num">§ 9</span>O que fazer a seguir</h2>
+<h2><span class="num">§ 9</span>Onde isto parou, e por quê</h2>
+
+<p>
+  <strong>Vinte e nove passadas de revisão externa</strong>, 872 → 966 testes,
+  três achados de gravidade alta. Parei aqui por decisão sua, e com um motivo
+  que os números sustentam.
+</p>
+
+<div class="tabela-wrap wide">
+<table>
+  <caption>Onde as passadas encontraram coisa</caption>
+  <thead><tr><th>Faixa</th><th>Onde</th><th class="num">Altos</th></tr></thead>
+  <tbody>
+    <tr><td>1 – 17</td><td>Espalhado: paginação, dreno, busca, árvore de pastas,
+        calendário, agenda, roteiros de medição</td><td class="num">0</td></tr>
+    <tr><td>18 – 22</td><td>Diário de divulgação, anexos, compositor — e o
+        pipeline de conteúdo começa</td><td class="num">1</td></tr>
+    <tr><td><strong>23 – 29</strong></td><td><strong>Todas no leitor de HTML</strong>
+        — o mesmo arquivo, sete vezes</td><td class="num">2</td></tr>
+  </tbody>
+</table>
+</div>
+
+<div class="nota">
+  <strong>O leitor de HTML fica congelado, e isso é decisão.</strong> Ele não
+  roda: a captura lê texto puro e monta o snapshot com HTML desligado, então
+  nenhum defeito dele alcança a tela ou o provedor. Sete passadas seguidas ali
+  acharam mais um estado do HTML a cada vez — que é o esperado, porque
+  transformar HTML em texto sem escrever um parser não fecha por remendo.
+  <strong>Continuar seria endurecer código morto.</strong>
+  A condição de reabrir está escrita no ESCOPO: no dia em que alguém ligar o
+  caminho HTML, ele precisa de revisão nova <em>antes</em> do primeiro byte.
+</div>
+
+<h3>Os três altos, que valeram a série inteira</h3>
+
+<ul>
+  <li><strong>O aviso de egresso ambíguo podia sumir para sempre.</strong> Um
+      envio à IA interrompido fica <em>ambíguo</em> — os bytes podem ter
+      chegado. A abertura seguinte devia avisar você, e a conta era da
+      <em>transição</em>: bastava uma falha para o aviso sumir e o egresso
+      religar em silêncio.</li>
+  <li><strong>Duas formas de <code>data:</code> URI atravessavam a
+      invariante</strong> — inclusive uma partida por uma quebra de linha, que
+      o navegador remonta e o padrão não via.</li>
+</ul>
+
+<h3>O que eu levo daqui sobre o meu próprio trabalho</h3>
+
+<p>
+  <strong>Três vezes um controle negativo meu passou quando devia falhar</strong>
+  — a correção não tinha teste, ou o teste não tocava o defeito, ou a mutação
+  não reproduzia o defeito. E <strong>duas vezes eu declarei uma propriedade que
+  o código não cumpria</strong>: uma guarda &quot;não observável&quot; que era
+  observável, e a promessa de preservar o texto visível, que exigiria um
+  navegador. Não foi o código que estava ruim nessas horas — fui eu afirmando
+  mais do que tinha provado. Está passada a passada no diário.
+</p>
+
+<h3>Onde olhar na próxima vez</h3>
+
+<p>
+  O revisor mal abriu <code>Iris.Sync</code>, <code>Iris.Cache</code>, a
+  reconciliação e o broker — as passadas foram sendo puxadas para onde já havia
+  achado. Se houver uma próxima série, é por ali que eu começaria, e não pelo
+  pipeline de conteúdo.
+</p>
+
+<h2><span class="num">§ 10</span>O que fazer a seguir</h2>
 
 <div class="acoes wide">
   <div>

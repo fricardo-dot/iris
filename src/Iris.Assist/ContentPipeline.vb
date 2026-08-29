@@ -315,6 +315,24 @@ Namespace Global.Iris.Assist
         ''' <b>Lê o HTML uma vez e devolve o texto — e diz quando não sabe.</b>
         '''
         ''' ------------------------------------------------------------------
+        ''' <b>CONGELADO EM 29/08/2026, E SEM CONSUMIDOR</b>
+        '''
+        ''' Isto não roda. A captura lê <c>mail.Body</c> — texto puro — e monta
+        ''' o snapshot com <c>ehHtml:=False</c>, então nada daqui alcança a tela
+        ''' nem o provedor.
+        '''
+        ''' Sete passadas de revisão externa seguidas foram neste arquivo, e
+        ''' cada uma achou mais um estado do HTML. É o esperado: transformar
+        ''' HTML em texto sem escrever um parser não fecha por remendo. Parar
+        ''' foi decisão, para não endurecer código morto.
+        '''
+        ''' <b>Quem for ligar o caminho HTML</b> — passar <c>ehHtml:=True</c>,
+        ''' ou capturar <c>HTMLBody</c> — <b>precisa de uma revisão nova deste
+        ''' arquivo antes do primeiro byte sair</b>. Ele está bom o bastante
+        ''' para ficar guardado, e não para ser confiado sem outra passada. O
+        ''' risco residual conhecido está no ESCOPO.
+        '''
+        ''' ------------------------------------------------------------------
         ''' <b>PRIMEIRO: POR QUE UM LEITOR SÓ</b>
         '''
         ''' Antes havia <i>dois</i> códigos: um decidia se o HTML era

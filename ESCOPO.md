@@ -636,6 +636,21 @@ que este ESCOPO carregava.
   E nenhuma das duas é "entrega atômica", que era o que eu tinha escrito.
   **A entrega parcial passou a ter teste em 28/08** — antes ela estava só
   descrita aqui, e a ressalva da busca chegava a afirmar o contrário dela.
+- **O leitor de HTML está CONGELADO, e não tem consumidor** — *decisão de
+  29/08/2026, depois de sete passadas de revisão seguidas nele.*
+  **Ele não roda hoje.** A captura lê `mail.Body` — texto puro — e monta o
+  snapshot com `ehHtml:=False` (`MessageSnapshots.vb`). Nenhum defeito do
+  leitor pode chegar à tela ou ao provedor enquanto isso não mudar.
+  Sete das oito últimas passadas de revisão externa foram neste arquivo, e cada
+  uma achou mais um estado do HTML — o que é esperado: transformar HTML em
+  texto sem escrever um parser é um problema que não fecha por remendo. Parar
+  aqui é decisão, e não cansaço: continuar seria endurecer código morto.
+  **A condição de reabrir é uma só:** no dia em que alguém ligar o caminho HTML
+  — passar `ehHtml:=True`, ou capturar `HTMLBody` —, este leitor **precisa de
+  revisão nova antes de o primeiro byte sair**. Ele está bom o bastante para
+  ficar guardado, e não para ser confiado sem outra passada.
+  O que ficou de risco residual, e é o que a revisão nova tem de atacar
+  primeiro, está logo abaixo.
 - **O leitor de HTML não sabe o que está visível na tela** — *risco residual
   declarado em 29/08/2026, e ele não some por enumeração.*
   O que vai para o provedor é o **texto do documento**: o que está escrito no
