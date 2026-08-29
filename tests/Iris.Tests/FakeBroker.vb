@@ -153,6 +153,13 @@ Friend NotInheritable Class FakeBroker
     ''' <summary>Como a leitura da lista de destinatarios se saiu.</summary>
     Friend LeituraDeDestinatarios As PartStatus = PartStatus.Full
 
+    ''' <summary>
+    ''' O que a leitura dos ANEXOS conseguiu. Existe pelo mesmo motivo do de
+    ''' cima, e chegou depois: a tela de confirmação olhava só os destinatários,
+    ''' e uma lista de anexos incompleta passava.
+    ''' </summary>
+    Friend LeituraDeAnexos As PartStatus = PartStatus.Full
+
     ''' <summary>O que foi de fato enviado, para o teste conferir.</summary>
     Friend Enviado As SendPreview
 
@@ -384,6 +391,7 @@ Friend NotInheritable Class FakeBroker
 
         p.Attachments.AddRange(_anexos)
         p.RecipientsStatus = LeituraDeDestinatarios
+        p.AttachmentsStatus = LeituraDeAnexos
         Return OperationResult(Of SendPreview).Ok(p)
     End Function
 

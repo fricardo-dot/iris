@@ -370,12 +370,23 @@ Public Class ContentPipelineTests
     ''' <c>&gt;</c> — não removia nada. Sobrava <c>SEGREDO&lt;/script</c> no
     ''' texto que vai para o provedor.
     '''
-    ''' Foi a <b>terceira</b> versão deste conserto: primeiro o
-    ''' <c>&lt;/script&gt;</c> exato, depois o espaço, e só então o critério
-    ''' inteiro. Agora os dois lados usam o mesmo, e o que não termina não conta.
+    ''' ------------------------------------------------------------------
+    ''' <b>AS TRÊS ÚLTIMAS: FECHAMENTO FALSO, E O CASO QUE EU MESMO ABRI</b>
     '''
-    ''' <b>Controle negativo:</b> voltando a contagem para a substring, estas
-    ''' três linhas passam a ser aceitas e o segredo vaza.
+    ''' Enquanto o teste era <i>contar</i> aberturas e fechamentos, ele aceitava
+    ''' fechamento falso vindo de comentário ou de atributo. E a minha correção
+    ''' anterior — contar só fechamento terminado — <b>abriu um caso novo</b>:
+    ''' <c>&lt;!-- &lt;/script&gt; --&gt;&lt;script&gt;SEGREDO&lt;/script</c>
+    ''' passou a ser aceito, porque o fechamento de dentro do comentário
+    ''' equilibrava a abertura real. A contagem antiga recusava esse.
+    '''
+    ''' <b>Três versões consertando contagem com contagem.</b> A pergunta certa
+    ''' não é "está balanceado", é <i>"sobrou alguma coisa que eu não soube
+    ''' remover"</i> — e é isso que o código faz agora: tira comentário, tira
+    ''' bloco, e recusa se ainda restar <c>&lt;script</c> em qualquer forma.
+    '''
+    ''' <b>Controle negativo:</b> qualquer uma das três versões de contagem
+    ''' deixa passar pelo menos uma destas linhas.
     ''' </summary>
     <DataTestMethod>
     <DataRow("<p>visivel</p><script>SEGREDO")>
@@ -385,6 +396,9 @@ Public Class ContentPipelineTests
     <DataRow("<p>visivel</p><script>SEGREDO</script")>
     <DataRow("<p>visivel</p><script>SEGREDO</script x")>
     <DataRow("<p>visivel</p><style>SEGREDO</style")>
+    <DataRow("<!-- </script> --><script>SEGREDO")>
+    <DataRow("<!-- </script> --><script>SEGREDO</script")>
+    <DataRow("<p title=""</script>"">visivel</p><script>SEGREDO")>
     Public Sub Bloco_sem_fechar_RECUSA(corpo As String)
         Dim r = Preparar(corpo, html:=True)
 

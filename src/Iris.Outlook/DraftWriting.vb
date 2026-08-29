@@ -377,6 +377,24 @@ Namespace Global.Iris.Outlook
                     Dim aAlvo As OL.Attachment = Nothing
                     Try
                         aAlvo = anexos.Item(alvo)
+
+                        ' CONFERE DE NOVO O OBJETO QUE VAI APAGAR.
+                        '
+                        ' A primeira passada validou um Attachment, guardou o
+                        ' INDICE e soltou o objeto. Entre as duas passadas a
+                        ' colecao pode mudar, e ai o indice aponta para outro
+                        ' anexo -- que era exatamente o defeito que as duas
+                        ' passadas existem para impedir, sobrevivendo dentro
+                        ' delas. A revisao externa pegou.
+                        '
+                        ' Recusa aqui e Stale pelo mesmo motivo de cima: nada
+                        ' aconteceu, e reler o rascunho resolve.
+                        If Not MesmoArquivo(aAlvo, anexo) Then
+                            Return OperationResult(Of DraftInfo).Fail(
+                                ErrorKind.Stale,
+                                "o anexo naquele indice mudou entre conferir e apagar")
+                        End If
+
                         aAlvo.Delete()
                     Finally
                         ComHelpers.Release(aAlvo)
@@ -963,7 +981,12 @@ Namespace Global.Iris.Outlook
                             .FileName = If(nome, ""),
                             .SizeBytes = If(tamanho, 0)
                         })
-                        obtidos += 1
+
+                        ' ANEXO COM IDENTIDADE FABRICADA NAO E ANEXO OBTIDO.
+                        ' Contar como obtido fazia a lista fechar como
+                        ' COMPLETA, e a completude e o que a tela consulta
+                        ' antes de encaminhar e de enviar.
+                        If nome IsNot Nothing AndAlso tamanho.HasValue Then obtidos += 1
                     Catch ex As COMException
                         ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
                             ex.HResult, isMutation:=False, mutationAttemptStarted:=False)

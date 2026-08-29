@@ -1334,6 +1334,42 @@ Public Class ComposerTests
     End Sub
 
     ''' <summary>
+    ''' <b>LISTA DE ANEXOS INCOMPLETA BLOQUEIA O ENVIO.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A TELA OLHAVA SÓ OS DESTINATÁRIOS</b>
+    '''
+    ''' O <c>PrepareSend</c> já entregava o <c>AttachmentsStatus</c>, e esta
+    ''' confirmação consultava apenas o dos destinatários. Uma leitura de anexo
+    ''' que falhou — ou, desde 29/08, um anexo cuja <b>identidade</b> não pôde
+    ''' ser conferida — deixava a tela dizer o que vai junto <i>sem saber o que
+    ''' vai junto</i>.
+    '''
+    ''' Anexo é onde isso pesa mais: ele não deixa rastro na tela, ao contrário
+    ''' de um corpo truncado, que se vê. E envio é a única operação sem
+    ''' desfazer.
+    '''
+    ''' <b>Controle negativo:</b> tirando a conferência do
+    ''' <c>AttachmentsStatus</c>, este teste cai. O controle <i>positivo</i> é
+    ''' o teste logo abaixo, que exige que a lista completa siga em frente.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Anexos_lidos_pela_metade_bloqueiam_o_envio()
+        Dim broker As New FakeBroker With {.LeituraDeAnexos = PartStatus.IncompleteWith(3, 1, ErrorKind.Denied)}
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano'''empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.Editing, vm.State,
+            "Nao pode chegar a confirmacao sem saber o que vai junto.")
+        Assert.IsTrue(vm.HasStatus)
+        StringAssert.Contains(vm.Status, "anexos")
+        CollectionAssert.DoesNotContain(broker.Chamadas, "send")
+    End Sub
+
+    ''' <summary>
     ''' Controle negativo: leitura completa segue para a confirmacao. Sem
     ''' isto, um compositor que bloqueasse sempre passaria no teste acima.
     ''' </summary>

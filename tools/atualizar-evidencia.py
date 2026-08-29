@@ -1,10 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Atualiza os numeros dos tres documentos de evidencia numa passada so.
+"""Atualiza os NUMEROS de RESULTADO-SUITE.md e RELATORIO-TRABALHO-AUTONOMO.html.
+
+NAO toca no DIARIO-AUTONOMO.md: o diario e prosa por dia, escrita a mao. A
+primeira versao deste cabecalho dizia "os tres documentos", e a revisao externa
+pegou -- roteiro que descreve errado o que faz e a mesma familia dos zeros
+fabricados, num lugar diferente.
 
 Existe porque eu ja errei essa atualizacao duas vezes a mao: uma vez o script
 abortou no meio e nao gravou (o relatorio ficou dizendo 17 no cabecalho e
 dezoito no rodape), e outra eu somei o commit de cabeca em vez de medir.
-Aqui a contagem vem do git e as substituicoes falham alto.
+Aqui a contagem vem do git, TODA substituicao e conferida, e as gravacoes so
+acontecem depois de as duas edicoes terem sido montadas em memoria.
 """
 import io, os, subprocess, sys
 os.chdir(r"C:\Users\Ricardo\Documents\Iris")
@@ -14,11 +20,13 @@ TESTES_NOVO, ANT_TESTES = sys.argv[3], sys.argv[4]
 DUR = sys.argv[5]
 ORD_NOVO, ORD_ANT = sys.argv[6], sys.argv[7]      # "vigésima", "décima nona"
 PASSADA_NOVA, PASSADA_ANT = sys.argv[8], sys.argv[9]   # "20", "19"
-POR_EXTENSO = sys.argv[10]                        # "Vinte"
-DATA = sys.argv[11]
+DATA = sys.argv[10]
 
+# check=True: sem ele, um git que falha devolveria contagem VAZIA e ela seria
+# gravada como se fosse medida.
 n = subprocess.run(["git", "rev-list", "--count", "874f223.." + HASH_NOVO],
-                   capture_output=True, text=True).stdout.strip()
+                   capture_output=True, text=True, check=True).stdout.strip()
+assert n.isdigit() and n != "0", f"contagem de commits invalida: {n!r}"
 
 def edita(p, pares):
     s = io.open(p, encoding="utf-8", newline="").read()
@@ -85,8 +93,9 @@ edita("RELATORIO-TRABALHO-AUTONOMO.html", [
 # o numero de commits do cabecalho e do rodape, medido e nao somado
 s = io.open("RELATORIO-TRABALHO-AUTONOMO.html", encoding="utf-8", newline="").read()
 import re
-s = re.sub(r"<span><b>\d+</b> commits até o", f"<span><b>{n}</b> commits até o", s, count=1)
-s = re.sub(r"</code> · \d+ commits ·", f"</code> · {n} commits ·", s, count=1)
+s, q1 = re.subn(r"<span><b>\d+</b> commits até o", f"<span><b>{n}</b> commits até o", s, count=1)
+s, q2 = re.subn(r"</code> · \d+ commits ·", f"</code> · {n} commits ·", s, count=1)
+assert q1 == 1 and q2 == 1, f"contagem de commits nao encontrada no relatorio: {q1}, {q2}"
 io.open("RELATORIO-TRABALHO-AUTONOMO.html", "w", encoding="utf-8", newline="").write(s)
 
 print(f"documentos: {TESTES_NOVO} testes, {n} commits, {HASH_NOVO}, {PASSADA_NOVA} passadas")

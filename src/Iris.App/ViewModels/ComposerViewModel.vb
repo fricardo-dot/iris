@@ -997,6 +997,23 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End If
 
+            ' E A LISTA DE ANEXOS? Mesma pergunta, e ela estava faltando.
+            '
+            ' O PrepareSend ja entregava o AttachmentsStatus e esta tela olhava
+            ' so o dos destinatarios. Uma leitura de anexo que falhou -- ou um
+            ' anexo cuja IDENTIDADE nao pode ser conferida, que desde 29/08
+            ' tambem derruba a completude -- deixava a confirmacao dizer o que
+            ' vai junto sem saber o que vai junto.
+            '
+            ' Anexo e o caso em que isso pesa mais: ele nao deixa rastro na
+            ' tela, ao contrario de um corpo truncado, que se ve.
+            If Not ReplyReadiness.CanReply(p.AttachmentsStatus) Then
+                Status = ReplyReadiness.DescribeBlock("os anexos", p.AttachmentsStatus) &
+                         " Não dá para conferir o que vai junto com a mensagem; " &
+                         "reabra o rascunho ou envie pelo Outlook."
+                Return
+            End If
+
             If p.Recipients.Count = 0 Then
                 Status = "Sem destinatários."
                 Return

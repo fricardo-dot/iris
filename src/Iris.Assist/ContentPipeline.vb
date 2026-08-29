@@ -237,16 +237,34 @@ Namespace Global.Iris.Assist
         ''' <c>&gt;</c> — não removia nada, e sobrava
         ''' <c>SEGREDO&lt;/script</c> no texto que vai para o provedor.
         '''
-        ''' Os dois lados usam o mesmo critério agora, e o critério é o do
-        ''' removedor: <c>&lt;/nome</c> ... <c>&gt;</c>. O que não termina não
-        ''' conta como fechamento, o balanço não fecha, e o HTML é
-        ''' <b>recusado</b> — que é o lado certo de errar aqui.
+        ''' ------------------------------------------------------------------
+        ''' <b>CONTAR ERA A ABORDAGEM ERRADA, E EU INSISTI NELA TRÊS VEZES</b>
+        '''
+        ''' Contar aberturas e fechamentos no HTML <b>bruto</b> aceita
+        ''' fechamento falso vindo de comentário ou de atributo:
+        ''' <c>&lt;!-- &lt;/script&gt; --&gt;&lt;script&gt;SEGREDO</c> equilibra
+        ''' e passa. E a minha correção anterior — contar só fechamento
+        ''' terminado — <b>abriu um caso novo</b>: o fechamento dentro do
+        ''' comentário equilibrava a abertura real, e
+        ''' <c>SEGREDO&lt;/script</c> sobrava. Consertar contagem com contagem
+        ''' estava sempre a um contraexemplo de distância.
+        '''
+        ''' <b>A pergunta certa não é "está balanceado", é "sobrou alguma coisa
+        ''' que eu não soube remover".</b> Então o teste é o próprio removedor:
+        ''' tira comentário, tira bloco, e se ainda restar <c>&lt;script</c> ou
+        ''' <c>&lt;/script</c> em qualquer forma, é porque a limpeza não deu
+        ''' conta — e o que ela não removeu viraria texto para o provedor.
+        '''
+        ''' Isso recusa também um atributo que contenha <c>&lt;/script&gt;</c>,
+        ''' que é HTML esquisito e legítimo. É o lado certo de errar: o mínimo
+        ''' honesto é <b>recusar</b> o que não dá para interpretar.
         ''' </summary>
         Private Shared Function HtmlInterpretavel(bruto As String) As Boolean
+            ' NA MESMA ORDEM DA LIMPEZA: comentario primeiro, bloco depois.
+            Dim resto = ScriptOuEstilo.Replace(Comentario.Replace(bruto, " "), " ")
             For Each nome In {"script", "style"}
-                Dim fechamentos = New Regex("</" & nome & "[^>]*>",
-                                            RegexOptions.IgnoreCase).Matches(bruto).Count
-                If Contagem(bruto, "<" & nome) <> fechamentos Then Return False
+                If resto.IndexOf("<" & nome, StringComparison.OrdinalIgnoreCase) >= 0 Then Return False
+                If resto.IndexOf("</" & nome, StringComparison.OrdinalIgnoreCase) >= 0 Then Return False
             Next
             Return Contagem(bruto, "<!--") = Contagem(bruto, "-->")
         End Function

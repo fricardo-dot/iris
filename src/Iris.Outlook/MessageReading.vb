@@ -246,7 +246,13 @@ Namespace Global.Iris.Outlook
                             .ContentId = "",
                             .IsInline = False
                         })
-                        obtidos += 1
+
+                        ' ANEXO COM IDENTIDADE FABRICADA NAO E ANEXO OBTIDO.
+                        ' Ele entrava na conta e a lista fechava como COMPLETA
+                        ' -- e e a completude que o CanForward consulta antes
+                        ' de deixar encaminhar. Identidade que ninguem conferiu
+                        ' nao pode virar "conferi tudo".
+                        If identidadeLida Then obtidos += 1
                     Catch ex As COMException
                         ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
                             ex.HResult, isMutation:=False, mutationAttemptStarted:=False)
