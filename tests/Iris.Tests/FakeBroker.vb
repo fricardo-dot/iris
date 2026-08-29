@@ -749,7 +749,7 @@ Friend NotInheritable Class FakeBroker
     Public Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentInfo)) _
-        Implements IOutlookBroker.CreateAppointmentAsync
+        Implements IAgendaWriter.CreateAppointmentAsync
         Chamadas.Add("createAppointment")
         Return ForaDaAlcada(Of OperationResult(Of AppointmentInfo))()
     End Function
@@ -757,7 +757,7 @@ Friend NotInheritable Class FakeBroker
     Public Function UpdateAppointmentAsync(chave As AppointmentKey, rascunho As AppointmentDraft,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentInfo)) _
-        Implements IOutlookBroker.UpdateAppointmentAsync
+        Implements IAgendaWriter.UpdateAppointmentAsync
         Chamadas.Add("updateAppointment")
         Return ForaDaAlcada(Of OperationResult(Of AppointmentInfo))()
     End Function
@@ -765,7 +765,7 @@ Friend NotInheritable Class FakeBroker
     Public Function DeleteAppointmentAsync(chave As AppointmentKey,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of Boolean)) _
-        Implements IOutlookBroker.DeleteAppointmentAsync
+        Implements IAgendaWriter.DeleteAppointmentAsync
         Chamadas.Add("deleteAppointment")
         Return ForaDaAlcada(Of OperationResult(Of Boolean))()
     End Function

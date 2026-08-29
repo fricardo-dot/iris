@@ -771,7 +771,7 @@ Namespace Global.Iris.Outlook
                                                      rascunho As AppointmentDraft,
                                                      cancel As CancellationToken) _
             As Task(Of OperationResult(Of AppointmentInfo)) _
-            Implements IOutlookBroker.CreateAppointmentAsync
+            Implements IAgendaWriter.CreateAppointmentAsync
 
             Return Await MutateAsync(Of AppointmentInfo)(
                 "outlook.createAppointment",
@@ -783,7 +783,7 @@ Namespace Global.Iris.Outlook
                                                      rascunho As AppointmentDraft,
                                                      cancel As CancellationToken) _
             As Task(Of OperationResult(Of AppointmentInfo)) _
-            Implements IOutlookBroker.UpdateAppointmentAsync
+            Implements IAgendaWriter.UpdateAppointmentAsync
 
             Return Await MutateAsync(Of AppointmentInfo)(
                 "outlook.updateAppointment",
@@ -794,7 +794,7 @@ Namespace Global.Iris.Outlook
         Public Async Function DeleteAppointmentAsync(chave As AppointmentKey,
                                                      cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean)) _
-            Implements IOutlookBroker.DeleteAppointmentAsync
+            Implements IAgendaWriter.DeleteAppointmentAsync
 
             Return Await MutateAsync(Of Boolean)(
                 "outlook.deleteAppointment",

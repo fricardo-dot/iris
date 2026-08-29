@@ -238,21 +238,21 @@ Friend NotInheritable Class WatcherBroker
     Public Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentInfo)) _
-        Implements IOutlookBroker.CreateAppointmentAsync
+        Implements IAgendaWriter.CreateAppointmentAsync
         Throw New NotSupportedException("fora da alcada")
     End Function
 
     Public Function UpdateAppointmentAsync(chave As AppointmentKey, rascunho As AppointmentDraft,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of AppointmentInfo)) _
-        Implements IOutlookBroker.UpdateAppointmentAsync
+        Implements IAgendaWriter.UpdateAppointmentAsync
         Throw New NotSupportedException("fora da alcada")
     End Function
 
     Public Function DeleteAppointmentAsync(chave As AppointmentKey,
                                            cancel As CancellationToken) _
         As Task(Of OperationResult(Of Boolean)) _
-        Implements IOutlookBroker.DeleteAppointmentAsync
+        Implements IAgendaWriter.DeleteAppointmentAsync
         Throw New NotSupportedException("fora da alcada")
     End Function
 

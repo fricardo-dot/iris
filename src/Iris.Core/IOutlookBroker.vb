@@ -54,8 +54,45 @@ Namespace Global.Iris.Core
             As Task(Of OperationResult(Of AppointmentWindow))
     End Interface
 
+    ''' <summary>
+    ''' <b>A porta estreita de ESCRITA no calendário.</b>
+    '''
+    ''' Separada da <see cref="IAgendaSource"/> pelo mesmo motivo que ela
+    ''' existe: quem só lê não deve ser obrigado a implementar escrita para
+    ''' ter um duplo. E aqui a separação vale mais, porque do outro lado
+    ''' desta interface há uma operação que <b>apaga</b>.
+    ''' </summary>
+    Public Interface IAgendaWriter
+        ''' <summary>
+        ''' Cria um compromisso <b>na pasta indicada</b>.
+        '''
+        ''' Não há participantes em <see cref="AppointmentDraft"/>, e a
+        ''' ausência é a funcionalidade: compromisso com participante é
+        ''' reunião, e salvar reunião manda convite por e-mail.
+        ''' </summary>
+        Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
+                                        cancel As CancellationToken) _
+            As Task(Of OperationResult(Of AppointmentInfo))
+
+        ''' <summary>
+        ''' Edita um compromisso. <b>Recusa reunião</b>, porque o
+        ''' <c>Save</c> dela manda atualização a quem foi convidado.
+        ''' </summary>
+        Function UpdateAppointmentAsync(chave As AppointmentKey, rascunho As AppointmentDraft,
+                                        cancel As CancellationToken) _
+            As Task(Of OperationResult(Of AppointmentInfo))
+
+        ''' <summary>
+        ''' Apaga um compromisso. <b>Recusa reunião</b>: apagar reunião manda
+        ''' cancelamento, e aí o estrago chega a terceiros.
+        ''' </summary>
+        Function DeleteAppointmentAsync(chave As AppointmentKey,
+                                        cancel As CancellationToken) _
+            As Task(Of OperationResult(Of Boolean))
+    End Interface
+
     Public Interface IOutlookBroker
-        Inherits IAgendaSource
+        Inherits IAgendaSource, IAgendaWriter
 
 
         ' ---- Sessão -----------------------------------------------------
@@ -343,33 +380,6 @@ Namespace Global.Iris.Core
         ''' reenviar.
         ''' </summary>
         Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
-            As Task(Of OperationResult(Of Boolean))
-
-        ''' <summary>
-        ''' Cria um compromisso <b>na pasta indicada</b>.
-        '''
-        ''' Não há participantes em <see cref="AppointmentDraft"/>, e a
-        ''' ausência é a funcionalidade: compromisso com participante é
-        ''' reunião, e salvar reunião manda convite por e-mail.
-        ''' </summary>
-        Function CreateAppointmentAsync(folder As FolderKey, rascunho As AppointmentDraft,
-                                        cancel As CancellationToken) _
-            As Task(Of OperationResult(Of AppointmentInfo))
-
-        ''' <summary>
-        ''' Edita um compromisso. <b>Recusa reunião</b>, porque o
-        ''' <c>Save</c> dela manda atualização a quem foi convidado.
-        ''' </summary>
-        Function UpdateAppointmentAsync(chave As AppointmentKey, rascunho As AppointmentDraft,
-                                        cancel As CancellationToken) _
-            As Task(Of OperationResult(Of AppointmentInfo))
-
-        ''' <summary>
-        ''' Apaga um compromisso. <b>Recusa reunião</b>: apagar reunião manda
-        ''' cancelamento, e aí o estrago chega a terceiros.
-        ''' </summary>
-        Function DeleteAppointmentAsync(chave As AppointmentKey,
-                                        cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean))
 
         Function DeleteDraftAsync(draft As DraftKey, cancel As CancellationToken) _

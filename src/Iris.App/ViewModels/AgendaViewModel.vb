@@ -76,6 +76,14 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _fonte As IAgendaSource
         Private ReadOnly _agora As Func(Of DateTimeOffset)
 
+        Private ReadOnly _escritor As IAgendaWriter
+        Private _selecionado As LinhaDaAgenda
+        Private _confirmando As LinhaDaAgenda
+        Private _gravando As Boolean
+        Private _novoAssunto As String = ""
+        Private _novoInicio As DateTimeOffset
+        Private _novaDuracao As Integer = 30
+
         Private _pasta As FolderKey
         Private _carregando As Boolean
         Private _erro As String = ""
@@ -98,12 +106,145 @@ Namespace Global.Iris.App.ViewModels
         ''' Um teste de agenda que use <c>Now</c> passa em agosto e falha em
         ''' dezembro por um motivo que não é o código.
         ''' </summary>
-        Public Sub New(fonte As IAgendaSource, Optional agora As Func(Of DateTimeOffset) = Nothing)
+        Public Sub New(fonte As IAgendaSource,
+                       Optional agora As Func(Of DateTimeOffset) = Nothing,
+                       Optional escritor As IAgendaWriter = Nothing)
             _fonte = fonte
             _agora = If(agora, Function() DateTimeOffset.Now)
+
+            ' SEM ESCRITOR A AGENDA CONTINUA INTEIRA, so de leitura. E o que
+            ' os testes de leitura usam, e e o que a Fase 6 entregou primeiro.
+            _escritor = escritor
+
             AtualizarCommand = New AsyncRelayCommand(AddressOf CarregarAsync,
                                                      Function() _pasta IsNot Nothing AndAlso Not _carregando)
+            CriarCommand = New AsyncRelayCommand(AddressOf CriarAsync, Function() PodeCriar)
+            PedirExclusaoCommand = New RelayCommand(AddressOf PedirExclusao, Function() PodeApagar)
+            CancelarExclusaoCommand = New RelayCommand(Sub() Confirmando = Nothing)
+            ApagarCommand = New AsyncRelayCommand(AddressOf ApagarAsync,
+                                                 Function() Confirmando IsNot Nothing)
         End Sub
+
+        ''' <summary>
+        ''' <b>Criar, editar e apagar compromisso — e por que a agenda pergunta
+        ''' antes de apagar.</b>
+        '''
+        ''' A leitura da Fase 6 entrou em 28/08; a escrita esperou o desenho que
+        ''' não pudesse mandar e-mail por descuido. Ver
+        ''' <c>Iris.Outlook.CalendarWriting</c> para a invariante.
+        '''
+        ''' Aqui a única decisão de tela que importa é a confirmação: apagar não
+        ''' tem desfazer visível — o compromisso vai para os Itens Excluídos e
+        ''' ninguém olha lá. Um clique não pode bastar.
+        '''
+        ''' <b>A validação NÃO é repetida aqui.</b> Quem recusa assunto vazio e
+        ''' fim antes do início é o <c>CalendarWriting</c>, e esta tela mostra o
+        ''' motivo que ele devolve. Guarda duplicada é guarda que ninguém prova
+        ''' — foi a lição da vigésima passada de revisão, e ela vale igual aqui.
+        ''' </summary>
+        Public ReadOnly Property CriarCommand As IAsyncRelayCommand
+        Public ReadOnly Property PedirExclusaoCommand As RelayCommand
+        Public ReadOnly Property CancelarExclusaoCommand As RelayCommand
+        Public ReadOnly Property ApagarCommand As IAsyncRelayCommand
+
+        ''' <summary>
+        ''' A agenda sabe escrever? Sem escritor ela é só leitura, e a faixa não
+        ''' mostra nada de escrita — em vez de mostrar botão que não funciona.
+        ''' </summary>
+        Public ReadOnly Property PodeEscrever As Boolean
+            Get
+                Return _escritor IsNot Nothing
+            End Get
+        End Property
+
+        Public ReadOnly Property PodeCriar As Boolean
+            Get
+                Return PodeEscrever AndAlso _pasta IsNot Nothing AndAlso
+                       Not _carregando AndAlso Not _gravando
+            End Get
+        End Property
+
+        Public ReadOnly Property PodeApagar As Boolean
+            Get
+                Return PodeEscrever AndAlso Selecionado IsNot Nothing AndAlso Not _gravando
+            End Get
+        End Property
+
+        Public Property Selecionado As LinhaDaAgenda
+            Get
+                Return _selecionado
+            End Get
+            Set(value As LinhaDaAgenda)
+                If SetProperty(_selecionado, value) Then
+                    ' Trocar de compromisso CANCELA a confirmacao pendente.
+                    ' Sem isto, confirmar apagaria o item que se acabou de
+                    ' escolher, e nao o que a pergunta citou.
+                    Confirmando = Nothing
+                    OnPropertyChanged(NameOf(PodeApagar))
+                    PedirExclusaoCommand.NotifyCanExecuteChanged()
+                End If
+            End Set
+        End Property
+
+        ''' <summary>
+        ''' O compromisso cuja exclusão está sendo confirmada, ou
+        ''' <c>Nothing</c>. É <b>a linha</b>, e não um booleano, justamente para
+        ''' a pergunta poder citar o assunto: "apagar <i>Reunião de equipe</i>?"
+        ''' </summary>
+        Public Property Confirmando As LinhaDaAgenda
+            Get
+                Return _confirmando
+            End Get
+            Private Set(value As LinhaDaAgenda)
+                If SetProperty(_confirmando, value) Then
+                    OnPropertyChanged(NameOf(PerguntaDaExclusao))
+                    OnPropertyChanged(NameOf(EstaConfirmando))
+                    ApagarCommand.NotifyCanExecuteChanged()
+                End If
+            End Set
+        End Property
+
+        Public ReadOnly Property EstaConfirmando As Boolean
+            Get
+                Return _confirmando IsNot Nothing
+            End Get
+        End Property
+
+        Public ReadOnly Property PerguntaDaExclusao As String
+            Get
+                If _confirmando Is Nothing Then Return ""
+                Return $"Apagar ""{_confirmando.Assunto}""? Ele vai para os Itens Excluídos."
+            End Get
+        End Property
+
+        ''' <summary>O assunto do compromisso a criar. Vazio é recusado — pelo
+        ''' <c>CalendarWriting</c>, e não por aqui.</summary>
+        Public Property NovoAssunto As String
+            Get
+                Return _novoAssunto
+            End Get
+            Set(value As String)
+                SetProperty(_novoAssunto, If(value, ""))
+            End Set
+        End Property
+
+        Public Property NovoInicio As DateTimeOffset
+            Get
+                Return _novoInicio
+            End Get
+            Set(value As DateTimeOffset)
+                SetProperty(_novoInicio, value)
+            End Set
+        End Property
+
+        Public Property NovaDuracaoMinutos As Integer
+            Get
+                Return _novaDuracao
+            End Get
+            Set(value As Integer)
+                SetProperty(_novaDuracao, value)
+            End Set
+        End Property
 
         Public ReadOnly Property Compromissos As New ObservableCollection(Of LinhaDaAgenda)()
         Public ReadOnly Property AtualizarCommand As IAsyncRelayCommand
@@ -176,6 +317,117 @@ Namespace Global.Iris.App.ViewModels
             Compromissos.Clear()
             Erro = ""
             Resumo = ""
+
+            ' O ESTADO DE ESCRITA E DA PASTA, e nao da tela. Trocar de
+            ' calendario com uma confirmacao de exclusao pendente apagaria um
+            ' compromisso de outra pasta -- o mesmo defeito que a lista de
+            ' mensagens teve com o total da pasta anterior.
+            Selecionado = Nothing
+            Confirmando = Nothing
+            _novoInicio = ProximaMeiaHora()
+            OnPropertyChanged(NameOf(NovoInicio))
+            OnPropertyChanged(NameOf(PodeCriar))
+            OnPropertyChanged(NameOf(PodeApagar))
+            CriarCommand.NotifyCanExecuteChanged()
+            PedirExclusaoCommand.NotifyCanExecuteChanged()
+        End Sub
+
+        ''' <summary>
+        ''' O próximo instante "redondo", para o formulário não abrir num horário
+        ''' com segundos. Vem do relógio injetável, e não de <c>Now</c>.
+        ''' </summary>
+        Private Function ProximaMeiaHora() As DateTimeOffset
+            Dim n = _agora()
+            Dim base = New DateTimeOffset(n.Year, n.Month, n.Day, n.Hour, 0, 0, n.Offset)
+            Return If(n.Minute < 30, base.AddMinutes(30), base.AddHours(1))
+        End Function
+
+        Private Sub PedirExclusao()
+            Confirmando = Selecionado
+        End Sub
+
+        ''' <summary>
+        ''' Cria o compromisso na pasta que está aberta.
+        '''
+        ''' Depois de criar, <b>recarrega</b>: a agenda tem de mostrar o item
+        ''' novo, e reler é mais barato e mais honesto que enfiar na lista o que
+        ''' eu acho que foi gravado. O <c>AppointmentInfo</c> devolvido já vem
+        ''' com a identidade relida, mas quem manda na tela é o calendário.
+        ''' </summary>
+        Private Async Function CriarAsync() As Task
+            If Not PodeCriar OrElse _disposed Then Return
+
+            Dim rascunho As New Model.AppointmentDraft With {
+                .Subject = _novoAssunto,
+                .De = _novoInicio,
+                .Ate = _novoInicio.AddMinutes(Math.Max(0, _novaDuracao))
+            }
+
+            Await GravarAsync(Function(c) EmResultado(_escritor.CreateAppointmentAsync(_pasta, rascunho, c)),
+                              Sub()
+                                  NovoAssunto = ""
+                              End Sub)
+        End Function
+
+        Private Async Function ApagarAsync() As Task
+            Dim alvo = Confirmando
+            If alvo Is Nothing OrElse _disposed Then Return
+
+            Await GravarAsync(Function(c) _escritor.DeleteAppointmentAsync(
+                                  New AppointmentKey(alvo.Chave), c),
+                              Sub()
+                                  Confirmando = Nothing
+                                  Selecionado = Nothing
+                              End Sub)
+        End Function
+
+        Private Shared Async Function EmResultado(tarefa As Task(Of OperationResult(Of Model.AppointmentInfo))) _
+            As Task(Of OperationResult(Of Boolean))
+            Dim r = Await tarefa
+            If Not r.Succeeded Then Return OperationResult(Of Boolean).Fail(r.Kind, r.Detail)
+            Return OperationResult(Of Boolean).Ok(True)
+        End Function
+
+        ''' <summary>
+        ''' O corpo comum das duas escritas: trava, executa, mostra o motivo se
+        ''' recusar, e <b>recarrega</b> se der certo.
+        '''
+        ''' <c>_gravando</c> existe para o segundo clique não virar a segunda
+        ''' criação. Mutação não tem retry neste projeto justamente porque criar
+        ''' não é idempotente, e uma tela que deixa clicar duas vezes desfaz essa
+        ''' garantia por fora.
+        ''' </summary>
+        Private Async Function GravarAsync(op As Func(Of Threading.CancellationToken, Task(Of OperationResult(Of Boolean))),
+                                           aoDarCerto As Action) As Task
+            _gravando = True
+            AvisarEstadoDeEscrita()
+            Erro = ""
+
+            Try
+                Dim r = Await op(Threading.CancellationToken.None)
+                If Not r.Succeeded Then
+                    Erro = If(String.IsNullOrWhiteSpace(r.Detail),
+                              Traduzir(r.Kind), r.Detail)
+                    Return
+                End If
+                aoDarCerto()
+            Catch ex As Exception
+                Erro = "não consegui gravar no calendário (" & ex.GetType().Name & ")."
+                Return
+            Finally
+                _gravando = False
+                AvisarEstadoDeEscrita()
+            End Try
+
+            Await CarregarAsync()
+        End Function
+
+        Private Sub AvisarEstadoDeEscrita()
+            OnPropertyChanged(NameOf(PodeCriar))
+            OnPropertyChanged(NameOf(PodeApagar))
+            CriarCommand.NotifyCanExecuteChanged()
+            PedirExclusaoCommand.NotifyCanExecuteChanged()
+            ApagarCommand.NotifyCanExecuteChanged()
         End Sub
 
         Public Async Function CarregarAsync() As Task
@@ -356,7 +608,17 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property Pendente As Boolean
 
+        ''' <summary>
+        ''' A chave do compromisso, para a tela poder apagá-lo.
+        '''
+        ''' Ela é <c>ItemKey</c> e não <c>AppointmentKey</c> porque a linha é um
+        ''' dado de tela; quem constrói a chave tipada é quem vai chamar a
+        ''' operação — e aí o compilador impede passar uma mensagem no lugar.
+        ''' </summary>
+        Public ReadOnly Property Chave As ItemKey
+
         Friend Sub New(a As AppointmentInfo)
+            Chave = a.Key
             Assunto = If(String.IsNullOrWhiteSpace(a.Subject), "(sem assunto)", a.Subject)
             Local = If(a.Location, "")
             Organizador = If(a.Organizer, "")
