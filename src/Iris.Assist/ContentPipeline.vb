@@ -260,13 +260,71 @@ Namespace Global.Iris.Assist
         ''' honesto é <b>recusar</b> o que não dá para interpretar.
         ''' </summary>
         Private Shared Function HtmlInterpretavel(bruto As String) As Boolean
+            ' MARCADOR DENTRO DE ATRIBUTO DERRUBA ANTES DE QUALQUER COISA.
+            '
+            ' O removedor nao sabe que esta dentro de aspas, e isso corta dos
+            ' DOIS lados: <p title="<script>">VISIVEL</p><p title="</script>">
+            ' faz a regex comer o VISIVEL inteiro -- texto que o usuario VE, e
+            ' que sumiria do que vai para o provedor sem ninguem notar. E do
+            ' outro lado um </script> em atributo ja servia de fechamento
+            ' falso. Nao da para interpretar isso sem um parser; entao recusa.
+            If MarcadorDentroDeAtributo(bruto) Then Return False
+
             ' NA MESMA ORDEM DA LIMPEZA: comentario primeiro, bloco depois.
             Dim resto = ScriptOuEstilo.Replace(Comentario.Replace(bruto, " "), " ")
             For Each nome In {"script", "style"}
                 If resto.IndexOf("<" & nome, StringComparison.OrdinalIgnoreCase) >= 0 Then Return False
                 If resto.IndexOf("</" & nome, StringComparison.OrdinalIgnoreCase) >= 0 Then Return False
             Next
-            Return Contagem(bruto, "<!--") = Contagem(bruto, "-->")
+            ' O COMENTARIO PELA MESMA REGRA, e ele tinha ficado na contagem.
+            '
+            ' "<p>VISIVEL</p>--><!-- marcador >SEGREDO" tem um "<!--" e um
+            ' "-->", entao a contagem fechava -- so que o "-->" vem ANTES, o
+            ' Comentario.Replace nao acha par nenhum, e a limpeza generica
+            ' entregava o SEGREDO que o navegador trata como comentario aberto.
+            ' Contagem nao distingue ordem; sobra distingue.
+            If resto.IndexOf("<!--", StringComparison.Ordinal) >= 0 Then Return False
+            If resto.IndexOf("-->", StringComparison.Ordinal) >= 0 Then Return False
+            Return True
+        End Function
+
+        ''' <summary>
+        ''' <b>Um <c>&lt;</c> dentro de um valor de atributo.</b>
+        '''
+        ''' Varredura de estado, e não expressão regular, porque é exatamente a
+        ''' noção que expressão regular não tem: <i>estou dentro de aspas?</i>
+        ''' Três estados — fora de tag, dentro de tag, dentro de aspas — e o que
+        ''' interessa é um <c>&lt;</c> aparecendo no terceiro.
+        '''
+        ''' Isso recusa HTML legítimo, porque <c>&lt;</c> em atributo é válido.
+        ''' É raro, e o preço de aceitar é o removedor comer texto visível ou
+        ''' engolir um fechamento falso — os dois já aconteceram aqui.
+        ''' </summary>
+        Friend Shared Function MarcadorDentroDeAtributo(bruto As String) As Boolean
+            If String.IsNullOrEmpty(bruto) Then Return False
+
+            Dim dentroDeTag = False
+            Dim aspa As Char = ChrW(0)
+
+            For Each c In bruto
+                If aspa <> ChrW(0) Then
+                    If c = aspa Then
+                        aspa = ChrW(0)
+                    ElseIf c = "<"c Then
+                        Return True
+                    End If
+                ElseIf dentroDeTag Then
+                    If c = ChrW(34) OrElse c = ChrW(39) Then
+                        aspa = c
+                    ElseIf c = ">"c Then
+                        dentroDeTag = False
+                    End If
+                ElseIf c = "<"c Then
+                    dentroDeTag = True
+                End If
+            Next
+
+            Return False
         End Function
 
         Private Shared Function Contagem(texto As String, agulha As String) As Integer

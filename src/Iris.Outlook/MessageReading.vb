@@ -235,11 +235,15 @@ Namespace Global.Iris.Outlook
                             tamanho = a.Size
                         Catch
                         End Try
-                        Dim identidadeLida = nome IsNot Nothing AndAlso tamanho.HasValue
+                        ' O local NAO pode se chamar identidadeLida: ele eclipsaria a
+                        ' funcao IdentidadeLida (VB e case-insensitive), e o
+                        ' compilador diz "o tipo nao pode ser inferido" -- a
+                        ' armadilha que o CLAUDE.md lista doze vezes, ao vivo.
+                        Dim conferida = IdentidadeLida(nome, tamanho)
 
                         destino.Add(New AttachmentInfo With {
                             .Key = New AttachmentKey(dono, i, If(nome, ""), If(tamanho, 0),
-                                                     identidadeLida),
+                                                     conferida),
                             .FileName = If(nome, ""),
                             .SizeBytes = If(tamanho, 0),
                             .AttachmentType = Texto(Function() a.Type.ToString()),
@@ -252,7 +256,7 @@ Namespace Global.Iris.Outlook
                         ' -- e e a completude que o CanForward consulta antes
                         ' de deixar encaminhar. Identidade que ninguem conferiu
                         ' nao pode virar "conferi tudo".
-                        If identidadeLida Then obtidos += 1
+                        If conferida Then obtidos += 1
                     Catch ex As COMException
                         ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
                             ex.HResult, isMutation:=False, mutationAttemptStarted:=False)
@@ -418,6 +422,18 @@ Namespace Global.Iris.Outlook
         ''' parte desta guarda que dá para provar sem um <c>Attachment</c> real
         ''' — e é a parte que tinha o defeito.
         ''' </summary>
+        ''' <summary>
+        ''' A leitura da identidade de um anexo <b>concluiu</b>?
+        '''
+        ''' Existe como função para morar num lugar só e ter teste: ela decide
+        ''' duas coisas em dois arquivos — se a chave nasce confiável, e se o
+        ''' anexo conta como <i>obtido</i> na completude da lista. Repetir a
+        ''' condição nos quatro pontos é como um deles fica para trás.
+        ''' </summary>
+        Friend Function IdentidadeLida(nome As String, tamanho As Integer?) As Boolean
+            Return nome IsNot Nothing AndAlso tamanho.HasValue
+        End Function
+
         Friend Function MesmaIdentidade(nomeAgora As String, tamanhoAgora As Integer?,
                                         key As AttachmentKey) As Boolean
             If key Is Nothing Then Return False

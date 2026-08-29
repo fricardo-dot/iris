@@ -226,8 +226,23 @@ Namespace Global.Iris.App.ViewModels
                 If anexos.Length > 0 Then partes.Add(anexos)
                 If partes.Count = 0 Then Return ""
 
-                Return String.Join(" ", partes) &
-                       " Responder e encaminhar ficam bloqueados até uma releitura completa."
+                ' E DIZ O QUE DE FATO BLOQUEOU, e nao os dois sempre.
+                '
+                ' A frase era fixa: "Responder e encaminhar ficam bloqueados".
+                ' So que responder olha os DESTINATARIOS e encaminhar olha os
+                ' ANEXOS. Com so os anexos incompletos -- que ficou muito mais
+                ' comum desde 29/08, quando identidade nao conferida passou a
+                ' derrubar a completude -- a tela dizia que responder estava
+                ' bloqueado, e nao estava. Aviso que exagera ensina a ignorar
+                ' aviso.
+                Dim bloqueadas = New List(Of String)()
+                If Not CanReply Then bloqueadas.Add("Responder")
+                If Not CanForward Then bloqueadas.Add("encaminhar")
+                If bloqueadas.Count = 0 Then Return String.Join(" ", partes)
+
+                Return String.Join(" ", partes) & " " & String.Join(" e ", bloqueadas) &
+                       If(bloqueadas.Count = 1, " fica bloqueado", " ficam bloqueados") &
+                       " até uma releitura completa."
             End Get
         End Property
 

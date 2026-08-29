@@ -357,4 +357,81 @@ Public Class LeitorDeMensagemTests
         Assert.IsFalse(MessageReading.MesmaIdentidade("contrato.pdf", 4095, boa))
     End Sub
 
+    ''' <summary>
+    ''' <b>O AVISO DIZ O QUE DE FATO BLOQUEOU.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>AVISO QUE EXAGERA ENSINA A IGNORAR AVISO</b>
+    '''
+    ''' A frase era fixa — <i>"Responder e encaminhar ficam bloqueados"</i> —
+    ''' e as duas ações olham coisas diferentes: responder olha os
+    ''' <b>destinatários</b>, encaminhar olha os <b>anexos</b>. Com só os
+    ''' anexos incompletos, a tela afirmava que responder estava bloqueado, e
+    ''' não estava.
+    '''
+    ''' Ficou muito mais comum em 29/08, quando identidade de anexo não
+    ''' conferida passou a derrubar a completude da lista — ou seja, o meu
+    ''' conserto anterior aumentou a frequência de uma frase falsa.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo a frase fixa, a primeira asserção
+    ''' cai.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_aviso_de_leitura_parcial_nomeia_so_o_que_bloqueou()
+        NoDispatcherAsync(
+            Async Function(d)
+                Dim b As New FakeBroker() With {.LeitorLigado = True}
+                b.ComDetalhe(New MessageDetail With {
+                    .Key = Chave(1), .Subject = "assunto",
+                    .SenderName = "quem", .SenderAddress = "quem@x.invalido",
+                    .Content = ContentState.AttachmentsAvailable,
+                    .Format = BodyFormat.PlainText, .TextBody = "corpo",
+                    .RecipientsStatus = PartStatus.Full,
+                    .AttachmentsStatus = PartStatus.IncompleteWith(3, 1, ErrorKind.Denied),
+                    .Attachments = New List(Of AttachmentInfo)()})
+
+                Using leitor = AbrirLeitor(b, d, "C:\destino\x.txt")
+                    leitor.Show(LinhaDe(1))
+                    Await Assentar(Function() leitor.HasPartialRead)
+
+                    ' SO OS ANEXOS ESTAO INCOMPLETOS.
+                    Assert.IsTrue(leitor.CanReply, "controle: responder continua liberado")
+                    Assert.IsFalse(leitor.CanForward, "controle: encaminhar tinha de bloquear")
+
+                    Assert.IsFalse(leitor.PartialReadNotice.Contains("Responder"),
+                        "o aviso diz que responder esta bloqueado, e ele nao esta: " &
+                        leitor.PartialReadNotice)
+                    StringAssert.Contains(leitor.PartialReadNotice, "encaminhar fica bloqueado")
+                End Using
+            End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A REGRA "A IDENTIDADE FOI LIDA" MORA NUM LUGAR SÓ.</b>
+    '''
+    ''' Ela decide duas coisas em dois arquivos: se a chave do anexo nasce
+    ''' confiável, e se o anexo conta como <i>obtido</i> na completude da
+    ''' lista. Estava repetida em quatro pontos — e repetição é como um deles
+    ''' fica para trás, que foi exatamente o que aconteceu com o caminho dos
+    ''' rascunhos.
+    '''
+    ''' <b>Controle negativo:</b> fazendo a função devolver sempre
+    ''' <c>True</c>, este teste cai — e com ele a completude da lista volta a
+    ''' fechar sobre anexo que ninguém conferiu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Identidade_lida_exige_os_DOIS_valores()
+        Assert.IsTrue(MessageReading.IdentidadeLida("contrato.pdf", 4096))
+
+        ' Vazio e zero LIDOS continuam sendo leitura conclusiva: um anexo
+        ' pode legitimamente ter nome vazio ou tamanho zero.
+        Assert.IsTrue(MessageReading.IdentidadeLida("", 0))
+
+        Assert.IsFalse(MessageReading.IdentidadeLida(Nothing, 4096),
+            "sem o nome, a identidade nao foi conferida")
+        Assert.IsFalse(MessageReading.IdentidadeLida("contrato.pdf", Nothing),
+            "sem o tamanho, a identidade nao foi conferida")
+        Assert.IsFalse(MessageReading.IdentidadeLida(Nothing, Nothing))
+    End Sub
+
 End Class

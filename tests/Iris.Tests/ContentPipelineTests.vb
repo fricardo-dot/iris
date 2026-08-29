@@ -385,8 +385,25 @@ Public Class ContentPipelineTests
     ''' remover"</i> — e é isso que o código faz agora: tira comentário, tira
     ''' bloco, e recusa se ainda restar <c>&lt;script</c> em qualquer forma.
     '''
-    ''' <b>Controle negativo:</b> qualquer uma das três versões de contagem
-    ''' deixa passar pelo menos uma destas linhas.
+    ''' ------------------------------------------------------------------
+    ''' <b>AS DUAS ÚLTIMAS: O DANO PELO OUTRO LADO</b>
+    '''
+    ''' A penúltima é o comentário pela mesma doença: <c>--&gt;</c> vem
+    ''' <i>antes</i> de <c>&lt;!--</c>, a contagem fecha, o removedor não acha
+    ''' par nenhum, e o texto que o navegador trata como comentário aberto sai
+    ''' como mensagem. Eu tinha trocado a regra de <c>script</c> e deixado o
+    ''' comentário na contagem.
+    '''
+    ''' A última é o dano <b>invertido</b>, e foi o revisor que apontou: com
+    ''' abertura <i>e</i> fechamento falsos em atributos, o removedor come o
+    ''' <c>VISIVEL</c> que está entre os dois. Não sobra nada, a verificação
+    ''' aceita, e o que vai para o provedor perdeu texto que o usuário vê.
+    ''' Consertar o vazamento e criar um sumiço é o mesmo erro de sinal
+    ''' trocado.
+    '''
+    ''' <b>Controle negativo:</b> qualquer uma das versões de contagem deixa
+    ''' passar pelo menos uma destas linhas; e sem o
+    ''' <c>MarcadorDentroDeAtributo</c>, as duas de atributo passam.
     ''' </summary>
     <DataTestMethod>
     <DataRow("<p>visivel</p><script>SEGREDO")>
@@ -399,6 +416,8 @@ Public Class ContentPipelineTests
     <DataRow("<!-- </script> --><script>SEGREDO")>
     <DataRow("<!-- </script> --><script>SEGREDO</script")>
     <DataRow("<p title=""</script>"">visivel</p><script>SEGREDO")>
+    <DataRow("<p>VISIVEL</p>--><!-- marcador >SEGREDO")>
+    <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>")>
     Public Sub Bloco_sem_fechar_RECUSA(corpo As String)
         Dim r = Preparar(corpo, html:=True)
 

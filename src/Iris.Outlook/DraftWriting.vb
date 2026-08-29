@@ -349,6 +349,7 @@ Namespace Global.Iris.Outlook
                 Dim anexos As OL.Attachments = Nothing
                 Try
                     anexos = item.Attachments
+                    Dim quantosAntes = anexos.Count
                     For i = 1 To anexos.Count
                         Dim a As OL.Attachment = Nothing
                         Try
@@ -387,6 +388,22 @@ Namespace Global.Iris.Outlook
                         ' passadas existem para impedir, sobrevivendo dentro
                         ' delas. A revisao externa pegou.
                         '
+                        ' E A COLECAO NAO PODE TER MUDADO DE TAMANHO.
+                        '
+                        ' Reconferir o objeto pega a troca por outro anexo
+                        ' DIFERENTE. Nao pega a troca por um anexo de MESMO
+                        ' nome e MESMO tamanho que tenha entrado no lugar --
+                        ' e a identidade aqui e so nome+tamanho. Comparar a
+                        ' contagem fecha o caso "sairam ou entraram anexos
+                        ' entre as duas passadas", que e como esse cenario
+                        ' chega. Fica declarado o que sobra: uma troca que
+                        ' preserve a contagem E os metadados passa.
+                        If anexos.Count <> quantosAntes Then
+                            Return OperationResult(Of DraftInfo).Fail(
+                                ErrorKind.Stale,
+                                "a lista de anexos mudou entre conferir e apagar")
+                        End If
+
                         ' Recusa aqui e Stale pelo mesmo motivo de cima: nada
                         ' aconteceu, e reler o rascunho resolve.
                         If Not MesmoArquivo(aAlvo, anexo) Then
@@ -977,7 +994,7 @@ Namespace Global.Iris.Outlook
 
                         lista.Add(New AttachmentInfo With {
                             .Key = New AttachmentKey(dono, i, If(nome, ""), If(tamanho, 0),
-                                                     nome IsNot Nothing AndAlso tamanho.HasValue),
+                                                     MessageReading.IdentidadeLida(nome, tamanho)),
                             .FileName = If(nome, ""),
                             .SizeBytes = If(tamanho, 0)
                         })
@@ -986,7 +1003,7 @@ Namespace Global.Iris.Outlook
                         ' Contar como obtido fazia a lista fechar como
                         ' COMPLETA, e a completude e o que a tela consulta
                         ' antes de encaminhar e de enviar.
-                        If nome IsNot Nothing AndAlso tamanho.HasValue Then obtidos += 1
+                        If MessageReading.IdentidadeLida(nome, tamanho) Then obtidos += 1
                     Catch ex As COMException
                         ultimaFalha = OutlookFailurePolicy.ClassifyFailure(
                             ex.HResult, isMutation:=False, mutationAttemptStarted:=False)

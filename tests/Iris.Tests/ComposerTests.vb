@@ -1359,7 +1359,7 @@ Public Class ComposerTests
         Dim vm = Montar(broker)
         Aguardar(vm.NewMessageAsync())
 
-        vm.ToLine = "fulano'''empresa.com"
+        vm.ToLine = "fulano@empresa.com"
         Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
 
         Assert.AreEqual(ComposerState.Editing, vm.State,
