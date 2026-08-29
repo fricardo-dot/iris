@@ -44,6 +44,13 @@ $sistema = @(
     "Reminders", "Lembretes", "Chamadas", "Calls"
 )
 
+# FALHA ENGOLIDA E PASTA QUE SOME. Tipo, contagem e filhas eram lidos dentro
+# de try/catch mudos, e o rodape depois imprimia "nenhuma" -- que e afirmacao
+# sobre o que nao foi lido.
+$script:semTipo = 0
+$script:semContagem = 0
+$script:semFilhas = 0
+
 function Varrer($pasta, [string]$caminho, [int]$prof, [bool]$sobExcluidos) {
     if ($prof -gt 12) { return }
 
@@ -56,9 +63,9 @@ function Varrer($pasta, [string]$caminho, [int]$prof, [bool]$sobExcluidos) {
     } catch { } finally { Solta $pa }
 
     $tipo = -1
-    try { $tipo = [int]$pasta.DefaultItemType } catch { }
+    try { $tipo = [int]$pasta.DefaultItemType } catch { $script:semTipo++ }
     $n = 0
-    try { $itens = $pasta.Items; $n = $itens.Count; Solta $itens } catch { }
+    try { $itens = $pasta.Items; $n = $itens.Count; Solta $itens } catch { $script:semContagem++ }
 
     $cat =
         if ($nome -like "Iris*") { "ARTEFATO DO IRIS" }
@@ -72,7 +79,7 @@ function Varrer($pasta, [string]$caminho, [int]$prof, [bool]$sobExcluidos) {
         Caminho = $caminho; Nome = $nome; Cat = $cat; Itens = $n; Prof = $prof })
 
     $filhas = $null
-    try { $filhas = $pasta.Folders } catch { return }
+    try { $filhas = $pasta.Folders } catch { $script:semFilhas++; return }
     try {
         for ($k = 1; $k -le $filhas.Count; $k++) {
             $f = $filhas.Item($k)
@@ -110,7 +117,11 @@ Write-Host "PASTAS DO USUARIO (as unicas que interessam ao cache)"
 Write-Host ("=" * 72)
 $doUsuario = @($linhas | Where-Object { $_.Cat -eq "DO USUARIO" })
 if ($doUsuario.Count -eq 0) {
-    Write-Host "  nenhuma"
+    if (($script:semTipo + $script:semContagem + $script:semFilhas) -gt 0) {
+        Write-Host "  nenhuma FOI LIDA -- e houve falha de leitura (ver o rodape)."
+    } else {
+        Write-Host "  nenhuma"
+    }
 } else {
     foreach ($l in $doUsuario) {
         Write-Host ("  {0,6} itens  {1}" -f $l.Itens, $l.Caminho)
@@ -118,6 +129,14 @@ if ($doUsuario.Count -eq 0) {
 }
 
 Write-Host ""
+if (($script:semTipo + $script:semContagem + $script:semFilhas) -gt 0) {
+    Write-Host "O QUE ESTE INVENTARIO NAO VIU:" -ForegroundColor DarkYellow
+    if ($script:semTipo -gt 0)     { Write-Host ("  {0} pasta(s): nao consegui ler o tipo" -f $script:semTipo) }
+    if ($script:semContagem -gt 0) { Write-Host ("  {0} pasta(s): nao consegui contar os itens (aparecem com 0)" -f $script:semContagem) }
+    if ($script:semFilhas -gt 0)   { Write-Host ("  {0} ramo(s): nao consegui enumerar as filhas" -f $script:semFilhas) }
+    Write-Host "  Zero nas linhas acima pode ser 'nao contei', e nao 'nao tem'."
+    Write-Host ""
+}
 Write-Host ("=" * 72)
 Write-Host "ARTEFATOS QUE **EU** DEIXEI"
 Write-Host ("=" * 72)

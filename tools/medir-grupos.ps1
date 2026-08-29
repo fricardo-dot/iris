@@ -93,7 +93,12 @@ foreach ($g in $grupos) {
         Write-Host ("  itens:  {0}" -f $n)
 
         if ($n -eq 0) {
-            Write-Host "  VAZIA. Um modulo para uma pasta vazia e trabalho sem consumidor." -ForegroundColor Yellow
+            # "VAZIA" E AFIRMACAO DE AUSENCIA. O Count do OOM e o que esta
+            # EXPOSTO LOCALMENTE, e a contagem do servidor continua
+            # inalcancavel -- e essa e a ressalva que o projeto inteiro repete.
+            Write-Host "  NENHUM ITEM EXPOSTO LOCALMENTE nesta pasta." -ForegroundColor Yellow
+            Write-Host "    Nao da para concluir que ela esteja vazia no servidor; da para"
+            Write-Host "    dizer que nao ha o que agrupar AQUI, que e o que decide o modulo."
             continue
         }
 

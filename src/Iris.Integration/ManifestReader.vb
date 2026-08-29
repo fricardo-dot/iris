@@ -122,7 +122,16 @@ Namespace Global.Iris.Integration
         Public ReadOnly Property Ressalva As String
             Get
                 If GenerationKey Is Nothing Then
-                    Return "Esta pasta ainda não foi varrida."
+                    ' "AINDA NAO FOI VARRIDA" E MAIS DO QUE SE SABE.
+                    '
+                    ' GenerationKey Is Nothing quer dizer que nao ha geracao
+                    ' PUBLICADA -- e cabe tambem a varredura rejeitada pela S6,
+                    ' a cancelada e a que falhou. A mesma frase foi corrigida na
+                    ' BuscaNoAcervo na revisao anterior, e esta superficie ficou
+                    ' para tras: a revisao seguinte achou aqui, com TRES testes
+                    ' prendendo a formulacao errada.
+                    Return "Esta pasta não tem acervo publicado. Isso não quer dizer " &
+                           "que ninguém tentou varrer."
                 End If
                 Dim base As String
                 Select Case Cobertura

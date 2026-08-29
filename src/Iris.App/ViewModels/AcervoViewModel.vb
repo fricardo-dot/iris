@@ -371,7 +371,7 @@ Namespace Global.Iris.App.ViewModels
 
             Try
                 ' SemPasta = 0: nao existe folder_key 0, entao o manifesto sai
-                ' vazio e a faixa diz "ainda nao foi varrida".
+                ' vazio e a faixa diz "nao tem acervo publicado".
                 _servico.Apontar(If(New ResolvedorDoAcervo(_db).PastaExistente(
                     pasta.StoreId, pasta.EntryId), 0L))
             Catch ex As Exception

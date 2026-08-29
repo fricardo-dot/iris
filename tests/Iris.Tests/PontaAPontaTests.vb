@@ -264,14 +264,17 @@ Public Class PontaAPontaTests
     ''' devolve nulo nem lista vazia sem explicacao.
     ''' </summary>
     <TestMethod>
-    Public Sub Pasta_nunca_varrida_diz_que_nunca_foi_varrida()
+    Public Sub Pasta_sem_geracao_diz_que_nao_ha_acervo_publicado()
         Dim falha As OpenFailure = Nothing
         Using db = CacheDatabase.Open(_db, CacheSchema.Intended(), falha)
             Dim m = New ManifestReader(db).Ler(FolderKey)
             Assert.AreEqual(0, m.Items.Count)
             Assert.IsNull(m.GenerationKey)
             Assert.IsFalse(m.EhEstadoCorrente)
-            StringAssert.Contains(m.Ressalva, "nao foi varrida".Replace("nao", "não"))
+            ' "nao foi varrida" era mais do que o cache sabe: sem geracao
+            ' publicada cabe varredura rejeitada, cancelada ou falha.
+            StringAssert.Contains(m.Ressalva, "não tem acervo publicado")
+            Assert.IsFalse(m.Ressalva.Contains("foi varrida"))
         End Using
     End Sub
 

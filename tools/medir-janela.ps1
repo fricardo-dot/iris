@@ -102,6 +102,14 @@ $linhas = New-Object System.Collections.ArrayList
 # itens", que e afirmacao de ausencia sobre o que nao foi lido.
 $semDatas = New-Object System.Collections.ArrayList
 
+# O INVENTARIO COMPLETO. O $semDatas cobria so GetFirst/GetLast, e a revisao
+# seguinte apontou que sobravam tres buracos: o tipo da pasta, o bloco de
+# leitura inteiro e a travessia das filhas. Falha nao contada e pasta que
+# some, e o rodape dizendo "nenhuma pasta" sobre o que nao foi lido.
+$semTipo   = 0   # DefaultItemType lancou: nao sei nem se e pasta de correio
+$semLeitura = 0  # Items/Count/Sort lancou: contei a pasta e nao a medi
+$semFilhas = 0   # Folders lancou: um RAMO INTEIRO da arvore nao foi visto
+
 # Percorre a arvore. Nao encadeia expressao COM: cada colecao intermediaria
 # recebe nome, pela R7 do ESCOPO.
 function Percorrer($pastas, $trilha) {
@@ -109,7 +117,7 @@ function Percorrer($pastas, $trilha) {
         $caminho = if ($trilha) { "$trilha\$($f.Name)" } else { $f.Name }
 
         $ehCorreio = $false
-        try { $ehCorreio = ($f.DefaultItemType -eq 0) } catch { }
+        try { $ehCorreio = ($f.DefaultItemType -eq 0) } catch { $script:semTipo++ }
 
         if ($ehCorreio) {
             $itens = $null
@@ -153,6 +161,7 @@ function Percorrer($pastas, $trilha) {
                     if ($ultimo)   { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($ultimo) }
                 }
             } catch {
+                $script:semLeitura++
                 Write-Host ("  nao consegui ler '{0}': {1}" -f $caminho, $_.Exception.Message) -ForegroundColor DarkYellow
             } finally {
                 if ($itens) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($itens) }
@@ -164,6 +173,8 @@ function Percorrer($pastas, $trilha) {
             $filhas = $f.Folders
             Percorrer $filhas $caminho
         } catch {
+            # UM RAMO INTEIRO nao foi visto, e isto era engolido em silencio.
+            $script:semFilhas++
         } finally {
             if ($filhas) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($filhas) }
         }
@@ -195,11 +206,20 @@ if ($semDatas.Count -gt 0) {
     foreach ($p in $semDatas) { Write-Host ("    {0}" -f $p) }
 }
 
+$falhou = $semDatas.Count + $semTipo + $semLeitura + $semFilhas
+if ($falhou -gt 0) {
+    Write-Host ""
+    Write-Host "O QUE ESTA MEDICAO NAO VIU:" -ForegroundColor DarkYellow
+    if ($semTipo -gt 0)    { Write-Host ("  {0} pasta(s): nao consegui ler o tipo (pode ser correio)" -f $semTipo) }
+    if ($semLeitura -gt 0) { Write-Host ("  {0} pasta(s) de correio: a leitura dos itens falhou" -f $semLeitura) }
+    if ($semFilhas -gt 0)  { Write-Host ("  {0} ramo(s) da arvore: nao consegui enumerar as filhas" -f $semFilhas) }
+}
+
 if ($linhas.Count -eq 0) {
-    if ($semDatas.Count -gt 0) {
-        Write-Host ("Nenhuma pasta MEDIVEL: as {0} que tinham itens suficientes nao" -f $semDatas.Count) -ForegroundColor Yellow
-        Write-Host "  tiveram data legivel. Isso NAO quer dizer que nao ha pastas com"
-        Write-Host "  $MinimoDeItens itens -- quer dizer que nao consegui medir nenhuma."
+    if ($falhou -gt 0) {
+        Write-Host ("Nenhuma pasta MEDIVEL, e {0} leitura(s) falharam. Isso NAO quer" -f $falhou) -ForegroundColor Yellow
+        Write-Host "  dizer que nao ha pastas com $MinimoDeItens itens -- quer dizer"
+        Write-Host "  que nao consegui medir nenhuma."
     } else {
         Write-Host "Nenhuma pasta de correio com $MinimoDeItens itens ou mais." -ForegroundColor Yellow
     }

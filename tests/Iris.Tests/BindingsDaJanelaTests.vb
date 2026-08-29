@@ -363,6 +363,37 @@ Public Class BindingsDaJanelaTests
         Return File.ReadAllText(caminho)
     End Function
 
+    ''' <summary>
+    ''' <b>O TEXTO DA PASTA VAZIA É CALCULADO, e não literal no XAML.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>PROVA DE ALCANCE, e não de leitura</b>
+    '''
+    ''' Os dois testes do <c>MessageListViewModel</c> provam que o
+    ''' <c>EmptyMessage</c> diz a coisa certa. Eles <b>não</b> provam que a tela
+    ''' mostra o <c>EmptyMessage</c>: se o XAML voltasse para
+    ''' <c>Text="Esta pasta está vazia"</c>, os dois continuariam verdes — e a
+    ''' revisão externa apontou que o comentário deles anunciava justamente esse
+    ''' controle negativo, que não existia.
+    '''
+    ''' É a mesma lição do calendário escondido pela política de visibilidade:
+    ''' <i>prova de leitura não é prova de alcance</i>. Este teste fecha o
+    ''' último metro, lendo o XAML de verdade.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_texto_da_pasta_vazia_vem_do_ViewModel()
+        Dim xaml = LerXaml()
+
+        StringAssert.Contains(xaml, "Text=""{Binding Messages.EmptyMessage}""",
+            "o TextBlock da pasta vazia parou de ler o EmptyMessage -- e o " &
+            "texto literal afirma que a pasta esta vazia mesmo quando a " &
+            "leitura perdeu itens")
+
+        ' E o literal NAO pode voltar por outro caminho.
+        Assert.IsFalse(xaml.Contains("Text=""Esta pasta está vazia"""),
+            "o texto literal voltou ao XAML")
+    End Sub
+
     Private Shared Function LerXaml() As String
         If _xaml IsNot Nothing Then Return _xaml
         Dim d = New DirectoryInfo(AppContext.BaseDirectory)

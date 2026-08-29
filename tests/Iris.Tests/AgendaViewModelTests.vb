@@ -61,11 +61,12 @@ Public Class AgendaViewModelTests
 
     Private Shared Function Janela(quantos As Integer,
                                    Optional series As Integer = 0,
-                                   Optional truncada As Boolean = False) _
+                                   Optional truncada As Boolean = False,
+                                   Optional recusados As Integer? = 0) _
                                    As OperationResult(Of AppointmentWindow)
         Dim j As New AppointmentWindow With {
             .De = Agora, .Ate = Agora.AddDays(7),
-            .FromRecurrence = series, .Skipped = 0,
+            .FromRecurrence = series, .Skipped = recusados,
             .Truncada = truncada,
             .MotivoDoCorte = If(truncada, "a leitura foi interrompida no meio", "")}
         For i = 1 To quantos
@@ -109,6 +110,42 @@ Public Class AgendaViewModelTests
         StringAssert.Contains(vm.Resumo, "3 compromisso(s) lido(s)")
         Assert.IsFalse(vm.TemErro)
         Assert.IsFalse(vm.Carregando)
+    End Function
+
+    ''' <summary>
+    ''' <b>NÃO SEI QUANTOS FORAM RECUSADOS NÃO É "NENHUM FOI RECUSADO".</b>
+    '''
+    ''' <c>AppointmentWindow.Skipped</c> é <c>Integer?</c> de propósito, e o
+    ''' comentário do próprio <c>Descrever</c> declarava que nulo e zero são
+    ''' coisas diferentes — enquanto o código colapsava as duas num
+    ''' <c>HasValue AndAlso Value > 0</c>, que cala nos dois casos.
+    '''
+    ''' Hoje o <c>CalendarReading</c> sempre atribui o contador, então é ramo
+    ''' latente. <b>Latente é o estado em que todos os outros defeitos desta
+    ''' família estavam</b> quando chegaram à tela — e este DTO é público.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo o
+    ''' <c>If j.Skipped.HasValue AndAlso j.Skipped.Value > 0</c> de antes, a
+    ''' asserção cai.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Recusados_DESCONHECIDOS_nao_viram_zero() As Task
+        Dim b As New BrokerDeAgenda() With {.Resposta = Janela(3, recusados:=Nothing)}
+        Dim vm = Montar(b)
+        vm.Apontar(Cal)
+
+        Await vm.CarregarAsync()
+
+        StringAssert.Contains(vm.Resumo, "não sei quantos itens foram recusados")
+
+        ' CONTROLE POSITIVO: zero CONHECIDO continua calado, senao a frase
+        ' apareceria em toda leitura e viraria ruido.
+        Dim b2 As New BrokerDeAgenda() With {.Resposta = Janela(3, recusados:=0)}
+        Dim vm2 = Montar(b2)
+        vm2.Apontar(Cal)
+        Await vm2.CarregarAsync()
+        Assert.IsFalse(vm2.Resumo.Contains("não sei quantos"),
+            "zero conhecido virou 'nao sei'")
     End Function
 
     ''' <summary>

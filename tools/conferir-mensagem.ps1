@@ -38,6 +38,9 @@ $MaxTexto      = 20000
 # cid: e data:<tipo>/ -- a mesma expressao do ContentPipeline.Embutido.
 $Embutido = [regex]::new('(cid:|data:[a-z]+/)', 'IgnoreCase')
 
+# RAMO QUE NAO FOI VISTO -- mesma correcao do preparar-ativacao.
+$script:ramosCegos = 0
+
 function Achar-Pasta($raiz, $nome, $caminho) {
     $achadas = @()
     $filhas = $null
@@ -53,7 +56,10 @@ function Achar-Pasta($raiz, $nome, $caminho) {
                 } else {
                     $achadas += Achar-Pasta $f $nome $meu
                 }
-            } catch { }
+            } catch {
+                # UM RAMO INTEIRO nao foi visto, e isto era silencioso.
+                $script:ramosCegos++
+            }
         }
     } finally {
         if ($filhas) { [void][Runtime.InteropServices.Marshal]::ReleaseComObject($filhas) }
@@ -74,7 +80,12 @@ for ($s = 1; $s -le $ns.Folders.Count; $s++) {
 }
 
 if ($alvos.Count -eq 0) {
-    Write-Host "Nao achei pasta chamada '$Pasta'." -ForegroundColor Red
+    if ($script:ramosCegos -gt 0) {
+        Write-Host ("Nao achei pasta chamada '{0}' -- e {1} ramo(s) da arvore nao" -f $Pasta, $script:ramosCegos) -ForegroundColor Red
+        Write-Host "  pude percorrer. Ela pode estar num deles." -ForegroundColor Red
+    } else {
+        Write-Host "Nao achei pasta chamada '$Pasta'." -ForegroundColor Red
+    }
     exit 1
 }
 
@@ -174,7 +185,9 @@ for ($i = 1; $i -le $total; $i++) {
 Write-Host ("-" * 68)
 Write-Host ""
 if ($conferidas -eq 0) {
-    Write-Host "Nenhuma mensagem conferida (a pasta tem $total item(ns))." -ForegroundColor Yellow
+    Write-Host "Nenhuma mensagem CONFERIDA (a pasta expoe $total item(ns) localmente)." -ForegroundColor Yellow
+    Write-Host "  Zero conferidas nao diz nada sobre o conteudo da pasta: diz que este"
+    Write-Host "  roteiro nao chegou a conferir nada."
 } else {
     Write-Host ("$aprovadas de $conferidas passariam pelo ContentPipeline.")
 }

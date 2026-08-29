@@ -157,7 +157,7 @@ Public Class AcervoViewModelTests
     ''' números da pasta anterior.
     ''' </summary>
     <TestMethod>
-    Public Sub Pasta_nunca_varrida_diz_que_nao_foi_varrida()
+    Public Sub Pasta_sem_acervo_diz_que_nao_ha_acervo_publicado()
         NoDispatcher(
             Sub(d)
                 Using vm = AbrirVm(d)
@@ -165,7 +165,17 @@ Public Class AcervoViewModelTests
                                New StoreInfo() With {.StoreId = "store-1"})
 
                     Assert.AreEqual(0, vm.Itens)
-                    StringAssert.Contains(vm.Ressalva, "ainda não foi varrida")
+
+                    ' A FRASE MUDOU, E O MOTIVO IMPORTA: "ainda nao foi varrida"
+                    ' e mais do que o cache sabe. Sem geracao publicada cabe a
+                    ' varredura rejeitada pela S6, a cancelada e a que falhou.
+                    ' Este teste exigia a formulacao errada -- e um teste que
+                    ' exige a formulacao errada transforma o defeito em
+                    ' requisito.
+                    StringAssert.Contains(vm.Ressalva, "não tem acervo publicado")
+                    Assert.IsFalse(vm.Ressalva.Contains("foi varrida"),
+                        "a faixa afirma que ninguem varreu, e o cache so sabe " &
+                        "que nao ha geracao publicada")
                 End Using
             End Sub)
     End Sub
@@ -199,7 +209,7 @@ Public Class AcervoViewModelTests
 
                     Assert.AreEqual(0, vm.Itens,
                         "o acervo continuou contando os itens da pasta anterior")
-                    StringAssert.Contains(vm.Ressalva, "ainda não foi varrida",
+                    StringAssert.Contains(vm.Ressalva, "não tem acervo publicado",
                         "e continuou descrevendo ela")
                     Assert.IsFalse(vm.PodeVarrer)
                 End Using

@@ -108,6 +108,11 @@ try {
 # somente-leitura (e o PID do processo) e a atribuicao aborta a execucao.
 $achadas = New-Object System.Collections.ArrayList
 
+# RAMO QUE NAO FOI VISTO. A travessia engolia falha ao abrir as filhas, e o
+# "nao achei nenhuma pasta" logo abaixo virava afirmacao sobre uma arvore
+# que nao foi percorrida inteira.
+$script:ramosCegos = 0
+
 function Percorrer($pastas, $trilha) {
     foreach ($f in $pastas) {
         $caminho = if ($trilha) { "$trilha\$($f.Name)" } else { $f.Name }
@@ -119,14 +124,19 @@ function Percorrer($pastas, $trilha) {
                 Itens   = $f.Items.Count
             })
         }
-        try { Percorrer $f.Folders $caminho } catch { }
+        try { Percorrer $f.Folders $caminho } catch { $script:ramosCegos++ }
     }
 }
 
 Percorrer $ns.Folders ""
 
 if ($achadas.Count -eq 0) {
-    Write-Host "Nao achei nenhuma pasta chamada '$Pasta'." -ForegroundColor Red
+    if ($script:ramosCegos -gt 0) {
+        Write-Host ("Nao achei pasta chamada '{0}' -- e {1} ramo(s) da arvore nao" -f $Pasta, $script:ramosCegos) -ForegroundColor Red
+        Write-Host "  pude percorrer. Ela pode estar num deles." -ForegroundColor Red
+    } else {
+        Write-Host "Nao achei nenhuma pasta chamada '$Pasta'." -ForegroundColor Red
+    }
     exit 1
 }
 

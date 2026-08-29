@@ -89,6 +89,21 @@ Namespace Global.Iris.App.ViewModels
         Private _isRestoringSelection As Boolean
         Private _selected As MessageRowViewModel
         Private _total As Integer
+
+        ''' <summary>
+        ''' <b>Total DESCONHECIDO não é total ZERO — e o campo só tinha um zero.</b>
+        '''
+        ''' <c>MessagePage.TotalAtStart</c> é <c>Integer?</c> justamente porque
+        ''' <c>ContarItens</c> devolve <c>Nothing</c> quando <c>Items.Count</c>
+        ''' lança. O <c>_total</c> guardava só o número, então "a pasta declara
+        ''' zero" e "não consegui contar" viravam a mesma coisa — e o
+        ''' <c>EmptyMessage</c> dizia "Esta pasta está vazia" nos dois.
+        '''
+        ''' Pior: no reload o <c>_skipped</c> e o <c>_fabricadas</c> zeravam e o
+        ''' total <b>não</b>, então uma pasta cuja contagem falhou podia "declarar"
+        ''' o total da pasta anterior.
+        ''' </summary>
+        Private _totalConhecido As Boolean
         Private _hasMore As Boolean
         Private _hasFolder As Boolean
         Private _errorMessage As String = ""
@@ -235,7 +250,10 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property StatusLine As String
             Get
                 If Not _hasFolder Then Return ""
-                Dim linha = $"{Messages.Count} de {_total} · última página {_lastPageMs:0} ms"
+                ' "de ?" e feio e honesto: "de 0" para uma contagem que falhou
+                ' e a mesma afirmacao de ausencia que o resto desta familia.
+                Dim quantos = If(_totalConhecido, CStr(_total), "?")
+                Dim linha = $"{Messages.Count} de {quantos} · última página {_lastPageMs:0} ms"
                 ' "28 de 30" sem explicação vira mistério.
                 If _skipped > 0 Then linha &= $" · {_skipped} item(ns) ignorado(s)"
                 ' AUSENCIA QUE VIROU VALOR. Tamanho 0, "nao lida" e "sem anexo"
@@ -303,6 +321,13 @@ Namespace Global.Iris.App.ViewModels
                     Return "Nenhuma mensagem para mostrar, e a leitura teve campos que o " &
                            "Outlook não entregou."
                 End If
+                ' NAO CONSEGUI CONTAR vem ANTES de qualquer leitura do numero:
+                ' com a contagem falhada o _total e lixo -- zero inicial, ou o
+                ' total da pasta anterior, porque o reload nao o zera.
+                If Not _totalConhecido Then
+                    Return "Nenhuma mensagem para mostrar, e não consegui saber quantos " &
+                           "itens esta pasta tem."
+                End If
                 If _total > 0 Then
                     Return $"Nenhuma mensagem para mostrar, e a pasta declara {_total} " &
                            "item(ns). A leitura não trouxe nenhum."
@@ -343,6 +368,7 @@ Namespace Global.Iris.App.ViewModels
             Messages.Clear()
             Selected = Nothing
             Total = 0
+            _totalConhecido = False
             HasMore = False
             ErrorMessage = ""
             _skipped = 0
@@ -441,6 +467,11 @@ Namespace Global.Iris.App.ViewModels
                             ErrorMessage = ""
                             _skipped = 0
                             _fabricadas = 0
+                            ' E O TOTAL TAMBEM. Ele ficava, e a pasta nova
+                            ' "declarava" o total da anterior enquanto a
+                            ' primeira pagina nao chegasse -- ou para sempre,
+                            ' se a contagem dela falhasse.
+                            _totalConhecido = False
                             AtualizarEstados()
                         End Sub)
                 End If
@@ -482,7 +513,10 @@ Namespace Global.Iris.App.ViewModels
                         _fabricadas += pagina.FabricatedCells
                         ' TotalAtStart so vem na primeira pagina; nas demais
                         ' o valor anterior e mantido.
-                        If pagina.TotalAtStart.HasValue Then Total = pagina.TotalAtStart.Value
+                        If pagina.TotalAtStart.HasValue Then
+                            Total = pagina.TotalAtStart.Value
+                            _totalConhecido = True
+                        End If
                         HasMore = pagina.HasMore
                         LastPageMs = cronometro.Elapsed.TotalMilliseconds
                         AtualizarEstados()

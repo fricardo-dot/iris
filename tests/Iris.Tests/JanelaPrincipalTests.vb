@@ -376,8 +376,14 @@ Public Class JanelaPrincipalTests
     ''' roteiro, e esta. <b>Tratar "não observei" como "observei e não há".</b>
     ''' Esta é a única que estava na tela principal.
     '''
-    ''' <b>Controle negativo:</b> devolvendo o texto fixo ao XAML — ou fazendo o
-    ''' <c>EmptyMessage</c> ignorar <c>_skipped</c> —, a asserção do meio cai.
+    ''' <b>Controle negativo:</b> fazendo o <c>EmptyMessage</c> ignorar o
+    ''' <c>_skipped</c>, a asserção do meio cai.
+    '''
+    ''' <b>E o que ele NÃO controla:</b> este teste não lê o XAML, então devolver
+    ''' o texto fixo à tela o deixaria verde. Eu tinha escrito aqui que devolver
+    ''' o literal derrubaria a asserção, e não derruba — a revisão externa pegou.
+    ''' Quem fecha esse metro é
+    ''' <c>BindingsDaJanelaTests.O_texto_da_pasta_vazia_vem_do_ViewModel</c>.
     ''' </summary>
     <TestMethod>
     Public Sub Lista_vazia_com_item_ignorado_NAO_diz_que_a_pasta_esta_vazia()
@@ -415,11 +421,113 @@ Public Class JanelaPrincipalTests
     End Sub
 
     ''' <summary>
+    ''' <b>CONTAGEM QUE FALHOU NÃO É PASTA VAZIA.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O ZERO QUE ERA DOIS ESTADOS</b>
+    '''
+    ''' <c>MessagePage.TotalAtStart</c> é <c>Integer?</c> porque
+    ''' <c>ContarItens</c> devolve <c>Nothing</c> quando <c>Items.Count</c>
+    ''' lança. O <c>_total</c> guardava só o número, então "a pasta declara
+    ''' zero" e "não consegui contar" viravam o mesmo zero — e a tela dizia
+    ''' <i>"Esta pasta está vazia"</i> nos dois.
+    '''
+    ''' <b>Este teste nasceu de um controle negativo que PASSOU.</b> Eu tinha
+    ''' acabado de escrever o <c>_totalConhecido</c>, apaguei o ramo dele para
+    ''' conferir, e a suíte inteira continuou verde: a correção não tinha
+    ''' nenhum teste. É o bloqueio sem controle negativo que o CLAUDE.md
+    ''' descreve, cometido no mesmo dia em que eu o citei.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Contagem_que_FALHOU_nao_vira_pasta_vazia()
+        NoDispatcherAsync(
+            Async Function(d) As Task
+                Dim b As New FakeBroker()
+                b.EstadoDaSessao = SessionState.Connected
+                b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                    New MessagePage With {
+                        .Generation = 1,
+                        .Items = New List(Of MailSummary)(),
+                        .TotalAtStart = Nothing,
+                        .SkippedCount = 0})
+
+                Dim painel As New MessageListViewModel(b, d, Sub(t, nome)
+                                                             End Sub)
+                Await painel.ShowFolderAsync(New FolderKey("entry-1", "store-1"), "Caixa de Entrada")
+
+                Assert.IsTrue(painel.ShowEmptyFolder, "controle: a faixa do vazio aparece")
+                StringAssert.Contains(painel.StatusLine, "0 de ?",
+                    "o rodape afirma um total que ninguem contou")
+
+                Assert.IsFalse(painel.EmptyMessage.Contains("Esta pasta está vazia"),
+                    "a contagem falhou e a tela afirmou que a pasta esta vazia")
+                StringAssert.Contains(painel.EmptyMessage, "não consegui saber quantos")
+            End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A PASTA NOVA NÃO HERDA O TOTAL DA ANTERIOR.</b>
+    '''
+    ''' No reload, <c>Messages</c>, <c>_skipped</c> e <c>_fabricadas</c> zeravam
+    ''' e o total <b>não</b>. Então uma pasta cuja contagem falha "declarava" o
+    ''' total da pasta que o usuário estava olhando antes — número com dono
+    ''' errado, que é o mesmo defeito que o <c>Perder_a_selecao_ESVAZIA_o_acervo</c>
+    ''' pegou no acervo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Pasta_nova_NAO_herda_o_total_da_anterior()
+        NoDispatcherAsync(
+            Async Function(d) As Task
+                Dim b As New FakeBroker()
+                b.EstadoDaSessao = SessionState.Connected
+
+                ' PASTA A: contagem boa, cinco itens declarados.
+                b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                    New MessagePage With {
+                        .Generation = 1,
+                        .Items = New List(Of MailSummary)() From {
+                            New MailSummary With {
+                                .Key = New ItemKey("E-1", "store-1"),
+                                .Subject = "uma", .SenderName = "quem"}},
+                        .TotalAtStart = 5,
+                        .SkippedCount = 0})
+
+                Dim painel As New MessageListViewModel(b, d, Sub(t, nome)
+                                                             End Sub)
+                Await painel.ShowFolderAsync(New FolderKey("entry-1", "store-1"), "Caixa de Entrada")
+                Assert.AreEqual(1, painel.Messages.Count, "controle: a pasta A carregou")
+                StringAssert.Contains(painel.StatusLine, "1 de 5", "controle: o total de A")
+
+                ' PASTA B: a contagem falha, e nada dela pode vir de A.
+                b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                    New MessagePage With {
+                        .Generation = 2,
+                        .Items = New List(Of MailSummary)(),
+                        .TotalAtStart = Nothing,
+                        .SkippedCount = 0})
+                Await painel.ShowFolderAsync(New FolderKey("entry-2", "store-1"), "Outra")
+
+                Assert.IsTrue(painel.ShowEmptyFolder)
+                Assert.IsFalse(painel.EmptyMessage.Contains("5"),
+                    "a pasta nova declarou o total da anterior")
+                Assert.IsFalse(painel.StatusLine.Contains("de 5"),
+                    "o rodape continuou contando pela pasta anterior")
+            End Function)
+    End Sub
+
+    ''' <summary>
     ''' <b>CONTROLE POSITIVO: pasta que declara zero e não perdeu nada É vazia.</b>
     '''
     ''' Sem ele, um <c>EmptyMessage</c> que nunca dissesse "vazia" passaria no
     ''' teste de cima — que é o bloqueio sem controle negativo que o CLAUDE.md
     ''' descreve.
+    '''
+    ''' <b>E ele exige que a página TENHA SIDO APLICADA.</b> A primeira versão
+    ''' não exigia: <c>_total</c>, <c>_skipped</c> e <c>_fabricadas</c> já nascem
+    ''' zero, então o teste passaria com a página ignorada — a revisão externa
+    ''' apontou. O <c>_totalConhecido</c> resolve isso por construção: sem a
+    ''' página, o total é <b>desconhecido</b> e a frase é outra. A asserção do
+    ''' <c>StatusLine</c> deixa isso explícito.
     ''' </summary>
     <TestMethod>
     Public Sub Controle_pasta_que_declara_zero_e_dita_vazia()
@@ -444,6 +552,12 @@ Public Class JanelaPrincipalTests
                 Await painel.ShowFolderAsync(New FolderKey("entry-1", "store-1"), "Caixa de Entrada")
 
                 Assert.IsTrue(painel.ShowEmptyFolder)
+
+                ' A PAGINA CHEGOU: sem ela o total seria desconhecido, e o
+                ' rodape diria "0 de ?" em vez de "0 de 0".
+                StringAssert.Contains(painel.StatusLine, "0 de 0",
+                    "controle: a pagina nao foi aplicada, e o teste passaria " &
+                    "pelo estado inicial")
                 StringAssert.Contains(painel.EmptyMessage, "Esta pasta está vazia")
             End Function)
     End Sub

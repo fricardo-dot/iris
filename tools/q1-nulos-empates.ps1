@@ -110,8 +110,10 @@ if ($nulos -gt 0) {
     }
     Write-Host "   => BLOQUEADOR REAL: filtro '< data' perde estes itens."
 } else {
-    Write-Host "   => nenhum nesta caixa. Continua sendo lacuna do CONTRATO,"
-    Write-Host "      porque outra caixa pode ter, mas nao bloqueia aqui."
+    Write-Host "   => nenhum ENTRE OS ITENS QUE ESTE ROTEIRO LEU. Continua sendo"
+    Write-Host "      lacuna do CONTRATO, porque outra caixa pode ter -- e porque"
+    Write-Host "      este roteiro engole falha de pasta e de store, entao o"
+    Write-Host "      'nenhum' e sobre o que foi lido, e nao sobre a caixa."
 }
 Write-Host ""
 
