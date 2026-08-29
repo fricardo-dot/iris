@@ -148,8 +148,14 @@ Namespace Global.Iris.Model
         Public Overloads Function Equals(other As AttachmentKey) As Boolean _
             Implements IEquatable(Of AttachmentKey).Equals
             If other Is Nothing Then Return False
+            ' O "EU SEI" ENTRA NA IGUALDADE, e ficou de fora quando ele
+            ' nasceu. Duas chaves com os mesmos quatro campos e confiancas
+            ' DIFERENTES nao sao a mesma chave: o MesmaIdentidade trata uma
+            ' como conferivel e a outra nao, e um comparador que as iguala
+            ' esconde exatamente essa mudanca de confianca.
             Return Index = other.Index AndAlso
                    SizeBytes = other.SizeBytes AndAlso
+                   IdentidadeConhecida = other.IdentidadeConhecida AndAlso
                    String.Equals(FileName, other.FileName, StringComparison.Ordinal) AndAlso
                    Equals(Owner, other.Owner)
         End Function
@@ -159,7 +165,7 @@ Namespace Global.Iris.Model
         End Function
 
         Public Overrides Function GetHashCode() As Integer
-            Return HashCode.Combine(Owner, Index, FileName, SizeBytes)
+            Return HashCode.Combine(Owner, Index, FileName, SizeBytes, IdentidadeConhecida)
         End Function
     End Class
 

@@ -324,10 +324,17 @@ Public Class LeitorDeMensagemTests
         ' auxiliares tolerantes produzem quando a leitura falha.
         Dim fabricada As New AttachmentKey(dono, 1, "", 0, identidadeConhecida:=False)
 
-        Assert.IsFalse(MessageReading.MesmaIdentidade(Nothing, 0, fabricada),
-            "nome ilegivel casou com a chave fabricada -- o anexo errado seria gravado")
-        Assert.IsFalse(MessageReading.MesmaIdentidade("", Nothing, fabricada),
-            "tamanho ilegivel casou com a chave fabricada")
+        ' A LEITURA DE AGORA, contra uma chave CONCLUSIVA.
+        '
+        ' Estas duas usavam a chave fabricada, e por isso passavam pelo motivo
+        ' errado: a funcao retornava no IdentidadeConhecida e nem chegava a
+        ' olhar os argumentos. Apagar as duas guardas da leitura atual deixaria
+        ' as assercoes verdes. A revisao externa pegou.
+        Dim conclusiva As New AttachmentKey(dono, 1, "", 0)
+        Assert.IsFalse(MessageReading.MesmaIdentidade(Nothing, 0, conclusiva),
+            "nome ilegivel casou -- o anexo errado seria gravado")
+        Assert.IsFalse(MessageReading.MesmaIdentidade("", Nothing, conclusiva),
+            "tamanho ilegivel casou")
 
         ' O OUTRO LADO, e ele escapou da primeira versao desta guarda: a
         ' leitura de AGORA conclui, e a chave e que foi fabricada. Sem o

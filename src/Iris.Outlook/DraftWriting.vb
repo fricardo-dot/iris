@@ -392,11 +392,47 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
-        ''' <summary>Mesmo nome e mesmo tamanho.</summary>
+        ''' <summary>
+        ''' <b>Mesmo nome e mesmo tamanho — e os dois lados conclusivos.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>ESTA COMPARAÇÃO DECIDE UM <c>Delete()</c></b>
+        '''
+        ''' Ela lia os dois lados com os auxiliares tolerantes — exceção vira
+        ''' <c>""</c> e <c>0</c> — e a chave alvo tinha sido montada com os
+        ''' mesmos. Se as leituras falhassem nos dois momentos, <c>""/0</c>
+        ''' casava com <c>""/0</c>, a comparação dizia "é este" e o anexo errado
+        ''' era <b>apagado</b>.
+        '''
+        ''' É o mesmo defeito que o <c>MessageReading.MesmaIdentidade</c> tinha,
+        ''' numa operação destrutiva. Consertar lá e deixar aqui é o erro que
+        ''' este projeto já cometeu cinco vezes — a revisão externa pegou este
+        ''' perguntando explicitamente pelos irmãos.
+        '''
+        ''' Agora <b>falha fecha</b>: sem os quatro valores conclusivos, não é o
+        ''' mesmo arquivo, e a remoção é recusada antes do <c>Delete</c>.
+        '''
+        ''' <b>A regra mora num lugar só, de propósito.</b> A primeira versão
+        ''' desta função repetia aqui o teste de
+        ''' <see cref="AttachmentKey.IdentidadeConhecida"/> — e o controle
+        ''' negativo não derrubou nada, porque
+        ''' <see cref="MessageReading.MesmaIdentidade"/> já o fazia. Guarda
+        ''' duplicada é guarda que ninguém prova: a cópia sai, e o que fica é a
+        ''' que tem teste.
+        ''' </summary>
         Private Function MesmoArquivo(a As OL.Attachment, alvo As AttachmentKey) As Boolean
-            If Not String.Equals(Texto(Function() a.FileName), alvo.FileName,
-                                 StringComparison.Ordinal) Then Return False
-            Return Numero(Function() a.Size) = alvo.SizeBytes
+            Dim nome As String = Nothing
+            Dim tamanho As Integer? = Nothing
+            Try
+                nome = a.FileName
+            Catch
+            End Try
+            Try
+                tamanho = a.Size
+            Catch
+            End Try
+
+            Return MessageReading.MesmaIdentidade(nome, tamanho, alvo)
         End Function
 
         ''' <summary>
@@ -902,12 +938,30 @@ Namespace Global.Iris.Outlook
                     Dim a As OL.Attachment = Nothing
                     Try
                         a = anexos.Item(i)
+
+                        ' A CHAVE PRECISA SABER SE A IDENTIDADE FOI LIDA.
+                        ' Texto() e Numero() devolvem "" e 0 na falha, e esses
+                        ' valores entravam na chave como se fossem conhecidos.
+                        ' Depois, na REMOCAO, o MesmoArquivo comparava
+                        ' fabricado com fabricado, passava, e chamava Delete()
+                        ' no anexo errado. E o irmao destrutivo do defeito que
+                        ' o MessageReading ja tinha.
+                        Dim nome As String = Nothing
+                        Dim tamanho As Integer? = Nothing
+                        Try
+                            nome = a.FileName
+                        Catch
+                        End Try
+                        Try
+                            tamanho = a.Size
+                        Catch
+                        End Try
+
                         lista.Add(New AttachmentInfo With {
-                            .Key = New AttachmentKey(dono, i,
-                                                     Texto(Function() a.FileName),
-                                                     Numero(Function() a.Size)),
-                            .FileName = Texto(Function() a.FileName),
-                            .SizeBytes = Numero(Function() a.Size)
+                            .Key = New AttachmentKey(dono, i, If(nome, ""), If(tamanho, 0),
+                                                     nome IsNot Nothing AndAlso tamanho.HasValue),
+                            .FileName = If(nome, ""),
+                            .SizeBytes = If(tamanho, 0)
                         })
                         obtidos += 1
                     Catch ex As COMException

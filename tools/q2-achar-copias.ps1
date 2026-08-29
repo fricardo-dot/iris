@@ -131,6 +131,6 @@ if ($script:cego -gt 0) {
     if ($script:cortados -gt 0)  { Write-Host ("    {0} ramo(s) cortados na profundidade 12" -f $script:cortados) }
     if ($script:ramosCegos -gt 0) { Write-Host ("    {0} ramo(s) cujo Folders falhou" -f $script:ramosCegos) }
     if ($script:semTabela -gt 0) { Write-Host ("    {0} pasta(s) cujo GetTable falhou" -f $script:semTabela) }
-    if ($script:semStore -gt 0)  { Write-Host ("    {0} store(s) que nao consegui percorrer" -f $script:semStore) }
+    if ($script:semStore -gt 0)  { Write-Host ("    {0} store(s) que nao abriram, ou cuja travessia parou" -f $script:semStore) }
     Write-Host "  Zero aqui nao prova que nao sobrou copia."
 }

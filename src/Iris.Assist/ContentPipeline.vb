@@ -228,9 +228,25 @@ Namespace Global.Iris.Assist
         ''' honesto é <b>recusar</b> o que não dá para interpretar, em vez de
         ''' converter pela metade.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Fechamento que conta é fechamento TERMINADO.</b>
+        '''
+        ''' Contar a substring <c>"&lt;/script"</c> aceitava
+        ''' <c>"&lt;/script"</c> <i>sem o <c>&gt;</c></i> como fechamento: o
+        ''' HTML passava como interpretável, o padrão de bloco — que precisa do
+        ''' <c>&gt;</c> — não removia nada, e sobrava
+        ''' <c>SEGREDO&lt;/script</c> no texto que vai para o provedor.
+        '''
+        ''' Os dois lados usam o mesmo critério agora, e o critério é o do
+        ''' removedor: <c>&lt;/nome</c> ... <c>&gt;</c>. O que não termina não
+        ''' conta como fechamento, o balanço não fecha, e o HTML é
+        ''' <b>recusado</b> — que é o lado certo de errar aqui.
+        ''' </summary>
         Private Shared Function HtmlInterpretavel(bruto As String) As Boolean
             For Each nome In {"script", "style"}
-                If Contagem(bruto, "<" & nome) <> Contagem(bruto, "</" & nome) Then Return False
+                Dim fechamentos = New Regex("</" & nome & "[^>]*>",
+                                            RegexOptions.IgnoreCase).Matches(bruto).Count
+                If Contagem(bruto, "<" & nome) <> fechamentos Then Return False
             Next
             Return Contagem(bruto, "<!--") = Contagem(bruto, "-->")
         End Function

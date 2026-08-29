@@ -360,12 +360,31 @@ Public Class ContentPipelineTests
     '''
     ''' Um parser de verdade resolveria melhor. Enquanto não há, o mínimo
     ''' honesto é recusar o que não dá para interpretar.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>AS TRÊS ÚLTIMAS LINHAS: FECHAMENTO SEM O <c>&gt;</c></b>
+    '''
+    ''' A contagem procurava a substring <c>"&lt;/script"</c>, então
+    ''' <c>&lt;/script</c> <i>sem o terminador</i> contava como fechamento: o
+    ''' balanço fechava, o HTML passava, e o padrão de bloco — que precisa do
+    ''' <c>&gt;</c> — não removia nada. Sobrava <c>SEGREDO&lt;/script</c> no
+    ''' texto que vai para o provedor.
+    '''
+    ''' Foi a <b>terceira</b> versão deste conserto: primeiro o
+    ''' <c>&lt;/script&gt;</c> exato, depois o espaço, e só então o critério
+    ''' inteiro. Agora os dois lados usam o mesmo, e o que não termina não conta.
+    '''
+    ''' <b>Controle negativo:</b> voltando a contagem para a substring, estas
+    ''' três linhas passam a ser aceitas e o segredo vaza.
     ''' </summary>
     <DataTestMethod>
     <DataRow("<p>visivel</p><script>SEGREDO")>
     <DataRow("<p>visivel</p><style>SEGREDO")>
     <DataRow("<p>visivel</p><!-- SEGREDO")>
     <DataRow("<script>a</script><script>SEGREDO")>
+    <DataRow("<p>visivel</p><script>SEGREDO</script")>
+    <DataRow("<p>visivel</p><script>SEGREDO</script x")>
+    <DataRow("<p>visivel</p><style>SEGREDO</style")>
     Public Sub Bloco_sem_fechar_RECUSA(corpo As String)
         Dim r = Preparar(corpo, html:=True)
 

@@ -161,13 +161,17 @@ for ($s = 1; $s -le $stores.Count; $s++) {
 
 Write-Host ""
 Write-Host "pastas percorridas: $pastasVistas"
-$script:cego = $script:cortados + $script:ramosCegos + $script:semColunaChave + $script:semStore
+# A FALHA DE TABELA TAMBEM E CEGUEIRA. Ela ia so para $pastasComErro, e se
+# fosse a UNICA perda a ressalva dos zeros nem aparecia.
+$script:cego = $script:cortados + $script:ramosCegos + $script:semColunaChave +
+               $script:semStore + $pastasComErro.Count
 if ($script:cego -gt 0) {
     Write-Host "O QUE NAO FOI PERCORRIDO:" -ForegroundColor DarkYellow
     if ($script:cortados -gt 0)      { Write-Host ("  {0} ramo(s) cortados na profundidade 12" -f $script:cortados) }
     if ($script:ramosCegos -gt 0)    { Write-Host ("  {0} ramo(s) cujo Folders falhou" -f $script:ramosCegos) }
     if ($script:semColunaChave -gt 0) { Write-Host ("  {0} pasta(s) sem a coluna EntryID -- e o ramo abaixo delas" -f $script:semColunaChave) }
-    if ($script:semStore -gt 0)      { Write-Host ("  {0} store(s) que nao consegui abrir" -f $script:semStore) }
+    if ($script:semStore -gt 0)      { Write-Host ("  {0} store(s) que nao abriram, ou cuja travessia parou" -f $script:semStore) }
+    if ($pastasComErro.Count -gt 0)  { Write-Host ("  {0} pasta(s) cuja tabela falhou (listadas acima)" -f $pastasComErro.Count) }
     Write-Host "  Os zeros da matriz sao sobre o que foi lido, e nao sobre a caixa." -ForegroundColor DarkYellow
 }
 Write-Host "itens: $($itens.Count)"
