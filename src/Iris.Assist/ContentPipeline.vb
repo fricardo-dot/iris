@@ -347,7 +347,6 @@ Namespace Global.Iris.Assist
                 If Casa(texto, i, "<!--") Then
                     Dim depoisDoComentario = PularComentario(texto, i, incerto)
                     If incerto Then Return Fechar(sb)
-                    sb.Append(" "c)
                     i = depoisDoComentario
                     Continue While
                 End If
@@ -365,13 +364,16 @@ Namespace Global.Iris.Assist
 
                 If Casa(texto, i, "<!") OrElse Casa(texto, i, "<?") OrElse
                    (Casa(texto, i, "</") AndAlso Not ComecaNome(texto, i + 2)) Then
-                    Dim fim = texto.IndexOf(">"c, i)
+                    ' RESPEITANDO ASPAS. Um DOCTYPE pode ter ">" dentro do
+                    ' identificador publico -- <!DOCTYPE html PUBLIC "A>B"> --
+                    ' e parar no primeiro ">" fazia o resto da declaracao sair
+                    ' como se fosse texto do documento.
+                    Dim fim = FimDaDeclaracao(texto, i)
                     If fim < 0 Then
                         incerto = True
                         Return Fechar(sb)
                     End If
-                    sb.Append(" "c)
-                    i = fim + 1
+                    i = fim
                     Continue While
                 End If
 
@@ -412,7 +414,14 @@ Namespace Global.Iris.Assist
                     Return Fechar(sb)
                 End If
 
-                If EhQuebra(nome, ehFechamento) Then sb.Append(vbLf) Else sb.Append(" "c)
+                ' TAG NAO INVENTA ESPACO.
+                '
+                ' Cada tag acrescentava um " ", e isso PARTE palavra:
+                ' "co<strong>ntra</strong>to" saia "co ntra to". Nao e
+                ' normalizacao de apresentacao -- e texto diferente do que esta
+                ' escrito, e a promessa e o texto do documento. Estrutura vira
+                ' quebra de linha; o resto nao vira nada.
+                If EhQuebra(nome, ehFechamento) Then sb.Append(vbLf)
                 i = depois
 
                 If Not ehFechamento AndAlso (nome = "script" OrElse nome = "style") Then
@@ -514,8 +523,71 @@ Namespace Global.Iris.Assist
             Return depois
         End Function
 
+        ''' <summary>
+        ''' Fim de uma declaração, respeitando aspas. Devolve a posição
+        ''' <b>depois</b> do <c>&gt;</c>, ou <c>-1</c> se ela não fecha.
+        ''' </summary>
+        Private Shared Function FimDaDeclaracao(texto As String, i As Integer) As Integer
+            Dim aspa As Char = ChrW(0)
+            Dim j = i
+            While j < texto.Length
+                Dim c = texto(j)
+                If aspa <> ChrW(0) Then
+                    If c = aspa Then aspa = ChrW(0)
+                ElseIf c = ChrW(34) OrElse c = ChrW(39) Then
+                    aspa = c
+                ElseIf c = ">"c Then
+                    Return j + 1
+                End If
+                j += 1
+            End While
+            Return -1
+        End Function
+
         Private Shared Function Fechar(sb As StringBuilder) As String
-            Return Limpar(Net.WebUtility.HtmlDecode(sb.ToString()))
+            Return Limpar(Net.WebUtility.HtmlDecode(LegadoC1(sb.ToString())))
+        End Function
+
+        ''' <summary>
+        ''' As referências numéricas de <c>&amp;#128;</c> a <c>&amp;#159;</c>,
+        ''' que o HTML manda ler como windows-1252.
+        '''
+        ''' <c>&amp;#128;</c> é o símbolo do euro no HTML, e o
+        ''' <c>WebUtility.HtmlDecode</c> devolve <c>U+0080</c> — um controle,
+        ''' que o <see cref="Limpar"/> apaga. Resultado: <c>A&amp;#128;B</c>
+        ''' virava <c>AB</c>, e o euro sumia de uma cotação. É texto do
+        ''' documento desaparecendo, que é metade do que este leitor existe
+        ''' para não fazer.
+        '''
+        ''' A tabela é a do padrão, e cabe em vinte e sete linhas.
+        ''' </summary>
+        Private Shared ReadOnly C1 As Char() = {
+            ChrW(&H20AC), ChrW(&H81), ChrW(&H201A), ChrW(&H192),
+            ChrW(&H201E), ChrW(&H2026), ChrW(&H2020), ChrW(&H2021),
+            ChrW(&H2C6), ChrW(&H2030), ChrW(&H160), ChrW(&H2039),
+            ChrW(&H152), ChrW(&H8D), ChrW(&H17D), ChrW(&H8F),
+            ChrW(&H90), ChrW(&H2018), ChrW(&H2019), ChrW(&H201C),
+            ChrW(&H201D), ChrW(&H2022), ChrW(&H2013), ChrW(&H2014),
+            ChrW(&H2DC), ChrW(&H2122), ChrW(&H161), ChrW(&H203A),
+            ChrW(&H153), ChrW(&H9D), ChrW(&H17E), ChrW(&H178)}
+
+        Private Shared ReadOnly RefNumerica As New Regex("&#(?:x0*8([0-9a-fA-F])|(1[2-5][0-9]));",
+                                                         RegexOptions.IgnoreCase)
+
+        Private Shared Function LegadoC1(bruto As String) As String
+            If bruto.IndexOf("&#", StringComparison.Ordinal) < 0 Then Return bruto
+
+            Return RefNumerica.Replace(bruto,
+                Function(m)
+                    Dim n As Integer
+                    If m.Groups(1).Success Then
+                        n = &H80 + Convert.ToInt32(m.Groups(1).Value, 16)
+                    Else
+                        n = Integer.Parse(m.Groups(2).Value, CultureInfo.InvariantCulture)
+                    End If
+                    If n < &H80 OrElse n > &H9F Then Return m.Value
+                    Return C1(n - &H80)
+                End Function)
         End Function
 
         Private Shared Function Casa(texto As String, i As Integer, agulha As String) As Boolean
@@ -538,6 +610,12 @@ Namespace Global.Iris.Assist
         ''' O nome em minúsculas. Inclui <c>-</c> e dígito porque
         ''' <c>&lt;script-note&gt;</c> é um elemento válido, e a versão que lia
         ''' só <c>script</c> nele apagava o conteúdo visível inteiro.
+        '''
+        ''' E inclui <c>:</c> por um motivo prático: o HTML que o Outlook gera é
+        ''' cheio de <c>&lt;o:p&gt;</c> e <c>&lt;v:shape&gt;</c>. Sem isso, a
+        ''' regra do separador recusaria <b>quase toda mensagem vinda do
+        ''' Outlook</b> — e uma fronteira que recusa o caso comum não é
+        ''' conservadora, é inútil.
         ''' </summary>
         ''' <summary>
         ''' Depois do nome tem de vir separador — espaço ASCII, <c>/</c> ou
@@ -556,7 +634,7 @@ Namespace Global.Iris.Assist
             While j < texto.Length
                 Dim c = texto(j)
                 If (c >= "a"c AndAlso c <= "z"c) OrElse (c >= "A"c AndAlso c <= "Z"c) OrElse
-                   (c >= "0"c AndAlso c <= "9"c) OrElse c = "-"c Then
+                   (c >= "0"c AndAlso c <= "9"c) OrElse c = "-"c OrElse c = ":"c Then
                     sb.Append(Char.ToLowerInvariant(c))
                     j += 1
                 Else
@@ -671,7 +749,10 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Private Shared Function EhQuebra(nome As String, ehFechamento As Boolean) As Boolean
             If Not ehFechamento Then Return nome = "br"
-            Return nome = "p" OrElse nome = "div" OrElse nome = "tr" OrElse nome = "li"
+            ' td e th entraram junto com o fim do espaco por tag: sem eles,
+            ' "<td>a</td><td>b</td>" viraria "ab".
+            Return nome = "p" OrElse nome = "div" OrElse nome = "tr" OrElse
+                   nome = "li" OrElse nome = "td" OrElse nome = "th"
         End Function
         ''' <summary>
         ''' HTML vira texto — pelo <see cref="LerHtml"/>, que é o mesmo código
@@ -692,7 +773,35 @@ Namespace Global.Iris.Assist
         ''' Caractere de controle sai porque não é texto: um <c>U+0000</c> ou um
         ''' marcador de direção no meio de uma frase muda o que se lê sem mudar
         ''' o que está escrito. Tabulação e quebra ficam.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>MAS "CATEGORIA FORMAT" ERA LARGO DEMAIS, E APAGAVA EMOJI</b>
+        '''
+        ''' A regra derrubava toda a categoria <c>Format</c>, e ali dentro moram
+        ''' o ZWJ (<c>U+200D</c>) e o ZWNJ (<c>U+200C</c>) — que <b>ligam</b>
+        ''' caracteres em vez de reordená-los. Com isso <c>👩‍💻</c> virava
+        ''' <c>👩💻</c>: duas pessoas onde havia uma. E o teste que dizia
+        ''' preservar emoji usava um emoji <i>sem</i> junção, então passava.
+        '''
+        ''' Agora sai só o que <b>reordena</b>: os marcadores bidirecionais.
         ''' </summary>
+        ''' <summary>
+        ''' Os marcadores que <b>reordenam</b> a leitura — e só eles.
+        '''
+        ''' <c>U+061C</c> (árabe), <c>U+200E</c>/<c>U+200F</c> (marcas de
+        ''' direção), <c>U+202A</c>–<c>U+202E</c> (embutir e sobrepor) e
+        ''' <c>U+2066</c>–<c>U+2069</c> (isolar). São eles que fazem uma frase
+        ''' ser lida diferente do que está escrita.
+        '''
+        ''' O ZWJ e o ZWNJ ficam: eles montam emoji e escrita real.
+        ''' </summary>
+        Private Shared Function Bidirecional(c As Char) As Boolean
+            Dim n = AscW(c)
+            Return n = &H61C OrElse n = &H200E OrElse n = &H200F OrElse
+                   (n >= &H202A AndAlso n <= &H202E) OrElse
+                   (n >= &H2066 AndAlso n <= &H2069)
+        End Function
+
         Private Shared Function Limpar(bruto As String) As String
             Dim s = If(bruto, "")
             s = s.Replace(vbCrLf, vbLf).Replace(vbCr, vbLf)
@@ -702,7 +811,7 @@ Namespace Global.Iris.Assist
                 If c = vbLf(0) OrElse c = vbTab(0) Then
                     sb.Append(c)
                 ElseIf Char.GetUnicodeCategory(c) = UnicodeCategory.Control OrElse
-                       Char.GetUnicodeCategory(c) = UnicodeCategory.Format Then
+                       Bidirecional(c) Then
                     ' Fora. Inclui os marcadores de direcao, que reordenam a
                     ' leitura sem mudar o texto.
                 ElseIf c = " "c Then

@@ -576,7 +576,7 @@ Public Class ContentPipelineTests
     <DataTestMethod>
     <DataRow("<p>a < b e c > d</p>", "a < b e c > d", "SEGREDO")>
     <DataRow("<p>a <é> b</p>", "a <é> b", "SEGREDO")>
-    <DataRow("<p>resultado:</p>2 < 3", "2 < 3", "SEGREDO")>
+    <DataRow("<p>resultado:</p>2 < 3", "resultado:;2 < 3", "SEGREDO")>
     <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>", "VISIVEL;FIM", "script")>
     <DataRow("<p a=x"">VISIVEL""<span>DEPOIS</span>", "VISIVEL;DEPOIS", "span")>
     <DataRow("<style><!-- .x { color:red } --></style><p>oi</p>", "oi", "color")>
@@ -586,9 +586,14 @@ Public Class ContentPipelineTests
     <DataRow("<p>Use a seta --> para continuar.</p>", "Use a seta --> para continuar.", "SEGREDO")>
     <DataRow("<?xml version=""1.0""?><p>oi</p>", "oi", "xml")>
     <DataRow("<td width=100>VISIVEL</td>", "VISIVEL", "width")>
-    <DataRow("A<!-->B", "B", "SEGREDO")>
-    <DataRow("<p>VISIVEL</p><!-- x --!><p>DEPOIS</p>", "DEPOIS", "x ")>
-    Public Sub O_visivel_sobrevive_e_o_invisivel_nao_sai(
+    <DataRow("A<!-->B", "A;B", "SEGREDO")>
+    <DataRow("<p>VISIVEL</p><!-- x --!><p>DEPOIS</p>", "VISIVEL;DEPOIS", "x ")>
+    <DataRow("co<strong>ntra</strong>to", "contrato", "co ntra")>
+    <DataRow("<td>a</td><td>b</td>", "a;b", "SEGREDO")>
+    <DataRow("<!DOCTYPE html PUBLIC ""A>B""><p>REAL</p>", "REAL", "B")>
+    <DataRow("<p>A&#128;B</p>", "A€B", "SEGREDO")>
+    <DataRow("<o:p>oi</o:p><p>DEPOIS</p>", "oi;DEPOIS", "o:p")>
+    Public Sub O_texto_do_documento_sai_inteiro_e_so_ele(
             corpo As String, precisaTer As String, naoPodeTer As String)
 
         Dim r = Preparar(corpo, html:=True)
@@ -648,6 +653,40 @@ Public Class ContentPipelineTests
     Public Sub Controle_HTML_comum_continua_passando(corpo As String)
         Dim r = Preparar(corpo, html:=True)
         Assert.IsTrue(r.Ok, $"recusou HTML comum por {r.Recusa}: " & corpo)
+    End Sub
+
+    ''' <summary>
+    ''' <b>EMOJI COM JUNTOR CONTINUA INTEIRO.</b>
+    '''
+    ''' A limpeza derrubava toda a categoria <c>Format</c>, e ali dentro moram o
+    ''' ZWJ e o ZWNJ — que <b>ligam</b> caracteres em vez de reordená-los. Com
+    ''' isso <c>👩‍💻</c> virava <c>👩💻</c>: duas pessoas onde havia uma.
+    '''
+    ''' <b>E o teste que dizia preservar emoji passava</b>, porque usava um
+    ''' emoji sem junção. A revisão externa apontou: o teste cobria o nome da
+    ''' propriedade, não a propriedade.
+    '''
+    ''' <b>Controle negativo:</b> voltando a derrubar a categoria inteira, a
+    ''' primeira asserção cai. E o controle positivo é a segunda: o marcador
+    ''' bidirecional, que REORDENA, tem de continuar saindo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Juntor_de_emoji_fica_e_marcador_de_direcao_sai()
+        Dim zwj = ChrW(&H200D)
+        Dim mulher = ChrW(&HD83D) & ChrW(&HDC69)
+        Dim computador = ChrW(&HD83D) & ChrW(&HDCBB)
+
+        Dim r = Preparar(mulher & zwj & computador)
+        Assert.IsTrue(r.Ok, $"recusou por {r.Recusa}")
+        StringAssert.Contains(r.Parte.Corpo, mulher & zwj & computador,
+            "o juntor sumiu, e o emoji virou dois")
+
+        ' CONTROLE POSITIVO: o que reordena continua saindo.
+        Dim rlo = ChrW(&H202E)
+        Dim r2 = Preparar("antes" & rlo & "depois")
+        Assert.IsTrue(r2.Ok)
+        Assert.IsFalse(r2.Parte.Corpo.Contains(rlo),
+            "marcador de direcao ficou, e ele muda o que se le")
     End Sub
 
 End Class

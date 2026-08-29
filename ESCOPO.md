@@ -648,9 +648,13 @@ que este ESCOPO carregava.
   mostrou por quê: para prometer isso seria preciso aplicar CSS, e isso é um
   navegador.
   **O que se faz no lugar:** o leitor modela um subconjunto pequeno e **recusa**
-  o que não modela — nove elementos, as duas formas de comentário condicional,
-  nome de tag com sufixo estranho, `=` antes do nome de atributo, e `script`
-  com `<!--`. Fechar o resto exigiria interpretar CSS, e isso é outro projeto.
+  o que não modela — **onze** elementos, as duas formas de comentário
+  condicional, nome de tag com sufixo estranho, `=` antes do nome de atributo, e
+  `script` com `<!--`. Fechar o resto exigiria interpretar CSS, e isso é outro
+  projeto.
+  **E a régua é o documento, não a tela:** o que sai é o texto escrito no HTML.
+  Estrutura vira quebra de linha; tag não vira nada — inclusive não vira espaço,
+  porque um espaço por tag partia `co<strong>ntra</strong>to` em `co ntra to`.
 - **O aviso de egresso ambíguo não desaparece sozinho** — *dívida assumida em
   29/08/2026, e o preço de um conserto de gravidade alta.*
   A reconciliação da abertura devolvia **quantas transitaram naquela chamada**.
