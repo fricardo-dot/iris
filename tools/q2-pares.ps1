@@ -60,8 +60,14 @@ function Hex($v) {
 $itens = New-Object System.Collections.ArrayList
 $falhas = New-Object System.Collections.ArrayList
 
+# CORTE E RAMO CEGO. O laco para na profundidade 12 e engole falha ao abrir
+# as filhas; sem contar os dois, "nenhuma colisao" seria afirmacao sobre o que
+# nao foi percorrido.
+$script:cortados = 0
+$script:ramosCegos = 0
+
 function Varrer($pasta, [string]$caminho, [int]$prof) {
-    if ($prof -gt 12) { return }
+    if ($prof -gt 12) { $script:cortados++; return }
     $t = $null
     try {
         $t = $pasta.GetTable()
@@ -101,7 +107,7 @@ function Varrer($pasta, [string]$caminho, [int]$prof) {
     }
 
     $filhas = $null
-    try { $filhas = $pasta.Folders } catch { return }
+    try { $filhas = $pasta.Folders } catch { $script:ramosCegos++; return }
     try {
         for ($k = 1; $k -le $filhas.Count; $k++) {
             $f = $filhas.Item($k)
@@ -145,7 +151,14 @@ foreach ($campo in @("Sk", "Mid")) {
     }
 }
 Write-Host "grupos de colisao: $($grupos.Count)"
-if ($grupos.Count -eq 0) { Write-Host "nenhuma colisao — nada a caracterizar."; exit 0 }
+if ($grupos.Count -eq 0) {
+    Write-Host "nenhuma colisao ENTRE OS ITENS QUE ESTE ROTEIRO LEU."
+    if ($script:cortados -gt 0 -or $script:ramosCegos -gt 0 -or $falhas.Count -gt 0) {
+        Write-Host ("  RESSALVA: {0} ramo(s) cortados na profundidade 12, {1} ramo(s) que nao" -f $script:cortados, $script:ramosCegos)
+        Write-Host ("  consegui abrir, {0} pasta(s) que falharam. Nao e 'nao existe colisao'." -f $falhas.Count)
+    }
+    exit 0
+}
 
 # ---------- 3. caracterizar cada um ----------
 function Curto([string]$s, [int]$n) {

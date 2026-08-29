@@ -559,9 +559,21 @@ Public Class JanelaPrincipalTests
 
                 Dim painel As New MessageListViewModel(b, d, Sub(t, nome)
                                                              End Sub)
-                Await painel.ShowFolderAsync(New FolderKey("entry-1", "store-1"), "Caixa de Entrada")
+                ' A PAGINA DE A DEMORA DE PROPOSITO. Sem isso a duracao dela e
+                ' zero, e a assercao de que a duracao NAO vaza para B passaria
+                ' com a correcao desfeita -- foi o que aconteceu aqui.
+                Dim primeira As New TaskCompletionSource(Of Boolean)()
+                b.TravaDaPagina = primeira
+                Dim carga = painel.ShowFolderAsync(New FolderKey("entry-1", "store-1"), "Caixa de Entrada")
+                Await Task.Delay(40)
+                primeira.SetResult(True)
+                Await carga
+                b.TravaDaPagina = Nothing
+
                 Assert.AreEqual(1, painel.Messages.Count, "controle: a pasta A carregou")
                 StringAssert.Contains(painel.StatusLine, "1 de 5", "controle: o total de A")
+                Assert.IsTrue(painel.LastPageMs > 0,
+                    $"controle: a pagina de A tinha de custar tempo, custou {painel.LastPageMs}")
 
                 ' UM LOAD MORE DE A FICA EM VOO, preso na trava.
                 '
@@ -584,6 +596,11 @@ Public Class JanelaPrincipalTests
                 Assert.IsFalse(painel.StatusLine.Contains("de 5"),
                     "o rodape de B continuou contando pela pasta A")
                 StringAssert.Contains(painel.StatusLine, "0 de ?")
+
+                ' A DURACAO TAMBEM E CONTEUDO, e tambem vazava: B mostrava a
+                ' "ultima pagina" de A, inclusive sem nunca ter tido pagina.
+                Assert.AreEqual(0.0, painel.LastPageMs,
+                    "o rodape de B mostrou a duracao da pagina da pasta A")
 
                 ' Solta a trava para nao deixar operacao pendurada.
                 b.TravaDaPagina.SetResult(True)

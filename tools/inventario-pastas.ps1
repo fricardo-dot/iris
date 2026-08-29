@@ -98,6 +98,9 @@ $stores = $ns.Stores
 for ($s = 1; $s -le $stores.Count; $s++) {
     $store = $stores.Item($s)
     $raiz = $null
+    # O catch pega o GetRootFolder E TODA A RECURSAO. Dizer "nao consegui
+    # abrir a raiz" descreveria errado uma falha tardia, depois de meia
+    # arvore lida -- entao o rodape diz o que se sabe: a travessia parou.
     try { $raiz = $store.GetRootFolder(); Varrer $raiz "" 0 $false }
     catch { $script:semStore++ } finally {
         if ($raiz) { Solta $raiz }
@@ -115,6 +118,14 @@ foreach ($g in ($linhas | Group-Object Cat | Sort-Object Count -Descending)) {
 }
 
 Write-Host ""
+# O TOTAL DE CEGUEIRAS E CALCULADO AQUI, antes de qualquer secao consultar.
+# Ele estava sendo somado la embaixo, DEPOIS da secao "PASTAS DO USUARIO" que
+# o consulta -- entao aquela secao lia $null e imprimia "nenhuma" mesmo com
+# falha de leitura. Consertar o inventario de cegueiras e deixar a primeira
+# consulta cega e uma piada que a revisao externa nao deixou passar.
+$script:cego = $script:semTipo + $script:semContagem + $script:semFilhas +
+               $script:cortadoPorProfundidade + $script:semStore + $script:semOculta
+
 Write-Host ("=" * 72)
 Write-Host "PASTAS DO USUARIO (as unicas que interessam ao cache)"
 Write-Host ("=" * 72)
@@ -132,15 +143,13 @@ if ($doUsuario.Count -eq 0) {
 }
 
 Write-Host ""
-$script:cego = $script:semTipo + $script:semContagem + $script:semFilhas +
-               $script:cortadoPorProfundidade + $script:semStore + $script:semOculta
 if ($script:cego -gt 0) {
     Write-Host "O QUE ESTE INVENTARIO NAO VIU:" -ForegroundColor DarkYellow
     if ($script:semTipo -gt 0)     { Write-Host ("  {0} pasta(s): nao consegui ler o tipo" -f $script:semTipo) }
     if ($script:semContagem -gt 0) { Write-Host ("  {0} pasta(s): nao consegui contar os itens (aparecem com 0)" -f $script:semContagem) }
     if ($script:semFilhas -gt 0)   { Write-Host ("  {0} ramo(s): nao consegui enumerar as filhas" -f $script:semFilhas) }
     if ($script:cortadoPorProfundidade -gt 0) { Write-Host ("  {0} ramo(s): cortados na profundidade 12" -f $script:cortadoPorProfundidade) }
-    if ($script:semStore -gt 0)    { Write-Host ("  {0} STORE(s) inteiro(s): nao consegui abrir a raiz" -f $script:semStore) }
+    if ($script:semStore -gt 0)    { Write-Host ("  {0} store(s): a travessia parou no meio ou nem comecou" -f $script:semStore) }
     if ($script:semOculta -gt 0)   { Write-Host ("  {0} pasta(s): PR_ATTR_HIDDEN ilegivel (podem ter virado 'DO USUARIO')" -f $script:semOculta) }
     Write-Host "  Zero nas linhas acima pode ser 'nao contei', e nao 'nao tem'."
     Write-Host ""

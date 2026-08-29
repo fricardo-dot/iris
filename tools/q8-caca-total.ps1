@@ -41,7 +41,13 @@ function Pasta($nome) {
 }
 
 $pequena = Pasta "1. Backup"
-if (-not $pequena) { Write-Host "nao achei '1. Backup'"; exit 1 }
+if (-not $pequena) {
+    # A travessia corta na profundidade 6 e engole falha de Folders, entao
+    # "nao achei" e sobre o que foi PERCORRIDO.
+    Write-Host "nao alcancei '1. Backup' na travessia (corte na profundidade 6,"
+    Write-Host "e falha ao abrir subpastas e silenciosa aqui)."
+    exit 1
+}
 
 Write-Host "varrendo 0x0000-0xFFFF em PT_LONG na '1. Backup' (alvo $ALVO_PEQUENA)..."
 $pa = $pequena.PropertyAccessor

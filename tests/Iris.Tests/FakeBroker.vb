@@ -540,14 +540,24 @@ Friend NotInheritable Class FakeBroker
                                         cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessagePage)) Implements IOutlookBroker.GetMessagePageAsync
         Chamadas.Add("GetMessagePage")
-        Return PaginaAsync()
+
+        ' FORA DA ALCADA LANCA AQUI, e nao dentro da Task.
+        '
+        ' Ao embrulhar tudo no PaginaAsync eu tinha transformado a chamada nao
+        ' esperada numa Task com falha -- e um teste que esquecesse o Await
+        ' passaria em silencio. A propriedade deste duplo sempre foi a
+        ' contraria: chamada fora da alcada QUEBRA o teste.
+        If RespostaDaPagina Is Nothing Then Return ForaDaAlcada(Of OperationResult(Of MessagePage))()
+
+        Dim trava = TravaDaPagina
+        If trava Is Nothing Then Return Task.FromResult(RespostaDaPagina)
+        Return EsperarAPagina(trava)
     End Function
 
-    Private Async Function PaginaAsync() As Task(Of OperationResult(Of MessagePage))
-        Dim trava = TravaDaPagina
-        If trava IsNot Nothing Then Await trava.Task
-        If RespostaDaPagina IsNot Nothing Then Return RespostaDaPagina
-        Return Await ForaDaAlcada(Of OperationResult(Of MessagePage))()
+    Private Async Function EsperarAPagina(trava As TaskCompletionSource(Of Boolean)) _
+        As Task(Of OperationResult(Of MessagePage))
+        Await trava.Task
+        Return RespostaDaPagina
     End Function
 
     ''' <summary>

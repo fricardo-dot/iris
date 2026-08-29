@@ -381,6 +381,10 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private Sub LimparConteudo()
             _nextCursor = Nothing
+            ' A DURACAO TAMBEM E CONTEUDO. Ela ficava, e a pasta B mostrava
+            ' "0 de ? - ultima pagina X ms" com o X da pasta A -- inclusive
+            ' quando B falhava e nunca teve pagina nenhuma.
+            LastPageMs = 0
             Messages.Clear()
             Selected = Nothing
             Total = 0

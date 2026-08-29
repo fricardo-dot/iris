@@ -90,7 +90,7 @@ foreach ($nome in $alvos.Keys) {
     if ($bate) {
         foreach ($b in $bate) { Write-Host ("  '{0}': {1} = {2}  <-- ALVO" -f $nome, $b.Key, $b.Value) }
     } else {
-        Write-Host ("  '{0}': NENHUMA propriedade devolve {1}" -f $nome, $alvo)
+        Write-Host ("  '{0}': NENHUMA das PT_LONG legiveis devolve {1}" -f $nome, $alvo)
     }
 }
 
@@ -103,7 +103,7 @@ if ($porPasta.Count -eq 2) {
         $a[$_] -eq $alvos[$nomes[0]] -and $b.ContainsKey($_) -and $b[$_] -eq $alvos[$nomes[1]]
     }
     if ($resp) { foreach ($r in $resp) { Write-Host "  $r" } }
-    else { Write-Host "  nenhuma" }
+    else { Write-Host "  nenhuma ENTRE AS PROPRIEDADES QUE ESTE ROTEIRO CONSEGUIU LER" }
 }
 
 Write-Host ""
