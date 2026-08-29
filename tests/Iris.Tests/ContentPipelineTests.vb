@@ -417,9 +417,6 @@ Public Class ContentPipelineTests
     <DataRow("<!-- </script> --><script>SEGREDO</script")>
     <DataRow("<p title=""</script>"">visivel</p><script>SEGREDO")>
     <DataRow("<p>VISIVEL</p>--><!-- marcador >SEGREDO")>
-    <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>")>
-    <DataRow("<p>ANTES</p><p title=<script>>VISIVEL</p><p title=</script>><p>DEPOIS</p>")>
-    <DataRow("<p>a < b e c > d</p>")>
     Public Sub Bloco_sem_fechar_RECUSA(corpo As String)
         Dim r = Preparar(corpo, html:=True)
 
@@ -548,69 +545,68 @@ Public Class ContentPipelineTests
     End Function
 
     ''' <summary>
-    ''' <b>O AUTÔMATO DAS ASPAS, caso a caso.</b>
+    ''' <b>O QUE O USUÁRIO VÊ SOBREVIVE; O QUE ELE NÃO VÊ NÃO SAI.</b>
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>ELE RECUSA, ENTÃO ERRAR PARA O LADO ERRADO CUSTA CARO</b>
+    ''' <b>ESTE TESTE SUBSTITUI O DO AUTÔMATO, E O MOTIVO IMPORTA</b>
     '''
-    ''' <c>MarcadorForaDeLugar</c> é o que decide se um HTML é recusado
-    ''' por conter <c>&lt;</c> dentro de um valor de atributo. Um falso
-    ''' positivo recusa mensagem legítima; um falso negativo deixa o removedor
-    ''' comer texto visível. Os dois lados doem, então cada estado tem caso.
+    ''' Havia aqui um teste caso a caso de <c>MarcadorForaDeLugar</c> — a
+    ''' função que <i>aproximava</i> a pergunta "dá para interpretar?". Ela
+    ''' não existe mais: quem decide agora é o próprio leitor que produz o
+    ''' texto, então não há duas respostas para conciliar.
     '''
-    ''' Estes casos são os que a revisão externa ia pedir e eu escrevi antes:
-    ''' aspas simples dentro de duplas, <c>&gt;</c> dentro de aspas, tag não
-    ''' fechada no fim, <c>&lt;</c> solto no texto, e aspas fora de tag.
+    ''' E o teste antigo era da <b>aproximação</b>, não da propriedade. Tanto
+    ''' que um dos casos dele — <c>&lt;p&gt;a &lt; b e c &gt; d&lt;/p&gt;</c> —
+    ''' eu tinha marcado como correto, e a limpeza entregava <c>a d</c>.
+    ''' Perguntar pela propriedade não deixa esse erro passar: ela é
+    ''' <b>o texto visível sai inteiro, e o invisível não sai</b>.
     ''' </summary>
-    <TestMethod>
-    Public Sub O_automato_das_aspas_caso_a_caso()
-        ' ACHA: < dentro de valor de atributo, nas duas aspas.
-        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar("<p title=""<script>"">x</p>"))
-        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar("<p title='<script>'>x</p>"))
+    <DataTestMethod>
+    <DataRow("<p>a < b e c > d</p>", "a < b e c > d", "")>
+    <DataRow("<p>a <é> b</p>", "a <é> b", "")>
+    <DataRow("<p>resultado:</p>2 < 3", "2 < 3", "")>
+    <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>", "VISIVEL", "")>
+    <DataRow("<p>ANTES</p><p title=<script>>VISIVEL</p><p>DEPOIS</p>", "DEPOIS", "")>
+    <DataRow("<script-note>VISIVEL</script-note>", "VISIVEL", "")>
+    <DataRow("<p>VISIVEL</p><script>const lt = ""<"";</script>", "VISIVEL", "const")>
+    <DataRow("<p>VISIVEL</p><script>var x='<!--';</script><p>DEPOIS</p>", "DEPOIS", "var x")>
+    <DataRow("<!--[if mso]><table><tr><td>x</td></tr></table><![endif]--><p>oi</p>", "oi", "endif")>
+    <DataRow("<p>Use a seta --> para continuar.</p>", "Use a seta --> para continuar.", "")>
+    <DataRow("<?xml version=""1.0""?><p>oi</p>", "oi", "xml")>
+    <DataRow("<td width=100>VISIVEL</td>", "VISIVEL", "")>
+    Public Sub O_visivel_sobrevive_e_o_invisivel_nao_sai(
+            corpo As String, precisaTer As String, naoPodeTer As String)
 
-        ' ASPA SIMPLES DENTRO DE DUPLA nao fecha a dupla: o < depois dela
-        ' continua sendo dentro do atributo.
-        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar("<p t=""ele's <b"">x</p>"))
+        Dim r = Preparar(corpo, html:=True)
 
-        ' ATRIBUTO SEM ASPAS -- o irmao direto, e ele passava.
-        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar(
-            "<p title=<script>>VISIVEL</p><p title=</script>>"))
-
-        ' "<" SOLTO NO TEXTO -- este eu tinha marcado como "nao acha", e a
-        ' revisao mostrou que a limpeza generica come "< b e c >" e entrega
-        ' "a d". Texto visivel some, que e o dano invertido do vazamento.
-        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar("<p>a < b e c > d</p>"))
-
-        ' NAO ACHA -- e cada um destes seria um falso positivo caro:
-        '
-        ' aspas fora de tag sao texto comum.
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar("ele disse ""oi"" e foi <p>x</p>"))
-        ' > dentro de aspas nao termina a tag, mas tambem nao e marcador.
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar("<p title=""a > b"">x</p>"))
-        ' HTML comum, com atributo depois de atributo.
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(
-            "<a href=""http://x.invalido/?a=1&b=2"" title='dois'>ok</a>"))
-
-        ' TEXTO CRU: dentro de script/style nao ha marcacao, e este era o
-        ' falso positivo que a revisao achou -- o "<" da string JS abria uma
-        ' tag ficticia e o </script> derrubava HTML legitimo.
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(
-            "<p>VISIVEL</p><script>const lt = ""<"";</script>"))
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(
-            "<style>a[href^=""<""] { color: red }</style>"))
-
-        ' Comentario condicional da Microsoft, onipresente em newsletter.
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(
-            "<!--[if mso]><table><tr><td>x</td></tr></table><![endif]--><p>oi</p>"))
-
-        ' Tag que nao fecha ate o fim do texto: quem recusa isso, se for o
-        ' caso, e a regra da sobra -- aqui nao ha o que declarar.
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar("<p title=""aberto"))
-        ' Vazio e nulo nao explodem nem acusam.
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(""))
-        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(Nothing))
+        Assert.IsTrue(r.Ok, $"recusou por {r.Recusa}: " & corpo)
+        StringAssert.Contains(r.Parte.Corpo, precisaTer,
+            "texto que o usuario VE sumiu: " & r.Parte.Corpo)
+        If naoPodeTer.Length > 0 Then
+            Assert.IsFalse(r.Parte.Corpo.Contains(naoPodeTer),
+                "texto que o usuario NAO ve saiu: " & r.Parte.Corpo)
+        End If
     End Sub
 
+    ''' <summary>
+    ''' <b>FECHAMENTO DE BLOCO CRU EXIGE O NOME INTEIRO.</b>
+    '''
+    ''' <c>&lt;/scripture&gt;</c> não fecha <c>&lt;script&gt;</c> no navegador,
+    ''' e a versão por prefixo achava que fechava: ela removia até ali e
+    ''' entregava como texto o que vinha depois — invisível na tela.
+    '''
+    ''' Aqui o bloco não fecha até o fim, então o HTML é <b>truncado</b> e a
+    ''' mensagem é recusada. Nenhuma das duas coisas ruins acontece: o segredo
+    ''' não sai, e nada visível é inventado.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Fechamento_de_bloco_cru_exige_o_nome_inteiro()
+        Dim r = Preparar("<p>VISIVEL</p><script>const x=""</scripture>"";SEGREDO", html:=True)
+
+        Assert.IsFalse(r.Ok, "aceitou, e o SEGREDO teria saido: " &
+                              If(r.Parte Is Nothing, "", r.Parte.Corpo))
+        Assert.AreEqual(ContentRefusal.HtmlIlegivel, r.Recusa)
+    End Sub
     ''' <summary>
     ''' <b>CONTROLE POSITIVO DA REGRA NOVA: HTML comum continua passando.</b>
     '''

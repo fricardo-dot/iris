@@ -86,25 +86,6 @@ Namespace Global.Iris.Assist
         Public Const MaxCorpo As Integer = 200_000
 
         Private Shared ReadOnly Comentario As New Regex("<!--.*?-->", RegexOptions.Singleline)
-        ' O QUE A CONTAGEM ACEITA COMO FECHAMENTO, ESTE PADRAO TEM DE REMOVER.
-        '
-        ' O HtmlInterpretavel conta "</script" -- sem o ">" -- entao qualquer
-        ' coisa que comece assim conta como fechamento e o HTML passa. Este
-        ' padrao exigia "</script>" EXATO, e depois "</script\s*>": as duas
-        ' versoes deixavam frestas que a contagem aceita e o parser HTML
-        ' tambem trata como fechamento -- "</script >", "</script x>",
-        ' "</script/>". Em todas elas o bloco NAO era removido, a limpeza
-        ' generica comia so as tags, e o conteudo do script ia para o provedor
-        ' COMO SE FOSSE A MENSAGEM.
-        '
-        ' Agora os dois usam o mesmo criterio: "</nome" seguido de qualquer
-        ' coisa que nao seja ">", ate o ">".
-        Private Shared ReadOnly ScriptOuEstilo As New Regex(
-            "<(script|style)\b[^>]*>.*?</\1[^>]*>",
-            RegexOptions.Singleline Or RegexOptions.IgnoreCase)
-        Private Shared ReadOnly Quebra As New Regex("<(br|/p|/div|/tr|/li)\b[^>]*>",
-                                                    RegexOptions.IgnoreCase)
-        Private Shared ReadOnly Tag As New Regex("<[^>]*>", RegexOptions.Singleline)
         Private Shared ReadOnly Embutido As New Regex("(cid:|data:[a-z]+/)",
                                                       RegexOptions.IgnoreCase)
         Private Shared ReadOnly LinhasDemais As New Regex("(\r?\n){3,}")
@@ -173,7 +154,7 @@ Namespace Global.Iris.Assist
                 Return Recusar(ContentRefusal.ReferenciaEmbutida)
             End If
 
-            If ehHtml AndAlso Not HtmlInterpretavel(cru) Then
+            If ehHtml AndAlso Not DaParaLer(cru) Then
                 Return Recusar(ContentRefusal.HtmlIlegivel)
             End If
 
@@ -228,226 +209,248 @@ Namespace Global.Iris.Assist
         ''' honesto é <b>recusar</b> o que não dá para interpretar, em vez de
         ''' converter pela metade.
         ''' </summary>
+
         ''' <summary>
-        ''' <b>Fechamento que conta é fechamento TERMINADO.</b>
-        '''
-        ''' Contar a substring <c>"&lt;/script"</c> aceitava
-        ''' <c>"&lt;/script"</c> <i>sem o <c>&gt;</c></i> como fechamento: o
-        ''' HTML passava como interpretável, o padrão de bloco — que precisa do
-        ''' <c>&gt;</c> — não removia nada, e sobrava
-        ''' <c>SEGREDO&lt;/script</c> no texto que vai para o provedor.
+        ''' <b>Lê o HTML uma vez e devolve o texto — e diz se leu até o fim.</b>
         '''
         ''' ------------------------------------------------------------------
-        ''' <b>CONTAR ERA A ABORDAGEM ERRADA, E EU INSISTI NELA TRÊS VEZES</b>
+        ''' <b>POR QUE ISTO SUBSTITUIU CINCO CONSERTOS</b>
         '''
-        ''' Contar aberturas e fechamentos no HTML <b>bruto</b> aceita
-        ''' fechamento falso vindo de comentário ou de atributo:
-        ''' <c>&lt;!-- &lt;/script&gt; --&gt;&lt;script&gt;SEGREDO</c> equilibra
-        ''' e passa. E a minha correção anterior — contar só fechamento
-        ''' terminado — <b>abriu um caso novo</b>: o fechamento dentro do
-        ''' comentário equilibrava a abertura real, e
-        ''' <c>SEGREDO&lt;/script</c> sobrava. Consertar contagem com contagem
-        ''' estava sempre a um contraexemplo de distância.
+        ''' Antes havia <i>dois</i> códigos: um decidia se o HTML era
+        ''' interpretável (contagem, depois sobra, depois um autômato de aspas)
+        ''' e outro limpava (uma fila de expressões regulares). <b>Todo defeito
+        ''' desta família foi um desacordo entre os dois.</b> Cinco passadas de
+        ''' revisão externa acharam contraexemplo, e cada conserto alinhava um
+        ''' caso e deixava um irmão:
         '''
-        ''' <b>A pergunta certa não é "está balanceado", é "sobrou alguma coisa
-        ''' que eu não soube remover".</b> Então o teste é o próprio removedor:
-        ''' tira comentário, tira bloco, e se ainda restar <c>&lt;script</c> ou
-        ''' <c>&lt;/script</c> em qualquer forma, é porque a limpeza não deu
-        ''' conta — e o que ela não removeu viraria texto para o provedor.
+        ''' <list type="bullet">
+        ''' <item><c>&lt;/script&gt;</c> exato, depois com espaço, depois com
+        ''' lixo — três versões, e a contagem aceitava o que o removedor não
+        ''' removia: o segredo saía como mensagem.</item>
+        ''' <item>Fechamento falso em comentário ou atributo equilibrava a
+        ''' conta.</item>
+        ''' <item>O autômato comia texto <b>visível</b> entre marcadores falsos,
+        ''' e recusava um <c>&lt;</c> dentro de string JavaScript.</item>
+        ''' </list>
         '''
-        ''' Isso recusa também um atributo que contenha <c>&lt;/script&gt;</c>,
-        ''' que é HTML esquisito e legítimo. É o lado certo de errar: o mínimo
-        ''' honesto é <b>recusar</b> o que não dá para interpretar.
+        ''' <b>Um leitor só não tem com quem discordar.</b> Ele percorre o texto
+        ''' como um tokenizador: dado, tag, atributo com e sem aspas, comentário,
+        ''' e o <i>texto cru</i> de <c>script</c> e <c>style</c>. O que ele emite
+        ''' é o que sai; o que ele pula é o que o navegador também não mostra.
+        '''
+        ''' <b>E ele acerta os casos que derrubavam a aproximação</b>, sem regra
+        ''' especial: <c>a &lt; b</c> é texto (um <c>&lt;</c> só abre tag antes
+        ''' de letra ASCII, <c>/</c> ou <c>!</c>); <c>&lt;é&gt;</c> é texto;
+        ''' <c>&lt;script-note&gt;</c> não é <c>script</c>; e
+        ''' <c>&lt;/scripture&gt;</c> não fecha <c>&lt;script&gt;</c>, porque
+        ''' fechamento exige o nome inteiro seguido de espaço, <c>/</c> ou
+        ''' <c>&gt;</c>.
+        '''
+        ''' <b>O único desfecho que recusa é o TRUNCADO</b> — acabar dentro de
+        ''' uma tag, de um comentário ou de um bloco cru. Ali o navegador
+        ''' descarta o resto, e nós não temos como saber o que ficou faltando.
         ''' </summary>
-        Private Shared Function HtmlInterpretavel(bruto As String) As Boolean
-            ' MARCADOR DENTRO DE ATRIBUTO DERRUBA ANTES DE QUALQUER COISA.
-            '
-            ' O removedor nao sabe que esta dentro de aspas, e isso corta dos
-            ' DOIS lados: <p title="<script>">VISIVEL</p><p title="</script>">
-            ' faz a regex comer o VISIVEL inteiro -- texto que o usuario VE, e
-            ' que sumiria do que vai para o provedor sem ninguem notar. E do
-            ' outro lado um </script> em atributo ja servia de fechamento
-            ' falso. Nao da para interpretar isso sem um parser; entao recusa.
-            If MarcadorForaDeLugar(bruto) Then Return False
-
-            ' NA MESMA ORDEM DA LIMPEZA: comentario primeiro, bloco depois.
-            Dim resto = ScriptOuEstilo.Replace(Comentario.Replace(bruto, " "), " ")
-            For Each nome In {"script", "style"}
-                If resto.IndexOf("<" & nome, StringComparison.OrdinalIgnoreCase) >= 0 Then Return False
-                If resto.IndexOf("</" & nome, StringComparison.OrdinalIgnoreCase) >= 0 Then Return False
-            Next
-            ' O COMENTARIO PELA MESMA REGRA, e ele tinha ficado na contagem.
-            '
-            ' "<p>VISIVEL</p>--><!-- marcador >SEGREDO" tem um "<!--" e um
-            ' "-->", entao a contagem fechava -- so que o "-->" vem ANTES, o
-            ' Comentario.Replace nao acha par nenhum, e a limpeza generica
-            ' entregava o SEGREDO que o navegador trata como comentario aberto.
-            ' Contagem nao distingue ordem; sobra distingue.
-            ' SO O "<!--" QUE SOBROU DERRUBA, e o "-->" sozinho nao.
-            '
-            ' A primeira versao desta regra recusava os dois, e com isso
-            ' recusava "Use a seta --> para continuar" -- texto visivel, que a
-            ' limpeza generica preserva inteiro, porque "-->" nao casa com o
-            ' padrao de tag (nao tem "<"). Falso positivo puro.
-            '
-            ' O caso perigoso continua pego: "--> ... <!--" deixa o "<!--" na
-            ' sobra, porque nao houve par para remover.
-            If resto.IndexOf("<!--", StringComparison.Ordinal) >= 0 Then Return False
-            Return True
+        ''' <summary>
+        ''' <b>Dá para ler este HTML até o fim?</b>
+        '''
+        ''' É o mesmo leitor que produz o texto — de propósito. A pergunta
+        ''' "posso interpretar" e a resposta "aqui está o texto" saem do
+        ''' mesmo percurso, então não têm como discordar; e discordar era a
+        ''' raiz de todos os defeitos desta família.
+        '''
+        ''' Recusa só o <b>truncado</b>: HTML que acaba dentro de uma tag, de
+        ''' um comentário ou de um bloco cru. Ali o navegador descarta o resto
+        ''' e nós não sabemos o que ficou faltando.
+        ''' </summary>
+        Private Shared Function DaParaLer(bruto As String) As Boolean
+            Dim truncado = False
+            LerHtml(bruto, truncado)
+            Return Not truncado
         End Function
 
-        ''' <summary>
-        ''' <b>Um <c>&lt;</c> que a limpeza genérica vai comer errado.</b>
-        '''
-        ''' ------------------------------------------------------------------
-        ''' <b>A PRIMEIRA VERSÃO OLHAVA SÓ ATRIBUTO, E ERRAVA DOS DOIS LADOS</b>
-        '''
-        ''' Ela chamava-se <c>MarcadorDentroDeAtributo</c> e a revisão externa
-        ''' achou um contraexemplo em cada direção:
-        '''
-        ''' <b>Falso negativo</b> — <c>&lt;p&gt;a &lt; b e c &gt; d&lt;/p&gt;</c>
-        ''' passava, e o padrão de tag comia <c>&lt; b e c &gt;</c>: sobrava
-        ''' <c>a d</c>. E o irmão direto do defeito original, com atributo
-        ''' <i>sem aspas</i>: <c>&lt;p title=&lt;script&gt;&gt;VISIVEL</c> fazia o
-        ''' removedor comer o VISIVEL.
-        '''
-        ''' <b>Falso positivo</b> — <c>&lt;script&gt;const lt = "&lt;";&lt;/script&gt;</c>:
-        ''' o <c>&lt;</c> de dentro da string JS abria uma tag fictícia, a aspa
-        ''' seguinte abria um atributo fictício, e o <c>&lt;/script&gt;</c>
-        ''' derrubava. HTML legítimo recusado — e o bloco seria removido
-        ''' corretamente pela expressão regular.
-        '''
-        ''' ------------------------------------------------------------------
-        ''' <b>ENTÃO ELE PRECISA SABER TRÊS COISAS, E NÃO UMA</b>
-        '''
-        ''' <b>1. Onde uma tag começa.</b> Um <c>&lt;</c> só abre marcação se
-        ''' vier letra, <c>/</c> ou <c>!</c> depois. Qualquer outro é texto
-        ''' solto, e o padrão de tag vai comer dele até o próximo <c>&gt;</c>.
-        '''
-        ''' <b>2. Que dentro de <c>script</c> e <c>style</c> não há marcação.</b>
-        ''' São elementos de texto cru: o conteúdo é pulado até o fechamento,
-        ''' que é o que um tokenizador de verdade faz.
-        '''
-        ''' <b>3. Que aspas protegem, e a falta delas não.</b> Um <c>&lt;</c>
-        ''' dentro da tag — com ou sem aspas — é marcador fora de lugar.
-        '''
-        ''' O que ele NÃO decide fica para a regra da sobra: tag ou bloco que
-        ''' não fecham devolvem <c>False</c> aqui e são recusados lá, por não
-        ''' terem sido removidos.
-        ''' </summary>
-        Friend Shared Function MarcadorForaDeLugar(bruto As String) As Boolean
-            If String.IsNullOrEmpty(bruto) Then Return False
-
+        Friend Shared Function LerHtml(bruto As String, ByRef truncado As Boolean) As String
+            truncado = False
+            Dim texto = If(bruto, "")
+            Dim sb As New StringBuilder(texto.Length)
             Dim i As Integer = 0
-            While i < bruto.Length
-                If bruto(i) <> "<"c Then
+
+            While i < texto.Length
+                Dim c = texto(i)
+
+                If c <> "<"c Then
+                    sb.Append(c)
                     i += 1
                     Continue While
                 End If
 
-                ' 1. TEXTO SOLTO: o padrao de tag come daqui ate o proximo >.
-                If Not AbreMarcacao(bruto, i) Then Return True
-
-                ' Comentario: pula o par inteiro. Sem par, a sobra decide.
-                If i + 4 <= bruto.Length AndAlso
-                   bruto.Substring(i, 4) = "<!--" Then
-                    Dim fim = bruto.IndexOf("-->", i, StringComparison.Ordinal)
-                    If fim < 0 Then Return False
+                ' COMENTARIO: some inteiro, como no navegador.
+                If Casa(texto, i, "<!--") Then
+                    Dim fim = texto.IndexOf("-->", i + 4, StringComparison.Ordinal)
+                    If fim < 0 Then
+                        truncado = True
+                        Return Fechar(sb)
+                    End If
+                    sb.Append(" "c)
                     i = fim + 3
                     Continue While
                 End If
 
-                Dim nome = NomeDaTag(bruto, i)
-                Dim j As Integer = i + 1
-                Dim aspa As Char = ChrW(0)
-                Dim fechou = False
-
-                While j < bruto.Length
-                    Dim d = bruto(j)
-                    If aspa <> ChrW(0) Then
-                        If d = aspa Then
-                            aspa = ChrW(0)
-                        ElseIf d = "<"c Then
-                            Return True
-                        End If
-                    ElseIf d = ChrW(34) OrElse d = ChrW(39) Then
-                        aspa = d
-                    ElseIf d = "<"c Then
-                        ' 3. Atributo SEM aspas com marcador dentro.
-                        Return True
-                    ElseIf d = ">"c Then
-                        fechou = True
-                        Exit While
+                ' Declaracao, instrucao e fechamento sem nome: o navegador
+                ' trata como comentario torto e nao mostra. Some ate o ">".
+                If Casa(texto, i, "<!") OrElse Casa(texto, i, "<?") OrElse
+                   (Casa(texto, i, "</") AndAlso Not ComecaNome(texto, i + 2)) Then
+                    Dim fim = texto.IndexOf(">"c, i)
+                    If fim < 0 Then
+                        truncado = True
+                        Return Fechar(sb)
                     End If
-                    j += 1
-                End While
+                    sb.Append(" "c)
+                    i = fim + 1
+                    Continue While
+                End If
 
-                If Not fechou Then Return False
-                i = j + 1
+                ' "<" QUE NAO ABRE TAG E TEXTO. E o que o navegador faz, e o
+                ' que a versao anterior nao fazia: ela recusava a mensagem.
+                Dim ehFechamento = Casa(texto, i, "</")
+                Dim inicioDoNome = If(ehFechamento, i + 2, i + 1)
+                If Not ComecaNome(texto, inicioDoNome) Then
+                    sb.Append(c)
+                    i += 1
+                    Continue While
+                End If
 
-                ' 2. TEXTO CRU: dentro de script/style nao ha marcacao.
-                If nome = "script" OrElse nome = "style" Then
-                    Dim fim = bruto.IndexOf("</" & nome, i,
-                                            StringComparison.OrdinalIgnoreCase)
-                    If fim < 0 Then Return False
+                Dim nome = LerNome(texto, inicioDoNome)
+                Dim depois = PularAtributos(texto, inicioDoNome + nome.Length)
+                If depois < 0 Then
+                    truncado = True
+                    Return Fechar(sb)
+                End If
+
+                ' Estrutura vira quebra de linha. O resto da tag some.
+                If EhQuebra(nome, ehFechamento) Then sb.Append(vbLf) Else sb.Append(" "c)
+                i = depois
+
+                ' TEXTO CRU: dentro de script/style nada e marcacao.
+                If Not ehFechamento AndAlso (nome = "script" OrElse nome = "style") Then
+                    Dim fim = AcharFechamento(texto, i, nome)
+                    If fim < 0 Then
+                        truncado = True
+                        Return Fechar(sb)
+                    End If
                     i = fim
                 End If
             End While
 
-            Return False
+            Return Fechar(sb)
+        End Function
+
+        Private Shared Function Fechar(sb As StringBuilder) As String
+            Return Limpar(Net.WebUtility.HtmlDecode(sb.ToString()))
+        End Function
+
+        Private Shared Function Casa(texto As String, i As Integer, agulha As String) As Boolean
+            Return i + agulha.Length <= texto.Length AndAlso
+                   String.CompareOrdinal(texto, i, agulha, 0, agulha.Length) = 0
         End Function
 
         ''' <summary>
-        ''' Um <c>&lt;</c> abre marcação se vier letra, <c>/</c> ou <c>!</c>.
-        ''' Qualquer outra coisa é o caractere literal num texto que ninguém
-        ''' escapou — e é ele que faz a limpeza genérica comer o que vem junto.
+        ''' Nome de tag começa com letra <b>ASCII</b>. O tokenizador do HTML é
+        ''' assim, e o <c>Char.IsLetter</c> não era: ele aceitava
+        ''' <c>&lt;é&gt;</c> como tag, e a limpeza comia o que vinha junto.
         ''' </summary>
-        Private Shared Function AbreMarcacao(bruto As String, i As Integer) As Boolean
-            If i + 1 >= bruto.Length Then Return False
-            Dim d = bruto(i + 1)
-            Return Char.IsLetter(d) OrElse d = "/"c OrElse d = "!"c
+        Private Shared Function ComecaNome(texto As String, i As Integer) As Boolean
+            If i >= texto.Length Then Return False
+            Dim c = texto(i)
+            Return (c >= "a"c AndAlso c <= "z"c) OrElse (c >= "A"c AndAlso c <= "Z"c)
         End Function
 
         ''' <summary>
-        ''' O nome da tag em minúsculas, ou vazio para fechamento e declaração.
-        ''' Serve só para reconhecer <c>script</c> e <c>style</c>, que carregam
-        ''' texto cru.
+        ''' O nome em minúsculas. Inclui <c>-</c> e dígito porque
+        ''' <c>&lt;script-note&gt;</c> é um elemento válido, e a versão anterior
+        ''' lia só <c>script</c> nele — e apagava o conteúdo visível inteiro.
         ''' </summary>
-        Private Shared Function NomeDaTag(bruto As String, i As Integer) As String
-            Dim j = i + 1
-            Dim sb As New Text.StringBuilder()
-            While j < bruto.Length AndAlso Char.IsLetter(bruto(j))
-                sb.Append(Char.ToLowerInvariant(bruto(j)))
-                j += 1
+        Private Shared Function LerNome(texto As String, i As Integer) As String
+            Dim sb As New StringBuilder()
+            Dim j = i
+            While j < texto.Length
+                Dim c = texto(j)
+                If (c >= "a"c AndAlso c <= "z"c) OrElse (c >= "A"c AndAlso c <= "Z"c) OrElse
+                   (c >= "0"c AndAlso c <= "9"c) OrElse c = "-"c Then
+                    sb.Append(Char.ToLowerInvariant(c))
+                    j += 1
+                Else
+                    Exit While
+                End If
             End While
             Return sb.ToString()
         End Function
 
-        Private Shared Function Contagem(texto As String, agulha As String) As Integer
-            Dim n = 0
-            Dim i = texto.IndexOf(agulha, StringComparison.OrdinalIgnoreCase)
-            While i >= 0
-                n += 1
-                i = texto.IndexOf(agulha, i + 1, StringComparison.OrdinalIgnoreCase)
+        ''' <summary>
+        ''' Anda até depois do <c>&gt;</c> da tag, respeitando aspas. Devolve
+        ''' <c>-1</c> se a tag não fecha até o fim do texto — o caso truncado.
+        ''' </summary>
+        Private Shared Function PularAtributos(texto As String, i As Integer) As Integer
+            Dim j = i
+            Dim aspa As Char = ChrW(0)
+            While j < texto.Length
+                Dim c = texto(j)
+                If aspa <> ChrW(0) Then
+                    If c = aspa Then aspa = ChrW(0)
+                ElseIf c = ChrW(34) OrElse c = ChrW(39) Then
+                    aspa = c
+                ElseIf c = ">"c Then
+                    Return j + 1
+                End If
+                j += 1
             End While
-            Return n
+            Return -1
         End Function
 
         ''' <summary>
-        ''' HTML vira texto. <b>Estrutura vira quebra de linha</b>, o resto some.
+        ''' Onde começa o fechamento de um bloco cru.
         '''
-        ''' A ordem importa: comentário e <c>script</c>/<c>style</c> saem
-        ''' <b>antes</b> das tags, senão o conteúdo deles vira texto visível —
-        ''' e é justamente ali que mora texto que o usuário nunca viu na tela.
+        ''' <b>Exige o nome INTEIRO</b> seguido de espaço, <c>/</c> ou
+        ''' <c>&gt;</c> — que é a regra do HTML. Procurar só o prefixo
+        ''' <c>&lt;/script</c> fazia <c>&lt;/scripture&gt;</c> passar por
+        ''' fechamento, e o que vinha depois — invisível no navegador — saía
+        ''' como texto.
+        ''' </summary>
+        Private Shared Function AcharFechamento(texto As String, i As Integer,
+                                                nome As String) As Integer
+            Dim alvo = "</" & nome
+            Dim j = i
+            While True
+                j = texto.IndexOf(alvo, j, StringComparison.OrdinalIgnoreCase)
+                If j < 0 Then Return -1
+                Dim k = j + alvo.Length
+                If k >= texto.Length Then Return -1
+                Dim c = texto(k)
+                If Char.IsWhiteSpace(c) OrElse c = "/"c OrElse c = ">"c Then Return j
+                j = k
+            End While
+            Return -1
+        End Function
+
+        ''' <summary>
+        ''' As tags que viram quebra de linha, como na versão por expressão
+        ''' regular: <c>br</c> abrindo, e <c>p</c>, <c>div</c>, <c>tr</c>,
+        ''' <c>li</c> fechando.
+        ''' </summary>
+        Private Shared Function EhQuebra(nome As String, ehFechamento As Boolean) As Boolean
+            If Not ehFechamento Then Return nome = "br"
+            Return nome = "p" OrElse nome = "div" OrElse nome = "tr" OrElse nome = "li"
+        End Function
+        ''' <summary>
+        ''' HTML vira texto — pelo <see cref="LerHtml"/>, que é o mesmo código
+        ''' que decidiu se dava para interpretar.
+        '''
+        ''' Isto era uma fila de quatro expressões regulares, e o decisor era
+        ''' outro código. Ver o comentário do <c>LerHtml</c> para os cinco
+        ''' desacordos que essa separação produziu.
         ''' </summary>
         Private Shared Function DeHtml(bruto As String) As String
-            Dim s = If(bruto, "")
-            s = Comentario.Replace(s, " ")
-            s = ScriptOuEstilo.Replace(s, " ")
-            s = Quebra.Replace(s, vbLf)
-            s = Tag.Replace(s, " ")
-            s = Net.WebUtility.HtmlDecode(s)
-            Return Limpar(s)
+            Dim truncado = False
+            Return LerHtml(bruto, truncado)
         End Function
 
         ''' <summary>
