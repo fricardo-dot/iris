@@ -403,7 +403,7 @@ Public Class ContentPipelineTests
     '''
     ''' <b>Controle negativo:</b> qualquer uma das versões de contagem deixa
     ''' passar pelo menos uma destas linhas; e sem o
-    ''' <c>MarcadorDentroDeAtributo</c>, as duas de atributo passam.
+    ''' <c>MarcadorForaDeLugar</c>, as duas de atributo passam.
     ''' </summary>
     <DataTestMethod>
     <DataRow("<p>visivel</p><script>SEGREDO")>
@@ -418,6 +418,8 @@ Public Class ContentPipelineTests
     <DataRow("<p title=""</script>"">visivel</p><script>SEGREDO")>
     <DataRow("<p>VISIVEL</p>--><!-- marcador >SEGREDO")>
     <DataRow("<p title=""<script>"">VISIVEL</p><p title=""</script>"">FIM</p>")>
+    <DataRow("<p>ANTES</p><p title=<script>>VISIVEL</p><p title=</script>><p>DEPOIS</p>")>
+    <DataRow("<p>a < b e c > d</p>")>
     Public Sub Bloco_sem_fechar_RECUSA(corpo As String)
         Dim r = Preparar(corpo, html:=True)
 
@@ -551,7 +553,7 @@ Public Class ContentPipelineTests
     ''' ------------------------------------------------------------------
     ''' <b>ELE RECUSA, ENTÃO ERRAR PARA O LADO ERRADO CUSTA CARO</b>
     '''
-    ''' <c>MarcadorDentroDeAtributo</c> é o que decide se um HTML é recusado
+    ''' <c>MarcadorForaDeLugar</c> é o que decide se um HTML é recusado
     ''' por conter <c>&lt;</c> dentro de um valor de atributo. Um falso
     ''' positivo recusa mensagem legítima; um falso negativo deixa o removedor
     ''' comer texto visível. Os dois lados doem, então cada estado tem caso.
@@ -563,30 +565,50 @@ Public Class ContentPipelineTests
     <TestMethod>
     Public Sub O_automato_das_aspas_caso_a_caso()
         ' ACHA: < dentro de valor de atributo, nas duas aspas.
-        Assert.IsTrue(ContentPipeline.MarcadorDentroDeAtributo("<p title=""<script>"">x</p>"))
-        Assert.IsTrue(ContentPipeline.MarcadorDentroDeAtributo("<p title='<script>'>x</p>"))
+        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar("<p title=""<script>"">x</p>"))
+        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar("<p title='<script>'>x</p>"))
 
         ' ASPA SIMPLES DENTRO DE DUPLA nao fecha a dupla: o < depois dela
         ' continua sendo dentro do atributo.
-        Assert.IsTrue(ContentPipeline.MarcadorDentroDeAtributo("<p t=""ele's <b"">x</p>"))
+        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar("<p t=""ele's <b"">x</p>"))
+
+        ' ATRIBUTO SEM ASPAS -- o irmao direto, e ele passava.
+        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar(
+            "<p title=<script>>VISIVEL</p><p title=</script>>"))
+
+        ' "<" SOLTO NO TEXTO -- este eu tinha marcado como "nao acha", e a
+        ' revisao mostrou que a limpeza generica come "< b e c >" e entrega
+        ' "a d". Texto visivel some, que e o dano invertido do vazamento.
+        Assert.IsTrue(ContentPipeline.MarcadorForaDeLugar("<p>a < b e c > d</p>"))
 
         ' NAO ACHA -- e cada um destes seria um falso positivo caro:
         '
         ' aspas fora de tag sao texto comum.
-        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo("ele disse ""oi"" e foi <p>x</p>"))
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar("ele disse ""oi"" e foi <p>x</p>"))
         ' > dentro de aspas nao termina a tag, mas tambem nao e marcador.
-        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo("<p title=""a > b"">x</p>"))
-        ' < solto no texto (comparacao) nao esta dentro de atributo nenhum.
-        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo("<p>a < b e c > d</p>"))
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar("<p title=""a > b"">x</p>"))
         ' HTML comum, com atributo depois de atributo.
-        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo(
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(
             "<a href=""http://x.invalido/?a=1&b=2"" title='dois'>ok</a>"))
-        ' Tag que nao fecha ate o fim do texto: sem < dentro de aspas, nada a
-        ' declarar -- quem recusa isso, se for o caso, e a regra da sobra.
-        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo("<p title=""aberto"))
+
+        ' TEXTO CRU: dentro de script/style nao ha marcacao, e este era o
+        ' falso positivo que a revisao achou -- o "<" da string JS abria uma
+        ' tag ficticia e o </script> derrubava HTML legitimo.
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(
+            "<p>VISIVEL</p><script>const lt = ""<"";</script>"))
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(
+            "<style>a[href^=""<""] { color: red }</style>"))
+
+        ' Comentario condicional da Microsoft, onipresente em newsletter.
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(
+            "<!--[if mso]><table><tr><td>x</td></tr></table><![endif]--><p>oi</p>"))
+
+        ' Tag que nao fecha ate o fim do texto: quem recusa isso, se for o
+        ' caso, e a regra da sobra -- aqui nao ha o que declarar.
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar("<p title=""aberto"))
         ' Vazio e nulo nao explodem nem acusam.
-        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo(""))
-        Assert.IsFalse(ContentPipeline.MarcadorDentroDeAtributo(Nothing))
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(""))
+        Assert.IsFalse(ContentPipeline.MarcadorForaDeLugar(Nothing))
     End Sub
 
     ''' <summary>
@@ -605,6 +627,9 @@ Public Class ContentPipelineTests
     <DataRow("<p>oi</p><script>var s = 'a > b';</script><p>tchau</p>")>
     <DataRow("<div><span>a</span> &gt; <span>b</span></div>")>
     <DataRow("<p title=""a > b"">com maior dentro do atributo</p>")>
+    <DataRow("<!--[if mso]><table><tr><td>x</td></tr></table><![endif]--><p>oi</p>")>
+    <DataRow("<p>oi</p><script>const lt = ""<"";</script><p>tchau</p>")>
+    <DataRow("<p>Use a seta --> para continuar.</p>")>
     Public Sub Controle_HTML_comum_continua_passando(corpo As String)
         Dim r = Preparar(corpo, html:=True)
         Assert.IsTrue(r.Ok, $"recusou HTML comum por {r.Recusa}: " & corpo)

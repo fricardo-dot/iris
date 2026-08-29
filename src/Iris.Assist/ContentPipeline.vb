@@ -268,7 +268,7 @@ Namespace Global.Iris.Assist
             ' que sumiria do que vai para o provedor sem ninguem notar. E do
             ' outro lado um </script> em atributo ja servia de fechamento
             ' falso. Nao da para interpretar isso sem um parser; entao recusa.
-            If MarcadorDentroDeAtributo(bruto) Then Return False
+            If MarcadorForaDeLugar(bruto) Then Return False
 
             ' NA MESMA ORDEM DA LIMPEZA: comentario primeiro, bloco depois.
             Dim resto = ScriptOuEstilo.Replace(Comentario.Replace(bruto, " "), " ")
@@ -283,48 +283,144 @@ Namespace Global.Iris.Assist
             ' Comentario.Replace nao acha par nenhum, e a limpeza generica
             ' entregava o SEGREDO que o navegador trata como comentario aberto.
             ' Contagem nao distingue ordem; sobra distingue.
+            ' SO O "<!--" QUE SOBROU DERRUBA, e o "-->" sozinho nao.
+            '
+            ' A primeira versao desta regra recusava os dois, e com isso
+            ' recusava "Use a seta --> para continuar" -- texto visivel, que a
+            ' limpeza generica preserva inteiro, porque "-->" nao casa com o
+            ' padrao de tag (nao tem "<"). Falso positivo puro.
+            '
+            ' O caso perigoso continua pego: "--> ... <!--" deixa o "<!--" na
+            ' sobra, porque nao houve par para remover.
             If resto.IndexOf("<!--", StringComparison.Ordinal) >= 0 Then Return False
-            If resto.IndexOf("-->", StringComparison.Ordinal) >= 0 Then Return False
             Return True
         End Function
 
         ''' <summary>
-        ''' <b>Um <c>&lt;</c> dentro de um valor de atributo.</b>
+        ''' <b>Um <c>&lt;</c> que a limpeza genérica vai comer errado.</b>
         '''
-        ''' Varredura de estado, e não expressão regular, porque é exatamente a
-        ''' noção que expressão regular não tem: <i>estou dentro de aspas?</i>
-        ''' Três estados — fora de tag, dentro de tag, dentro de aspas — e o que
-        ''' interessa é um <c>&lt;</c> aparecendo no terceiro.
+        ''' ------------------------------------------------------------------
+        ''' <b>A PRIMEIRA VERSÃO OLHAVA SÓ ATRIBUTO, E ERRAVA DOS DOIS LADOS</b>
         '''
-        ''' Isso recusa HTML legítimo, porque <c>&lt;</c> em atributo é válido.
-        ''' É raro, e o preço de aceitar é o removedor comer texto visível ou
-        ''' engolir um fechamento falso — os dois já aconteceram aqui.
+        ''' Ela chamava-se <c>MarcadorDentroDeAtributo</c> e a revisão externa
+        ''' achou um contraexemplo em cada direção:
+        '''
+        ''' <b>Falso negativo</b> — <c>&lt;p&gt;a &lt; b e c &gt; d&lt;/p&gt;</c>
+        ''' passava, e o padrão de tag comia <c>&lt; b e c &gt;</c>: sobrava
+        ''' <c>a d</c>. E o irmão direto do defeito original, com atributo
+        ''' <i>sem aspas</i>: <c>&lt;p title=&lt;script&gt;&gt;VISIVEL</c> fazia o
+        ''' removedor comer o VISIVEL.
+        '''
+        ''' <b>Falso positivo</b> — <c>&lt;script&gt;const lt = "&lt;";&lt;/script&gt;</c>:
+        ''' o <c>&lt;</c> de dentro da string JS abria uma tag fictícia, a aspa
+        ''' seguinte abria um atributo fictício, e o <c>&lt;/script&gt;</c>
+        ''' derrubava. HTML legítimo recusado — e o bloco seria removido
+        ''' corretamente pela expressão regular.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>ENTÃO ELE PRECISA SABER TRÊS COISAS, E NÃO UMA</b>
+        '''
+        ''' <b>1. Onde uma tag começa.</b> Um <c>&lt;</c> só abre marcação se
+        ''' vier letra, <c>/</c> ou <c>!</c> depois. Qualquer outro é texto
+        ''' solto, e o padrão de tag vai comer dele até o próximo <c>&gt;</c>.
+        '''
+        ''' <b>2. Que dentro de <c>script</c> e <c>style</c> não há marcação.</b>
+        ''' São elementos de texto cru: o conteúdo é pulado até o fechamento,
+        ''' que é o que um tokenizador de verdade faz.
+        '''
+        ''' <b>3. Que aspas protegem, e a falta delas não.</b> Um <c>&lt;</c>
+        ''' dentro da tag — com ou sem aspas — é marcador fora de lugar.
+        '''
+        ''' O que ele NÃO decide fica para a regra da sobra: tag ou bloco que
+        ''' não fecham devolvem <c>False</c> aqui e são recusados lá, por não
+        ''' terem sido removidos.
         ''' </summary>
-        Friend Shared Function MarcadorDentroDeAtributo(bruto As String) As Boolean
+        Friend Shared Function MarcadorForaDeLugar(bruto As String) As Boolean
             If String.IsNullOrEmpty(bruto) Then Return False
 
-            Dim dentroDeTag = False
-            Dim aspa As Char = ChrW(0)
-
-            For Each c In bruto
-                If aspa <> ChrW(0) Then
-                    If c = aspa Then
-                        aspa = ChrW(0)
-                    ElseIf c = "<"c Then
-                        Return True
-                    End If
-                ElseIf dentroDeTag Then
-                    If c = ChrW(34) OrElse c = ChrW(39) Then
-                        aspa = c
-                    ElseIf c = ">"c Then
-                        dentroDeTag = False
-                    End If
-                ElseIf c = "<"c Then
-                    dentroDeTag = True
+            Dim i As Integer = 0
+            While i < bruto.Length
+                If bruto(i) <> "<"c Then
+                    i += 1
+                    Continue While
                 End If
-            Next
+
+                ' 1. TEXTO SOLTO: o padrao de tag come daqui ate o proximo >.
+                If Not AbreMarcacao(bruto, i) Then Return True
+
+                ' Comentario: pula o par inteiro. Sem par, a sobra decide.
+                If i + 4 <= bruto.Length AndAlso
+                   bruto.Substring(i, 4) = "<!--" Then
+                    Dim fim = bruto.IndexOf("-->", i, StringComparison.Ordinal)
+                    If fim < 0 Then Return False
+                    i = fim + 3
+                    Continue While
+                End If
+
+                Dim nome = NomeDaTag(bruto, i)
+                Dim j As Integer = i + 1
+                Dim aspa As Char = ChrW(0)
+                Dim fechou = False
+
+                While j < bruto.Length
+                    Dim d = bruto(j)
+                    If aspa <> ChrW(0) Then
+                        If d = aspa Then
+                            aspa = ChrW(0)
+                        ElseIf d = "<"c Then
+                            Return True
+                        End If
+                    ElseIf d = ChrW(34) OrElse d = ChrW(39) Then
+                        aspa = d
+                    ElseIf d = "<"c Then
+                        ' 3. Atributo SEM aspas com marcador dentro.
+                        Return True
+                    ElseIf d = ">"c Then
+                        fechou = True
+                        Exit While
+                    End If
+                    j += 1
+                End While
+
+                If Not fechou Then Return False
+                i = j + 1
+
+                ' 2. TEXTO CRU: dentro de script/style nao ha marcacao.
+                If nome = "script" OrElse nome = "style" Then
+                    Dim fim = bruto.IndexOf("</" & nome, i,
+                                            StringComparison.OrdinalIgnoreCase)
+                    If fim < 0 Then Return False
+                    i = fim
+                End If
+            End While
 
             Return False
+        End Function
+
+        ''' <summary>
+        ''' Um <c>&lt;</c> abre marcação se vier letra, <c>/</c> ou <c>!</c>.
+        ''' Qualquer outra coisa é o caractere literal num texto que ninguém
+        ''' escapou — e é ele que faz a limpeza genérica comer o que vem junto.
+        ''' </summary>
+        Private Shared Function AbreMarcacao(bruto As String, i As Integer) As Boolean
+            If i + 1 >= bruto.Length Then Return False
+            Dim d = bruto(i + 1)
+            Return Char.IsLetter(d) OrElse d = "/"c OrElse d = "!"c
+        End Function
+
+        ''' <summary>
+        ''' O nome da tag em minúsculas, ou vazio para fechamento e declaração.
+        ''' Serve só para reconhecer <c>script</c> e <c>style</c>, que carregam
+        ''' texto cru.
+        ''' </summary>
+        Private Shared Function NomeDaTag(bruto As String, i As Integer) As String
+            Dim j = i + 1
+            Dim sb As New Text.StringBuilder()
+            While j < bruto.Length AndAlso Char.IsLetter(bruto(j))
+                sb.Append(Char.ToLowerInvariant(bruto(j)))
+                j += 1
+            End While
+            Return sb.ToString()
         End Function
 
         Private Shared Function Contagem(texto As String, agulha As String) As Integer

@@ -18,7 +18,7 @@ porque assert desaparece sob `python -O`.
 
 Uso:
   python tools/atualizar-evidencia.py HASH_NOVO HASH_ANT TESTES_NOVO TESTES_ANT
-      "1 m 7 s" "vigesima segunda" "vigesima primeira" 22 21 "29 de agosto de 2026"
+      "1 m 7 s" "vigesima terceira" 23 22 "29 de agosto de 2026"
 """
 import io
 import os
@@ -38,14 +38,20 @@ def confere(cond, msg):
         raise SystemExit("atualizar-evidencia: " + msg)
 
 
-confere(len(sys.argv) == 11, f"esperava 10 argumentos, recebi {len(sys.argv) - 1}")
+confere(len(sys.argv) == 10, f"esperava 9 argumentos, recebi {len(sys.argv) - 1}")
 
 HASH_NOVO, ANT_HASH = sys.argv[1], sys.argv[2]
 TESTES_NOVO, ANT_TESTES = sys.argv[3], sys.argv[4]
 DUR = sys.argv[5]
-ORD_NOVO, ORD_ANT = sys.argv[6], sys.argv[7]
-PASSADA_NOVA, PASSADA_ANT = sys.argv[8], sys.argv[9]
-DATA = sys.argv[10]
+ORD_NOVO = sys.argv[6]
+PASSADA_NOVA, PASSADA_ANT = sys.argv[7], sys.argv[8]
+DATA = sys.argv[9]
+
+# ORD_ANT saiu. Ele exigia que o cabecalho corrente fosse literalmente
+# "depois da <ordinal> revisao", e uma passada em que eu NAO chamei de revisao
+# ("depois do automato testado") quebrou o roteiro. O rotulo da medicao que vai
+# para o arquivo agora vem do proprio cabecalho, lido na hora -- o arquivo
+# descreve o que ele dizia, e nao o que eu supus que dizia.
 
 # check=True: sem ele, um git que falha devolveria contagem VAZIA, e ela seria
 # gravada como se tivesse sido medida.
@@ -64,8 +70,13 @@ def aplica(caminho, pares):
     return s
 
 
+suite_bruto = io.open(SUITE, encoding="utf-8", newline="").read()
+m = re.search(r"^## Medição corrente — (.+)$", suite_bruto, re.MULTILINE)
+confere(m is not None, "nao achei o cabecalho da medicao corrente")
+ROTULO_ANT = m.group(1).strip()
+
 suite = aplica(SUITE, [
-    (f"## Medição corrente — depois da {ORD_ANT} revisão",
+    (f"## Medição corrente — {ROTULO_ANT}",
      f"## Medição corrente — depois da {ORD_NOVO} revisão"),
     (f"| **Commit** | `{ANT_HASH}` — a árvore da solução .NET que foi medida |",
      f"| **Commit** | `{HASH_NOVO}` — a árvore da solução .NET que foi medida |"),
@@ -86,11 +97,14 @@ nova = (f"Passed!  - Failed:     0, Passed:   {TESTES_NOVO}, Skipped:     0, "
         f"Total:   {TESTES_NOVO}, Duration: {DUR} - Iris.Tests.dll (net10.0)")
 suite = suite[:i] + nova + suite[fim:]
 
-marca = "### Medição da"
+# "### Medição da" nao serve mais como marca: os rotulos arquivados agora
+# copiam o cabecalho corrente, e um deles e "### Medição depois do automato
+# testado". A marca tem de ser o prefixo comum.
+marca = "### Medição "
 confere(marca in suite, "nao achei onde inserir a medicao anterior")
 j = suite.index(marca)
 bloco = nl.join([
-    f"### Medição da {ORD_ANT} revisão",
+    f"### Medição {ROTULO_ANT}",
     "",
     "| | |",
     "|---|---|",

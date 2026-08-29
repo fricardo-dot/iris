@@ -398,6 +398,11 @@ Namespace Global.Iris.Outlook
                         ' entre as duas passadas", que e como esse cenario
                         ' chega. Fica declarado o que sobra: uma troca que
                         ' preserve a contagem E os metadados passa.
+                        '
+                        ' SEM TESTE, e dito com esse nome: alcancar esta
+                        ' linha pede uma Attachments real mudando entre as
+                        ' duas passadas. Tirar a comparacao nao derruba
+                        ' nenhum dos testes -- a revisao externa conferiu.
                         If anexos.Count <> quantosAntes Then
                             Return OperationResult(Of DraftInfo).Fail(
                                 ErrorKind.Stale,
