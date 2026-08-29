@@ -1298,3 +1298,38 @@ ocorrências em silêncio; e o `git` rodava sem `check=True`, então uma falha
 gravaria contagem vazia como se fosse medida.
 
 Suíte: **903**.
+
+---
+
+## Vigésima segunda passada — o dano pelo outro lado
+
+O revisor achou o mesmo estrago **invertido**. Com abertura *e* fechamento
+falsos em atributos — `<p title="<script>">VISIVEL</p><p title="</script>">` —
+o removedor come o `VISIVEL` que está entre os dois, não sobra nada, a
+verificação aceita, e o que vai para o provedor **perdeu texto que o usuário
+vê**. Eu tinha consertado o vazamento e aberto um sumiço: o mesmo erro de sinal
+trocado.
+
+Entrou um `MarcadorDentroDeAtributo` — varredura de estado, e não expressão
+regular, porque é exatamente a noção que expressão regular não tem: *estou
+dentro de aspas?* Ele recusa HTML legítimo, e esse é o preço, declarado.
+
+**E o comentário tinha ficado na contagem** que eu abandonei para
+`script`/`style`: `--> ... <!--` fecha na conta, o removedor não acha par, e o
+texto que o navegador trata como comentário aberto sai como mensagem. Agora é a
+mesma regra: se sobrou, recusa.
+
+**A armadilha do `CLAUDE.md` ao vivo.** Extraí a regra "a identidade foi lida"
+para uma função `IdentidadeLida`, e o local chamado `identidadeLida` a eclipsou
+— VB é case-insensitive. O compilador disse *"o tipo não pode ser inferido"*,
+que é exatamente o sintoma que a tabela do `CLAUDE.md` lista doze vezes.
+
+O resto: a remoção ganhou comparação de contagem entre as duas passadas, com o
+resíduo declarado; o aviso de leitura parcial dizia "Responder e encaminhar
+ficam bloqueados" mesmo quando só encaminhar estava — e isso ficou mais comum
+**por causa do meu conserto anterior**; o roteiro de evidência passou a montar
+as duas edições em memória antes de gravar qualquer uma, e trocou `assert` por
+`SystemExit`, que não some sob `python -O`; e o endereço de um teste novo tinha
+saído corrompido pela minha própria substituição de aspas.
+
+Suíte: **907**.

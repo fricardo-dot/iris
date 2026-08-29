@@ -10,22 +10,22 @@ Reproduza com:
 dotnet test Iris.slnx
 ```
 
-## Medição corrente — depois da vigésima primeira revisão
+## Medição corrente — depois da vigésima segunda revisão
 
 | | |
 |---|---|
-| **Commit** | `92259de` — a árvore da solução .NET que foi medida |
+| **Commit** | `423906a` — a árvore da solução .NET que foi medida |
 | **Data** | 29 de agosto de 2026, de manhã |
 | **SDK** | .NET 10.0.301 |
 | **Alvo** | `net10.0-windows` |
 | **Máquina** | Windows 11 Pro 10.0.26200 |
 
 ```
-Passed!  - Failed:     0, Passed:   903, Skipped:     0, Total:   903, Duration: 1 m 7 s - Iris.Tests.dll (net10.0)
+Passed!  - Failed:     0, Passed:   907, Skipped:     0, Total:   907, Duration: 1 m 8 s - Iris.Tests.dll (net10.0)
 ```
 
 É este o número que `RELATORIO-TRABALHO-AUTONOMO.html` cita. A execução foi a
-última antes do commit `92259de`, que contém **exatamente** a árvore medida —
+última antes do commit `423906a`, que contém **exatamente** a árvore medida —
 `src/`, `tests/` e `tools/` entraram nele; os documentos vieram depois, em
 commit separado.
 
@@ -52,6 +52,17 @@ décima oitava acrescentou sete: dois da reconciliação do diário de divulgaç
 quatro do fechamento de bloco com espaço, e um da identidade do anexo. A
 décima nona acrescentou três casos aos irmãos do fechamento.
 872 → 874 → 875 → 876 → 878 → 882 → 883 → 884 → 886 → 893 → 896.
+
+### Medição da vigésima primeira revisão
+
+| | |
+|---|---|
+| **Commit** | `92259de` |
+| **Data** | 29 de agosto de 2026, de manhã |
+
+```
+Passed!  - Failed:     0, Passed:   903, Skipped:     0, Total:   903, Duration: 1 m 7 s - Iris.Tests.dll (net10.0)
+```
 
 ### Medição da vigésima revisão
 
