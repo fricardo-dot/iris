@@ -192,6 +192,13 @@
                 <RowDefinition Height="Auto" />
                 <!-- A IA. -->
                 <RowDefinition Height="Auto" />
+                <!-- As tarefas. Linha PROPRIA, e nao dividida com ninguem: a
+                     pasta de tarefas nao aparece na arvore (a politica de
+                     visibilidade a mantem fora), entao esta faixa nao tem
+                     condicao de pasta que a torne mutuamente exclusiva com o
+                     acervo ou a agenda. Empilhar aqui repetiria o defeito que
+                     escondeu a faixa do acervo por dias. -->
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
             <!-- ============ Barra de título ============ -->
@@ -1491,6 +1498,138 @@
                  O UserControl nao precisa de broker nem de Outlook: ele so
                  tem bindings. -->
             <local:FaixaDaIa Grid.Row="3" DataContext="{Binding Assistente}" />
+
+            <!-- ============ Tarefas ============
+                 A Fase 5 em uma frase: a sugestao preenche o campo, VOCE
+                 confirma, o Iris cria. Sao dois passos de proposito, e o do
+                 meio e o que impede a lista de tarefas de encher de linha que
+                 ninguem pediu.
+
+                 "Desta mensagem" NAO chama a IA. Ele copia o assunto da
+                 mensagem selecionada para o campo. Extrair tarefa de um corpo
+                 com o assistente e uma OPERACAO NOVA, e a cerimonia de
+                 ativacao autoriza operacoes nomeadas sobre pastas escolhidas:
+                 reusar a autorizacao do resumo para isso alargaria uma
+                 permissao que ninguem concordou em alargar.
+
+                 NAO HA CAMPO DE RESPONSAVEL, e a ausencia e a funcionalidade.
+                 Tarefa atribuida e pedido enviado por e-mail, e o Iris nao
+                 envia. Ver o comentario do TaskWriting. -->
+            <Border Grid.Row="4"
+                    Background="{DynamicResource Brush.Surface.1}"
+                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,1,0,0"
+                    Padding="16,8">
+                <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                        <TextBlock Text="TAREFAS"
+                                   Style="{DynamicResource Text.Muted}"
+                                   VerticalAlignment="Center" />
+                        <Button Content="Abrir"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Tarefas.AbrirCommand}"
+                                Margin="12,0,0,0"
+                                ToolTip="Le a pasta de tarefas do Outlook. Ela nao aparece na arvore de pastas."
+                                AutomationProperties.Name="Abrir as tarefas" />
+                        <Button Content="Atualizar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Tarefas.AtualizarCommand}"
+                                Margin="6,0,0,0"
+                                AutomationProperties.Name="Atualizar as tarefas" />
+                        <TextBlock Text="{Binding Tarefas.Resumo}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   Margin="12,0,0,0" VerticalAlignment="Center" />
+                        <ProgressBar IsIndeterminate="True"
+                                     Width="90" Height="3" Margin="12,0,0,0"
+                                     BorderThickness="0"
+                                     Background="{DynamicResource Brush.Surface.3}"
+                                     Foreground="{DynamicResource Brush.Accent}"
+                                     VerticalAlignment="Center"
+                                     Visibility="{Binding Tarefas.Carregando,
+                                                  Converter={StaticResource BoolToVis},
+                                                  FallbackValue=Collapsed}"
+                                     AutomationProperties.Name="Lendo as tarefas" />
+                    </StackPanel>
+
+                    <!-- PROPOR e CRIAR: dois controles, e nunca um so. -->
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                Visibility="{Binding Tarefas.TemPasta,
+                                             Converter={StaticResource BoolToVis},
+                                             FallbackValue=Collapsed}">
+                        <TextBox Text="{Binding Tarefas.NovoAssunto, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="280"
+                                 VerticalContentAlignment="Center"
+                                 ToolTip="O que e para fazer"
+                                 AutomationProperties.Name="Assunto da nova tarefa" />
+                        <Button Content="Desta mensagem"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding ProporTarefaCommand}"
+                                Margin="6,0,0,0"
+                                ToolTip="Copia o assunto da mensagem selecionada para o campo. Nao cria nada, e nao usa a IA."
+                                AutomationProperties.Name="Propor tarefa desta mensagem" />
+                        <Button Content="Criar"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Tarefas.CriarCommand}"
+                                Margin="6,0,0,0"
+                                ToolTip="Cria a tarefa na pasta de tarefas do Outlook"
+                                AutomationProperties.Name="Criar a tarefa" />
+                        <Button Content="Concluir"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding Tarefas.ConcluirCommand}"
+                                Margin="18,0,0,0"
+                                ToolTip="Marca a tarefa selecionada como concluida"
+                                AutomationProperties.Name="Concluir a tarefa selecionada" />
+                        <TextBlock Text="{Binding Tarefas.AvisoDaSelecionada}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   TextWrapping="Wrap" MaxWidth="360"
+                                   Margin="12,0,0,0" VerticalAlignment="Center"
+                                   AutomationProperties.Name="Por que esta tarefa nao pode ser concluida aqui" />
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding Tarefas.Tarefas}"
+                             SelectedItem="{Binding Tarefas.Selecionada}"
+                             MaxHeight="150"
+                             Background="Transparent"
+                             BorderThickness="0"
+                             AutomationProperties.Name="Tarefas lidas">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal" Margin="0,1">
+                                    <TextBlock Text="{Binding Prazo}"
+                                               Width="110"
+                                               FontSize="12"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                    <TextBlock Text="{Binding Assunto}"
+                                               FontSize="12"
+                                               TextTrimming="CharacterEllipsis"
+                                               MaxWidth="420" />
+                                    <!-- O aviso de atribuida fica na LINHA, e nao
+                                         so no rodape: quem le a lista precisa
+                                         saber quais linhas pertencem a uma
+                                         negociacao da qual o Iris nao participa. -->
+                                    <TextBlock Text="atribuida"
+                                               FontSize="11" Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                                               Visibility="{Binding Atribuida,
+                                                            Converter={StaticResource BoolToVis},
+                                                            FallbackValue=Collapsed}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <TextBlock Text="{Binding Tarefas.Erro}"
+                               TextWrapping="Wrap"
+                               FontSize="12"
+                               Margin="0,4,0,0"
+                               Foreground="{DynamicResource Brush.Error}"
+                               Visibility="{Binding Tarefas.TemErro,
+                                            Converter={StaticResource BoolToVis},
+                                            FallbackValue=Collapsed}"
+                               AutomationProperties.Name="Falha nas tarefas" />
+                </StackPanel>
+            </Border>
 
         </Grid>
     </Border>

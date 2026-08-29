@@ -1,8 +1,8 @@
+Imports System.Text.RegularExpressions
 Imports System.Collections.Generic
 Imports System.IO
 Imports System.Linq
 Imports System.Reflection
-Imports System.Text.RegularExpressions
 Imports Iris.App.ViewModels
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
 
@@ -439,6 +439,74 @@ Public Class BindingsDaJanelaTests
         Dim xaml = LerXaml()
         StringAssert.Contains(xaml, "{Binding Agenda.PodeEscrever,",
             "a faixa de escrita aparece mesmo quando a agenda nao escreve")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A FAIXA DE TAREFAS ESTÁ NA TELA — e os dois botões são dois.</b>
+    '''
+    ''' A regra da Fase 5 é "a sugestão preenche, você confirma, o Iris cria".
+    ''' Um <c>TarefasViewModel</c> perfeito num XAML que não o alcança é
+    ''' funcionalidade que não existe — foi o que aconteceu com a faixa do
+    ''' acervo, que ficou dias escondida atrás de outra borda.
+    '''
+    ''' A asserção que importa é a do meio: <c>ProporTarefaCommand</c> e
+    ''' <c>Tarefas.CriarCommand</c> são <b>dois</b> comandos ligados a dois
+    ''' botões. Um XAML que ligasse o botão "Desta mensagem" direto ao criar
+    ''' teria a tela criando tarefa sem confirmação, com o ViewModel inteiro
+    ''' correto e todos os outros testes verdes.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_faixa_de_tarefas_tem_propor_E_criar_separados()
+        Dim xaml = LerXaml()
+
+        StringAssert.Contains(xaml, "{Binding Tarefas.AbrirCommand}",
+            "nao ha como abrir as tarefas: a pasta delas nao aparece na arvore")
+        StringAssert.Contains(xaml, "{Binding ProporTarefaCommand}",
+            "a proposta a partir da mensagem nao chegou a tela")
+        StringAssert.Contains(xaml, "{Binding Tarefas.CriarCommand}",
+            "propor sem criar deixaria a tarefa presa no formulario")
+        StringAssert.Contains(xaml, "{Binding Tarefas.AvisoDaSelecionada}",
+            "o botao de concluir pode ficar desabilitado sem a tela dizer por que")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A faixa de tarefas tem linha própria.</b>
+    '''
+    ''' O acervo e a agenda dividem a linha 2 porque são mutuamente exclusivos
+    ''' — a pasta selecionada é de calendário ou não é. As tarefas não têm essa
+    ''' exclusão: a pasta delas nem aparece na árvore. Numa linha compartilhada
+    ''' elas empilhariam sobre o vizinho, que é <i>exatamente</i> o defeito que
+    ''' escondeu a faixa do acervo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_faixa_de_tarefas_NAO_divide_linha_com_ninguem()
+        ' A GRADE RAIZ, E NAO O ARQUIVO INTEIRO. O primeiro corte deste teste
+        ' contava Grid.Row="4" no XAML todo e falhou por causa de uma grade
+        ' ANINHADA -- a do compositor, que tem linhas proprias e nada a ver com
+        ' esta. Um teste que acusa colisao onde nao ha e um teste que sera
+        ' desligado na primeira vez que atrapalhar.
+        '
+        ' O recorte usa a INDENTACAO: filho direto da grade raiz abre com doze
+        ' espacos. E um proxy, e nao um parser -- e por isso a mensagem de
+        ' falha manda conferir, em vez de afirmar.
+        Dim raiz = LerXaml().Split(CChar(vbLf)).
+                   Where(Function(l) l.StartsWith("            <") AndAlso
+                                     Not l.StartsWith("             ")).ToList()
+
+        Dim ocupantes = raiz.Where(Function(l) l.Contains("Grid.Row=""4""")).Count()
+
+        Assert.AreEqual(1, ocupantes,
+            "a linha 4 da grade raiz tem " & ocupantes & " ocupante(s) diretos. " &
+            "Duas bordas na mesma linha se empilham e a de cima cobre a de " &
+            "baixo -- foi assim que a faixa do acervo ficou dias invisivel. " &
+            "Confira se o recorte por indentacao ainda vale antes de mexer no numero.")
+
+        ' CONTROLE: o recorte acha os vizinhos conhecidos. Sem isto, uma
+        ' mudanca de indentacao esvaziaria a lista e o teste passaria por
+        ' nao olhar nada -- o bloqueio que nunca bloqueia.
+        Assert.AreEqual(1, raiz.Where(Function(l) l.Contains("Grid.Row=""3""")).Count(),
+            "o recorte por indentacao parou de achar a faixa da IA: ele nao " &
+            "esta mais olhando a grade raiz, e a assercao acima virou fumaca")
     End Sub
 
     Private Shared Function LerXaml() As String

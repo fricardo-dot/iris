@@ -802,6 +802,35 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        ''' <summary>
+        ''' A pasta padrão de Tarefas, pelo <c>GetDefaultFolder</c>.
+        '''
+        ''' R7: <c>GetDefaultFolder</c> devolve um objeto COM próprio, e ler
+        ''' <c>EntryID</c> e <c>StoreID</c> encadeado deixaria um RCW sem dono.
+        ''' </summary>
+        Public Async Function GetDefaultTasksFolderAsync(cancel As CancellationToken) _
+            As Task(Of OperationResult(Of FolderKey)) _
+            Implements ITarefasBroker.GetDefaultTasksFolderAsync
+
+            Return Await ReadAsync(Of FolderKey)(
+                "outlook.getDefaultTasksFolder",
+                Function(app, ns)
+                    Dim pasta As OL.Folder = Nothing
+                    Try
+                        pasta = TryCast(ns.GetDefaultFolder(
+                            OL.OlDefaultFolders.olFolderTasks), OL.Folder)
+                        If pasta Is Nothing Then
+                            Return OperationResult(Of FolderKey).Fail(
+                                ErrorKind.NotFound, "pasta de tarefas")
+                        End If
+                        Return OperationResult(Of FolderKey).Ok(
+                            New FolderKey(pasta.EntryID, pasta.StoreID))
+                    Finally
+                        ComHelpers.Release(pasta)
+                    End Try
+                End Function,
+                cancel)
+        End Function
         ''' <summary>Leitura pura: <c>ReadAsync</c>, com retry.</summary>
         Public Async Function GetTasksAsync(folder As FolderKey, teto As Integer,
                                             cancel As CancellationToken) _

@@ -89,6 +89,28 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property Agenda As AgendaViewModel
 
         ''' <summary>
+        ''' <b>As tarefas — e por que elas não seguem a pasta selecionada.</b>
+        '''
+        ''' A agenda aparece quando você entra numa pasta de calendário. As
+        ''' tarefas não podem fazer o mesmo: a política de visibilidade mantém a
+        ''' pasta de tarefas <b>fora</b> da árvore, então não há o que
+        ''' selecionar. A faixa tem linha própria e um botão "Abrir" que
+        ''' pergunta ao Outlook onde a pasta padrão está.
+        ''' </summary>
+        Public ReadOnly Property Tarefas As TarefasViewModel
+
+        ''' <summary>
+        ''' <b>Copia o assunto da mensagem selecionada para o campo de tarefa —
+        ''' e para aí.</b>
+        '''
+        ''' Este comando existe aqui, e não no <see cref="TarefasViewModel"/>,
+        ''' porque só o <c>MainViewModel</c> sabe qual mensagem está
+        ''' selecionada. Ele não cria nada: a criação é o outro botão, e é
+        ''' proposital que sejam dois.
+        ''' </summary>
+        Public ReadOnly Property ProporTarefaCommand As IRelayCommand
+
+        ''' <summary>
         ''' <b>O acervo e a agenda dividem a mesma linha da janela, e nunca
         ''' aparecem juntos.</b>
         '''
@@ -178,6 +200,13 @@ Namespace Global.Iris.App.ViewModels
             ' le nao precisa implementar escrita para ter um duplo. Aqui o
             ' mesmo objeto serve as duas, e e o unico lugar onde isso acontece.
             Agenda = New AgendaViewModel(broker, escritor:=broker)
+            Tarefas = New TarefasViewModel(broker)
+
+            ' PROPOR NAO CRIA. O comando so preenche o campo -- e a linha
+            ' seguinte, que criaria, nao existe de proposito.
+            ProporTarefaCommand = New RelayCommand(
+                Sub() Tarefas.ProporDaMensagem(If(Messages?.Selected?.Subject, "")),
+                Function() Tarefas.TemPasta)
 
             Assistente = MontarAssistente(ui)
 
@@ -853,6 +882,7 @@ Namespace Global.Iris.App.ViewModels
             Messages.Clear()
 
             Agenda.Dispose()
+            Tarefas.Dispose()
             _watcher.Dispose()
             Composer.Dispose()
             Detail.Dispose()

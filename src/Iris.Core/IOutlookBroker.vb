@@ -101,6 +101,17 @@ Namespace Global.Iris.Core
     ''' necessidade seria cerimônia.
     ''' </summary>
     Public Interface ITarefasBroker
+        ''' <summary>
+        ''' A pasta padrão de Tarefas.
+        '''
+        ''' Existe porque a <c>FolderVisibilityPolicy</c> mantém Tarefas fora da
+        ''' árvore — a árvore mostra o que se ABRE como lista de mensagens, e
+        ''' tarefa não é isso. Sem esta porta, a única forma de chegar na pasta
+        ''' seria alargar a política e passar a mostrar na árvore uma pasta que
+        ''' a lista não sabe abrir.
+        ''' </summary>
+        Function GetDefaultTasksFolderAsync(cancel As CancellationToken) _
+            As Task(Of OperationResult(Of FolderKey))
         Function GetTasksAsync(folder As FolderKey, teto As Integer,
                                cancel As CancellationToken) _
             As Task(Of OperationResult(Of TaskList))

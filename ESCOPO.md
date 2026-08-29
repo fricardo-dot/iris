@@ -535,21 +535,51 @@ técnico primeiro:
 Enquanto essas oito não tiverem resposta, planejar a fase é escolher a
 implementação antes do requisito.
 
-### Fase 5 — Tarefas — *MEDIDA, NÃO EXECUTADA*
+### Fase 5 — Tarefas — *EXECUTADA em 29/08/2026*
 
-Inclui extração de tarefas a partir de e-mails, em duas etapas distintas:
-a IA **sugere**, você confirma, o Iris cria o `TaskItem`. Nunca criação
-silenciosa em massa.
+Duas etapas distintas: a sugestão **preenche o campo**, você confirma, o Iris
+cria o `TaskItem`. Nunca criação silenciosa em massa.
 
 **Medido em 28/08/2026** (`tools/medir-grupos.ps1`, só leitura): a pasta de
 Tarefas tem **3 itens**, e as nove propriedades são legíveis.
 
-**O que a medição mostra:** esta é uma feature de **escrita**. O valor não está
-em ler as três tarefas que existem — está em criar tarefas a partir de e-mail,
-que é o que o parágrafo acima descreve.
+**O que entrou:**
 
-**Por que não foi executada:** escrever na caixa do dono exige o dono na
-máquina. Não é bloqueio técnico; é de autoridade.
+- `TaskDraft` **não tem campo de responsável**, pelo mesmo motivo pelo qual o
+  `AppointmentDraft` não tem participante. Tarefa com responsável é
+  *atribuição*: `TaskItem.Assign()` seguido de `Send()` manda um pedido **por
+  e-mail**, e daí em diante cada mudança de status vai e volta pela caixa.
+  Sem campo, não existe caminho — a invariante fica presa pelo **tipo**, e há
+  teste por reflexão que cai no dia em que alguém acrescentar `AssignedTo`.
+- Concluir confere `DelegationState` **antes** de tocar no item e recusa com
+  `Denied`. `EhAtribuida` **falha fechado**: não conseguir ler vale como "sim",
+  porque o contrário deixaria uma leitura ruim autorizar um envio.
+- O sentinela `4501-01-01` do `DueDate` vira `Nothing`, e a tela diz "sem
+  prazo". `TaskItem.DueDate` nunca é nulo; traduzi-lo como data comum
+  transformaria "não tem prazo" em "vence em 4501" — a mesma família de
+  ausência-virando-fato que a série de revisões corrigiu em cinco lugares.
+- `Create` usa `Items.Add` **na pasta indicada**, e não criar na padrão e
+  mover: um `Move` que falhe deixaria a tarefa na lista de verdade.
+- Faixa própria na janela, com `Abrir` — porque a política de visibilidade
+  mantém a pasta de Tarefas **fora da árvore**, e não há o que selecionar.
+- **A proposta é determinística e local.** "Desta mensagem" copia o assunto da
+  mensagem selecionada para o campo; não chama o assistente e não sai da
+  máquina.
+
+**Por que a IA ainda não extrai a tarefa do corpo, e isto é decisão:** extrair
+tarefa com o assistente é uma **operação nova**, e a cerimônia de ativação
+autoriza operações *nomeadas* sobre pastas *escolhidas*. Reusar a autorização
+do resumo para extrair tarefas alargaria uma permissão que ninguém concordou em
+alargar — que é a mesma razão pela qual a Fase 4 continua parada. No dia em que
+existir entrada de ativação para isso, `ProporDaMensagem` ganha um irmão que
+chama o assistente; o resto da fase já está pronto para recebê-lo.
+
+**O que continua fora, e é decisão:** **atribuir tarefa**, porque atribuir é
+enviar. Quem quiser delegar faz no Outlook, onde vê para quem o pedido vai.
+
+**O que não foi exercitado contra o Outlook real:** a escrita. Os testes de
+tarefa são de unidade e de tradução; criar e concluir na caixa do dono exige o
+dono na máquina, e isso não é bloqueio técnico, é de autoridade.
 
 ### Fase 6 — Calendário — *LEITURA em 28/08/2026, ESCRITA em 29/08/2026*
 

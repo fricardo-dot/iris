@@ -239,6 +239,12 @@ Friend NotInheritable Class WatcherBroker
     ''' Tarefas. Fora da alçada por padrão, como o resto: chamada que ninguém
     ''' configurou QUEBRA o teste, em vez de passar por sorte.
     ''' </summary>
+    Public Function GetDefaultTasksFolderAsync(cancel As CancellationToken) _
+        As Task(Of OperationResult(Of FolderKey)) _
+        Implements ITarefasBroker.GetDefaultTasksFolderAsync
+        Throw New NotSupportedException("fora da alcada")
+    End Function
+
     Public Function GetTasksAsync(folder As FolderKey, teto As Integer,
                                   cancel As CancellationToken) _
         As Task(Of OperationResult(Of TaskList)) _
