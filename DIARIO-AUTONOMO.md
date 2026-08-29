@@ -1333,3 +1333,40 @@ as duas edições em memória antes de gravar qualquer uma, e trocou `assert` po
 saído corrompido pela minha própria substituição de aspas.
 
 Suíte: **907**.
+
+---
+
+## Vigésima terceira passada — a guarda errava dos dois lados
+
+Três médios, e os dois primeiros são o dano invertido **dentro da guarda que eu
+tinha escrito para impedir exatamente isso**.
+
+**Falso negativo — e o caso estava num teste meu.** `<p>a < b e c > d</p>`
+passava, e o padrão de tag come `< b e c >`: sobra `a d`. Eu tinha listado esse
+caso como "não acha" e olhado para ele achando que estava certo — porque
+perguntei *"isso é um marcador dentro de atributo?"* em vez de ***"a limpeza vai
+comer isso errado?"***. A pergunta estreita foi a que eu escrevi no nome da
+função, e ela me cegou para o irmão. O caso com atributo **sem aspas**
+(`<p title=<script>>VISIVEL`) passava pelo mesmo motivo.
+
+**Falso positivo.** `<script>const lt = "<";</script>` era recusado: o `<` da
+string JS abria uma tag fictícia, a aspa seguinte abria um atributo fictício, e o
+`</script>` derrubava HTML legítimo — que a expressão regular removeria sem
+problema nenhum.
+
+O autômato passou a saber **três** coisas em vez de uma: onde uma tag começa (um
+`<` só abre marcação com letra, `/` ou `!` depois); que dentro de `script` e
+`style` não há marcação — texto cru, pulado até o fechamento, como faz um
+tokenizador de verdade; e que aspas protegem, mas a falta delas não.
+
+**E o `-->` sozinho deixou de derrubar.** A regra recusava *"Use a seta --> para
+continuar"* — texto visível que a limpeza preserva inteiro, porque `-->` não casa
+com o padrão de tag. Falso positivo puro. O caso perigoso continua pego, porque
+ele deixa um `<!--` na sobra.
+
+**O roteiro de evidência não casava mais com o próprio documento:** ele exigia
+`depois da <ordinal> revisão` no cabeçalho, e a passada em que eu *não* chamei de
+revisão o quebrou. Agora o rótulo arquivado vem do arquivo, lido na hora — o
+arquivo descreve o que ele dizia, e não o que eu supus que dizia.
+
+Suíte: **918**.
