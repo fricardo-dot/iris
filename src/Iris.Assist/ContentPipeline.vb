@@ -110,10 +110,30 @@ Namespace Global.Iris.Assist
         ''' recusar <c>data:text/x</c> — que um teste já cobrava desde o
         ''' início. Fechar um lado e abrir o outro, de novo; o teste pegou
         ''' antes da revisão.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>DUAS COISAS QUE A REVISÃO SEGUINTE AINDA ACHOU</b>
+        '''
+        ''' <b>Largo demais:</b> <c>Data:29/08/2026</c> casava como se
+        ''' <c>29/08</c> fosse um tipo, e <c>metadata:text/xml</c> casava porque
+        ''' não havia fronteira à esquerda. Agora o tipo tem de <i>começar com
+        ''' letra</i>, e há <c>\b</c> antes.
+        '''
+        ''' <b>E estreito de novo, na tentativa seguinte:</b> eu tinha listado
+        ''' os caracteres aceitos antes da vírgula, e <c>data:'foo/bar,X</c>
+        ''' escapou pelo apóstrofo. Listar o que <i>pode</i> aparecer numa URI
+        ''' é errar por omissão; o que separa a URI do texto é <b>não haver
+        ''' espaço</b> até a vírgula, e é só isso que se exige agora.
+        '''
+        ''' <b>Estreito demais:</b> um <c>&amp;#10;</c> no meio da URI —
+        ''' <c>da&amp;#10;ta:,SEGREDO</c> — não casava, e o parser de URL do
+        ''' navegador <i>remove</i> quebra e tabulação antes de ler o esquema. A
+        ''' conferência passou a rodar também sobre o texto decodificado e sem
+        ''' espaço nenhum. Ver <see cref="TemReferenciaEmbutida"/>.
         ''' </summary>
         Private Shared ReadOnly Embutido As New Regex(
-            "(cid:|data:(?:[a-z0-9.+-]+/[a-z0-9.+-]+|[^\s""'<>]*[;,]))",
-                                                      RegexOptions.IgnoreCase)
+            "\b(?:cid:|data:(?:[a-z][a-z0-9.+-]*/[a-z0-9.+-]+|[^\s""<>]*,))",
+            RegexOptions.IgnoreCase)
         Private Shared ReadOnly LinhasDemais As New Regex("(\r?\n){3,}")
 
         ''' <summary>
@@ -175,8 +195,7 @@ Namespace Global.Iris.Assist
             ' do mesmo jeito. Procurar so no cru era uma barreira que qualquer
             ' remetente atravessava escrevendo dois pontos de outro jeito.
             Dim cru = If(corpo, "")
-            If Embutido.IsMatch(cru) OrElse
-               Embutido.IsMatch(Net.WebUtility.HtmlDecode(cru)) Then
+            If TemReferenciaEmbutida(cru) Then
                 Return Recusar(ContentRefusal.ReferenciaEmbutida)
             End If
 
@@ -194,7 +213,7 @@ Namespace Global.Iris.Assist
             ' Referencia embutida em QUALQUER campo. Um cid: no assunto e tao
             ' capaz de virar busca remota quanto um no corpo.
             For Each campo In quem.Concat({texto, tema, de})
-                If Embutido.IsMatch(campo) Then Return Recusar(ContentRefusal.ReferenciaEmbutida)
+                If TemReferenciaEmbutida(campo) Then Return Recusar(ContentRefusal.ReferenciaEmbutida)
             Next
 
             If texto.Length = 0 Then Return Recusar(ContentRefusal.SemTexto)
@@ -398,7 +417,13 @@ Namespace Global.Iris.Assist
                     ' fazia o resto sair como texto. Mas "<!x" e "<?x" sao
                     ' comentario torto para o HTML, e ali a aspa NAO protege:
                     ' tratar igual fazia o leitor engolir texto de verdade.
-                    Dim fim = FimDaDeclaracao(texto, i, Casa(texto, i, "<!DOCTYPE"))
+                    ' Sem caixa: "<!doctype html PUBLIC ""A>B"">" e valido, e a
+                    ' comparacao ordinal deixava a aspa desprotegida nele.
+                    Dim fim = FimDaDeclaracao(
+                        texto, i,
+                        i + 9 <= texto.Length AndAlso
+                        String.Compare(texto, i, "<!DOCTYPE", 0, 9,
+                                       StringComparison.OrdinalIgnoreCase) = 0)
                     If fim < 0 Then
                         incerto = True
                         Return Fechar(sb)
@@ -575,6 +600,37 @@ Namespace Global.Iris.Assist
             Return -1
         End Function
 
+        ''' <summary>
+        ''' <b>Há <c>cid:</c> ou <c>data:</c> aqui — inclusive escondido?</b>
+        '''
+        ''' Olha o texto como está <b>e</b> como um leitor de URL o veria: sem
+        ''' entidade e sem espaço em branco. O parser de URL do navegador
+        ''' descarta quebra de linha e tabulação <i>antes</i> de ler o esquema,
+        ''' então <c>da&amp;#10;ta:,SEGREDO</c> é uma data URI para ele e não
+        ''' era para nós.
+        '''
+        ''' Depois disso o atributo some na leitura, e some junto a evidência —
+        ''' por isso a conferência tem de acontecer aqui, no bruto.
+        ''' </summary>
+        Friend Shared Function TemReferenciaEmbutida(bruto As String) As Boolean
+            If String.IsNullOrEmpty(bruto) Then Return False
+            If Embutido.IsMatch(bruto) Then Return True
+
+            Dim decodificado = Net.WebUtility.HtmlDecode(bruto)
+            Dim sb As New StringBuilder(decodificado.Length)
+            ' SO CONTROLE, e NAO espaco em branco.
+            '
+            ' O parser de URL descarta tabulacao e quebra de linha, e nao o
+            ' espaco. Tirar espaco tambem fazia "Data: 12/03/2026, as 10h"
+            ' virar "Data:12/03/2026,as10h" -- uma data URI perfeita, e uma
+            ' recusa de texto comum em portugues. Foi o teste do outro lado
+            ' que pegou, no mesmo minuto.
+            For Each c In decodificado
+                If Not Char.IsControl(c) Then sb.Append(c)
+            Next
+            Return Embutido.IsMatch(sb.ToString())
+        End Function
+
         Private Shared Function Fechar(sb As StringBuilder) As String
             Return Limpar(Net.WebUtility.HtmlDecode(LegadoC1(sb.ToString())))
         End Function
@@ -611,7 +667,9 @@ Namespace Global.Iris.Assist
         ''' continuava perdendo a aspa curva. Faixa em expressão regular é
         ''' fácil de escrever pela metade.
         ''' </summary>
-        Private Shared ReadOnly RefNumerica As New Regex("&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));")
+        ' O ";" E OPCIONAL, e o HTML aceita assim: "A&#128B" e "A€B". Sem
+        ' isto o euro continuava sumindo -- so que num caso mais raro.
+        Private Shared ReadOnly RefNumerica As New Regex("&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));?")
 
         Private Shared Function LegadoC1(bruto As String) As String
             If bruto.IndexOf("&#", StringComparison.Ordinal) < 0 Then Return bruto
@@ -808,9 +866,11 @@ Namespace Global.Iris.Assist
         Private Shared ReadOnly Blocos As New HashSet(Of String)(
             {"p", "div", "tr", "td", "th", "li", "ul", "ol", "dl", "dt", "dd",
              "table", "thead", "tbody", "tfoot", "blockquote", "pre",
-             "h1", "h2", "h3", "h4", "h5", "h6",
-             "section", "article", "header", "footer", "nav", "aside",
-             "figure", "figcaption", "hr", "form", "fieldset"},
+             "h1", "h2", "h3", "h4", "h5", "h6", "hgroup",
+             "section", "article", "header", "footer", "nav", "aside", "main",
+             "figure", "figcaption", "hr", "form", "fieldset", "legend",
+             "address", "details", "summary", "dialog", "menu", "search",
+             "center"},
             StringComparer.Ordinal)
 
         Private Shared Function EhQuebra(nome As String, ehFechamento As Boolean) As Boolean

@@ -114,6 +114,9 @@ Public Class ContentPipelineTests
     <DataRow("<img src=""data:;base64,U0VHUkVETw=="">texto</img>")>
     <DataRow("data:,SEGREDO")>
     <DataRow("data:;base64,U0VHUkVETw==")>
+    <DataRow("<img src=""da&#10;ta:,SEGREDO"">texto</img>")>
+    <DataRow("<img src=""c&#9;id:logo"">texto</img>")>
+    <DataRow("data:'foo/bar,SEGREDO")>
     Public Sub Referencia_embutida_RECUSA(corpo As String)
         Dim r = Preparar(corpo, html:=corpo.StartsWith("<"))
 
@@ -598,8 +601,11 @@ Public Class ContentPipelineTests
     <DataRow("<div>Pai<div>Filho</div></div>", "Pai;Filho", "PaiFilho")>
     <DataRow("<li>um<li>dois", "um;dois", "umdois")>
     <DataRow("<p>A&#x91;B</p>", "A‘B", "AB")>
-    <DataRow("<!x "" >VISIVEL"">FIM", "VISIVEL", "SEGREDO")>
+    <DataRow("<!x "" >VISIVEL"">FIM", "VISIVEL;FIM", "x """)>
+    <DataRow("<address>A</address><span>B</span>", "A;B", "AB")>
+    <DataRow("<p>A&#128B</p>", "A€B", "AB")>
     <DataRow("<!DOCTYPE html PUBLIC ""A>B""><p>REAL</p>", "REAL", "B")>
+    <DataRow("<!doctype html PUBLIC ""A>B""><p>REAL</p>", "REAL", "B")>
     <DataRow("<p>A&#128;B</p>", "A€B", "SEGREDO")>
     <DataRow("<o:p>oi</o:p><p>DEPOIS</p>", "oi;DEPOIS", "o:p")>
     Public Sub O_texto_do_documento_sai_inteiro_e_so_ele(
@@ -716,6 +722,8 @@ Public Class ContentPipelineTests
     <DataRow("Data: 12/03/2026, às 10h")>
     <DataRow("A data: depende do prazo")>
     <DataRow("Assunto sem nada de especial")>
+    <DataRow("Data:29/08/2026 conforme combinado")>
+    <DataRow("O campo metadata:text/xml do arquivo")>
     Public Sub Palavra_data_em_portugues_NAO_recusa(corpo As String)
         Dim r = Preparar(corpo)
         Assert.IsTrue(r.Ok, $"recusou texto comum por {r.Recusa}: " & corpo)
