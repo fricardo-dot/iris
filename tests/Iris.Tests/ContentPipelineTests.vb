@@ -298,6 +298,44 @@ Public Class ContentPipelineTests
     ' HTML mal formado
 
     ''' <summary>
+    ''' <b>FECHAMENTO COM ESPAÇO É FECHAMENTO — e o segredo saía por essa fresta.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>DUAS REGRAS QUE NÃO CONCORDAVAM</b>
+    '''
+    ''' O <c>HtmlInterpretavel</c> conta <c>"&lt;/script"</c> — <b>sem</b> o
+    ''' <c>&gt;</c> —, então <c>&lt;/script &gt;</c> conta como fechamento e o
+    ''' HTML passa como interpretável. Mas o padrão que <i>remove o bloco</i>
+    ''' exigia <c>&lt;/script&gt;</c> exato, e não removia nada.
+    '''
+    ''' Resultado: o bloco não saía, a limpeza genérica de tags comia só as
+    ''' tags, e <c>segredo()</c> ia para o provedor <b>como se fosse a
+    ''' mensagem</b> — que é exatamente o dano que o teste "bloco sem fechar"
+    ''' logo abaixo existe para impedir, chegando pelo outro lado.
+    '''
+    ''' Hoje o fluxo do Outlook monta o snapshot com <c>ehHtml = False</c>,
+    ''' então isto era latente. <b>Latente é o estado em que todos os outros
+    ''' desta família estavam</b> quando chegaram à tela.
+    '''
+    ''' <b>Controle negativo:</b> devolvendo <c>&lt;/&gt;</c> ao padrão de
+    ''' bloco, este teste cai.
+    ''' </summary>
+    <DataTestMethod>
+    <DataRow("<p>visivel</p><script>SEGREDO</script >")>
+    <DataRow("<p>visivel</p><script>SEGREDO</script  >")>
+    <DataRow("<p>visivel</p><style>SEGREDO</style >")>
+    <DataRow("<p>visivel</p><SCRIPT>SEGREDO</SCRIPT >")>
+    Public Sub Fechamento_com_ESPACO_remove_o_bloco(corpo As String)
+        Dim r = Preparar(corpo, html:=True)
+
+        Assert.IsTrue(r.Ok, "recusou HTML que e interpretavel: " & corpo)
+        Assert.IsFalse(r.Parte.Corpo.Contains("SEGREDO"),
+            "o conteudo do bloco saiu como texto para o provedor: " & r.Parte.Corpo)
+        StringAssert.Contains(r.Parte.Corpo, "visivel",
+            "controle: o texto legitimo tinha de sobreviver")
+    End Sub
+
+    ''' <summary>
     ''' <b>Bloco sem fechar RECUSA — porque a alternativa é ele virar texto.</b>
     '''
     ''' A remoção de bloco é por expressão regular, e expressão regular não é

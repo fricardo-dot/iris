@@ -86,8 +86,16 @@ Namespace Global.Iris.Assist
         Public Const MaxCorpo As Integer = 200_000
 
         Private Shared ReadOnly Comentario As New Regex("<!--.*?-->", RegexOptions.Singleline)
+        ' O FECHAMENTO ACEITA ESPACO, e o HtmlInterpretavel sempre aceitou.
+        '
+        ' Este padrao exigia "</script>" EXATO, enquanto a conferencia de
+        ' interpretabilidade conta "</script" -- sem o ">". Entao
+        ' "<script>segredo()</script >" passava como interpretavel, o bloco
+        ' NAO era removido, e a limpeza generica de tags deixava o segredo()
+        ' no texto que vai para o provedor: exatamente o conteudo que o
+        ' usuario NAO viu na tela.
         Private Shared ReadOnly ScriptOuEstilo As New Regex(
-            "<(script|style)\b[^>]*>.*?</\1>",
+            "<(script|style)\b[^>]*>.*?</\1\s*>",
             RegexOptions.Singleline Or RegexOptions.IgnoreCase)
         Private Shared ReadOnly Quebra As New Regex("<(br|/p|/div|/tr|/li)\b[^>]*>",
                                                     RegexOptions.IgnoreCase)

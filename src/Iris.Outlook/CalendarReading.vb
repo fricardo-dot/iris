@@ -121,12 +121,19 @@ Namespace Global.Iris.Outlook
                         ' O contador e da JANELA, e cada item soma no dele.
                         ' Ver o que a mesma conta ja errou nas duas direcoes
                         ' em MessagePaging: aqui ela nasce por item, somando.
+                        '
+                        ' E SO SOMA SE O ITEM ENTROU. A primeira versao somava
+                        ' antes de conferir o Nothing, entao um item que
+                        ' fabricasse uma celula e depois fosse recusado
+                        ' aparecia nas DUAS contas -- recusado e fabricado, que
+                        ' o resumo apresenta como coisas diferentes. Fabricacao
+                        ' de item que nao entrou nao descreve nada na tela.
                         Dim daqui = 0
                         Dim dto = Traduzir(compromisso, daqui)
-                        resultado.FabricatedCells += daqui
                         If dto Is Nothing Then
                             recusadas += 1
                         Else
+                            resultado.FabricatedCells += daqui
                             resultado.Items.Add(dto)
                             If dto.IsRecurring Then
                                 resultado.FromRecurrence += 1
@@ -283,6 +290,12 @@ Namespace Global.Iris.Outlook
 
         ''' <summary>
         ''' Texto ilegível <b>ou ausente</b> vira vazio — e conta nos dois casos.
+        '''
+        ''' <b>Sem teste do fio inteiro, e dito com esse nome:</b> os auxiliares
+        ''' têm teste e o resumo da agenda tem teste, mas o trecho entre os dois
+        ''' — <c>Traduzir</c> somando e o laço acumulando na janela — precisa de
+        ''' um <c>AppointmentItem</c> real. É a mesma lacuna declarada do
+        ''' <c>ContarAnexos</c> na paginação.
         '''
         ''' O sufixo <c>-DoCompromisso</c> existe porque estes passaram a ser
         ''' <c>Friend</c> para ter teste, e <c>Friend</c> em <c>Module</c> vale
