@@ -1546,3 +1546,40 @@ declaração, quando só o DOCTYPE tem identificador entre aspas.
 separadamente, e `"ab"` contém os dois. Agora proíbe `ab`.
 
 Suíte: **958**.
+
+---
+
+## Vigésima nona passada — a referência escapava por uma quebra de linha
+
+**Segundo achado alto seguido, na mesma invariante.** `da&#10;ta:,SEGREDO` não
+casava com o padrão — e o parser de URL do navegador **remove** quebra e
+tabulação antes de ler o esquema, então para ele aquilo *é* uma data URI. Logo
+depois o atributo some na leitura, e some junto a evidência.
+
+A conferência passou a rodar também sobre o texto decodificado e sem caractere de
+controle. **E eu errei a normalização na primeira tentativa:** tirei espaço em
+branco junto, e `Data: 12/03/2026, às 10h` virou `Data:12/03/2026,às10h` — uma
+data URI perfeita, e uma recusa de texto comum em português. O teste do outro
+lado pegou no mesmo minuto. O navegador descarta tabulação e quebra, **e não o
+espaço**.
+
+**E o padrão oscilou entre largo e estreito três vezes**, contando a passada
+anterior: largo (`Data:29/08/2026` casava como se `29/08` fosse um tipo;
+`metadata:text/xml` casava por falta de fronteira à esquerda), estreito (eu tinha
+listado os caracteres aceitos antes da vírgula, e `data:'foo/bar,X` escapou pelo
+apóstrofo). A lição ficou no código: **listar o que *pode* aparecer numa URI é
+errar por omissão** — o que separa a URI do texto é não haver espaço até a
+vírgula.
+
+Mais três: o conjunto de blocos ganhou `address`, `details`, `summary`, `dialog`,
+`menu`, `search`, `main`, `hgroup`, `legend` e `center`; o `<!doctype` minúsculo
+é válido e a comparação era sensível a caixa; e a tabela C1 não pegava referência
+sem ponto e vírgula, que o HTML aceita.
+
+**Dois testes passavam pelo motivo errado** — o controle do `<!x` proibia
+`SEGREDO`, que nem existia na entrada.
+
+E o terceiro controle negativo só derrubou **depois** de eu acrescentar o caso do
+`<!doctype` minúsculo: sem ele, não havia o que derrubar.
+
+Suíte: **966**.

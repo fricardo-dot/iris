@@ -394,10 +394,10 @@ footer.fim {
     pode desfazer qualquer uma delas.
   </p>
   <div class="meta">
-    <span><b>958</b> testes · 0 falhas · 0 pulados</span>
-    <span><b>75</b> commits até o <code>c078f31</code></span>
-    <span><b>28</b> passadas de revisão externa</span>
-    <span><code>874f223</code> → <code>c078f31</code></span>
+    <span><b>966</b> testes · 0 falhas · 0 pulados</span>
+    <span><b>77</b> commits até o <code>1ca38a0</code></span>
+    <span><b>29</b> passadas de revisão externa</span>
+    <span><code>874f223</code> → <code>1ca38a0</code></span>
   </div>
 </header>
 
@@ -435,7 +435,7 @@ footer.fim {
 
 <div class="numeros wide">
   <div><span class="v">805</span><span class="k">testes ao começar</span></div>
-  <div><span class="v">958</span><span class="k">testes ao terminar</span></div>
+  <div><span class="v">966</span><span class="k">testes ao terminar</span></div>
   <div><span class="v">31</span><span class="k">dias de horizonte</span></div>
   <div><span class="v">65</span><span class="k">fora da janela, na ordem errada</span></div>
   <div><span class="v">22,7</span><span class="k">ms por busca, 1.127 msgs</span></div>
@@ -1556,10 +1556,35 @@ footer.fim {
   regex é fácil de escrever pela metade</em>.
 </p>
 
+<h3>A vigésima nona: a referência escapava por uma quebra de linha</h3>
+
+<div class="nota">
+  <strong>Segundo achado alto seguido, na mesma invariante.</strong> Uma
+  <code>data:</code> URI partida por uma quebra de linha —
+  <code>da&amp;#10;ta:,SEGREDO</code> — não casava com o padrão. Só que o
+  leitor de URL do navegador <em>remove</em> quebra e tabulação antes de ler o
+  esquema: para ele aquilo é uma data URI. E logo depois o atributo some na
+  leitura, levando junto a evidência.
+</div>
+
+<p>
+  <strong>Errei a normalização na primeira tentativa:</strong> tirei o espaço em
+  branco junto, e <em>&quot;Data: 12/03/2026, às 10h&quot;</em> virou uma data
+  URI perfeita — uma recusa de texto comum em português. O teste do outro lado
+  pegou no mesmo minuto. O navegador descarta tabulação e quebra, e não o espaço.
+</p>
+
+<p>
+  O padrão oscilou entre largo e estreito <strong>três vezes</strong> nesta
+  passada e na anterior. A lição ficou escrita no código: <em>listar o que pode
+  aparecer numa URI é errar por omissão</em> — o que a separa do texto é não
+  haver espaço até a vírgula.
+</p>
+
 <h2><span class="num">§ 8</span>O que fica sem correção</h2>
 
 <p>
-  Nenhum achado de produção destas <strong>vinte e oito</strong> passadas ficou sem
+  Nenhum achado de produção destas <strong>vinte e nove</strong> passadas ficou sem
   correção. O que sobra é dívida assumida, e agora ela cabe em três linhas —
   e as duas primeiras, que eram só texto, agora têm teste que mede o dano.
 </p>
@@ -1649,8 +1674,8 @@ footer.fim {
 
 <footer class="fim">
   Iris · trabalho autônomo de 28 de agosto de 2026<br>
-  <code>874f223</code> → <code>c078f31</code> · 75 commits · 958 testes, 0 falhas, 0 pulados<br>
-  Vinte e oito passadas de revisão externa, mais uma varredura própria · nada foi enviado por e-mail · nenhuma cerimônia foi executada
+  <code>874f223</code> → <code>1ca38a0</code> · 77 commits · 966 testes, 0 falhas, 0 pulados<br>
+  Vinte e nove passadas de revisão externa, mais uma varredura própria · nada foi enviado por e-mail · nenhuma cerimônia foi executada
 </footer>
 
 </div>
