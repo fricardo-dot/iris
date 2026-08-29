@@ -1138,3 +1138,57 @@ sobre o arquivo de ativação, que são coisas que o código acabou de ler.
 Dois controles negativos confirmados desfazendo.
 
 Suíte: **886**.
+
+---
+
+## Décima oitava passada — o achado mais grave do dia inteiro
+
+A cota voltou, e a passada trouxe **um alto**. É sobre conteúdo saindo da
+máquina dele.
+
+**O aviso de egresso ambíguo podia sumir para sempre.** Quando uma execução
+morre no meio de um envio à IA, aquele envio fica *ambíguo*: os bytes podem ter
+chegado, e ninguém sabe. A abertura seguinte deve avisar — e a conta era de
+**quantas transitaram naquela chamada**. Bastava a segunda escrita falhar, ou o
+processo morrer entre as duas, para as ambíguas ficarem gravadas e a abertura
+falhar; na abertura **seguinte** a transição não pegava mais nada, a conta dava
+zero, o aviso ficava vazio, e o egresso religava.
+
+A conta passou a ser do **estado**: quantas *estão* ambíguas, de qualquer
+execução. O preço está no ESCOPO: o aviso **fica**, porque não existe
+reconhecimento.
+
+**E mais um controle negativo meu que passou** — o quarto. Eu tinha escrito que
+o controle do teste da queda era *tirar a transação*. Tirei, e ele continuou
+verde: com a conta por estado, a linha é achada na reabertura de qualquer jeito.
+Quem segura o aviso é a contagem por estado; a transação é **guarda não
+observável pela API pública**, e ficou dita com esse nome.
+
+**Três outras com dente:**
+
+- **O segredo saía pela fresta do fechamento com espaço.** O
+  `HtmlInterpretavel` conta `</script` — sem o `>` — então `</script >` conta
+  como fechamento e o HTML passa. Mas o padrão que *remove o bloco* exigia
+  `</script>` exato. O bloco sobrevivia, a limpeza de tags comia só as tags, e o
+  conteúdo do script ia para o provedor **como se fosse a mensagem**.
+- **O anexo errado podia ser gravado com o nome certo.** A guarda de identidade
+  lê nome e tamanho dos dois lados com os auxiliares tolerantes: se as duas
+  leituras falhassem, `""/0` casava com `""/0` e a guarda passava. É o dano
+  exato que ela existe para impedir, chegando por dentro dela.
+- **Um ramo inteiro da árvore sumia.** Falha ao abrir `Folders` virava
+  `HasChildren = False`: a pasta perdia o triângulo de expandir, o correio
+  existia sem ter como ser alcançado, e nada dizia por quê.
+
+E o revisor disse, com razão, que **a minha varredura própria foi rasa**: eu
+tinha concluído que só sobravam frases de ausência sobre o esquema do banco e o
+arquivo de ativação, e faltavam a árvore de pastas, os detalhes, os anexos e a
+reconciliação.
+
+Nos roteiros, o pior foi o `q2-chaves`: `Select-Object -ExpandProperty`
+**descarta `$null` do pipeline**, então um grupo com um Message-ID presente e
+outro ausente caía em "igual" em vez de "falta" — na matriz que decide o desenho
+da correlação.
+
+Cinco controles negativos confirmados.
+
+Suíte: **893**.

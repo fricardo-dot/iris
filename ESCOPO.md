@@ -636,6 +636,22 @@ que este ESCOPO carregava.
   E nenhuma das duas é "entrega atômica", que era o que eu tinha escrito.
   **A entrega parcial passou a ter teste em 28/08** — antes ela estava só
   descrita aqui, e a ressalva da busca chegava a afirmar o contrário dela.
+- **O aviso de egresso ambíguo não desaparece sozinho** — *dívida assumida em
+  29/08/2026, e o preço de um conserto de gravidade alta.*
+  A reconciliação da abertura devolvia **quantas transitaram naquela chamada**.
+  Bastava a segunda escrita falhar, ou o processo morrer entre as duas, para as
+  ambíguas ficarem gravadas e a abertura falhar — e na abertura **seguinte** a
+  transição não pegava mais nada, a conta dava zero, o aviso ficava vazio e o
+  egresso religava. **O usuário nunca ficaria sabendo que pode ter saído
+  conteúdo dele.**
+  A conta passou a ser do **estado**: quantas *estão* ambíguas, de qualquer
+  execução. O preço é que o aviso **fica**, porque não existe reconhecimento —
+  e um egresso ambíguo não deixa de ser ambíguo. Construir o reconhecimento é
+  trabalho de desenho: precisa de um passo deliberado do usuário, gravado, que
+  distinga "eu li e entendi" de "sumiu sozinho". Fica aqui até então.
+  A transação que envolve as duas escritas é **guarda não observável pela API
+  pública** — com a conta por estado, o desfecho é o mesmo com ela e sem ela —,
+  e está dita com esse nome no teste.
 - **Valores fabricados na paginação** — *medido, e a decisão está tomada.*
   `tools/medir-nulos-da-table.ps1` contou **zero nulos nas oito colunas, em
   1.109 linhas** da Caixa de Entrada. O defeito existe no contrato e não se
