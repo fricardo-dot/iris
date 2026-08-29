@@ -1370,3 +1370,36 @@ revisão o quebrou. Agora o rótulo arquivado vem do arquivo, lido na hora — o
 arquivo descreve o que ele dizia, e não o que eu supus que dizia.
 
 Suíte: **918**.
+
+---
+
+## Vigésima quarta passada — parei de remendar e troquei o desenho
+
+Cinco médios, e todos com a **mesma raiz** — que só ficou visível depois de cinco
+passadas: **quem decidia se o HTML era interpretável e quem limpava eram códigos
+diferentes.** Todo defeito desta família foi um desacordo entre os dois, e cada
+conserto meu alinhava um caso e deixava um irmão.
+
+Os cinco desta vez: `</scripture>` passava por fechamento de `<script>`, e o que
+vinha depois — invisível no navegador — saía como texto; `<script-note>` era lido
+como `script` e o conteúdo visível sumia; tag comum sem `>` era aceita e saía
+crua; um comentário **dentro de uma string JS** comia HTML visível, porque o
+comentário era removido antes do texto cru; `Char.IsLetter` aceitava `<é>` como
+tag; e `2 < 3` era recusado.
+
+**Um leitor só não tem com quem discordar.** Entrou o `LerHtml`: percorre o texto
+uma vez como tokenizador — dado, tag, atributo com e sem aspas, comentário, e o
+texto cru de `script` e `style` — e devolve o texto. O `DaParaLer` é o **mesmo
+percurso**, e recusa só o **truncado**.
+
+Os cinco casos ficam certos **sem regra especial**, porque o código passou a
+fazer o que o navegador faz.
+
+**E o teste mudou de pergunta.** Havia um teste caso a caso da *aproximação* — e
+um dos casos dele eu tinha marcado como correto enquanto a limpeza entregava
+`a d`. Agora ele cobra a **propriedade**: o texto visível sai inteiro, e o
+invisível não sai. Doze casos, incluindo os cinco da revisão.
+
+Saíram quatro expressões regulares, um autômato e dois auxiliares.
+
+Suíte: **927**.
