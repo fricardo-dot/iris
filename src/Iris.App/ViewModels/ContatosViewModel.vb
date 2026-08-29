@@ -73,6 +73,15 @@ Namespace Global.Iris.App.ViewModels
         Private _disposed As Boolean
         Private _geracao As Integer
 
+        ''' <summary>
+        ''' A última leitura falhou, então a lista na tela é de antes.
+        '''
+        ''' Existe porque o aviso de ficha repetida é uma afirmação sobre o que
+        ''' foi lido — e depois de uma atualização falhar ele continuaria
+        ''' falando no presente sobre uma leitura que já não vale.
+        ''' </summary>
+        Private _leituraObsoleta As Boolean
+
         Public Sub New(broker As IContatosBroker)
             _broker = broker
 
@@ -257,9 +266,14 @@ Namespace Global.Iris.App.ViewModels
             Try
                 r = Await _broker.GetDefaultContactsFolderAsync(CancellationToken.None)
             Finally
+                ' A GUARDA VALE NO FINALLY TAMBEM. Descarte durante a descoberta
+                ' fazia este bloco notificar uma tela que ja tinha ido embora --
+                ' a geracao protege o CarregarAsync, e nao protegia esta etapa.
                 _carregando = False
-                OnPropertyChanged(NameOf(Carregando))
-                AvisarComandos()
+                If Not _disposed Then
+                    OnPropertyChanged(NameOf(Carregando))
+                    AvisarComandos()
+                End If
             End Try
 
             If _disposed Then Return
@@ -298,6 +312,7 @@ Namespace Global.Iris.App.ViewModels
                     ' A RESSALVA FICA. Falha na leitura e o momento em que menos
                     ' se pode deixar de dizer que o GAL esta fora do alcance.
                     Ressalva = RegrasDeContato.ForaDoAlcance
+                    MarcarLeituraObsoleta()
                     Return
                 End If
 
@@ -307,12 +322,27 @@ Namespace Global.Iris.App.ViewModels
                     Contatos.Add(New LinhaDeContato(c))
                 Next
                 Resumo = Descrever(r.Value)
-                Ressalva = r.Value.ForaDoAlcance
+
+                ' A RESSALVA NAO PODE DEPENDER DO LEITOR TE-LA PREENCHIDO.
+                '
+                ' O caminho de falha ja usava a constante; este usava o que
+                ' viesse. Um leitor -- ou um duplo, ou uma implementacao futura
+                ' -- que devolvesse sucesso com o campo vazio APAGARIA uma
+                ' ressalva ja visivel, e a tela passaria a mostrar lista vazia
+                ' calada. Numa invariante que precisa valer em todo caminho,
+                ' "todo caminho" inclui o que ninguem escreveu ainda.
+                Ressalva = If(String.IsNullOrWhiteSpace(r.Value.ForaDoAlcance),
+                              RegrasDeContato.ForaDoAlcance,
+                              r.Value.ForaDoAlcance)
+
+                _leituraObsoleta = False
                 ReavaliarDuplicata()
             Catch ex As Exception
                 If _disposed OrElse minha <> _geracao Then Return
                 Erro = "não consegui ler os contatos (" & ex.GetType().Name & ")."
+                Resumo = ""
                 Ressalva = RegrasDeContato.ForaDoAlcance
+                MarcarLeituraObsoleta()
             Finally
                 If minha = _geracao Then
                     _carregando = False
@@ -426,9 +456,23 @@ Namespace Global.Iris.App.ViewModels
             ' AVISO, E NAO RECUSA. E "ja ha um contato lido com este endereco",
             ' e nao "este contato ja existe": a busca so viu o que esta leitura
             ' trouxe.
+            Dim quando = If(_leituraObsoleta,
+                            " Isto é da última leitura que deu certo — a mais " &
+                            "recente falhou, então pode estar desatualizado.",
+                            "")
+
             Aviso = "já há um contato lido com este endereço (" &
                     If(achado.Nome, "sem nome legível") & "). Criar de novo " &
-                    "deixa duas fichas da mesma pessoa no catálogo."
+                    "deixa duas fichas da mesma pessoa no catálogo." & quando
+        End Sub
+
+        ''' <summary>
+        ''' A leitura falhou: a lista fica (apagá-la perderia informação
+        ''' verdadeira), mas o aviso passa a dizer de quando ele é.
+        ''' </summary>
+        Private Sub MarcarLeituraObsoleta()
+            _leituraObsoleta = True
+            ReavaliarDuplicata()
         End Sub
 
         Private Sub AvisarComandos()

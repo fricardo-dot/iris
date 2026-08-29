@@ -228,6 +228,13 @@ Namespace Global.Iris.App.ViewModels
 
             Contatos = New ContatosViewModel(broker)
 
+            ' O BOTAO "Deste remetente" DEPENDE DE DUAS COISAS QUE MUDAM SOZINHAS:
+            ' a pasta de contatos ter sido aberta, e haver mensagem aberta. O
+            ' RelayCommand do toolkit nao tem requery automatico, entao sem
+            ' estas assinaturas o botao nasceria desabilitado e ficaria assim --
+            ' funcionalidade presente e inalcancavel, que e o mesmo que ausente.
+            AddHandler Contatos.PropertyChanged, AddressOf OnContatosChanged
+
             ' PROPOR NAO CRIA, aqui tambem. E o remetente vem do que a lista ja
             ' leu -- nao ha leitura nova, e nao ha IA no caminho.
             ProporContatoCommand = New RelayCommand(
@@ -326,9 +333,21 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         Private Sub OnDetailChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
+            ' HasMessage entra aqui porque a proposta de contato depende dela:
+            ' o endereco do remetente so existe no detalhe da mensagem aberta.
+            If e.PropertyName = NameOf(MessageDetailViewModel.HasMessage) Then
+                ProporContatoCommand.NotifyCanExecuteChanged()
+                Return
+            End If
+
             If e.PropertyName <> NameOf(MessageDetailViewModel.CanReply) AndAlso
                e.PropertyName <> NameOf(MessageDetailViewModel.CanForward) Then Return
             AtualizarComandosDeComposicao()
+        End Sub
+
+        Private Sub OnContatosChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
+            If e.PropertyName <> NameOf(ContatosViewModel.TemPasta) Then Return
+            ProporContatoCommand.NotifyCanExecuteChanged()
         End Sub
 
         Private Sub OnComposerChanged(sender As Object, e As ComponentModel.PropertyChangedEventArgs)
@@ -911,6 +930,7 @@ Namespace Global.Iris.App.ViewModels
 
             Agenda.Dispose()
             Tarefas.Dispose()
+            RemoveHandler Contatos.PropertyChanged, AddressOf OnContatosChanged
             Contatos.Dispose()
             _watcher.Dispose()
             Composer.Dispose()

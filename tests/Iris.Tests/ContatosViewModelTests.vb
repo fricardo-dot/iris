@@ -36,7 +36,20 @@ Public Class ContatosViewModelTests
         Friend UltimaPasta As FolderKey
         Friend Trava As TaskCompletionSource(Of Boolean)
         Friend TravaDaPasta As TaskCompletionSource(Of Boolean)
+        Friend TravaDaLeitura As TaskCompletionSource(Of Boolean)
+        Friend LancaAoLer As Boolean
         Friend SemPasta As Boolean
+
+        ''' <summary>
+        ''' O leitor devolve SUCESSO com a ressalva VAZIA.
+        '''
+        ''' Existe porque a revisao externa mostrou o buraco: o duplo
+        ''' sempre injetava a ressalva certa, entao o teste central da
+        ''' fase nao conseguia enxergar a tela apagando-a no caminho de
+        ''' sucesso. Um duplo que so sabe fazer a coisa certa nao prova
+        ''' que a tela faz a coisa certa.
+        ''' </summary>
+        Friend SemRessalva As Boolean
 
         Public Async Function GetDefaultContactsFolderAsync(cancel As CancellationToken) _
             As Task(Of OperationResult(Of FolderKey)) _
@@ -50,15 +63,16 @@ Public Class ContatosViewModelTests
             Return OperationResult(Of FolderKey).Ok(Pasta)
         End Function
 
-        Public Function GetContactsAsync(folder As FolderKey, teto As Integer,
-                                         cancel As CancellationToken) _
+        Public Async Function GetContactsAsync(folder As FolderKey, teto As Integer,
+                                               cancel As CancellationToken) _
             As Task(Of OperationResult(Of ContactList)) _
             Implements IContatosBroker.GetContactsAsync
 
             Chamadas.Add("ler")
+            If TravaDaLeitura IsNot Nothing Then Await TravaDaLeitura.Task
+            If LancaAoLer Then Throw New InvalidOperationException("o COM caiu")
             If FalhaAoLer Then
-                Return Task.FromResult(OperationResult(Of ContactList).Fail(
-                    ErrorKind.Busy, "ocupado"))
+                Return OperationResult(Of ContactList).Fail(ErrorKind.Busy, "ocupado")
             End If
 
             ' O DUPLO IMITA O LEITOR DE VERDADE: quem marca a ressalva e o
@@ -67,9 +81,9 @@ Public Class ContatosViewModelTests
             Dim lista As New ContactList With {
                 .Skipped = Recusados,
                 .Truncada = Truncada,
-                .ForaDoAlcance = RegrasDeContato.ForaDoAlcance}
+                .ForaDoAlcance = If(SemRessalva, "", RegrasDeContato.ForaDoAlcance)}
             lista.Items.AddRange(Itens)
-            Return Task.FromResult(OperationResult(Of ContactList).Ok(lista))
+            Return OperationResult(Of ContactList).Ok(lista)
         End Function
 
         Public Async Function CreateContactAsync(folder As FolderKey, rascunho As ContactDraft,
@@ -129,6 +143,111 @@ Public Class ContatosViewModelTests
         Assert.IsTrue(vm.TemRessalva, "a lista veio vazia e a tela não ressalvou nada")
         StringAssert.Contains(vm.Ressalva, "GAL",
             "a ressalva não nomeia o catálogo que está fora do alcance")
+    End Function
+
+    ''' <summary>
+    ''' <b>E NÃO SOME NEM QUANDO O LEITOR ESQUECE DE MANDÁ-LA.</b>
+    '''
+    ''' Este teste é o que faltava, e a revisão externa o nomeou: o duplo
+    ''' sempre injetava a ressalva certa, então o teste da lista vazia não
+    ''' conseguia enxergar a tela apagando-a no caminho de sucesso.
+    '''
+    ''' A invariante é <i>a tela ressalva sempre que houve leitura</i>, e não
+    ''' <i>a tela repassa o que o leitor mandou</i>. A diferença aparece
+    ''' exatamente aqui — num leitor futuro, num duplo, numa implementação que
+    ''' ninguém escreveu ainda.
+    '''
+    ''' <b>Controle negativo:</b> voltando a atribuição para
+    ''' <c>Ressalva = r.Value.ForaDoAlcance</c>, este teste cai.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function A_ressalva_sobrevive_a_um_leitor_que_a_esquece() As Task
+        Dim b As New BrokerDeContatos() With {.SemRessalva = True}
+        b.Itens.Add(Contato("Ana", "ana@empresa.com"))
+        Dim vm = Await Aberta(b)
+
+        Assert.IsTrue(vm.TemRessalva,
+            "o leitor mandou sucesso com a ressalva vazia e a tela calou: " &
+            "lista na tela sem dizer o que ela não alcança")
+        StringAssert.Contains(vm.Ressalva, "GAL")
+    End Function
+
+    ''' <summary>
+    ''' <b>Leitura que EXPLODE também mantém a ressalva, e limpa o resumo.</b>
+    '''
+    ''' O caminho do <c>Catch</c> não tinha teste: o duplo só sabia devolver
+    ''' <c>Fail</c>. Uma exceção deixava o resumo antigo na tela, afirmando uma
+    ''' contagem sobre uma leitura que não aconteceu.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Leitura_que_explode_mantem_a_ressalva_e_limpa_o_resumo() As Task
+        Dim b As New BrokerDeContatos()
+        b.Itens.Add(Contato("Ana", "ana@empresa.com"))
+        Dim vm = Await Aberta(b)
+        Assert.IsTrue(vm.Resumo.Contains("1 contato"), "controle: a primeira leitura contou")
+
+        b.LancaAoLer = True
+        Await vm.AtualizarCommand.ExecuteAsync(Nothing)
+
+        Assert.IsTrue(vm.TemErro, "a exceção não apareceu")
+        Assert.IsTrue(vm.TemRessalva, "a ressalva sumiu no caminho da exceção")
+        Assert.AreEqual("", vm.Resumo,
+            "o resumo antigo ficou afirmando uma contagem que esta leitura não fez")
+    End Function
+
+    ''' <summary>
+    ''' <b>Depois de uma atualização falhar, o aviso diz de quando ele é.</b>
+    '''
+    ''' A lista fica — apagá-la perderia informação verdadeira. Mas o aviso de
+    ''' ficha repetida é uma afirmação sobre o que foi lido, e continuar
+    ''' falando no presente sobre uma leitura que já não vale é a mesma família
+    ''' de defeito da fase: dizer mais do que se sabe.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Aviso_apos_falha_diz_que_e_da_leitura_anterior() As Task
+        Dim b As New BrokerDeContatos()
+        b.Itens.Add(Contato("Ana Lima", "ana@empresa.com"))
+        Dim vm = Await Aberta(b)
+
+        vm.ProporDoRemetente("Ana L.", "ana@empresa.com")
+        Assert.IsTrue(vm.TemAviso, "controle: o aviso apareceu com leitura boa")
+        Assert.IsFalse(vm.Aviso.Contains("pode estar desatualizado"),
+                       "controle: com leitura boa o aviso não se desculpa")
+
+        b.FalhaAoLer = True
+        Await vm.AtualizarCommand.ExecuteAsync(Nothing)
+
+        Assert.IsTrue(vm.TemAviso, "o aviso sumiu, e a informação era verdadeira")
+        StringAssert.Contains(vm.Aviso, "pode estar desatualizado",
+            "o aviso continuou falando no presente sobre uma leitura que falhou")
+    End Function
+
+    ''' <summary>
+    ''' <b>Descartar durante a ABERTURA não notifica a tela descartada.</b>
+    '''
+    ''' A geração já protegia o corpo do <c>CarregarAsync</c>; o que não estava
+    ''' protegido era o <c>Finally</c> do <c>AbrirAsync</c>, que mexia em
+    ''' <c>Carregando</c> e nos comandos depois do <c>Dispose</c>.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Descartar_durante_a_abertura_nao_notifica() As Task
+        Dim b As New BrokerDeContatos() With {
+            .TravaDaPasta = New TaskCompletionSource(Of Boolean)()}
+        Dim vm As New ContatosViewModel(b)
+
+        Dim mudancas = 0
+        AddHandler vm.PropertyChanged, Sub(remetente, args) mudancas += 1
+
+        Dim emVoo = vm.AbrirCommand.ExecuteAsync(Nothing)
+        vm.Dispose()
+        Dim antes = mudancas
+        b.TravaDaPasta.SetResult(True)
+        Await emVoo
+
+        Assert.AreEqual(antes, mudancas,
+            "a tela descartada recebeu notificação: o Finally do AbrirAsync " &
+            "não conferia _disposed")
+        Assert.IsFalse(vm.TemPasta, "instalou a pasta numa tela já descartada")
     End Function
 
     ''' <summary>
