@@ -50,17 +50,20 @@ $sistema = @(
 $script:semTipo = 0
 $script:semContagem = 0
 $script:semFilhas = 0
+$script:cortadoPorProfundidade = 0   # a arvore continua abaixo e ninguem olhou
+$script:semStore = 0                 # um STORE inteiro nao foi percorrido
+$script:semOculta = 0                # PR_ATTR_HIDDEN ilegivel: pode virar "DO USUARIO"
 
 function Varrer($pasta, [string]$caminho, [int]$prof, [bool]$sobExcluidos) {
-    if ($prof -gt 12) { return }
+    if ($prof -gt 12) { $script:cortadoPorProfundidade++; return }
 
     $nome = $pasta.Name
     $oculta = $false
     $pa = $null
     try {
         $pa = $pasta.PropertyAccessor
-        try { $oculta = [bool]$pa.GetProperty($P_HIDDEN) } catch { }
-    } catch { } finally { Solta $pa }
+        try { $oculta = [bool]$pa.GetProperty($P_HIDDEN) } catch { $script:semOculta++ }
+    } catch { $script:semOculta++ } finally { Solta $pa }
 
     $tipo = -1
     try { $tipo = [int]$pasta.DefaultItemType } catch { $script:semTipo++ }
@@ -96,7 +99,7 @@ for ($s = 1; $s -le $stores.Count; $s++) {
     $store = $stores.Item($s)
     $raiz = $null
     try { $raiz = $store.GetRootFolder(); Varrer $raiz "" 0 $false }
-    catch { } finally {
+    catch { $script:semStore++ } finally {
         if ($raiz) { Solta $raiz }
         Solta $store
     }
@@ -117,7 +120,7 @@ Write-Host "PASTAS DO USUARIO (as unicas que interessam ao cache)"
 Write-Host ("=" * 72)
 $doUsuario = @($linhas | Where-Object { $_.Cat -eq "DO USUARIO" })
 if ($doUsuario.Count -eq 0) {
-    if (($script:semTipo + $script:semContagem + $script:semFilhas) -gt 0) {
+    if ($script:cego -gt 0) {
         Write-Host "  nenhuma FOI LIDA -- e houve falha de leitura (ver o rodape)."
     } else {
         Write-Host "  nenhuma"
@@ -129,11 +132,16 @@ if ($doUsuario.Count -eq 0) {
 }
 
 Write-Host ""
-if (($script:semTipo + $script:semContagem + $script:semFilhas) -gt 0) {
+$script:cego = $script:semTipo + $script:semContagem + $script:semFilhas +
+               $script:cortadoPorProfundidade + $script:semStore + $script:semOculta
+if ($script:cego -gt 0) {
     Write-Host "O QUE ESTE INVENTARIO NAO VIU:" -ForegroundColor DarkYellow
     if ($script:semTipo -gt 0)     { Write-Host ("  {0} pasta(s): nao consegui ler o tipo" -f $script:semTipo) }
     if ($script:semContagem -gt 0) { Write-Host ("  {0} pasta(s): nao consegui contar os itens (aparecem com 0)" -f $script:semContagem) }
     if ($script:semFilhas -gt 0)   { Write-Host ("  {0} ramo(s): nao consegui enumerar as filhas" -f $script:semFilhas) }
+    if ($script:cortadoPorProfundidade -gt 0) { Write-Host ("  {0} ramo(s): cortados na profundidade 12" -f $script:cortadoPorProfundidade) }
+    if ($script:semStore -gt 0)    { Write-Host ("  {0} STORE(s) inteiro(s): nao consegui abrir a raiz" -f $script:semStore) }
+    if ($script:semOculta -gt 0)   { Write-Host ("  {0} pasta(s): PR_ATTR_HIDDEN ilegivel (podem ter virado 'DO USUARIO')" -f $script:semOculta) }
     Write-Host "  Zero nas linhas acima pode ser 'nao contei', e nao 'nao tem'."
     Write-Host ""
 }
@@ -141,7 +149,13 @@ Write-Host ("=" * 72)
 Write-Host "ARTEFATOS QUE **EU** DEIXEI"
 Write-Host ("=" * 72)
 $meus = @($linhas | Where-Object { $_.Cat -eq "ARTEFATO DO IRIS" })
-if ($meus.Count -eq 0) { Write-Host "  nenhum" }
+if ($meus.Count -eq 0) {
+    if ($script:cego -gt 0) {
+        Write-Host "  nenhum FOI LIDO -- e houve falha de leitura (ver acima)."
+    } else {
+        Write-Host "  nenhum"
+    }
+}
 else {
     foreach ($l in $meus) { Write-Host ("  {0,6} itens  {1}" -f $l.Itens, $l.Caminho) }
     Write-Host ("  --> {0} pastas, {1} itens, TODOS meus" -f `

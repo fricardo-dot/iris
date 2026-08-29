@@ -255,8 +255,13 @@ if ($maior.Count -ge 3 -and $maior.Count -ge ($total / 2)) {
     Write-Host "  O QUE SEPARA: rodar de novo daqui a alguns dias. Se o corte andar" -ForegroundColor DarkGray
     Write-Host "  junto, e deslizante; se ficar parado em $($maior.Name), foi um evento." -ForegroundColor DarkGray
 } else {
-    Write-Host "SEM horizonte comum: as pastas comecam em datas espalhadas." -ForegroundColor Green
-    Write-Host "O corte de uma pasta isolada e habito de arquivamento, e nao janela."
+    Write-Host "SEM horizonte comum ENTRE AS PASTAS MEDIDAS: elas comecam em datas" -ForegroundColor Green
+    Write-Host "espalhadas. O corte de uma pasta isolada e habito de arquivamento, e"
+    Write-Host "nao janela."
+    if ($falhou -gt 0) {
+        Write-Host ("  RESSALVA: {0} leitura(s) falharam (ver acima). A conclusao vale" -f $falhou) -ForegroundColor DarkYellow
+        Write-Host "  entre as pastas que entraram na tabela, e nao sobre a caixa."
+    }
 }
 
 Write-Host ""

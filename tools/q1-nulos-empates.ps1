@@ -117,7 +117,10 @@ if ($nulos -gt 0) {
 }
 Write-Host ""
 
-Write-Host ("2. MAIOR EMPATE no mesmo segundo: {0} itens" -f $maiorEmpate)
+# TODO NUMERO DAQUI PARA BAIXO E SOBRE O CORPUS QUE ESTE ROTEIRO CONSEGUIU
+# LER: ele corta em profundidade 12 e engole falha de tabela, de filhas e de
+# store. Maximo observado nao e maximo existente.
+Write-Host ("2. MAIOR EMPATE OBSERVADO no mesmo segundo: {0} itens" -f $maiorEmpate)
 Write-Host ("   em: {0}" -f $ondeEmpate.Split("/")[-1])
 if ($empatesGrandes.Count -gt 0) {
     Write-Host "   grupos com 10 ou mais:"
@@ -125,7 +128,7 @@ if ($empatesGrandes.Count -gt 0) {
         Write-Host ("      {0,4} itens  {1}  em {2}" -f $_.N, $_.Quando, $_.Pasta)
     }
 } else {
-    Write-Host "   nenhum grupo com 10 ou mais."
+    Write-Host "   nenhum grupo com 10 ou mais ENTRE OS ITENS QUE ESTE ROTEIRO LEU."
 }
 Write-Host "   => a pagina drenada devolve ate PAGINA + (empate - 1) itens."
 Write-Host ""

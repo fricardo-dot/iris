@@ -15,8 +15,10 @@
 
     O QUE ELE RESPONDE, E POR QUE CADA UMA IMPORTA
 
-    1. As pastas existem, e quantos itens tem? Um modulo para uma pasta vazia
-       e trabalho sem consumidor.
+    1. As pastas aparecem, e quantos itens elas EXPOEM LOCALMENTE? Um modulo
+       para uma pasta sem nada que agrupar e trabalho sem consumidor. Note o
+       "expoem": a contagem do servidor e inalcancavel pelo OOM, entao zero
+       aqui decide o modulo e nao afirma vazio.
 
     2. As propriedades que o modulo precisaria SAO LEGIVEIS? A Fase 0 mediu
        que Permission nao vem por coluna de Table, e isso mudou o desenho
@@ -82,7 +84,11 @@ foreach ($g in $grupos) {
     try {
         $pasta = $ns.GetDefaultFolder($g.Id)
     } catch {
-        Write-Host "  A pasta padrao nao existe nesta conta." -ForegroundColor Yellow
+        # NAO EXISTE vs NAO CONSEGUI ABRIR. GetDefaultFolder lanca tambem por
+        # sessao ocupada, permissao e store desconectado, e a frase antiga
+        # transformava as tres em ausencia.
+        Write-Host ("  Nao consegui abrir a pasta padrao: {0}" -f $_.Exception.Message) -ForegroundColor Yellow
+        Write-Host "    Pode nao existir nesta conta, ou pode ser falha de leitura."
         continue
     }
 

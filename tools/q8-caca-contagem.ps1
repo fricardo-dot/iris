@@ -47,8 +47,11 @@ function Achar($pasta) {
 }
 
 $porPasta = @{}
+# A ARVORE E CORTADA NA PROFUNDIDADE 6, e "nao encontrada" nao pode ser
+# afirmacao sobre o que nao foi percorrido.
+$script:cortados = 0
 function Varrer($pasta, $prof) {
-    if ($prof -gt 6) { return }
+    if ($prof -gt 6) { $script:cortados++; return }
     if ($alvos.ContainsKey($pasta.Name)) {
         Write-Host ("varrendo '{0}' (alvo: {1})..." -f $pasta.Name, $alvos[$pasta.Name])
         $script:porPasta[$pasta.Name] = Achar $pasta
@@ -74,7 +77,14 @@ foreach ($st in $ns.Stores) {
 Write-Host ""
 Write-Host "=== propriedades que batem com o alvo, POR PASTA ==="
 foreach ($nome in $alvos.Keys) {
-    if (-not $porPasta.ContainsKey($nome)) { Write-Host "  '$nome' nao encontrada"; continue }
+    if (-not $porPasta.ContainsKey($nome)) {
+        if ($script:cortados -gt 0) {
+            Write-Host ("  '{0}' nao foi ALCANCADA -- e {1} ramo(s) foram cortados na profundidade 6" -f $nome, $script:cortados)
+        } else {
+            Write-Host "  '$nome' nao foi alcancada na travessia"
+        }
+        continue
+    }
     $alvo = $alvos[$nome]
     $bate = $porPasta[$nome].GetEnumerator() | Where-Object { $_.Value -eq $alvo }
     if ($bate) {

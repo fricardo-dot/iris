@@ -348,23 +348,39 @@ Namespace Global.Iris.App.ViewModels
 
         ' ===================================================================
 
+        ''' <summary>
+        ''' <b>A troca de pasta limpa a tela AGORA, e não quando o pedido sair da
+        ''' fila.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O NOME MUDAVA E OS NÚMEROS FICAVAM</b>
+        '''
+        ''' O <c>Despachar</c> tem uma fila de um: se já há operação em voo, o
+        ''' pedido novo vira <c>_pending</c> e <b>volta na hora</b>. O
+        ''' <c>ShowFolderAsync</c> então terminava com o nome da pasta B na tela
+        ''' e as mensagens, o total e o descarte da pasta A — e o
+        ''' <c>_totalConhecido = False</c> só chegava quando o pedido pendente
+        ''' começasse. Se a operação de A travasse, isso durava para sempre.
+        '''
+        ''' É o mesmo defeito que o <c>Perder_a_selecao_ESVAZIA_o_acervo</c> pegou
+        ''' no acervo: <b>número com dono errado</b>. A limpeza é síncrona porque
+        ''' o instante da troca é aqui, e não no despacho.
+        ''' </summary>
         Public Async Function ShowFolderAsync(folder As FolderKey, nome As String) As Task
             _folder = folder
             FolderName = nome
             HasFolder = True
+            LimparConteudo()
             Await ReloadAsync(preservarSelecao:=False)
         End Function
 
-        Public Sub Clear()
-            Interlocked.Increment(_generation)
-            SyncLock _gate
-                _pending = Nothing
-            End SyncLock
-
-            _folder = Nothing
+        ''' <summary>
+        ''' O que descreve o CONTEÚDO de uma pasta, e por isso não sobrevive à
+        ''' troca dela. Não mexe em <c>_folder</c>, <c>FolderName</c> nem
+        ''' <c>HasFolder</c>, que são a identidade e têm dono diferente.
+        ''' </summary>
+        Private Sub LimparConteudo()
             _nextCursor = Nothing
-            FolderName = ""
-            HasFolder = False
             Messages.Clear()
             Selected = Nothing
             Total = 0
@@ -374,6 +390,18 @@ Namespace Global.Iris.App.ViewModels
             _skipped = 0
             _fabricadas = 0
             AtualizarEstados()
+        End Sub
+
+        Public Sub Clear()
+            Interlocked.Increment(_generation)
+            SyncLock _gate
+                _pending = Nothing
+            End SyncLock
+
+            _folder = Nothing
+            FolderName = ""
+            HasFolder = False
+            LimparConteudo()
         End Sub
 
         Public Async Function ReloadAsync(preservarSelecao As Boolean) As Task

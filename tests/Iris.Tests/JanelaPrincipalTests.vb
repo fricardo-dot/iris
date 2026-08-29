@@ -510,8 +510,84 @@ Public Class JanelaPrincipalTests
                 Assert.IsTrue(painel.ShowEmptyFolder)
                 Assert.IsFalse(painel.EmptyMessage.Contains("5"),
                     "a pasta nova declarou o total da anterior")
+
+                ' EXIGIR O ESTADO CERTO, e nao so a ausencia do errado: sem
+                ' esta linha o teste tambem passaria se B virasse "zero
+                ' CONHECIDO", que e outra afirmacao falsa.
+                StringAssert.Contains(painel.StatusLine, "0 de ?",
+                    "o total de B nao e zero: e desconhecido")
+                StringAssert.Contains(painel.EmptyMessage, "não consegui saber quantos")
+            End Function)
+    End Sub
+
+    ''' <summary>
+    ''' <b>TROCAR DE PASTA DURANTE UMA CARGA NÃO DEIXA OS NÚMEROS DA ANTERIOR.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O NOME MUDAVA E OS NÚMEROS FICAVAM</b>
+    '''
+    ''' O <c>Despachar</c> tem fila de um: com uma operação em voo, o pedido novo
+    ''' vira <c>_pending</c> e volta na hora. O <c>ShowFolderAsync</c> terminava
+    ''' com o nome de B na tela e as mensagens, o total e o descarte de A — e o
+    ''' <c>_totalConhecido = False</c> só chegava quando o pendente começasse. Se
+    ''' a operação de A travasse, durava para sempre.
+    '''
+    ''' O teste sequencial não alcança isso, e a revisão externa apontou: ele
+    ''' prova o reload EXECUTADO, e o defeito está no instante lógico da troca.
+    ''' Aqui a página de A fica <b>presa</b> na trava do duplo, que é o que torna
+    ''' a fila de um observável.
+    '''
+    ''' <b>Controle negativo:</b> tirando o <c>LimparConteudo()</c> do
+    ''' <c>ShowFolderAsync</c>, as asserções do meio caem.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Trocar_de_pasta_DURANTE_a_carga_nao_deixa_os_numeros_da_anterior()
+        NoDispatcherAsync(
+            Async Function(d) As Task
+                Dim b As New FakeBroker()
+                b.EstadoDaSessao = SessionState.Connected
+                b.RespostaDaPagina = OperationResult(Of MessagePage).Ok(
+                    New MessagePage With {
+                        .Generation = 1,
+                        .Items = New List(Of MailSummary)() From {
+                            New MailSummary With {
+                                .Key = New ItemKey("E-1", "store-1"),
+                                .Subject = "uma", .SenderName = "quem"}},
+                        .TotalAtStart = 5,
+                        .SkippedCount = 0,
+                        .NextCursor = "c1"})
+
+                Dim painel As New MessageListViewModel(b, d, Sub(t, nome)
+                                                             End Sub)
+                Await painel.ShowFolderAsync(New FolderKey("entry-1", "store-1"), "Caixa de Entrada")
+                Assert.AreEqual(1, painel.Messages.Count, "controle: a pasta A carregou")
+                StringAssert.Contains(painel.StatusLine, "1 de 5", "controle: o total de A")
+
+                ' UM LOAD MORE DE A FICA EM VOO, preso na trava.
+                '
+                ' TEM DE SER LOAD MORE, e nao reload: o reload limpa a tela
+                ' logo no comeco dele, entao o estado ja estaria limpo por
+                ' outro motivo e o teste passaria com a correcao desfeita.
+                ' Foi o que aconteceu na primeira versao deste teste.
+                b.TravaDaPagina = New TaskCompletionSource(Of Boolean)()
+                Dim emVoo = painel.LoadMoreAsync()
+
+                ' E O USUARIO TROCA PARA B. O ShowFolderAsync volta na hora,
+                ' porque o Despachar so enfileira.
+                Await painel.ShowFolderAsync(New FolderKey("entry-2", "store-1"), "Outra")
+
+                Assert.AreEqual("Outra", painel.FolderName, "controle: o nome ja e o de B")
+
+                ' O CONSERTO: os numeros de A nao podem estar na tela de B.
+                Assert.AreEqual(0, painel.Messages.Count,
+                    "a tela de B continuou mostrando as mensagens de A")
                 Assert.IsFalse(painel.StatusLine.Contains("de 5"),
-                    "o rodape continuou contando pela pasta anterior")
+                    "o rodape de B continuou contando pela pasta A")
+                StringAssert.Contains(painel.StatusLine, "0 de ?")
+
+                ' Solta a trava para nao deixar operacao pendurada.
+                b.TravaDaPagina.SetResult(True)
+                Await emVoo
             End Function)
     End Sub
 

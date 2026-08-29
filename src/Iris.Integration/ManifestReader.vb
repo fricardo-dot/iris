@@ -114,10 +114,12 @@ Namespace Global.Iris.Integration
         End Property
 
         ''' <summary>
-        ''' Como a UI <b>deve</b> qualificar o que está mostrando — hoje nenhuma
-        ''' o consome. Texto e não
-        ''' booleano porque "por que não é o estado corrente" é a informação
-        ''' que o usuário precisa, e um booleano a joga fora.
+        ''' Como a UI qualifica o que está mostrando. <b>O
+        ''' <c>AcervoViewModel</c> a consome e o XAML a exibe na faixa do
+        ''' acervo</b> — este comentário dizia "hoje nenhuma o consome", que
+        ''' deixou de ser verdade e não foi revisado. Texto e não booleano
+        ''' porque "por que não é o estado corrente" é a informação que o
+        ''' usuário precisa, e um booleano a joga fora.
         ''' </summary>
         Public ReadOnly Property Ressalva As String
             Get

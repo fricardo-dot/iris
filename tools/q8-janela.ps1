@@ -21,7 +21,7 @@ if ($ol) {
         # A janela NAO e propriedade do Store no OOM. Confirmando:
         $temJanela = $st | Get-Member -Name "*Sync*","*Window*" -ErrorAction SilentlyContinue
         if ($temJanela) { Write-Host "    membros Sync/Window: $($temJanela.Name -join ', ')" }
-        else { Write-Host "    membros Sync/Window: NENHUM" }
+        else { Write-Host "    membros Sync/Window: NENHUM exposto pelo OOM" }
     }
 }
 
@@ -48,7 +48,9 @@ foreach ($v in $vers) {
                 }
             }
         }
-        if (-not $achou) { Write-Host "      nenhum valor de janela encontrado" }
+        # -ErrorAction SilentlyContinue acima: chave sem permissao some sem
+        # avisar, entao "nenhum" e sobre o que foi LIDO.
+        if (-not $achou) { Write-Host "      nenhum valor de janela ENTRE AS CHAVES LIDAS" }
     }
 }
 

@@ -116,7 +116,13 @@ for ($i = 1; $i -le $total; $i++) {
         # 1. ANEXO. O ContentPipeline recusa QUALQUER mensagem com anexo --
         #    inclusive imagem de assinatura, que e o caso comum e o que mais
         #    surpreende.
+        # FALHA AQUI NAO E "NAO TEM ANEXO". O $nAnexos comecava em zero e o
+        # catch era mudo, entao uma leitura que falhou chegava a imprimir
+        # "O IRIS ACEITA" -- e a producao faz o oposto: TemAnexo = Nothing e
+        # recusado expressamente pelo ContentPipeline. Veredito de diagnostico
+        # que contradiz a producao e pior que diagnostico nenhum.
         $nAnexos = 0
+        $anexoIlegivel = $false
         $nomes = @()
         try {
             $anexos = $m.Attachments
@@ -125,9 +131,13 @@ for ($i = 1; $i -le $total; $i++) {
                 $nomes += [string]$anexos.Item($a).FileName
             }
             [void][Runtime.InteropServices.Marshal]::ReleaseComObject($anexos)
-        } catch { }
+        } catch {
+            $anexoIlegivel = $true
+        }
 
-        if ($nAnexos -gt 0) {
+        if ($anexoIlegivel) {
+            $problemas += "nao consegui ler os anexos (o ContentPipeline recusa quando nao sabe)"
+        } elseif ($nAnexos -gt 0) {
             $problemas += "tem $nAnexos anexo(s): $($nomes -join ', ')"
         }
 
@@ -163,7 +173,7 @@ for ($i = 1; $i -le $total; $i++) {
         if ($texto.Length -gt $MaxTexto)  { $problemas += "corpo passa de $MaxTexto" }
 
         Write-Host ("  formato .... {0}" -f $nomeFormato)
-        Write-Host ("  anexos ..... {0}" -f $nAnexos)
+        Write-Host ("  anexos ..... {0}" -f $(if ($anexoIlegivel) { "nao sei" } else { $nAnexos }))
         Write-Host ("  corpo ...... {0} caracteres" -f $texto.Length)
 
         if ($problemas.Count -eq 0) {

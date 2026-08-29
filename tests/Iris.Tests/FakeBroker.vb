@@ -81,6 +81,13 @@ Friend NotInheritable Class FakeBroker
     Friend ReadOnly Filhas As New Dictionary(Of String, List(Of FolderInfo))()
 
     Friend TravaDosStores As TaskCompletionSource(Of Boolean)
+
+    ''' <summary>
+    ''' Segura a página em voo. É o que permite provar o instante da TROCA de
+    ''' pasta: sem ela, o reload da pasta A já terminou quando a B chega, e a
+    ''' fila de um do <c>Despachar</c> nunca é exercitada.
+    ''' </summary>
+    Friend TravaDaPagina As TaskCompletionSource(Of Boolean)
     Friend TravaDasFilhas As TaskCompletionSource(Of Boolean)
 
     Friend FalhaAoListarStores As ErrorKind = ErrorKind.None
@@ -533,8 +540,14 @@ Friend NotInheritable Class FakeBroker
                                         cancel As CancellationToken) _
         As Task(Of OperationResult(Of MessagePage)) Implements IOutlookBroker.GetMessagePageAsync
         Chamadas.Add("GetMessagePage")
-        If RespostaDaPagina IsNot Nothing Then Return Task.FromResult(RespostaDaPagina)
-        Return ForaDaAlcada(Of OperationResult(Of MessagePage))()
+        Return PaginaAsync()
+    End Function
+
+    Private Async Function PaginaAsync() As Task(Of OperationResult(Of MessagePage))
+        Dim trava = TravaDaPagina
+        If trava IsNot Nothing Then Await trava.Task
+        If RespostaDaPagina IsNot Nothing Then Return RespostaDaPagina
+        Return Await ForaDaAlcada(Of OperationResult(Of MessagePage))()
     End Function
 
     ''' <summary>
