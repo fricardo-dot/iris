@@ -85,7 +85,34 @@ Namespace Global.Iris.Assist
         Public Const MaxDestinatarios As Integer = 100
         Public Const MaxCorpo As Integer = 200_000
 
-        Private Shared ReadOnly Embutido As New Regex("(cid:|data:[a-z]+/)",
+        ''' <summary>
+        ''' Referência embutida — <c>cid:</c> e <c>data:</c> — que a invariante
+        ''' proíbe de sair.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O PADRÃO EXIGIA UM TIPO, E DATA URI NÃO PRECISA DE UM</b>
+        '''
+        ''' Era <c>data:[a-z]+/</c>, que casa com <c>data:image/png</c> e
+        ''' <b>não</b> casa com <c>data:,SEGREDO</c> nem com
+        ''' <c>data:;base64,U0VHUkVETw==</c> — as duas formas válidas e sem
+        ''' tipo. A invariante diz "nunca data URI", e o padrão dizia "nunca
+        ''' data URI com tipo".
+        '''
+        ''' <b>Por que não simplesmente <c>data:</c>:</b> porque em português
+        ''' "Data:" é a palavra mais comum de um cabeçalho de mensagem, e
+        ''' recusar toda mensagem que a contenha seria trocar um buraco por
+        ''' outro. O que distingue a URI é o que vem depois sem espaço, até a
+        ''' vírgula que separa o conteúdo — e "Data: 12/03" tem espaço logo
+        ''' depois dos dois-pontos.
+        '''
+        ''' <b>E a forma com tipo continua valendo sem a vírgula.</b> A
+        ''' primeira tentativa exigia a vírgula sempre, e com isso deixou de
+        ''' recusar <c>data:text/x</c> — que um teste já cobrava desde o
+        ''' início. Fechar um lado e abrir o outro, de novo; o teste pegou
+        ''' antes da revisão.
+        ''' </summary>
+        Private Shared ReadOnly Embutido As New Regex(
+            "(cid:|data:(?:[a-z0-9.+-]+/[a-z0-9.+-]+|[^\s""'<>]*[;,]))",
                                                       RegexOptions.IgnoreCase)
         Private Shared ReadOnly LinhasDemais As New Regex("(\r?\n){3,}")
 
@@ -364,11 +391,14 @@ Namespace Global.Iris.Assist
 
                 If Casa(texto, i, "<!") OrElse Casa(texto, i, "<?") OrElse
                    (Casa(texto, i, "</") AndAlso Not ComecaNome(texto, i + 2)) Then
-                    ' RESPEITANDO ASPAS. Um DOCTYPE pode ter ">" dentro do
-                    ' identificador publico -- <!DOCTYPE html PUBLIC "A>B"> --
-                    ' e parar no primeiro ">" fazia o resto da declaracao sair
-                    ' como se fosse texto do documento.
-                    Dim fim = FimDaDeclaracao(texto, i)
+                    ' ASPAS PROTEGEM SO NO DOCTYPE.
+                    '
+                    ' La um ">" pode morar dentro do identificador publico --
+                    ' <!DOCTYPE html PUBLIC "A>B"> -- e parar no primeiro ">"
+                    ' fazia o resto sair como texto. Mas "<!x" e "<?x" sao
+                    ' comentario torto para o HTML, e ali a aspa NAO protege:
+                    ' tratar igual fazia o leitor engolir texto de verdade.
+                    Dim fim = FimDaDeclaracao(texto, i, Casa(texto, i, "<!DOCTYPE"))
                     If fim < 0 Then
                         incerto = True
                         Return Fechar(sb)
@@ -527,14 +557,15 @@ Namespace Global.Iris.Assist
         ''' Fim de uma declaração, respeitando aspas. Devolve a posição
         ''' <b>depois</b> do <c>&gt;</c>, ou <c>-1</c> se ela não fecha.
         ''' </summary>
-        Private Shared Function FimDaDeclaracao(texto As String, i As Integer) As Integer
+        Private Shared Function FimDaDeclaracao(texto As String, i As Integer,
+                                                ehDoctype As Boolean) As Integer
             Dim aspa As Char = ChrW(0)
             Dim j = i
             While j < texto.Length
                 Dim c = texto(j)
                 If aspa <> ChrW(0) Then
                     If c = aspa Then aspa = ChrW(0)
-                ElseIf c = ChrW(34) OrElse c = ChrW(39) Then
+                ElseIf ehDoctype AndAlso (c = ChrW(34) OrElse c = ChrW(39)) Then
                     aspa = c
                 ElseIf c = ">"c Then
                     Return j + 1
@@ -571,8 +602,16 @@ Namespace Global.Iris.Assist
             ChrW(&H2DC), ChrW(&H2122), ChrW(&H161), ChrW(&H203A),
             ChrW(&H153), ChrW(&H9D), ChrW(&H17E), ChrW(&H178)}
 
-        Private Shared ReadOnly RefNumerica As New Regex("&#(?:x0*8([0-9a-fA-F])|(1[2-5][0-9]));",
-                                                         RegexOptions.IgnoreCase)
+        ''' <summary>
+        ''' Qualquer referência numérica, decimal ou hexadecimal, com zeros à
+        ''' esquerda. A faixa é conferida <b>depois</b>, no código.
+        '''
+        ''' A primeira versão embutia a faixa no padrão — <c>x0*8([0-9a-f])</c>
+        ''' — e com isso pegava só <c>80</c>–<c>8F</c>: <c>&amp;#x91;</c>
+        ''' continuava perdendo a aspa curva. Faixa em expressão regular é
+        ''' fácil de escrever pela metade.
+        ''' </summary>
+        Private Shared ReadOnly RefNumerica As New Regex("&#(?:[xX]([0-9a-fA-F]+)|([0-9]+));")
 
         Private Shared Function LegadoC1(bruto As String) As String
             If bruto.IndexOf("&#", StringComparison.Ordinal) < 0 Then Return bruto
@@ -580,11 +619,17 @@ Namespace Global.Iris.Assist
             Return RefNumerica.Replace(bruto,
                 Function(m)
                     Dim n As Integer
-                    If m.Groups(1).Success Then
-                        n = &H80 + Convert.ToInt32(m.Groups(1).Value, 16)
-                    Else
-                        n = Integer.Parse(m.Groups(2).Value, CultureInfo.InvariantCulture)
-                    End If
+                    Try
+                        If m.Groups(1).Success Then
+                            n = Convert.ToInt32(m.Groups(1).Value, 16)
+                        Else
+                            n = Integer.Parse(m.Groups(2).Value, CultureInfo.InvariantCulture)
+                        End If
+                    Catch
+                        ' Numero grande demais para caber: nao e C1, e o
+                        ' HtmlDecode resolve o que der.
+                        Return m.Value
+                    End Try
                     If n < &H80 OrElse n > &H9F Then Return m.Value
                     Return C1(n - &H80)
                 End Function)
@@ -744,15 +789,35 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
-        ''' As tags que viram quebra de linha: <c>br</c> abrindo, e <c>p</c>,
-        ''' <c>div</c>, <c>tr</c>, <c>li</c> fechando.
+        ''' Elemento de bloco: <b>abrir e fechar</b> quebram linha.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>SÓ O FECHAMENTO NÃO BASTA, PORQUE ELE É OPCIONAL</b>
+        '''
+        ''' A versão anterior quebrava em alguns fechamentos, e depois que a tag
+        ''' deixou de emitir espaço isso colou texto que estava separado:
+        ''' <c>&lt;h1&gt;Resumo&lt;/h1&gt;&lt;p&gt;Agora&lt;/p&gt;</c> virava
+        ''' <c>ResumoAgora</c>; <c>&lt;li&gt;um&lt;li&gt;dois</c> — com o
+        ''' fechamento omitido, que o HTML permite — virava <c>umdois</c>; e
+        ''' bloco dentro de bloco também colava.
+        '''
+        ''' Quebrar nos <b>dois</b> lados resolve os três de uma vez, e o custo é
+        ''' uma linha em branco a mais, que o <see cref="LinhasDemais"/> já
+        ''' colapsa.
         ''' </summary>
+        Private Shared ReadOnly Blocos As New HashSet(Of String)(
+            {"p", "div", "tr", "td", "th", "li", "ul", "ol", "dl", "dt", "dd",
+             "table", "thead", "tbody", "tfoot", "blockquote", "pre",
+             "h1", "h2", "h3", "h4", "h5", "h6",
+             "section", "article", "header", "footer", "nav", "aside",
+             "figure", "figcaption", "hr", "form", "fieldset"},
+            StringComparer.Ordinal)
+
         Private Shared Function EhQuebra(nome As String, ehFechamento As Boolean) As Boolean
-            If Not ehFechamento Then Return nome = "br"
-            ' td e th entraram junto com o fim do espaco por tag: sem eles,
-            ' "<td>a</td><td>b</td>" viraria "ab".
-            Return nome = "p" OrElse nome = "div" OrElse nome = "tr" OrElse
-                   nome = "li" OrElse nome = "td" OrElse nome = "th"
+            ' "</br>" nao existe no HTML como fechamento, mas o navegador o
+            ' trata como quebra -- entao os dois lados de br tambem.
+            If nome = "br" Then Return True
+            Return Blocos.Contains(nome)
         End Function
         ''' <summary>
         ''' HTML vira texto — pelo <see cref="LerHtml"/>, que é o mesmo código

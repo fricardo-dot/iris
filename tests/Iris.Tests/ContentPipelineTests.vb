@@ -110,6 +110,10 @@ Public Class ContentPipelineTests
     <DataRow("veja a imagem cid:abc123@empresa")>
     <DataRow("data:image/png;base64,AAAA")>
     <DataRow("<img src=""cid:logo"">texto</img>")>
+    <DataRow("<img src=""data:,SEGREDO"">texto</img>")>
+    <DataRow("<img src=""data:;base64,U0VHUkVETw=="">texto</img>")>
+    <DataRow("data:,SEGREDO")>
+    <DataRow("data:;base64,U0VHUkVETw==")>
     Public Sub Referencia_embutida_RECUSA(corpo As String)
         Dim r = Preparar(corpo, html:=corpo.StartsWith("<"))
 
@@ -589,7 +593,12 @@ Public Class ContentPipelineTests
     <DataRow("A<!-->B", "A;B", "SEGREDO")>
     <DataRow("<p>VISIVEL</p><!-- x --!><p>DEPOIS</p>", "VISIVEL;DEPOIS", "x ")>
     <DataRow("co<strong>ntra</strong>to", "contrato", "co ntra")>
-    <DataRow("<td>a</td><td>b</td>", "a;b", "SEGREDO")>
+    <DataRow("<td>a</td><td>b</td>", "a;b", "ab")>
+    <DataRow("<h1>Resumo</h1><p>Agora</p>", "Resumo;Agora", "ResumoAgora")>
+    <DataRow("<div>Pai<div>Filho</div></div>", "Pai;Filho", "PaiFilho")>
+    <DataRow("<li>um<li>dois", "um;dois", "umdois")>
+    <DataRow("<p>A&#x91;B</p>", "A‘B", "AB")>
+    <DataRow("<!x "" >VISIVEL"">FIM", "VISIVEL", "SEGREDO")>
     <DataRow("<!DOCTYPE html PUBLIC ""A>B""><p>REAL</p>", "REAL", "B")>
     <DataRow("<p>A&#128;B</p>", "A€B", "SEGREDO")>
     <DataRow("<o:p>oi</o:p><p>DEPOIS</p>", "oi;DEPOIS", "o:p")>
@@ -687,6 +696,29 @@ Public Class ContentPipelineTests
         Assert.IsTrue(r2.Ok)
         Assert.IsFalse(r2.Parte.Corpo.Contains(rlo),
             "marcador de direcao ficou, e ele muda o que se le")
+    End Sub
+
+    ''' <summary>
+    ''' <b>"Data:" em português não é uma data URI.</b>
+    '''
+    ''' O padrão de referência embutida exigia um tipo — <c>data:image/png</c>
+    ''' — e por isso deixava passar <c>data:,SEGREDO</c> e
+    ''' <c>data:;base64,...</c>, que são URIs válidas e sem tipo. A revisão
+    ''' externa achou; a invariante diz "nunca data URI", e o padrão dizia
+    ''' "nunca data URI com tipo".
+    '''
+    ''' <b>Mas alargar para <c>data:</c> seco recusaria quase toda mensagem em
+    ''' português</b>, porque "Data:" é a palavra mais comum de um cabeçalho. O
+    ''' que distingue a URI é não haver espaço depois dos dois-pontos — e é isso
+    ''' que este controle prende, dos dois lados.
+    ''' </summary>
+    <DataTestMethod>
+    <DataRow("Data: 12/03/2026, às 10h")>
+    <DataRow("A data: depende do prazo")>
+    <DataRow("Assunto sem nada de especial")>
+    Public Sub Palavra_data_em_portugues_NAO_recusa(corpo As String)
+        Dim r = Preparar(corpo)
+        Assert.IsTrue(r.Ok, $"recusou texto comum por {r.Recusa}: " & corpo)
     End Sub
 
 End Class
