@@ -969,3 +969,47 @@ ignorar o `_skipped`, o teste da lista cai; devolvendo *"Nenhuma pasta foi
 varrida"*, o da busca cai.
 
 Suíte: **878**.
+
+---
+
+## Décima quarta passada — o controle negativo que passou
+
+Eu perguntei ao revisor se a caça a "afirmar ausência" estava esgotada, **porque
+eu ia parar de procurar**. A resposta foi **não**, com lista: dois no produto e
+cinco em roteiros. Foi a pergunta certa a fazer, e a resposta certa a receber.
+
+**O zero que eram dois estados.** `MessagePage.TotalAtStart` é `Integer?` porque
+`ContarItens` devolve `Nothing` quando `Items.Count` lança. O `_total` do
+ViewModel guardava só o número — então *"a pasta declara zero"* e *"não consegui
+contar"* viravam o mesmo zero, e a tela dizia *"Esta pasta está vazia"* nos dois.
+E o reload zerava `_skipped` e `_fabricadas` e **não** o total: uma pasta cuja
+contagem falhasse declarava o total da pasta anterior. O rodapé agora mostra
+`0 de ?`.
+
+**Mas o que importa aqui não é o conserto.** Escrevi o `_totalConhecido`, apaguei
+o ramo novo para conferir o controle negativo — **e a suíte inteira continuou
+verde**. A correção não tinha teste nenhum. É o bloqueio sem controle negativo
+que o `CLAUDE.md` descreve, cometido no mesmo dia em que eu o citei num
+relatório. Dois dos quatro testes novos vieram desse susto.
+
+**E a mesma frase, numa terceira superfície.** O `ManifestReader` ainda dizia
+*"Esta pasta ainda não foi varrida"* — com **três testes** prendendo a
+formulação —, e ela chega à faixa visível do acervo. Eu tinha corrigido a
+superfície da busca na passada anterior e **não procurei as irmãs dela**, que é
+literalmente o que o `CLAUDE.md` manda fazer: *ao corrigir uma corrida, procure
+as irmãs antes de declarar a família coberta*.
+
+Entrou também a **prova de alcance** que faltava: os dois testes do
+`EmptyMessage` passariam com o texto literal de volta no XAML, e o comentário
+deles anunciava um controle negativo que não existia. Agora um teste lê o XAML.
+
+O resto foi inventário: o `medir-janela` engolia falha de tipo, de leitura e de
+ramo da árvore (o `$semDatas` cobria só `GetFirst`/`GetLast`), e cinco outros
+roteiros concluíam ausência sobre o que não leram — `medir-grupos`,
+`inventario-pastas`, `preparar-ativacao`, `conferir-mensagem` e o histórico
+`q1-nulos-empates`.
+
+**Seis controles negativos confirmados desfazendo** — e um sétimo que passou, o
+que originou dois testes.
+
+Suíte: **882**.
