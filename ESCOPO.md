@@ -486,17 +486,30 @@ relatório só com agregados.
 |---|---:|---:|
 | palavras exatas, sem acento, caixa trocada | 100,0% | 100,0% |
 | fora de ordem, pedaço da palavra, assunto+remetente | 100,0% | 100,0% |
-| erro — substituição | 0,4% | **98,8%** |
-| erro — inserção | 0,0% | **98,8%** |
-| erro — remoção | 0,0% | **89,8%** |
+| erro — substituição | 0,4% | **100,0%** |
+| erro — inserção | 0,0% | **100,0%** |
+| erro — remoção | 0,0% | **91,0%** |
 | erro — **transposição** | 0,0% | **0,0%** |
 | flexão de número (famílias cobertas) | 0,0% | **100,0%** |
-| flexão **fora** do radical (diminutivo) | 0,0% | **0,0%** |
+| sonda — diminutivo | 0,0% | **0,0%** |
 
 **As duas últimas linhas são as que a primeira versão desta seção não tinha**, e
 elas mudam a leitura. Transposição é distância 2 para este algoritmo — 237
 consultas, nenhuma achada. Diminutivo não cabe num radical de nove linhas — 140
 consultas, nenhuma achada. **O conserto tem borda, e a borda está medida.**
+
+**A última linha se chama SONDA e não recall, e a diferença é da segunda
+revisão.** Ela aplica uma transformação mecânica escolhida à mão, sem léxico —
+"contrato" → "contratinho" é válido, a mesma regra sobre um nome próprio produz
+lixo. Ela mostra que existe morfologia fora do alcance do radical; **ela não
+mede o tamanho desse buraco**, e não é evidência sobre sinônimo, que é outra
+coisa.
+
+**E os números subiram entre a primeira e a segunda revisão** (98,8 / 98,8 /
+89,8 antes) porque a tokenização do segundo passe estava incompleta: ela partia
+o alvo por uma lista de pontuação ASCII, e assunto de e-mail vem cheio de aspas
+curvas, travessão e reticências. Agora parte por *qualquer coisa que não seja
+letra ou dígito*, que é o que o comentário sempre disse que ela fazia.
 
 #### O conserto, e o que ele custou
 
@@ -547,14 +560,30 @@ continua de pé.
    com o achado até a tela. Um segundo passe silencioso teria trocado "a busca
    achou" por "a busca achou algo parecido" sem ninguém notar.
 
+#### Custo, medido em vez de suposto
+
+Pior caso — consulta que não acha nada, e portanto paga o segundo passe sobre o
+acervo inteiro: **28,7 ms** sobre 1.127 itens. Teto folgado, medido em Python,
+que é mais lento que o .NET da aplicação. A pergunta que importava era "está na
+casa dos milissegundos ou dos segundos?", e a resposta é a primeira.
+
 #### Uma nota sobre a própria medição
 
 O harness reimplementa em Python a regra do `TermoDeBusca`. Um comentário dele
 afirmava que havia teste comparando as duas implementações; **não havia**, e a
-revisão externa pegou. Agora há: `tools/casos-de-busca.json` é conferido pelos
-dois lados (`BuscaMedidaTests` e `--conferir`). A proteção é real e é parcial —
-ela não obriga ninguém a rodar o lado Python —, e dizer *qual das duas* ela é
-foi exatamente o que faltou da primeira vez.
+primeira revisão pegou. Agora há: `tools/casos-de-busca.json` é conferido pelos
+dois lados (`BuscaMedidaTests` e `--conferir`).
+
+**A proteção é parcial, e a segunda revisão mostrou exatamente onde.** Ela pega
+divergência *nos casos da tabela*; fora dela, ninguém pega — e havia uma
+divergência real ali: o VB contava unidades UTF-16 e o Python contava pontos de
+código, então `contra😀to` contra `Contrato` dava *Aproximado* de um lado e
+*Nenhum* do outro. O VB passou a contar pontos de código, e os três casos que
+estavam fora — emoji, aspas curvas, travessão — entraram na tabela.
+
+É uma lição sobre o formato da garantia, e não sobre este defeito: **uma tabela
+de casos protege o que está escrito nela, e o que a segunda revisão achou estava
+fora.** Escrever isso aqui é o que impede a próxima pessoa de confiar demais.
 
 ### Fase 5 — Tarefas — *EXECUTADA em 29/08/2026*
 

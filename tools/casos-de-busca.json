@@ -11,10 +11,16 @@
     "prometia uma garantia inexistente, que e pior que nao ter garantia,",
     "porque quem le para de procurar.",
     "",
-    "Este arquivo E a garantia. Os dois lados conferem os mesmos casos:",
+    "Este arquivo E a garantia, E ELA E PARCIAL. Os dois lados conferem os",
+    "mesmos casos:",
     "  VB      -> BuscaMedidaTests.As_duas_implementacoes_concordam",
     "  Python  -> python tools/medir-busca.py --conferir",
-    "Se um deles divergir, o lado que divergiu falha sozinho.",
+    "Quem divergir NUM CASO DESTA TABELA falha sozinho. Divergencia FORA",
+    "dela nao e detectada por ninguem -- e foi exatamente ai que a segunda",
+    "revisao achou uma divergencia real, de UTF-16 contra pontos de codigo.",
+    "As tres ultimas linhas entraram por causa disso. A do emoji vale 2 e",
+    "nao 0: contado em pontos de codigo, o emoji e UMA insercao. Antes o VB",
+    "dizia 0 e o Python dizia 2, e ninguem via.",
     "",
     "grau: 0 = nenhum, 1 = exato, 2 = aproximado."
   ],
@@ -41,6 +47,10 @@
     {"consulta": "contrado",    "assunto": "Contrabando apreendido",  "remetente": "",          "grau": 0},
     {"consulta": "jacare",      "assunto": "Contrato aditivo",        "remetente": "",          "grau": 0},
     {"consulta": "contrado jacare", "assunto": "Contrato aditivo",    "remetente": "",          "grau": 0},
-    {"consulta": "",            "assunto": "Contrato aditivo",        "remetente": "",          "grau": 0}
+    {"consulta": "",            "assunto": "Contrato aditivo",        "remetente": "",          "grau": 0},
+
+    {"consulta": "contra😀to", "assunto": "Contrato aditivo",         "remetente": "",          "grau": 2},
+    {"consulta": "contrado",   "assunto": "“Contrato” urgente",       "remetente": "",          "grau": 2},
+    {"consulta": "contrado",   "assunto": "Contrato—urgente",         "remetente": "",          "grau": 2}
   ]
 }

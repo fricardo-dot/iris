@@ -217,16 +217,6 @@ Namespace Global.Iris.Integration
     ''' </summary>
     Public NotInheritable Class TermoDeBusca
 
-        ''' <summary>
-        ''' Tudo o que separa palavra no <b>alvo</b> do segundo passe.
-        '''
-        ''' Não inclui letra acentuada porque a normalização já as tirou, e não
-        ''' inclui dígito porque número faz parte de assunto ("contrato 2026").
-        ''' </summary>
-        Private Shared ReadOnly Separadores As Char() =
-            " ,.;:!?/\|()[]{}<>""'-_+*=@#$%&~^`".ToCharArray().
-            Concat({ChrW(9), ChrW(10), ChrW(13)}).ToArray()
-
         Public ReadOnly Property Original As String
         Public ReadOnly Property Palavras As IReadOnlyList(Of String)
 
@@ -340,14 +330,76 @@ Namespace Global.Iris.Integration
             '''
             ''' O primeiro passe não precisa disto: ele casa por subcadeia, e
             ''' subcadeia atravessa pontuação sozinha.
-            Dim doAlvo = alvo.Split(Separadores, StringSplitOptions.RemoveEmptyEntries)
-            If doAlvo.Length = 0 Then Return GrauDoAchado.Nenhum
+            Dim doAlvo = EmPalavras(alvo)
+            If doAlvo.Count = 0 Then Return GrauDoAchado.Nenhum
 
             If Palavras.All(Function(p) doAlvo.Any(Function(a) Parecidas(p, a))) Then
                 Return GrauDoAchado.Aproximado
             End If
 
             Return GrauDoAchado.Nenhum
+        End Function
+
+        ''' <summary>
+        ''' <b>Parte por tudo o que não é letra nem dígito.</b>
+        '''
+        ''' Era uma lista de pontuação ASCII, e o comentário dizia "tudo o que
+        ''' não é letra ou dígito" — a revisão externa mediu a diferença e ela é
+        ''' real: aspas curvas, travessão, reticências e espaço não separável
+        ''' ficavam colados na palavra, e <c>"Contrato"</c> entre aspas tipográficas
+        ''' não casava com <c>contrado</c>. Assunto de e-mail vem cheio deles.
+        '''
+        ''' <c>Char.IsLetterOrDigit</c> em vez de lista: a lista nunca termina, e
+        ''' uma lista incompleta com comentário completo é pior que as duas
+        ''' coisas separadas.
+        ''' </summary>
+        Friend Shared Function EmPalavras(alvo As String) As List(Of String)
+            Dim saida As New List(Of String)()
+            If String.IsNullOrEmpty(alvo) Then Return saida
+
+            Dim atual As New StringBuilder()
+            For Each c In alvo
+                If Char.IsLetterOrDigit(c) Then
+                    atual.Append(c)
+                ElseIf atual.Length > 0 Then
+                    saida.Add(atual.ToString())
+                    atual.Clear()
+                End If
+            Next
+            If atual.Length > 0 Then saida.Add(atual.ToString())
+            Return saida
+        End Function
+
+        ''' <summary>
+        ''' <b>A palavra em PONTOS DE CÓDIGO, e não em unidades UTF-16.</b>
+        '''
+        ''' Esta é a correção de uma divergência real, e não teórica. O harness
+        ''' de medição é Python, que conta pontos de código; o VB conta
+        ''' <c>Char</c>, que são unidades UTF-16. Um emoji ocupa <b>dois</b>
+        ''' <c>Char</c> e <b>um</b> ponto de código — então
+        ''' <c>contra😀to</c> contra <c>Contrato</c> dava <i>Aproximado</i> num
+        ''' lado e <i>Nenhum</i> no outro.
+        '''
+        ''' A revisão externa achou isso <b>fora</b> da tabela de casos
+        ''' compartilhada, que é exatamente onde a tabela não protege. O caso
+        ''' entrou nela junto com esta correção.
+        ''' </summary>
+        Friend Shared Function Pontos(p As String) As Integer()
+            If String.IsNullOrEmpty(p) Then Return Array.Empty(Of Integer)()
+
+            Dim saida As New List(Of Integer)()
+            Dim i = 0
+            While i < p.Length
+                If Char.IsHighSurrogate(p(i)) AndAlso i + 1 < p.Length AndAlso
+                   Char.IsLowSurrogate(p(i + 1)) Then
+                    saida.Add(Char.ConvertToUtf32(p(i), p(i + 1)))
+                    i += 2
+                Else
+                    saida.Add(AscW(p(i)))
+                    i += 1
+                End If
+            End While
+            Return saida.ToArray()
         End Function
 
         ''' <summary>
@@ -370,7 +422,12 @@ Namespace Global.Iris.Integration
             ''' UMA LETRA, E SÓ EM PALAVRA LONGA. Distância 1 sobre palavra
             ''' de quatro letras casa metade do dicionário -- e "aproximado"
             ''' que casa com tudo não é aproximado, é lixo.
-            If consulta.Length >= 5 AndAlso Math.Abs(consulta.Length - doAlvo.Length) <= 1 Then
+            '''
+            ''' Contado em PONTOS DE CÓDIGO: <c>Length</c> conta unidades UTF-16,
+            ''' e um emoji valeria por dois. Ver <see cref="Pontos"/>.
+            Dim pc = Pontos(consulta)
+            Dim pa = Pontos(doAlvo)
+            If pc.Length >= 5 AndAlso Math.Abs(pc.Length - pa.Length) <= 1 Then
                 Return DistanciaAte1(consulta, doAlvo)
             End If
 
@@ -425,9 +482,14 @@ Namespace Global.Iris.Integration
         Friend Shared Function DistanciaAte1(a As String, b As String) As Boolean
             If a = b Then Return True
 
+            ''' PONTOS DE CÓDIGO, e não Char. Ver <see cref="Pontos"/>: contar
+            ''' em UTF-16 fazia um emoji valer por dois e divergir do harness.
+            Dim x = Pontos(a)
+            Dim y = Pontos(b)
+
             Dim ia = 0, ib = 0, erros = 0
-            While ia < a.Length AndAlso ib < b.Length
-                If a(ia) = b(ib) Then
+            While ia < x.Length AndAlso ib < y.Length
+                If x(ia) = y(ib) Then
                     ia += 1 : ib += 1
                     Continue While
                 End If
@@ -435,9 +497,9 @@ Namespace Global.Iris.Integration
                 erros += 1
                 If erros > 1 Then Return False
 
-                If a.Length = b.Length Then
+                If x.Length = y.Length Then
                     ia += 1 : ib += 1        ' substituicao
-                ElseIf a.Length > b.Length Then
+                ElseIf x.Length > y.Length Then
                     ia += 1                  ' sobra em a
                 Else
                     ib += 1                  ' sobra em b
@@ -446,7 +508,7 @@ Namespace Global.Iris.Integration
 
             ''' O que sobrou no fim conta: "abc" e "abcd" saem do laço com
             ''' zero erros e uma letra pendente.
-            Return erros + (a.Length - ia) + (b.Length - ib) <= 1
+            Return erros + (x.Length - ia) + (y.Length - ib) <= 1
         End Function
 
     End Class

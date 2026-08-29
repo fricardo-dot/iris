@@ -46,6 +46,7 @@ Uso:  python tools/medir-busca.py [caminho-do-cache.db]
 """
 import io
 import os
+import time
 import random
 import re
 import sqlite3
@@ -127,11 +128,24 @@ def distancia_ate_1(a, b):
     return erros + (len(a) - ia) + (len(b) - ib) <= 1
 
 
-# Espelha TermoDeBusca.Separadores: pontuacao, e nao so espaco. Montado
-# por codigo em vez de literal para o caractere de escape nao virar
-# problema de citacao aqui dentro.
-SEPARADORES = (" ,.;:!?/|()[]{}<>-_+*=@#$%&~^`" + chr(92) + chr(34) +
-               chr(39) + chr(9) + chr(10) + chr(13))
+def em_palavras(alvo):
+    """Espelha TermoDeBusca.EmPalavras: parte por tudo o que nao e letra nem
+    digito.
+
+    Era uma lista de pontuacao ASCII dos dois lados, e a revisao externa
+    mediu a diferenca: aspas curvas, travessao, reticencias e espaco nao
+    separavel ficavam colados na palavra. Lista de pontuacao nunca termina --
+    a pergunta certa e "isto e letra ou digito?"."""
+    saida, atual = [], []
+    for c in alvo or "":
+        if c.isalnum():
+            atual.append(c)
+        elif atual:
+            saida.append("".join(atual))
+            atual = []
+    if atual:
+        saida.append("".join(atual))
+    return saida
 
 
 def parecidas(consulta, do_alvo):
@@ -165,10 +179,7 @@ def grau(consulta, assunto, remetente):
         return 1
     if not TOLERANCIA:
         return 0
-    # Espelha Separadores do TermoDeBusca: pontuacao colada derrubava o
-    # segundo passe por um motivo que nada tem a ver com o que ele mede.
-    import re as _re
-    do_alvo = [t for t in _re.split("[" + _re.escape(SEPARADORES) + "]", alvo) if t]
+    do_alvo = em_palavras(alvo)
     if do_alvo and all(any(parecidas(p, a) for a in do_alvo) for p in palavras):
         return 2
     return 0
@@ -264,17 +275,29 @@ def flexionar(palavra):
     return None
 
 
-def flexao_fora_do_radical(palavra):
-    """Uma variacao morfologica que o radical NAO cobre, de proposito.
+def sonda_fora_do_radical(palavra):
+    """UMA transformacao morfologica escolhida a mao, que o radical NAO cobre.
 
-    Diminutivo: "contrato" -> "contratinho". Nenhuma regra do radical alcanca
-    isso, e o primeiro passe tambem nao (o singular nao e subcadeia). Ela esta
-    aqui para o relatorio nao poder dizer "flexao: 100%" sobre uma medida que
-    so contem o que o conserto ja resolve.
+    ISTO E UMA SONDA, E NAO UMA MEDIDA DE RECALL. A diferenca importa, e a
+    primeira versao desta funcao a apagava: ela se chamava
+    "flexao_fora_do_radical" e o relatorio publicava o resultado como se fosse
+    recall de uma classe de consulta real.
 
-    E o numero que ela produzir e o comeco honesto da conversa sobre a metade
-    semantica -- porque morfologia de verdade tambem nao cabe num radical de
-    nove linhas."""
+    O problema e o mesmo do gerador de plural que ja foi corrigido uma vez:
+    aplicar uma regra mecanica a qualquer palavra fabrica forma que ninguem
+    digita. "contrato" -> "contratinho" e valido; a mesma regra sobre um nome
+    proprio ou um estrangeirismo produz lixo. Sem lexico, o numero nao mede
+    "diminutivos que uma pessoa escreveria" -- mede "esta transformacao que eu
+    escolhi".
+
+    Entao ela serve para UMA coisa, e o relatorio diz qual: mostrar que existe
+    transformacao morfologica fora do alcance do radical. O tamanho do buraco
+    ela nao mede.
+
+    E ela NAO e evidencia sobre a metade semantica. Diminutivo e morfologia
+    derivacional; sinonimo e outra coisa. O comentario anterior dizia que este
+    numero era "o comeco da conversa sobre a metade semantica", e isso
+    ultrapassava os dados -- a revisao externa pegou."""
     p = normalizar(palavra)
     if len(p) < 6 or p.endswith("s"):
         return None
@@ -338,9 +361,9 @@ def consultas(assunto, remetente, rnd):
     if flex:
         saida.append(("flexao_de_numero", flex))
 
-    fora = flexao_fora_do_radical(ps[0])
+    fora = sonda_fora_do_radical(ps[0])
     if fora:
-        saida.append(("flexao_NAO_coberta", fora))
+        saida.append(("sonda_diminutivo", fora))
 
     return saida
 
@@ -362,8 +385,12 @@ def conferir():
     for c in dados["casos"]:
         obtido = grau(c["consulta"], c["assunto"], c["remetente"])
         if obtido != c["grau"]:
-            erros.append("  %-22r vs %-26r  esperado %d, obtido %d"
-                         % (c["consulta"], c["assunto"], c["grau"], obtido))
+            # ascii() e nao %r: o console do Windows e cp1252, e um emoji
+            # num caso de teste derrubava o relatorio de divergencia --
+            # a ferramenta de diagnostico morrendo no diagnostico.
+            erros.append("  %-24s vs %-28s  esperado %d, obtido %d"
+                         % (ascii(c["consulta"]), ascii(c["assunto"]),
+                            c["grau"], obtido))
 
     if erros:
         print("DIVERGIU em %d de %d casos:" % (len(erros), len(dados["casos"])))
@@ -442,7 +469,7 @@ def main():
     ordem = (["exato", "sem_acento", "caixa_alta", "fora_de_ordem",
               "prefixo_da_palavra", "assunto_mais_remetente"] +
              ["erro_" + t for t in ERROS] +
-             ["flexao_de_numero", "flexao_NAO_coberta"])
+             ["flexao_de_numero", "sonda_diminutivo"])
 
     print("MEDICAO DA BUSCA TEXTUAL -- round-trip sobre o acervo local")
     print("segundo passe (tolerancia): %s" % ("LIGADO" if TOLERANCIA else "DESLIGADO"))
@@ -459,6 +486,32 @@ def main():
               % (caso, p["exato"], p["achou"] - p["exato"], p["total"],
                  100.0 * p["achou"] / p["total"]))
 
+    # ==================================================================
+    # QUANTO CUSTA UMA BUSCA, EM CIMA DESTE ACERVO.
+    #
+    # A revisao externa deixou aberto: o segundo passe roda item a item,
+    # palavra a palavra, na thread da UI. Para 1.127 itens "provavelmente
+    # continua aceitavel" -- e "provavelmente" nao e numero.
+    #
+    # O pior caso e a consulta que NAO acha nada: todo item falha no primeiro
+    # passe e paga o segundo inteiro. E o que esta medido aqui.
+    #
+    # RESSALVA: Python e mais lento que .NET, entao este numero e um TETO
+    # folgado, e nao o tempo da aplicacao. Ele responde "esta na casa dos
+    # milissegundos ou dos segundos?", que e a pergunta que importa agora.
+    pior = "jacarebicicletaxyz"
+    t0 = time.perf_counter()
+    for _ in range(10):
+        for a, r in corpus:
+            grau(pior, a, r)
+    ms = (time.perf_counter() - t0) * 1000.0 / 10.0
+
+    print("")
+    print("PIOR CASO (consulta sem nenhum achado, acervo inteiro):")
+    print("  %.1f ms por busca, sobre %d itens -- teto folgado, medido em"
+          % (ms, len(corpus)))
+    print("  Python, que e mais lento que o .NET da aplicacao.")
+
     print("")
     print("RUIDO (consultas que casam com mais de 10 mensagens):")
     for caso in ordem:
@@ -467,6 +520,10 @@ def main():
             continue
         print("  %-22s %5.1f%%" % (caso, 100.0 * p["ruido"] / p["total"]))
 
+    print("")
+    print("sonda_diminutivo NAO E RECALL. E uma transformacao mecanica")
+    print("escolhida a mao, sem lexico -- ela mostra que existe morfologia fora")
+    print("do alcance do radical, e nao mede o tamanho desse buraco.")
     print("")
     print("NAO MEDIDO: consulta por sinonimo ou parafrase. E onde embeddings")
     print("ganhariam, e decidir que uma responde a outra e julgamento -- so o")
