@@ -535,12 +535,47 @@ achando "fatura". É onde embeddings ganhariam de verdade, e continua **sem
 evidência nos dois sentidos**. O gatilho de reavaliação que esta seção nomeou
 em 28/08 *não* foi cumprido para essa metade; foi cumprido para a outra.
 
-#### O que falta, e é uma coisa só
+#### O que falta, e o que aconteceu quando eu pedi
 
-**Uma lista curta de consultas reais em que você sabe qual mensagem queria e a
-busca erra por sentido, não por letra.** Dez ou quinze bastam. É o oráculo que
-esta seção sempre disse que só o dono da caixa pode dar, e com ele a pergunta
-"vale a pena indexar?" vira medível.
+**Uma lista curta de consultas reais em que o dono sabe qual mensagem queria e a
+busca erra por sentido, não por letra.** É o oráculo que esta seção sempre disse
+que só ele pode dar, e com ele a pergunta "vale a pena indexar?" vira medível.
+
+A ferramenta para isso existe desde 30/08 — `tools/consultas-por-sentido.json`
+e `python tools/medir-busca.py --por-sentido`. Ela localiza a mensagem alvo pelo
+trecho de assunto informado e classifica: achou exato, achou aproximado, não
+achou.
+
+**Pedido em 30/08/2026. Resposta: nenhum caso veio à cabeça na hora.**
+
+E isto precisa ser lido pelo que é. **"Não me vem nenhum" é ausência de
+lembrança, e não ausência do fenômeno** — a mesma distinção que este projeto
+corrigiu em cinco lugares, aplicada agora à evidência que decidiria a fase.
+Registrar isso como "medido que não precisa" seria repetir o defeito no
+documento em vez de no código.
+
+O que se pode dizer, e é pouco: **pedir de memória não produziu caso**. Isso é
+compatível com "não há necessidade semântica nesta caixa" e igualmente
+compatível com "há, e ninguém lembra de exemplo sob demanda" — que é o
+comportamento normal de qualquer pessoa a quem se pergunta por uma busca que
+falhou semanas atrás.
+
+**Por isso a fase continua NÃO EXECUTADA, e não passa a "descartada".** A
+ferramenta fica; o arquivo em branco fica. No dia em que uma busca falhar por
+sentido, são duas linhas para registrá-la, e a medição responde.
+
+#### O caminho alternativo, que é decisão do dono
+
+Pedir de memória é o método mais fraco possível de coletar oráculo. O método
+forte é **passivo**: o Iris registrar localmente as buscas que o dono realmente
+faz e se ele achou o que queria. Em algumas semanas o oráculo se junta sozinho,
+com a distribuição real das buscas dele em vez da amostra do que ele lembrou.
+
+**Não está feito, e não vou fazer sem pedir.** Registrar o que uma pessoa
+procura é coleta de comportamento — é local, é metadado, e ainda assim é uma
+decisão dela, não minha. Fica aqui como proposta, com o custo declarado: um
+arquivo local a mais, nenhum egress, e o dono podendo ler e apagar quando
+quiser.
 
 As decisões 4, 5, 6 e 7 — qual ato autoriza indexação em massa, retenção,
 identidade do índice, orçamento — continuam abertas e **só passam a valer se
