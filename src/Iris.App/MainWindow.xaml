@@ -1439,6 +1439,19 @@
                                        MaxWidth="520"
                                        Foreground="{DynamicResource Brush.Text.Secondary}"
                                        AutomationProperties.Name="O que o diario de buscas anota" />
+                            <!-- DESLIGAR E APAGAR SAO DOIS BOTOES, e a
+                                 primeira versao desta faixa so tinha o
+                                 segundo. Apagar tira o que ja foi coletado, e
+                                 a busca seguinte recria o arquivo: apagar
+                                 nunca chega a ser "pare de coletar". Retirar
+                                 consentimento precisa de botao proprio. -->
+                            <Button Content="{Binding Busca.RotuloDoInterruptor}"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Busca.AlternarDiarioCommand}"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Top"
+                                    ToolTip="Liga ou desliga o registro das suas buscas. Fica valendo depois de fechar o Iris."
+                                    AutomationProperties.Name="Ligar ou desligar o registro de buscas" />
                             <Button Content="Apagar registro"
                                     Style="{DynamicResource Toolbar.Button}"
                                     Command="{Binding Busca.ApagarDiarioCommand}"

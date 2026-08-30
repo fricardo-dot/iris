@@ -5,49 +5,74 @@ O DIARIO DE BUSCAS VIRANDO CANDIDATOS A CONSULTA POR SENTIDO.
 ===========================================================================
 O QUE ELE PROCURA
 
-Uma REFORMULACAO: duas buscas seguidas, perto no tempo, em que a primeira
-achou pouco ou nada e a segunda achou -- e as duas nao compartilham
-palavra. Isso e o par que a Fase 4 precisa:
+Um EPISODIO: buscas encadeadas, cada uma perto no tempo da anterior, em que
+as primeiras acharam pouco ou nada e a ultima achou. Isso e o par que a
+Fase 4 precisa:
 
-    digitei "cobranca"  -> 0 achados
-    digitei "fatura"    -> 3 achados     (dentro de 3 minutos, sem palavra em comum)
+    digitei "cobranca" -> 0 achados
+    digitei "boleto"   -> 0 achados
+    digitei "fatura"   -> 5 achados
 
     => candidato: eu procuro por "cobranca" o que a caixa chama de "fatura"
 
-Nao e prova. E CANDIDATO -- so o dono confirma que as duas buscas eram a
-mesma intencao. Por isso a saida e uma lista para ele revisar, e nao um
-numero para publicar.
+A PRIMEIRA VERSAO SO OLHAVA A BUSCA SEGUINTE, e perdia exatamente este
+caso: "cobranca" nao virava par (porque "boleto" tambem falhou) nem orfa
+(porque havia uma seguinte). Sumia. A revisao externa pegou.
+
+===========================================================================
+A REGRA DE VOCABULARIO, E POR QUE ELA MUDOU
+
+Descartar o par quando as duas buscas compartilham QUALQUER palavra era
+forte demais, e perdia o caso mais comum de todos:
+
+    "contrato fornecedor" -> "acordo fornecedor"
+
+A palavra em comum e o contexto; a trocada e a falha de vocabulario, que e
+justamente o que se quer medir. A regra agora e outra: descarta quando a
+busca seguinte CONTEM todas as palavras da anterior -- isso e refino
+("contrato" -> "contrato aditivo"), e nao troca de palavra.
 
 ===========================================================================
 O QUE ELE NAO CONSEGUE VER
 
 Busca que falhou e nao foi reformulada. Se voce procurou "cobranca", nao
-achou e desistiu, o diario tem a linha com zero achados e nao tem com que
-parear. Essas aparecem numa segunda lista -- "falhou e ninguem tentou de
-novo" --, e elas SAO sinal, so que sem o outro lado do par.
+achou e desistiu, o diario tem a linha e nao tem com que parear. Essas
+aparecem numa segunda lista -- e SAO sinal, so que com um lado so.
 
 ===========================================================================
-PRIVACIDADE
+PRIVACIDADE -- LEIA ANTES DE RODAR EM TELA COMPARTILHADA
 
-Le so o diario local, que por desenho tem apenas o termo digitado -- nunca
-assunto, remetente ou EntryID. Nada sai da maquina.
+Le so o diario local, que por desenho tem apenas o termo digitado. Nada sai
+da maquina POR ESTE SCRIPT.
 
-Uso:  python tools/ler-diario-de-buscas.py [caminho-do-buscas.jsonl]
+Mas ele IMPRIME OS TERMOS INTEIROS na saida, e termo de busca de caixa
+corporativa costuma conter nome de pessoa, numero de contrato ou valor. A
+saida vai para o terminal, e de la para onde voce mandar: arquivo,
+compartilhamento de tela, anexo. Isso e exposicao, e o script nao tem como
+impedi-la -- so avisar.
+
+Uso:  python tools/ler-diario-de-buscas.py [caminho] [--pouco N] [--autoteste]
 """
 import io
 import json
 import os
 import sys
 import unicodedata
+from datetime import datetime, timedelta
 
 # Duas buscas a mais de JANELA minutos uma da outra nao sao a mesma
-# intencao -- sao duas sessoes. O numero e arbitrario no valor e nao no
-# motivo, e esta aqui para ser discutido em vez de escondido.
+# intencao -- sao duas sessoes. Arbitrario no valor, e nao no motivo.
 JANELA_MINUTOS = 3
 
-# "Achou pouco" e zero ou um. Dois ja e uma busca que funcionou o
-# suficiente para a pessoa olhar antes de desistir.
-POUCO = 1
+# "Achou pouco" e, por padrao, zero.
+#
+# A PRIMEIRA VERSAO USAVA 1, e a revisao externa apontou: numa caixa
+# corporativa uma busca que devolve UMA mensagem costuma ser sucesso
+# perfeito, e conta-la como falha fabrica candidato "1 -> muitos". Como o
+# desenho nao registra clique, nao ha sinal para distinguir "um resultado
+# certo" de "um resultado errado" -- entao o padrao passou a ser o unico
+# valor sobre o qual nao ha duvida, e o resto e --pouco.
+POUCO = 0
 
 
 def normalizar(s):
@@ -64,14 +89,66 @@ def palavras(termo):
                if len(p) >= 3)
 
 
-def instante(iso):
-    from datetime import datetime
-    return datetime.fromisoformat(iso)
+def e_refino(antes, depois):
+    """A segunda busca e a primeira com mais palavras?
+
+    Refino ("contrato" -> "contrato aditivo") nao e troca de vocabulario, e
+    e o unico caso que precisa ser descartado. Compartilhar UMA palavra nao
+    descarta: em "contrato fornecedor" -> "acordo fornecedor", a comum e o
+    contexto e a trocada e o achado."""
+    a, b = palavras(antes), palavras(depois)
+    if not a:
+        return False
+    return a.issubset(b)
+
+
+def achou(reg, pouco):
+    return reg.get("exatos", 0) + reg.get("aproximados", 0) > pouco
+
+
+def episodios(buscas, janela_min):
+    """Parte a lista em blocos de buscas encadeadas no tempo."""
+    saida, atual = [], []
+    for b in buscas:
+        if atual and (b["_t"] - atual[-1]["_t"]) > timedelta(minutes=janela_min):
+            saida.append(atual)
+            atual = []
+        atual.append(b)
+    if atual:
+        saida.append(atual)
+    return saida
+
+
+def classificar(buscas, pouco=POUCO, janela_min=JANELA_MINUTOS):
+    """Devolve (pares, orfas).
+
+    pares: (primeira_que_falhou, a_que_achou, minutos, cadeia_do_meio)
+    orfas: buscas que falharam e nao tiveram sucesso depois no episodio."""
+    pares, orfas = [], []
+
+    for bloco in episodios(sorted(buscas, key=lambda d: d["_t"]), janela_min):
+        falhas = []
+        for b in bloco:
+            if not achou(b, pouco):
+                falhas.append(b)
+                continue
+
+            # ACHOU. As falhas acumuladas se pareiam com esta -- menos as
+            # que sao so refino dela, que nao sao troca de vocabulario.
+            candidatas = [f for f in falhas if not e_refino(f["termo"], b["termo"])]
+            if candidatas:
+                primeira = candidatas[0]
+                minutos = (b["_t"] - primeira["_t"]).total_seconds() / 60.0
+                pares.append((primeira, b, minutos, candidatas[1:]))
+            falhas = []
+
+        orfas.extend(falhas)
+
+    return pares, orfas
 
 
 def ler(caminho):
-    linhas = []
-    ruins = 0
+    linhas, ruins = [], 0
     with io.open(caminho, encoding="utf-8") as f:
         for l in f:
             l = l.strip()
@@ -79,18 +156,91 @@ def ler(caminho):
                 continue
             try:
                 d = json.loads(l)
-                d["_t"] = instante(d["quando"])
+                d["_t"] = datetime.fromisoformat(d["quando"])
                 linhas.append(d)
             except Exception:
                 # LINHA QUEBRADA NAO DERRUBA A LEITURA, e nao some calada:
-                # uma queda no meio de um append deixa meia linha, e o
-                # arquivo continua servindo. O total vai no relatorio.
+                # uma queda no meio de um append deixa meia linha. O total
+                # vai no relatorio.
                 ruins += 1
     return linhas, ruins
 
 
+# ==========================================================================
+
+def autoteste():
+    """Casos do proprio classificador, para ele nao ser a unica parte desta
+    medicao sem teste. A suite do projeto e VB e nao roda Python."""
+    def reg(minuto, termo, n):
+        return {"quando": "x", "termo": termo, "exatos": n, "aproximados": 0,
+                "_t": datetime(2026, 8, 30, 9, minuto, 0)}
+
+    falhas = []
+
+    def conferir(nome, ok):
+        if not ok:
+            falhas.append(nome)
+
+    # CADEIA: o caso que a primeira versao perdia.
+    p, o = classificar([reg(0, "cobranca", 0), reg(1, "boleto", 0), reg(2, "fatura", 5)])
+    conferir("cadeia produz um par", len(p) == 1)
+    conferir("cadeia pareia a PRIMEIRA falha", p and p[0][0]["termo"] == "cobranca")
+    conferir("cadeia guarda o meio", p and [x["termo"] for x in p[0][3]] == ["boleto"])
+    conferir("cadeia nao deixa orfa", not o)
+
+    # REFINO nao e troca de vocabulario.
+    p, o = classificar([reg(0, "contrato", 0), reg(1, "contrato aditivo", 3)])
+    conferir("refino nao vira par", not p)
+
+    # PALAVRA EM COMUM com troca E par -- o caso que a regra antiga perdia.
+    p, o = classificar([reg(0, "contrato fornecedor", 0), reg(1, "acordo fornecedor", 4)])
+    conferir("troca com contexto comum vira par", len(p) == 1)
+
+    # FORA DA JANELA: episodios diferentes.
+    p, o = classificar([reg(0, "cobranca", 0), reg(30, "fatura", 5)])
+    conferir("fora da janela nao pareia", not p)
+    conferir("fora da janela vira orfa", len(o) == 1)
+
+    # DESISTIU: falhou e acabou.
+    p, o = classificar([reg(0, "jacare bicicleta", 0)])
+    conferir("desistencia vira orfa", len(o) == 1 and not p)
+
+    # POUCO: com o padrao 0, uma busca com 1 achado e SUCESSO.
+    p, o = classificar([reg(0, "unica", 1), reg(1, "outra", 5)])
+    conferir("um achado conta como sucesso por padrao", not p and not o)
+    p, o = classificar([reg(0, "unica", 1), reg(1, "outra", 5)], pouco=1)
+    conferir("--pouco 1 muda a classificacao", len(p) == 1)
+
+    if falhas:
+        print("AUTOTESTE FALHOU em %d caso(s):" % len(falhas))
+        for f in falhas:
+            print("  " + f)
+        raise SystemExit(1)
+    print("autoteste: %d casos, todos passam" % 9)
+
+
 def main():
-    caminho = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
+    if "--autoteste" in sys.argv:
+        autoteste()
+        return
+
+    pouco = POUCO
+    if "--pouco" in sys.argv:
+        pouco = int(sys.argv[sys.argv.index("--pouco") + 1])
+
+    argumentos = []
+    pular = False
+    for a in sys.argv[1:]:
+        if pular:
+            pular = False
+            continue
+        if a == "--pouco":
+            pular = True
+            continue
+        if not a.startswith("--"):
+            argumentos.append(a)
+
+    caminho = argumentos[0] if argumentos else os.path.join(
         os.environ.get("LOCALAPPDATA", ""), "Iris", "buscas.jsonl")
 
     if not os.path.exists(caminho):
@@ -101,56 +251,35 @@ def main():
         return
 
     buscas, ruins = ler(caminho)
-    buscas.sort(key=lambda d: d["_t"])
-
-    pares = []
-    orfas = []
-
-    for i, b in enumerate(buscas):
-        achou_b = b.get("exatos", 0) + b.get("aproximados", 0)
-        if achou_b > POUCO:
-            continue
-
-        # A PROXIMA busca, se houver, dentro da janela.
-        seguinte = buscas[i + 1] if i + 1 < len(buscas) else None
-        if seguinte is None:
-            orfas.append(b)
-            continue
-
-        minutos = (seguinte["_t"] - b["_t"]).total_seconds() / 60.0
-        if minutos > JANELA_MINUTOS:
-            orfas.append(b)
-            continue
-
-        achou_s = seguinte.get("exatos", 0) + seguinte.get("aproximados", 0)
-        if achou_s <= POUCO:
-            continue     # as duas falharam: nao ha o lado que funcionou
-
-        # PALAVRA EM COMUM DESQUALIFICA. "contrato" -> "contrato aditivo" e
-        # a pessoa refinando a mesma busca, e nao trocando de vocabulario.
-        # E o vocabulario e a coisa inteira que se quer medir.
-        if palavras(b["termo"]) & palavras(seguinte["termo"]):
-            continue
-
-        pares.append((b, seguinte, minutos))
+    pares, orfas = classificar(buscas, pouco=pouco)
 
     print("DIARIO DE BUSCAS -> candidatos a consulta por sentido")
-    print("buscas anotadas: %d%s" % (len(buscas),
-                                     ("  (%d linha(s) ilegivel(is))" % ruins) if ruins else ""))
+    print("buscas anotadas: %d%s | 'achou pouco' = ate %d resultado(s)"
+          % (len(buscas),
+             ("  (%d linha(s) ilegivel(is))" % ruins) if ruins else "", pouco))
+    print("")
+    print("A SAIDA ABAIXO CONTEM OS TERMOS QUE VOCE DIGITOU, inteiros. Numa")
+    print("caixa corporativa isso costuma incluir nome de pessoa e numero de")
+    print("contrato -- cuidado com tela compartilhada e com redirecionar para")
+    print("arquivo.")
     print("")
 
     if pares:
         print("REFORMULACOES -- digitei uma coisa, nao achei, digitei outra e achei:")
         print("")
-        for b, s, m in pares:
-            print("  %-28s (%d achados)" % (repr(b["termo"]), b.get("exatos", 0) + b.get("aproximados", 0)))
+        for b, s, m, meio in pares:
+            print("  %-28s (%d achados)"
+                  % (repr(b["termo"]), b.get("exatos", 0) + b.get("aproximados", 0)))
+            for x in meio:
+                print("     %-25s (%d achados)"
+                      % (repr(x["termo"]), x.get("exatos", 0) + x.get("aproximados", 0)))
             print("  -> %-25s (%d achados, %.1f min depois)"
                   % (repr(s["termo"]), s.get("exatos", 0) + s.get("aproximados", 0), m))
             print("")
-        print("CADA UM DESTES E CANDIDATO, E NAO PROVA. So voce sabe se as duas")
-        print("buscas eram a mesma intencao. As que forem, viram linha em")
+        print("CADA UM DESTES E CANDIDATO, E NAO PROVA. So voce sabe se as buscas")
+        print("de um bloco eram a mesma intencao. As que forem viram linha em")
         print("tools/consultas-por-sentido.json -- 'digitei' e a primeira, e o")
-        print("'queria' e o assunto da mensagem que a segunda achou.")
+        print("'queria' e o assunto da mensagem que a ultima achou.")
     else:
         print("Nenhuma reformulacao ate agora.")
         print("")
@@ -167,9 +296,9 @@ def main():
         if len(orfas) > 15:
             print("  ... e mais %d" % (len(orfas) - 15))
         print("")
-        print("Estas SAO sinal, e sem o outro lado do par: a busca nao achou e")
-        print("a pessoa desistiu. Se voce lembrar qual mensagem queria em")
-        print("alguma delas, ela vira uma linha completa.")
+        print("Estas SAO sinal, com um lado so: a busca nao achou e a pessoa")
+        print("desistiu. Se voce lembrar qual mensagem queria em alguma delas,")
+        print("ela vira uma linha completa.")
 
 
 if __name__ == "__main__":

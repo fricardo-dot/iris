@@ -679,6 +679,12 @@ Public Class BindingsDaJanelaTests
         StringAssert.Contains(xaml, "{Binding Busca.RegistrandoBuscas,",
             "sem a visibilidade a faixa aparece mesmo quando nao ha diario, " &
             "e passa a anunciar uma coleta que nao acontece")
+        StringAssert.Contains(xaml, "{Binding Busca.AlternarDiarioCommand}",
+            "nao ha como DESLIGAR a coleta pela tela. Apagar nao serve: a " &
+            "busca seguinte recria o arquivo, entao apagar nunca chega a ser " &
+            "'pare de coletar'.")
+        StringAssert.Contains(xaml, "{Binding Busca.RotuloDoInterruptor}",
+            "o botao nao diz em que estado a coleta esta")
         StringAssert.Contains(xaml, "{Binding Busca.TemFalhaDoDiario,",
             "a falha do diario nao chega a tela: amostra furada que ninguem " &
             "sabe que e furada")

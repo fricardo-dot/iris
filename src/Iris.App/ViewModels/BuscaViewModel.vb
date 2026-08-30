@@ -86,6 +86,8 @@ Namespace Global.Iris.App.ViewModels
             LimparCommand = New RelayCommand(AddressOf Limpar, Function() Procurou)
             ApagarDiarioCommand = New RelayCommand(AddressOf ApagarDiario,
                                                    Function() _diario IsNot Nothing)
+            AlternarDiarioCommand = New RelayCommand(AddressOf AlternarDiario,
+                                                     Function() _diario IsNot Nothing)
         End Sub
 
         Public ReadOnly Property Achados As New ObservableCollection(Of LinhaAchada)()
@@ -175,11 +177,82 @@ Namespace Global.Iris.App.ViewModels
         ''' contar. <b>Arquivo travado não é arquivo vazio</b> — a tela diz "não
         ''' consegui contar", e não "zero".
         ''' </summary>
+        ''' <summary>
+        ''' <b>A BARREIRA ENTRE A BUSCA E O DIÁRIO.</b>
+        '''
+        ''' O <c>DiarioDeBuscasEmArquivo</c> engole as próprias falhas, e a
+        ''' interface diz "nunca lança". <b>A revisão externa mostrou que isso
+        ''' não basta:</b> um contrato cumprido só pela implementação atual
+        ''' deixa de valer no dia em que alguém trocar a implementação,
+        ''' decorá-la, ou introduzir um defeito.
+        '''
+        ''' E o teste que eu tinha escrito consagrava o defeito — ele
+        ''' <i>exigia</i> que um diário quebrado derrubasse a busca, com um
+        ''' comentário explicando que ali a decisão ficava visível. Decisão
+        ''' visível e errada continua errada: instrumentação não derruba o que
+        ''' ela observa, e a garantia mora em quem chama.
+        '''
+        ''' A falha vai para a tela pelo mesmo lugar das outras.
+        ''' </summary>
+        Private Sub Protegido(acao As Action)
+            If _diario Is Nothing Then Return
+            Try
+                acao()
+            Catch ex As Exception
+                _falhaAoApagar = "o registro de buscas falhou (" & ex.GetType().Name &
+                                 "). A busca continua funcionando."
+            End Try
+        End Sub
+
+        Private Function Protegido(Of T)(leitura As Func(Of T), quandoFalha As T) As T
+            If _diario Is Nothing Then Return quandoFalha
+            Try
+                Return leitura()
+            Catch ex As Exception
+                _falhaAoApagar = "o registro de buscas falhou (" & ex.GetType().Name &
+                                 "). A busca continua funcionando."
+                Return quandoFalha
+            End Try
+        End Function
+
+        Private Sub AvisarDiario()
+            OnPropertyChanged(NameOf(BuscasRegistradas))
+            OnPropertyChanged(NameOf(FraseDoDiario))
+            OnPropertyChanged(NameOf(Registrando))
+            OnPropertyChanged(NameOf(RotuloDoInterruptor))
+            OnPropertyChanged(NameOf(FalhaDoDiario))
+            OnPropertyChanged(NameOf(TemFalhaDoDiario))
+        End Sub
+
         Public ReadOnly Property BuscasRegistradas As Integer?
             Get
-                Return _diario?.Quantas()
+                Return Protegido(Function() _diario.Quantas(), CType(Nothing, Integer?))
             End Get
         End Property
+
+        ''' <summary>
+        ''' <b>A coleta está LIGADA agora?</b> Diferente de
+        ''' <see cref="RegistrandoBuscas"/>, que só diz se existe diário.
+        '''
+        ''' Apagar é faxina; desligar é retirar consentimento. A primeira versão
+        ''' desta tela só tinha o botão de apagar, e a revisão externa nomeou o
+        ''' problema: a busca seguinte recriava o arquivo, então apagar nunca
+        ''' chegava a ser "pare de coletar".
+        ''' </summary>
+        Public ReadOnly Property Registrando As Boolean
+            Get
+                Return Protegido(Function() _diario.Ligado, False)
+            End Get
+        End Property
+
+        Public ReadOnly Property RotuloDoInterruptor As String
+            Get
+                Return If(Registrando, "Parar de anotar", "Voltar a anotar")
+            End Get
+        End Property
+
+        ''' <summary>Liga ou desliga a coleta. Persiste entre execuções.</summary>
+        Public ReadOnly Property AlternarDiarioCommand As IRelayCommand
 
         ''' <summary>
         ''' <b>A frase que impede a coleta de ser silenciosa.</b>
@@ -197,9 +270,21 @@ Namespace Global.Iris.App.ViewModels
                 Dim quantas = If(n.HasValue,
                                  $"{n.Value} busca(s) anotada(s)",
                                  "não consegui contar quantas")
-                Return $"As suas buscas estão sendo anotadas nesta máquina — " &
-                       quantas & ", em " & _diario.Caminho &
-                       ". Só o texto digitado; nenhum assunto de mensagem."
+                If Not Registrando Then
+                    Return "O registro de buscas está DESLIGADO — nada novo " &
+                           "está sendo anotado. O que já foi anotado continua " &
+                           "em " & _diario.Caminho & " até você apagar."
+                End If
+
+                Return "As suas buscas estão sendo anotadas nesta máquina: " &
+                       quantas & ", em " & _diario.Caminho & ". " &
+                       "Fica gravado o TEXTO INTEIRO que você digita, em texto " &
+                       "claro, sem prazo para sumir — e o que se digita numa " &
+                       "busca costuma ser nome de pessoa, número de contrato ou " &
+                       "valor. Nenhum assunto de mensagem entra ali, e nada sai " &
+                       "desta máquina pelo Iris — mas qualquer programa que rode " &
+                       "com o seu usuário, e o backup da empresa, conseguem ler " &
+                       "o arquivo."
             End Get
         End Property
 
@@ -210,7 +295,7 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property FalhaDoDiario As String
             Get
                 If Not String.IsNullOrWhiteSpace(_falhaAoApagar) Then Return _falhaAoApagar
-                Return If(_diario?.UltimaFalha, "")
+                Return Protegido(Function() _diario.UltimaFalha, "")
             End Get
         End Property
 
@@ -273,27 +358,42 @@ Namespace Global.Iris.App.ViewModels
             ''' garantia mora no <see cref="DiarioDeBuscasEmArquivo"/> —, mas
             ''' pôr a chamada aqui embaixo faz a ordem ser óbvia para quem lê,
             ''' em vez de depender de lembrar daquela garantia.
-            _diario?.Registrar(_termo, Achados.Count - Aproximados, Aproximados)
-            OnPropertyChanged(NameOf(BuscasRegistradas))
-            OnPropertyChanged(NameOf(FalhaDoDiario))
-            OnPropertyChanged(NameOf(TemFalhaDoDiario))
+            ''' O INTERRUPTOR E CONFERIDO AQUI TAMBEM, e nao so dentro do
+            ''' diario. E a mesma licao da barreira logo acima: um
+            ''' desligamento que so a implementacao atual respeita para de
+            ''' valer no dia em que a implementacao mudar -- e o que esta em
+            ''' jogo aqui e consentimento retirado, que e a pior coisa para
+            ''' se confiar a uma so camada.
+            '''
+            ''' A duplicacao e barata e o teste prova as duas: o duplo da
+            ''' suite NAO confere Ligado, de proposito.
+            If Registrando Then
+                Protegido(Sub() _diario.Registrar(_termo, Achados.Count - Aproximados, Aproximados))
+            End If
+            AvisarDiario()
             OnPropertyChanged(NameOf(SemAchados))
             OnPropertyChanged(NameOf(Aproximados))
             OnPropertyChanged(NameOf(TemAproximados))
             OnPropertyChanged(NameOf(FraseDosAproximados))
         End Sub
 
+        Private Sub AlternarDiario()
+            If _diario Is Nothing Then Return
+            Dim motivo As String = Nothing
+            Protegido(Sub() motivo = If(_diario.Ligado, _diario.Desligar(), _diario.Ligar()))
+            If motivo IsNot Nothing Then _falhaAoApagar = motivo
+            AvisarDiario()
+        End Sub
+
         Private Sub ApagarDiario()
             If _diario Is Nothing Then Return
-            Dim motivo = _diario.Apagar()
+            Dim motivo As String = Nothing
+            Protegido(Sub() motivo = _diario.Apagar())
             ''' A falha entra pelo MESMO lugar da falha de escrita, e nao
             ''' numa propriedade nova: sao a mesma coisa para quem le --
             ''' "o diario nao esta fazendo o que promete".
-            _falhaAoApagar = If(motivo, "")
-            OnPropertyChanged(NameOf(BuscasRegistradas))
-            OnPropertyChanged(NameOf(FraseDoDiario))
-            OnPropertyChanged(NameOf(FalhaDoDiario))
-            OnPropertyChanged(NameOf(TemFalhaDoDiario))
+            If motivo IsNot Nothing Then _falhaAoApagar = motivo
+            AvisarDiario()
         End Sub
 
         Private Sub Limpar()

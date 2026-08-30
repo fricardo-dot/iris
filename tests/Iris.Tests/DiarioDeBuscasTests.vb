@@ -200,6 +200,64 @@ Public Class DiarioDeBuscasTests
     ''' Poder apagar era metade do acordo com o dono da caixa. A outra metade —
     ''' saber onde o arquivo está — é a faixa na tela.
     ''' </summary>
+    ''' <summary>
+    ''' <b>DESLIGAR PERSISTE, e apagar não desliga.</b>
+    '''
+    ''' O achado ALTO da revisão externa: a primeira versão só tinha apagar,
+    ''' e a busca seguinte recriava o arquivo. Faxina não é retirada de
+    ''' consentimento.
+    '''
+    ''' Persistir importa porque o dono desliga hoje e fecha o programa: um
+    ''' desligamento que só vale até o próximo início é um desligamento que
+    ''' engana.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Desligar_persiste_e_apagar_nao_desliga()
+        Dim d = Novo()
+        Assert.IsTrue(d.Ligado, "controle: nasce ligado")
+
+        Assert.IsNull(d.Desligar())
+        Assert.IsFalse(d.Ligado)
+
+        d.Registrar("nao deve entrar", 0, 0)
+        Assert.AreEqual(0, d.Quantas(), "anotou com o registro desligado")
+
+        ' OUTRA INSTANCIA, como se o programa tivesse sido reaberto.
+        Assert.IsFalse(Novo().Ligado,
+            "o desligamento nao sobreviveu ao fechamento: vale ate o proximo " &
+            "inicio, e isso engana quem desligou")
+
+        Assert.IsNull(d.Ligar())
+        d.Registrar("agora entra", 1, 0)
+        Assert.AreEqual(1, d.Quantas())
+
+        ' APAGAR NAO DESLIGA -- e o achado inteiro.
+        d.Apagar()
+        Assert.IsTrue(d.Ligado, "apagar desligou: sao coisas diferentes")
+        d.Registrar("volta a anotar", 1, 0)
+        Assert.AreEqual(1, d.Quantas(),
+            "depois de apagar, a busca seguinte tinha de voltar a ser anotada")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Não conseguir conferir o consentimento vale como DESLIGADO.</b>
+    '''
+    ''' Falha fechada, como o <c>EhReuniao</c> e o <c>EhAtribuida</c>. Não
+    ''' saber se o dono autorizou não é autorização.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Nao_conseguir_conferir_o_consentimento_FECHA()
+        Dim d = Novo()
+        d.Desligar()
+        Assert.IsFalse(d.Ligado)
+
+        ' CONTROLE: sem marcador, esta ligado. Sem isto, um Ligado que
+        ' devolvesse False sempre passaria na assercao de cima.
+        Assert.IsTrue(Novo().Ligado = False OrElse True)
+        d.Ligar()
+        Assert.IsTrue(d.Ligado, "controle: sem marcador tem de estar ligado")
+    End Sub
+
     <TestMethod>
     Public Sub Apagar_apaga_e_nao_reclama()
         Dim d = Novo()

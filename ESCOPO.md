@@ -580,15 +580,45 @@ dele em vez da amostra do que ele lembrou num dia.
   cai se alguém acrescentar um.
 - Texto e não SQLite **de propósito**: o dono precisa poder abrir no Bloco de
   Notas e apagar, e tabela dentro de banco não atende a isso.
-- **A tela declara a coleta**: diz que está anotando, quantas, **onde o arquivo
-  está**, e tem botão de apagar. Autorizar não é o mesmo que querer esquecer
-  que existe — e arquivo que o dono não sabe localizar é arquivo que ele não
-  pode apagar.
-- **O diário nunca derruba a busca.** É o único lugar deste projeto onde engolir
-  exceção é o comportamento certo — busca é a funcionalidade, diário é
-  instrumentação. Mas engolir não é esconder: o motivo fica guardado e a tela
-  mostra, porque instrumentação que morre calada produz amostra furada que
-  ninguém sabe que é furada.
+- **A tela declara a coleta e permite RETIRÁ-LA.** Diz que está anotando,
+  quantas, **onde o arquivo está**, e tem dois botões: *parar de anotar* e
+  *apagar registro*.
+
+  **A primeira versão só tinha apagar, e a revisão externa classificou como
+  ALTO.** Apagar é faxina: a busca seguinte recria o arquivo, então apagar
+  nunca chega a ser "pare de coletar". Coleta contínua de comportamento precisa
+  de retirada de consentimento, e ela persiste entre execuções — um
+  desligamento que valesse até o próximo início enganaria quem desligou. Falha
+  ao conferir o marcador vale como **desligado**: não saber se o dono autorizou
+  não é autorização.
+
+- **O texto do consentimento diz o RISCO, e não só o que não é coletado.** Ele
+  era *"só o texto digitado; nenhum assunto de mensagem"* — literalmente
+  verdadeiro, e escolhido para acalmar. A revisão externa chamou de
+  consentimento mal informado, e estava certa: numa caixa corporativa o que se
+  digita numa busca é nome de pessoa, número de contrato, valor. Agora a tela
+  diz que fica **texto claro, sem prazo**, e que qualquer programa rodando com
+  o usuário — ou o backup da empresa — consegue ler.
+- **O diário nunca derruba a busca, e a garantia mora em QUEM CHAMA.** A
+  implementação engole as próprias falhas, mas confiar nisso é confiar na
+  implementação de hoje: a revisão externa apontou que um contrato de "nunca
+  lança" cumprido só pela classe atual deixa de valer quando alguém a trocar.
+  A barreira está no `BuscaViewModel` e protege **toda** chamada — e o
+  interruptor é conferido lá **também**, porque consentimento retirado é a pior
+  coisa para se confiar a uma camada só.
+
+  **E o teste que eu tinha escrito consagrava o defeito**: ele *exigia* que um
+  diário quebrado derrubasse a busca, com um comentário explicando que ali "a
+  decisão ficava visível". Decisão visível e errada continua errada.
+
+- Engolir não é esconder: o motivo fica guardado e a tela mostra, porque
+  instrumentação que morre calada produz amostra furada que ninguém sabe que é
+  furada.
+
+- **Duas janelas do Iris não perdem registro.** O `SyncLock` protege uma
+  instância; dois processos precisam de mutex nomeado, senão um dos
+  `AppendAllText` falha por compartilhamento e — com a exceção engolida — a
+  amostra fica com um buraco invisível.
 
 **O sinal é a REFORMULAÇÃO, e não o clique.** A tela de busca não abre
 resultado — só mostra. Isso parecia limitação e é vantagem: o que interessa não
@@ -596,11 +626,25 @@ resultado — só mostra. Isso parecia limitação e é vantagem: o que interess
 "cobrança", não achar, digitar "fatura" e parar é a falha semântica inteira — e
 com isso o diário não precisa registrar assunto de mensagem nenhuma.
 
-`tools/ler-diario-de-buscas.py` transforma o diário em candidatos: duas buscas
-seguidas, dentro de três minutos, a primeira achando pouco ou nada, a segunda
-achando, **e sem palavra em comum** — porque "contrato" → "contrato aditivo" é
-refino da mesma busca, e vocabulário é justamente o que se quer medir. Ele
-também lista as que falharam e não foram reformuladas: são sinal com um lado só.
+`tools/ler-diario-de-buscas.py` transforma o diário em candidatos. Ele agrupa
+as buscas em **episódios** — encadeadas dentro de três minutos — e pareia a
+primeira que falhou com a que finalmente achou, mostrando as do meio. Também
+lista as que falharam e não foram reformuladas: são sinal com um lado só.
+
+**Duas correções que a revisão externa obrigou:**
+
+- **Olhava só a busca seguinte**, e perdia a cadeia mais comum:
+  *cobrança* → *boleto* → *fatura*. A primeira não virava par (porque a segunda
+  também falhou) nem órfã (porque havia uma seguinte). Sumia.
+- **Descartava o par por qualquer palavra em comum**, e isso perdia
+  *"contrato fornecedor"* → *"acordo fornecedor"*, onde a palavra comum é o
+  contexto e a trocada é justamente o achado. A regra agora descarta só o
+  **refino** — quando a segunda contém todas as palavras da primeira.
+
+O limiar de "achou pouco" caiu para **zero** e virou parâmetro: uma busca que
+devolve um resultado costuma ser sucesso perfeito, e contá-la como falha
+fabricava candidato. E o leitor ganhou `--autoteste`, porque ele era a única
+parte desta medição sem teste — a suíte do projeto é VB e não roda Python.
 
 **E ele produz CANDIDATO, não prova.** Só o dono confirma que duas buscas eram a
 mesma intenção. A saída é lista para revisar, não número para publicar.

@@ -424,25 +424,117 @@ Public Class BuscaToleranteTests
     End Sub
 
     ''' <summary>
-    ''' <b>E um diário que EXPLODE não derruba a busca.</b>
+    ''' <b>UM DIÁRIO QUE EXPLODE NÃO DERRUBA A BUSCA.</b>
     '''
-    ''' A garantia mora no <c>DiarioDeBuscasEmArquivo</c>, que engole. Este
-    ''' teste prende o contrato pelo lado de fora: qualquer implementação de
-    ''' <c>IDiarioDeBuscas</c> que lance não pode levar a tela junto.
+    ''' <b>Este teste já disse o contrário, e estava errado.</b> A primeira
+    ''' versão usava <c>Assert.ThrowsException</c> — ela <i>exigia</i> que um
+    ''' diário quebrado levasse a busca junto, com um comentário explicando que
+    ''' ali "a decisão ficava visível". Decisão visível e errada continua
+    ''' errada, e a revisão externa nomeou: instrumentação não derruba o que ela
+    ''' observa, e a garantia mora em <b>quem chama</b>.
     '''
-    ''' Hoje ele <b>falha</b> se alguém puser um diário que lança — e é isso
-    ''' que ele existe para dizer: a proteção é do implementador, e a interface
-    ''' declara "nunca lança" em vez de a tela se defender. Se um dia isso
-    ''' mudar, este teste é onde a decisão fica visível.
+    ''' Confiar no contrato "nunca lança" da interface é confiar na
+    ''' implementação de hoje. A barreira agora está no <c>BuscaViewModel</c>,
+    ''' e este duplo explode em <b>todos</b> os membros para prová-la.
+    '''
+    ''' <b>Controle negativo:</b> tirando o <c>Protegido</c> de qualquer uma das
+    ''' chamadas, este teste volta a lançar.
     ''' </summary>
     <TestMethod>
-    Public Sub Um_diario_que_explode_e_problema_de_quem_o_escreveu()
+    Public Sub Um_diario_que_explode_NAO_derruba_a_busca()
         Dim d As New DiarioQueExplode()
 
-        Assert.ThrowsException(Of InvalidOperationException)(
-            Sub() ProcurarCom(d, "contrato", {Item("Contrato aditivo", "")}),
-            "se isto parar de lancar, alguem pos protecao na tela -- e ai o " &
-            "comentario da IDiarioDeBuscas ('nunca lanca') virou opcional")
+        Dim vm = ProcurarCom(d, "contrato", {Item("Contrato aditivo", "")})
+
+        Assert.AreEqual(1, vm.Achados.Count,
+            "o diário derrubou a busca: instrumentação não pode quebrar o que observa")
+        Assert.IsTrue(vm.TemFalhaDoDiario,
+            "engoliu a falha do diário E não avisou -- o usuário fica achando " &
+            "que está sendo anotado quando não está")
+        StringAssert.Contains(vm.FalhaDoDiario, "A busca continua funcionando")
+
+        ' E os outros caminhos tambem: ler contagem, alternar, apagar.
+        Assert.IsNull(vm.BuscasRegistradas)
+        vm.AlternarDiarioCommand.Execute(Nothing)
+        vm.ApagarDiarioCommand.Execute(Nothing)
+
+        ' E O CAMINHO EM QUE O PROPRIO Ligado EXPLODE. Ele tem de ser
+        ' exercitado a parte: com o Ligado explodindo, o Registrando engole
+        ' e o Registrar nem chega a ser chamado -- entao um teste so nao
+        ' alcanca as duas barreiras.
+        Dim e As New DiarioQueExplode() With {.ExplodeNoLigado = True}
+        Dim vm2 = ProcurarCom(e, "contrato", {Item("Contrato aditivo", "")})
+        Assert.AreEqual(1, vm2.Achados.Count,
+            "o Ligado que explode derrubou a busca")
+        Assert.IsFalse(vm2.Registrando,
+            "falha ao conferir o consentimento tem de valer como DESLIGADO")
+    End Sub
+
+    ''' <summary>
+    ''' <b>DESLIGAR NÃO É APAGAR, e a tela precisa das duas coisas.</b>
+    '''
+    ''' Apagar tira o que já foi coletado; a busca seguinte recria o arquivo.
+    ''' Coleta contínua de comportamento precisa de <b>retirada de
+    ''' consentimento</b>, e a primeira versão desta tela só tinha faxina — a
+    ''' revisão externa classificou como ALTO, e com razão.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Desligar_para_de_anotar_e_apagar_nao()
+        Dim d As New DiarioFalso()
+
+        Dim vm = ProcurarCom(d, "contrato", {Item("Contrato aditivo", "")})
+        Assert.AreEqual(1, d.Anotadas.Count, "controle: anotou com o registro ligado")
+
+        ' APAGAR nao para a coleta -- e o ponto do achado.
+        vm.ApagarDiarioCommand.Execute(Nothing)
+        vm.ProcurarCommand.Execute(Nothing)
+        Assert.AreEqual(1, d.Anotadas.Count,
+            "controle: depois de apagar, a busca seguinte volta a anotar")
+
+        ' DESLIGAR para.
+        ' DESLIGAR para de anotar NOVAS -- o que ja foi anotado fica, e e
+        ' por isso que a contagem se compara com o ANTES em vez de com zero.
+        ' A primeira versao deste teste esperava zero, e o errado era ela.
+        Dim antes = d.Anotadas.Count
+        vm.AlternarDiarioCommand.Execute(Nothing)
+        Assert.IsFalse(vm.Registrando)
+        vm.ProcurarCommand.Execute(Nothing)
+        Assert.AreEqual(antes, d.Anotadas.Count,
+            "continuou anotando depois de o dono desligar")
+
+        ' E volta.
+        vm.AlternarDiarioCommand.Execute(Nothing)
+        Assert.IsTrue(vm.Registrando)
+        vm.ProcurarCommand.Execute(Nothing)
+        Assert.AreEqual(antes + 1, d.Anotadas.Count, "nao voltou a anotar depois de religar")
+    End Sub
+
+    ''' <summary>
+    ''' <b>O texto do consentimento diz o risco, e não só o que não coleta.</b>
+    '''
+    ''' A frase original era "só o texto digitado; nenhum assunto de mensagem" —
+    ''' literalmente verdadeira, e escolhida para acalmar. A revisão externa
+    ''' chamou de consentimento mal informado: numa caixa corporativa o que se
+    ''' digita numa busca é nome de pessoa, número de contrato, valor. E o
+    ''' arquivo é texto claro, sem prazo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_consentimento_diz_o_risco()
+        Dim d As New DiarioFalso()
+        Dim vm = ProcurarCom(d, "contrato", {Item("Contrato aditivo", "")})
+
+        StringAssert.Contains(vm.FraseDoDiario, "texto claro",
+            "não diz que fica legível para quem abrir o arquivo")
+        StringAssert.Contains(vm.FraseDoDiario, "sem prazo",
+            "não diz que fica indefinidamente")
+        StringAssert.Contains(vm.FraseDoDiario, "nome de pessoa",
+            "não diz que o que se digita costuma ser dado sensível")
+
+        ' E DESLIGADO ele diz outra coisa: que nada novo esta sendo anotado, e
+        ' que o que ja foi anotado continua la.
+        vm.AlternarDiarioCommand.Execute(Nothing)
+        StringAssert.Contains(vm.FraseDoDiario, "DESLIGADO")
+        StringAssert.Contains(vm.FraseDoDiario, "continua")
     End Sub
 
     ''' <summary>Sem diário, a busca funciona igual e a tela não anuncia coleta.</summary>
@@ -493,6 +585,24 @@ Public Class BuscaToleranteTests
                 Return ""
             End Get
         End Property
+
+        Friend Desligou As Boolean
+
+        Public ReadOnly Property Ligado As Boolean Implements IDiarioDeBuscas.Ligado
+            Get
+                Return Not Desligou
+            End Get
+        End Property
+
+        Public Function Desligar() As String Implements IDiarioDeBuscas.Desligar
+            Desligou = True
+            Return Nothing
+        End Function
+
+        Public Function Ligar() As String Implements IDiarioDeBuscas.Ligar
+            Desligou = False
+            Return Nothing
+        End Function
     End Class
 
     Private NotInheritable Class DiarioQueExplode
@@ -522,6 +632,33 @@ Public Class BuscaToleranteTests
                 Return ""
             End Get
         End Property
+
+        ''' <summary>
+        ''' Por padrao o <c>Ligado</c> NAO explode, e isso e o ponto.
+        '''
+        ''' O primeiro corte deste duplo explodia em tudo -- e ai o teste da
+        ''' barreira passava pelo motivo errado: o <c>Registrando</c> engolia
+        ''' a excecao do <c>Ligado</c>, o <c>Registrar</c> nunca era chamado, e
+        ''' a barreira que o teste dizia provar nao era alcancada. O controle
+        ''' negativo mostrou: tirar a protecao do <c>Registrar</c> nao
+        ''' derrubava nada.
+        ''' </summary>
+        Friend ExplodeNoLigado As Boolean
+
+        Public ReadOnly Property Ligado As Boolean Implements IDiarioDeBuscas.Ligado
+            Get
+                If ExplodeNoLigado Then Throw New InvalidOperationException("o disco sumiu")
+                Return True
+            End Get
+        End Property
+
+        Public Function Desligar() As String Implements IDiarioDeBuscas.Desligar
+            Throw New InvalidOperationException("o disco sumiu")
+        End Function
+
+        Public Function Ligar() As String Implements IDiarioDeBuscas.Ligar
+            Throw New InvalidOperationException("o disco sumiu")
+        End Function
     End Class
 
 End Class
