@@ -192,13 +192,6 @@
                 <RowDefinition Height="Auto" />
                 <!-- A IA. -->
                 <RowDefinition Height="Auto" />
-                <!-- As tarefas. Linha PROPRIA, e nao dividida com ninguem: a
-                     pasta de tarefas nao aparece na arvore (a politica de
-                     visibilidade a mantem fora), entao esta faixa nao tem
-                     condicao de pasta que a torne mutuamente exclusiva com o
-                     acervo ou a agenda. Empilhar aqui repetiria o defeito que
-                     escondeu a faixa do acervo por dias. -->
-                <RowDefinition Height="Auto" />
                 <!-- Os contatos. Linha propria pelo mesmo motivo das tarefas:
                      a pasta pessoal de Contatos tambem fica fora da arvore. -->
                 <RowDefinition Height="Auto" />
@@ -263,6 +256,37 @@
 
                     <StackPanel Grid.Column="2" Orientation="Horizontal"
                                 VerticalAlignment="Center" Margin="0,0,12,0">
+                        <!-- A LUPA. A busca no acervo era uma faixa fixa embaixo
+                             da janela, ocupando altura o tempo todo para uma
+                             coisa que se usa de vez em quando. Aqui ela e um
+                             botao, e o painel abre por cima.
+
+                             Segoe MDL2 E721 e a lupa do proprio Windows: o
+                             mesmo simbolo que o usuario ja reconhece na barra
+                             de tarefas e no Explorer. -->
+                        <Button Style="{StaticResource CaptionButton}"
+                                Content="&#xE721;"
+                                Command="{Binding AlternarBuscaCommand}"
+                                ToolTip="{Binding RotuloDaBusca}"
+                                Margin="0,0,10,0"
+                                AutomationProperties.Name="{Binding RotuloDaBusca}" />
+                        <!-- TAREFAS e CONTATOS, o mesmo padrao da lupa.
+
+                             Segoe MDL2: E8FD e a lista, E77B e o contato. Sao
+                             os simbolos do proprio Windows, e nao desenho meu:
+                             icone que o usuario ja viu em outro lugar nao
+                             precisa ser aprendido. -->
+                        <Button Style="{StaticResource CaptionButton}"
+                                Content="&#xE8FD;"
+                                Command="{Binding AlternarTarefasCommand}"
+                                ToolTip="Tarefas"
+                                AutomationProperties.Name="Abrir ou fechar as tarefas" />
+                        <Button Style="{StaticResource CaptionButton}"
+                                Content="&#xE77B;"
+                                Command="{Binding AlternarContatosCommand}"
+                                ToolTip="Contatos"
+                                Margin="0,0,10,0"
+                                AutomationProperties.Name="Abrir ou fechar os contatos" />
                         <Ellipse Style="{StaticResource StatusDotState}" />
                         <TextBlock Margin="8,0,0,0" Text="{Binding Connection.StatusLabel}"
                                    Style="{StaticResource Text.Muted}"
@@ -405,23 +429,127 @@
                     <Border Grid.Row="2" Padding="16,8"
                             BorderBrush="{DynamicResource Brush.Border.Subtle}"
                             BorderThickness="0,1,0,0">
-                        <Grid>
-                            <TextBlock Text="{Binding Messages.StatusLine}"
-                                       Style="{StaticResource Text.Muted}"
-                                       HorizontalAlignment="Left" VerticalAlignment="Center" />
+                        <StackPanel>
+                            <Grid>
+                                <TextBlock Text="{Binding Messages.StatusLine}"
+                                           Style="{StaticResource Text.Muted}"
+                                           HorizontalAlignment="Left" VerticalAlignment="Center" />
 
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
-                                <TextBlock Text="carregando…" Style="{StaticResource Text.Muted}"
-                                           VerticalAlignment="Center" Margin="0,0,12,0"
-                                           Visibility="{Binding Messages.IsLoading, Converter={StaticResource BoolToVis}}" />
-                                <Button Content="Carregar mais"
-                                        Style="{StaticResource Button.Secondary}"
-                                        Padding="10,4"
-                                        FontSize="{StaticResource Font.Size.Small}"
-                                        Command="{Binding Messages.LoadMoreCommand}"
-                                        Visibility="{Binding Messages.HasMore, Converter={StaticResource BoolToVis}}" />
+                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <TextBlock Text="carregando…" Style="{StaticResource Text.Muted}"
+                                               VerticalAlignment="Center" Margin="0,0,12,0"
+                                               Visibility="{Binding Messages.IsLoading, Converter={StaticResource BoolToVis}}" />
+                                    <Button Content="Carregar mais"
+                                            Style="{StaticResource Button.Secondary}"
+                                            Padding="10,4"
+                                            FontSize="{StaticResource Font.Size.Small}"
+                                            Command="{Binding Messages.LoadMoreCommand}"
+                                            Visibility="{Binding Messages.HasMore, Converter={StaticResource BoolToVis}}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <!-- O ACERVO, JUNTO COM O CONTADOR DA LISTA.
+
+                               Ele era uma faixa propria embaixo da janela, e falava da
+                               MESMA pasta que a lista logo acima — "13 de 13" e "0 itens
+                               guardados" sao duas contagens do mesmo lugar, e estavam a
+                               meia tela de distancia uma da outra.
+
+                               Aqui as duas ficam lado a lado, e a diferenca entre elas —
+                               o que a lista mostra ao vivo contra o que o cache guardou —
+                               passa a ser visivel de um olhar, em vez de exigir memoria. -->
+                            <Border Margin="0,8,0,0" Padding="0,8,0,0"
+                                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                    BorderThickness="0,1,0,0"
+                                    Visibility="{Binding MostrarAcervo, Converter={StaticResource BoolToVis},
+                                                         FallbackValue=Collapsed}">
+                                <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                <TextBlock Text="ACERVO"
+                                           Style="{DynamicResource Text.Muted}"
+                                           VerticalAlignment="Center" />
+                                <Button Content="Varrer esta pasta"
+                                        Style="{DynamicResource Toolbar.Button}"
+                                        Command="{Binding Acervo.VarrerCommand}"
+                                        Margin="12,0,0,0"
+                                        ToolTip="Le a pasta inteira e guarda o que viu no cache"
+                                        AutomationProperties.Name="Varrer esta pasta" />
+                                <TextBlock Text="{Binding Acervo.Itens, StringFormat={}{0} itens guardados}"
+                                           Style="{DynamicResource Text.Muted}"
+                                           Margin="12,0,0,0" VerticalAlignment="Center" />
+                                <!-- Varrer bloqueia e demora: sem sinal na tela, "esta
+                                     lendo" e "travou" sao a mesma coisa para quem olha. -->
+                                <ProgressBar IsIndeterminate="True"
+                                             Width="90" Height="3" Margin="12,0,0,0"
+                                             BorderThickness="0"
+                                             Background="{DynamicResource Brush.Surface.3}"
+                                             Foreground="{DynamicResource Brush.Accent}"
+                                             VerticalAlignment="Center"
+                                             Visibility="{Binding Acervo.Varrendo,
+                                                          Converter={StaticResource BoolToVis},
+                                                          FallbackValue=Collapsed}"
+                                             AutomationProperties.Name="Varrendo" />
                             </StackPanel>
-                        </Grid>
+                            <TextBlock Text="{Binding Acervo.Ressalva}"
+                                       TextWrapping="Wrap"
+                                       FontSize="12"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       Visibility="{Binding Acervo.Ressalva, Converter={StaticResource NullToVis},
+                                                            FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Ressalva do acervo" />
+                            <TextBlock Text="{Binding Acervo.Travado}"
+                                       TextWrapping="Wrap"
+                                       FontSize="12"
+                                       Margin="0,4,0,0"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       Visibility="{Binding Acervo.Travado, Converter={StaticResource NullToVis},
+                                                            FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Falha na atualizacao do acervo" />
+
+                            <!-- ==================== BUSCA ====================
+                                 Ela mora AQUI, junto do acervo, e nao junto da lista:
+                                 a lista le ao vivo do Outlook e a busca le do cache.
+                                 Poe-la ao lado da lista faria o usuario esperar que
+                                 ela procurasse na caixa, e ela procura no ACERVO:
+                                 so metadados, sem corpo, e so o que ja foi varrido.
+                                 Duas fontes diferentes com a mesma cara enganam em
+                                 silencio.
+
+                                 NAO se escreve aqui quanto tempo o acervo cobre. A
+                                 janela de 31 dias medida em 28/08 e do OUTLOOK, e o
+                                 cache foi desenhado para acumular alem dela. Fixar
+                                 "um mes" no comentario seria gravar como permanente
+                                 um numero que e do provedor e muda sozinho.
+
+                                 A ressalva fica visivel SEMPRE que houve busca, e
+                                 nao so quando ela nao acha: uma ressalva que so
+                                 aparece no vazio ensina a le-la como "nao achei", e
+                                 ela diz outra coisa - onde se procurou, com que
+                                 alcance, e que o corpo nao e procuravel. -->
+                                </StackPanel>
+                            </Border>
+                            <!-- O CACHE QUE NAO ABRE fica no mesmo lugar do acervo, e nao
+                                numa faixa propria: e o mesmo assunto, e quando ele
+                                aparece o outro nao aparece. Na grade raiz eles eram duas
+                                bordas na mesma linha, cada uma com sua condicao,
+                                esperando nao coincidir. Aqui empilham de verdade, um
+                                embaixo do outro. -->
+                            <!-- O cache que nao abre nao pode virar tela vazia silenciosa:
+                                 vazio e indistinguivel de "nao ha nada guardado". -->
+                            <Border Grid.Row="2"
+                                    Visibility="{Binding AcervoIndisponivel, Converter={StaticResource NullToVis},
+                                                         FallbackValue=Collapsed}"
+                                    Background="{DynamicResource Brush.Surface.1}"
+                                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                    BorderThickness="0,1,0,0"
+                                    Padding="16,8">
+                                <TextBlock Text="{Binding AcervoIndisponivel}"
+                                           TextWrapping="Wrap"
+                                           FontSize="12"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                           AutomationProperties.Name="Acervo indisponivel" />
+                            </Border>
+                        </StackPanel>
                     </Border>
                 </Grid>
 
@@ -632,6 +760,554 @@
                 aberto. Prender o usuario dentro do compositor seria trocar
                 um problema de foco por um de saida.
             -->
+            <!-- ============ TAREFAS (painel) ============
+
+                 Era uma faixa fixa no rodape da janela, numa linha propria
+                 da grade, empurrando a lista de mensagens para cima o tempo
+                 todo. Ela ja nascia com botao "Abrir", porque a pasta nem
+                 aparece na arvore — entao o botao virou a barra de titulo, e
+                 o resto virou painel.
+
+                 O conteudo e o MESMO, inclusive as ressalvas. Elas nao sao
+                 decoracao de faixa: no caso dos contatos, a ressalva do GAL e
+                 a unica coisa que impede uma lista vazia de ser lida como
+                 "nao ha contatos". -->
+            <Grid Grid.Row="1" Panel.ZIndex="11"
+                  Visibility="{Binding TarefasAberta, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}">
+
+                <Rectangle Fill="#99000000">
+                    <Rectangle.InputBindings>
+                        <MouseBinding MouseAction="LeftClick"
+                                      Command="{Binding FecharTarefasCommand}" />
+                    </Rectangle.InputBindings>
+                </Rectangle>
+
+                <Border Background="{DynamicResource Brush.Surface.1}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Card}"
+                        MaxWidth="900" Margin="28"
+                        VerticalAlignment="Top"
+                        Padding="20,16,20,18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <TextBlock Text="TAREFAS"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <Button Content="Fechar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding FecharTarefasCommand}"
+                                    Margin="16,0,0,0"
+                                    AutomationProperties.Name="Fechar as tarefas" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="TAREFAS"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <Button Content="Abrir"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Tarefas.AbrirCommand}"
+                                    Margin="12,0,0,0"
+                                    ToolTip="Le a pasta de tarefas do Outlook. Ela nao aparece na arvore de pastas."
+                                    AutomationProperties.Name="Abrir as tarefas" />
+                            <Button Content="Atualizar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Tarefas.AtualizarCommand}"
+                                    Margin="6,0,0,0"
+                                    AutomationProperties.Name="Atualizar as tarefas" />
+                            <TextBlock Text="{Binding Tarefas.Resumo}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       Margin="12,0,0,0" VerticalAlignment="Center" />
+                            <ProgressBar IsIndeterminate="True"
+                                         Width="90" Height="3" Margin="12,0,0,0"
+                                         BorderThickness="0"
+                                         Background="{DynamicResource Brush.Surface.3}"
+                                         Foreground="{DynamicResource Brush.Accent}"
+                                         VerticalAlignment="Center"
+                                         Visibility="{Binding Tarefas.Carregando,
+                                                      Converter={StaticResource BoolToVis},
+                                                      FallbackValue=Collapsed}"
+                                         AutomationProperties.Name="Lendo as tarefas" />
+                        </StackPanel>
+
+                        <!-- PROPOR e CRIAR: dois controles, e nunca um so. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                    Visibility="{Binding Tarefas.TemPasta,
+                                                 Converter={StaticResource BoolToVis},
+                                                 FallbackValue=Collapsed}">
+                            <TextBox Text="{Binding Tarefas.NovoAssunto, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="280"
+                                     VerticalContentAlignment="Center"
+                                     ToolTip="O que e para fazer"
+                                     AutomationProperties.Name="Assunto da nova tarefa" />
+                            <Button Content="Desta mensagem"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding ProporTarefaCommand}"
+                                    Margin="6,0,0,0"
+                                    ToolTip="Copia o assunto da mensagem selecionada para o campo. Nao cria nada, e nao usa a IA."
+                                    AutomationProperties.Name="Propor tarefa desta mensagem" />
+                            <Button Content="Criar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Tarefas.CriarCommand}"
+                                    Margin="6,0,0,0"
+                                    ToolTip="Cria a tarefa na pasta de tarefas do Outlook"
+                                    AutomationProperties.Name="Criar a tarefa" />
+                            <Button Content="Concluir"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Tarefas.ConcluirCommand}"
+                                    Margin="18,0,0,0"
+                                    ToolTip="Marca a tarefa selecionada como concluida"
+                                    AutomationProperties.Name="Concluir a tarefa selecionada" />
+                            <TextBlock Text="{Binding Tarefas.AvisoDaSelecionada}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       TextWrapping="Wrap" MaxWidth="360"
+                                       Margin="12,0,0,0" VerticalAlignment="Center"
+                                       AutomationProperties.Name="Por que esta tarefa nao pode ser concluida aqui" />
+                        </StackPanel>
+
+                        <ListBox ItemsSource="{Binding Tarefas.Tarefas}"
+                                 SelectedItem="{Binding Tarefas.Selecionada}"
+                                 MaxHeight="150"
+                                 Background="Transparent"
+                                 BorderThickness="0"
+                                 AutomationProperties.Name="Tarefas lidas">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,1">
+                                        <TextBlock Text="{Binding Prazo}"
+                                                   Width="110"
+                                                   FontSize="12"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                        <TextBlock Text="{Binding Assunto}"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxWidth="420" />
+                                        <!-- O aviso de atribuida fica na LINHA, e nao
+                                             so no rodape: quem le a lista precisa
+                                             saber quais linhas pertencem a uma
+                                             negociacao da qual o Iris nao participa. -->
+                                        <TextBlock Text="atribuida"
+                                                   FontSize="11" Margin="8,0,0,0"
+                                                   VerticalAlignment="Center"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                   Visibility="{Binding Atribuida,
+                                                                Converter={StaticResource BoolToVis},
+                                                                FallbackValue=Collapsed}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <TextBlock Text="{Binding Tarefas.Erro}"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Margin="0,4,0,0"
+                                   Foreground="{DynamicResource Brush.Error}"
+                                   Visibility="{Binding Tarefas.TemErro,
+                                                Converter={StaticResource BoolToVis},
+                                                FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="Falha nas tarefas" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ============ CONTATOS (painel) ============
+
+                 Era uma faixa fixa no rodape da janela, numa linha propria
+                 da grade, empurrando a lista de mensagens para cima o tempo
+                 todo. Ela ja nascia com botao "Abrir", porque a pasta nem
+                 aparece na arvore — entao o botao virou a barra de titulo, e
+                 o resto virou painel.
+
+                 O conteudo e o MESMO, inclusive as ressalvas. Elas nao sao
+                 decoracao de faixa: no caso dos contatos, a ressalva do GAL e
+                 a unica coisa que impede uma lista vazia de ser lida como
+                 "nao ha contatos". -->
+            <Grid Grid.Row="1" Panel.ZIndex="11"
+                  Visibility="{Binding ContatosAberta, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}">
+
+                <Rectangle Fill="#99000000">
+                    <Rectangle.InputBindings>
+                        <MouseBinding MouseAction="LeftClick"
+                                      Command="{Binding FecharContatosCommand}" />
+                    </Rectangle.InputBindings>
+                </Rectangle>
+
+                <Border Background="{DynamicResource Brush.Surface.1}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Card}"
+                        MaxWidth="900" Margin="28"
+                        VerticalAlignment="Top"
+                        Padding="20,16,20,18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <TextBlock Text="CONTATOS"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <Button Content="Fechar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding FecharContatosCommand}"
+                                    Margin="16,0,0,0"
+                                    AutomationProperties.Name="Fechar os contatos" />
+                        </StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                            <TextBlock Text="CONTATOS"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <Button Content="Abrir"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Contatos.AbrirCommand}"
+                                    Margin="12,0,0,0"
+                                    ToolTip="Le a pasta pessoal de Contatos. Ela nao aparece na arvore de pastas."
+                                    AutomationProperties.Name="Abrir os contatos" />
+                            <Button Content="Atualizar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Contatos.AtualizarCommand}"
+                                    Margin="6,0,0,0"
+                                    AutomationProperties.Name="Atualizar os contatos" />
+                            <TextBlock Text="{Binding Contatos.Resumo}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       Margin="12,0,0,0" VerticalAlignment="Center" />
+                            <ProgressBar IsIndeterminate="True"
+                                         Width="90" Height="3" Margin="12,0,0,0"
+                                         BorderThickness="0"
+                                         Background="{DynamicResource Brush.Surface.3}"
+                                         Foreground="{DynamicResource Brush.Accent}"
+                                         VerticalAlignment="Center"
+                                         Visibility="{Binding Contatos.Carregando,
+                                                      Converter={StaticResource BoolToVis},
+                                                      FallbackValue=Collapsed}"
+                                         AutomationProperties.Name="Lendo os contatos" />
+                        </StackPanel>
+
+                        <!-- A RESSALVA, ACIMA DA LISTA E NAO ABAIXO.
+                             Ela explica o que a lista NAO diz, e quem le de cima
+                             para baixo precisa dela antes de tirar conclusao do
+                             que ve, ou da falta do que ve. -->
+                        <TextBlock Text="{Binding Contatos.Ressalva}"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Margin="0,0,0,6"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   Visibility="{Binding Contatos.TemRessalva,
+                                                Converter={StaticResource BoolToVis},
+                                                FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="O que esta leitura de contatos nao alcanca" />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                    Visibility="{Binding Contatos.TemPasta,
+                                                 Converter={StaticResource BoolToVis},
+                                                 FallbackValue=Collapsed}">
+                            <TextBox Text="{Binding Contatos.NovoNome, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="170"
+                                     VerticalContentAlignment="Center"
+                                     ToolTip="Nome do contato"
+                                     AutomationProperties.Name="Nome do novo contato" />
+                            <TextBox Text="{Binding Contatos.NovoEmail, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="190" Margin="6,0,0,0"
+                                     VerticalContentAlignment="Center"
+                                     ToolTip="Endereco de e-mail"
+                                     AutomationProperties.Name="E-mail do novo contato" />
+                            <TextBox Text="{Binding Contatos.NovaEmpresa, UpdateSourceTrigger=PropertyChanged}"
+                                     Width="140" Margin="6,0,0,0"
+                                     VerticalContentAlignment="Center"
+                                     ToolTip="Empresa"
+                                     AutomationProperties.Name="Empresa do novo contato" />
+                            <Button Content="Deste remetente"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding ProporContatoCommand}"
+                                    Margin="6,0,0,0"
+                                    ToolTip="Copia o remetente da mensagem selecionada para o formulario. Nao cria nada, e nao usa a IA."
+                                    AutomationProperties.Name="Propor contato deste remetente" />
+                            <Button Content="Criar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Contatos.CriarCommand}"
+                                    Margin="6,0,0,0"
+                                    ToolTip="Cria o contato na pasta pessoal de Contatos"
+                                    AutomationProperties.Name="Criar o contato" />
+                        </StackPanel>
+
+                        <!-- O AVISO DE FICHA REPETIDA. Aviso, e nao recusa: o botao
+                             "Criar" ao lado continua habilitado de proposito. -->
+                        <TextBlock Text="{Binding Contatos.Aviso}"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Margin="0,0,0,6"
+                                   Foreground="{DynamicResource Brush.Text.Secondary}"
+                                   Visibility="{Binding Contatos.TemAviso,
+                                                Converter={StaticResource BoolToVis},
+                                                FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="Ja ha ficha com este endereco" />
+
+                        <ItemsControl ItemsSource="{Binding Contatos.Contatos}"
+                                      AutomationProperties.Name="Contatos lidos">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <StackPanel Orientation="Horizontal" Margin="0,1">
+                                        <TextBlock Text="{Binding Nome}"
+                                                   Width="170" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding Email}"
+                                                   Width="230" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                        <TextBlock Text="{Binding Empresa}"
+                                                   FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   MaxWidth="200"
+                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+
+                        <TextBlock Text="{Binding Contatos.Erro}"
+                                   TextWrapping="Wrap"
+                                   FontSize="12"
+                                   Margin="0,4,0,0"
+                                   Foreground="{DynamicResource Brush.Error}"
+                                   Visibility="{Binding Contatos.TemErro,
+                                                Converter={StaticResource BoolToVis},
+                                                FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="Falha nos contatos" />
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ============ Busca no acervo ============
+
+                 ERA UMA FAIXA FIXA, e ocupava altura o tempo todo para uma
+                 coisa que se usa de vez em quando. Com a declaracao do diario
+                 de buscas junto — que e um paragrafo inteiro, e tem de ser —
+                 ela empurrava a lista de mensagens para cima.
+
+                 Virou uma lupa na barra de titulo, ao lado do estado da
+                 conexao. A declaracao do diario veio junto: o lugar de uma
+                 ressalva e onde a coisa ressalvada acontece, e move-la para
+                 uma tela de configuracoes seria a versao arrumadinha de
+                 escondê-la. -->
+            <Grid Grid.Row="1" Panel.ZIndex="11"
+                  Visibility="{Binding BuscaAberta, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}">
+
+                <!-- Clicar fora fecha. Escurecer diz, sem texto, que o resto
+                     nao responde enquanto isto esta aberto. -->
+                <Rectangle Fill="#99000000">
+                    <Rectangle.InputBindings>
+                        <MouseBinding MouseAction="LeftClick"
+                                      Command="{Binding FecharBuscaCommand}" />
+                    </Rectangle.InputBindings>
+                </Rectangle>
+
+                <Border Background="{DynamicResource Brush.Surface.1}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Card}"
+                        MaxWidth="860" Margin="28"
+                        VerticalAlignment="Top"
+                        Padding="20,16,20,18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                            <TextBlock Text="PROCURAR NO ACERVO"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <Button Content="Fechar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding FecharBuscaCommand}"
+                                    HorizontalAlignment="Right" Margin="16,0,0,0"
+                                    AutomationProperties.Name="Fechar a busca" />
+                        </StackPanel>
+                        <StackPanel Margin="0,10,0,0"
+                                    Visibility="{Binding Busca, Converter={StaticResource NullToVis},
+                                                         FallbackValue=Collapsed}">
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="PROCURAR NO ACERVO"
+                                           Style="{DynamicResource Text.Muted}"
+                                           VerticalAlignment="Center" />
+                                <TextBox Text="{Binding Busca.Termo, UpdateSourceTrigger=PropertyChanged}"
+                                         Width="240" Margin="12,0,0,0"
+                                         VerticalAlignment="Center"
+                                         VerticalContentAlignment="Center"
+                                         Padding="6,3"
+                                         AutomationProperties.Name="Termo da busca no acervo">
+                                    <TextBox.InputBindings>
+                                        <!-- Enter procura. Sem isto o usuario digita
+                                             e nao acontece nada, que e o formato de
+                                             "parece quebrado" mais barato de evitar. -->
+                                        <KeyBinding Key="Return" Command="{Binding Busca.ProcurarCommand}" />
+                                    </TextBox.InputBindings>
+                                </TextBox>
+                                <Button Content="Procurar"
+                                        Style="{DynamicResource Toolbar.Button}"
+                                        Command="{Binding Busca.ProcurarCommand}"
+                                        Margin="8,0,0,0"
+                                        ToolTip="Procura assunto e remetente no que ja foi varrido"
+                                        AutomationProperties.Name="Procurar no acervo" />
+                                <Button Content="Limpar"
+                                        Style="{DynamicResource Toolbar.Button}"
+                                        Command="{Binding Busca.LimparCommand}"
+                                        Margin="6,0,0,0"
+                                        AutomationProperties.Name="Limpar a busca" />
+                                <TextBlock Text="{Binding Busca.Achados.Count, StringFormat={}{0} achado(s)}"
+                                           Style="{DynamicResource Text.Muted}"
+                                           Margin="12,0,0,0" VerticalAlignment="Center"
+                                           Visibility="{Binding Busca.Procurou,
+                                                        Converter={StaticResource BoolToVis},
+                                                        FallbackValue=Collapsed}" />
+                            </StackPanel>
+
+                            <!-- QUANTOS DESTES SAO PALPITE.
+                                 A busca ganhou um segundo passe tolerante a erro
+                                 de digitacao e a flexao. Medido em 29/08 sobre o
+                                 acervo real: erro de digitacao subiu de 0,4% para
+                                 93,8%, e flexao de 0% para 100%.
+                                 O ganho tem preco, e o preco e ruido. Uma lista
+                                 que misturasse os dois diria "a busca achou"
+                                 quando o certo e "a busca achou algo parecido":
+                                 a mesma familia de defeito que este projeto passou
+                                 uma serie de revisoes corrigindo. -->
+                            <!-- O DIARIO DE BUSCAS, DECLARADO NA TELA.
+                                 O dono autorizou a coleta em 30/08. Autorizar nao
+                                 e o mesmo que querer esquecer que ela existe: a
+                                 faixa diz que esta anotando, quantas, e ONDE o
+                                 arquivo esta. Arquivo que o usuario nao sabe
+                                 localizar e arquivo que ele nao pode apagar, e
+                                 poder apagar era metade do acordo.
+
+                                 So o texto digitado entra ali. Nenhum assunto,
+                                 nenhum remetente, nenhum EntryID. -->
+                            <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
+                                        Visibility="{Binding Busca.RegistrandoBuscas,
+                                                     Converter={StaticResource BoolToVis},
+                                                     FallbackValue=Collapsed}">
+                                <TextBlock Text="{Binding Busca.FraseDoDiario}"
+                                           TextWrapping="Wrap"
+                                           FontSize="11"
+                                           MaxWidth="520"
+                                           Foreground="{DynamicResource Brush.Text.Secondary}"
+                                           AutomationProperties.Name="O que o diario de buscas anota" />
+                                <!-- DESLIGAR E APAGAR SAO DOIS BOTOES, e a
+                                     primeira versao desta faixa so tinha o
+                                     segundo. Apagar tira o que ja foi coletado, e
+                                     a busca seguinte recria o arquivo: apagar
+                                     nunca chega a ser "pare de coletar". Retirar
+                                     consentimento precisa de botao proprio. -->
+                                <Button Content="{Binding Busca.RotuloDoInterruptor}"
+                                        Style="{DynamicResource Toolbar.Button}"
+                                        Command="{Binding Busca.AlternarDiarioCommand}"
+                                        Margin="8,0,0,0"
+                                        VerticalAlignment="Top"
+                                        ToolTip="Liga ou desliga o registro das suas buscas. Fica valendo depois de fechar o Iris."
+                                        AutomationProperties.Name="Ligar ou desligar o registro de buscas" />
+                                <Button Content="Apagar registro"
+                                        Style="{DynamicResource Toolbar.Button}"
+                                        Command="{Binding Busca.ApagarDiarioCommand}"
+                                        Margin="8,0,0,0"
+                                        VerticalAlignment="Top"
+                                        ToolTip="Apaga o arquivo de buscas anotadas"
+                                        AutomationProperties.Name="Apagar o diario de buscas" />
+                            </StackPanel>
+
+                            <TextBlock Text="{Binding Busca.FalhaDoDiario}"
+                                       TextWrapping="Wrap"
+                                       FontSize="11"
+                                       Margin="0,4,0,0"
+                                       Foreground="{DynamicResource Brush.Error}"
+                                       Visibility="{Binding Busca.TemFalhaDoDiario,
+                                                    Converter={StaticResource BoolToVis},
+                                                    FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Falha do diario de buscas" />
+
+                            <TextBlock Text="{Binding Busca.FraseDosAproximados}"
+                                       TextWrapping="Wrap"
+                                       FontSize="11"
+                                       Margin="0,6,0,0"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       Visibility="{Binding Busca.TemAproximados,
+                                                    Converter={StaticResource BoolToVis},
+                                                    FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Quantos achados sao aproximados" />
+
+                            <!-- Altura limitada: o acervo tem mil linhas, e uma
+                                 lista sem teto empurraria a lista de mensagens
+                                 para fora da tela. -->
+                            <ItemsControl ItemsSource="{Binding Busca.Achados}"
+                                          MaxHeight="160" Margin="0,8,0,0">
+                                <ItemsControl.Template>
+                                    <ControlTemplate TargetType="ItemsControl">
+                                        <ScrollViewer VerticalScrollBarVisibility="Auto">
+                                            <ItemsPresenter />
+                                        </ScrollViewer>
+                                    </ControlTemplate>
+                                </ItemsControl.Template>
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <Grid Margin="0,0,0,4">
+                                            <Grid.ColumnDefinitions>
+                                                <ColumnDefinition Width="*" />
+                                                <ColumnDefinition Width="Auto" />
+                                            </Grid.ColumnDefinitions>
+                                            <StackPanel Grid.Column="0">
+                                                <TextBlock Text="{Binding Assunto}"
+                                                           FontSize="12"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Foreground="{DynamicResource Brush.Text.Primary}" />
+                                                <StackPanel Orientation="Horizontal">
+                                                    <TextBlock Text="{Binding Remetente}"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                    <TextBlock Text="{Binding Pasta, StringFormat={} · {0}}"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                                    <!-- "pode ja ter sido apagada": e o
+                                                         que impede o resultado de parecer
+                                                         o estado corrente da caixa. -->
+                                                    <!-- A MARCA NA LINHA, e nao so no rodape:
+                                                         quem le uma lista le linha a linha,
+                                                         e um contador no rodape nao diz QUAL
+                                                         das quinze e o palpite. -->
+                                                    <TextBlock Text=" · aproximado"
+                                                               FontSize="11"
+                                                               FontStyle="Italic"
+                                                               Foreground="{DynamicResource Brush.Text.Secondary}"
+                                                               Visibility="{Binding Aproximado,
+                                                                            Converter={StaticResource BoolToVis},
+                                                                            FallbackValue=Collapsed}"
+                                                               AutomationProperties.Name="Este achado casou por aproximacao" />
+                                                    <TextBlock Text="{Binding Aviso, StringFormat={} · {0}}"
+                                                               FontSize="11"
+                                                               Foreground="{DynamicResource Brush.Error}"
+                                                               Visibility="{Binding TemAviso,
+                                                                            Converter={StaticResource BoolToVis},
+                                                                            FallbackValue=Collapsed}" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="1" Text="{Binding Quando}"
+                                                       FontSize="11" Margin="12,0,0,0"
+                                                       VerticalAlignment="Top"
+                                                       Foreground="{DynamicResource Brush.Text.Secondary}" />
+                                        </Grid>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+
+                            <TextBlock Text="{Binding Busca.Ressalva}"
+                                       TextWrapping="Wrap"
+                                       FontSize="12"
+                                       Margin="0,6,0,0"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       Visibility="{Binding Busca.TemRessalva,
+                                                    Converter={StaticResource BoolToVis},
+                                                    FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Ressalva da busca" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
             <Grid Grid.Row="1" Panel.ZIndex="10"
                   Visibility="{Binding Composer.IsOpen, Converter={StaticResource BoolToVis}}">
 
@@ -1300,278 +1976,7 @@
                  empilhariam, e a de cima cobriria a de baixo, que foi
                  literalmente o defeito que escondeu a faixa do acervo por
                  dias, quando ela e a da IA moravam as duas em Grid.Row=2. -->
-            <Border Grid.Row="2"
-                    Visibility="{Binding MostrarAcervo, Converter={StaticResource BoolToVis},
-                                         FallbackValue=Collapsed}"
-                    Background="{DynamicResource Brush.Surface.1}"
-                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                    BorderThickness="0,1,0,0"
-                    Padding="16,8">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <TextBlock Text="ACERVO"
-                                   Style="{DynamicResource Text.Muted}"
-                                   VerticalAlignment="Center" />
-                        <Button Content="Varrer esta pasta"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding Acervo.VarrerCommand}"
-                                Margin="12,0,0,0"
-                                ToolTip="Le a pasta inteira e guarda o que viu no cache"
-                                AutomationProperties.Name="Varrer esta pasta" />
-                        <TextBlock Text="{Binding Acervo.Itens, StringFormat={}{0} itens guardados}"
-                                   Style="{DynamicResource Text.Muted}"
-                                   Margin="12,0,0,0" VerticalAlignment="Center" />
-                        <!-- Varrer bloqueia e demora: sem sinal na tela, "esta
-                             lendo" e "travou" sao a mesma coisa para quem olha. -->
-                        <ProgressBar IsIndeterminate="True"
-                                     Width="90" Height="3" Margin="12,0,0,0"
-                                     BorderThickness="0"
-                                     Background="{DynamicResource Brush.Surface.3}"
-                                     Foreground="{DynamicResource Brush.Accent}"
-                                     VerticalAlignment="Center"
-                                     Visibility="{Binding Acervo.Varrendo,
-                                                  Converter={StaticResource BoolToVis},
-                                                  FallbackValue=Collapsed}"
-                                     AutomationProperties.Name="Varrendo" />
-                    </StackPanel>
-                    <TextBlock Text="{Binding Acervo.Ressalva}"
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                               Visibility="{Binding Acervo.Ressalva, Converter={StaticResource NullToVis},
-                                                    FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Ressalva do acervo" />
-                    <TextBlock Text="{Binding Acervo.Travado}"
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Margin="0,4,0,0"
-                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                               Visibility="{Binding Acervo.Travado, Converter={StaticResource NullToVis},
-                                                    FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Falha na atualizacao do acervo" />
 
-                    <!-- ==================== BUSCA ====================
-                         Ela mora AQUI, junto do acervo, e nao junto da lista:
-                         a lista le ao vivo do Outlook e a busca le do cache.
-                         Poe-la ao lado da lista faria o usuario esperar que
-                         ela procurasse na caixa, e ela procura no ACERVO:
-                         so metadados, sem corpo, e so o que ja foi varrido.
-                         Duas fontes diferentes com a mesma cara enganam em
-                         silencio.
-
-                         NAO se escreve aqui quanto tempo o acervo cobre. A
-                         janela de 31 dias medida em 28/08 e do OUTLOOK, e o
-                         cache foi desenhado para acumular alem dela. Fixar
-                         "um mes" no comentario seria gravar como permanente
-                         um numero que e do provedor e muda sozinho.
-
-                         A ressalva fica visivel SEMPRE que houve busca, e
-                         nao so quando ela nao acha: uma ressalva que so
-                         aparece no vazio ensina a le-la como "nao achei", e
-                         ela diz outra coisa - onde se procurou, com que
-                         alcance, e que o corpo nao e procuravel. -->
-                    <StackPanel Margin="0,10,0,0"
-                                Visibility="{Binding Busca, Converter={StaticResource NullToVis},
-                                                     FallbackValue=Collapsed}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="PROCURAR NO ACERVO"
-                                       Style="{DynamicResource Text.Muted}"
-                                       VerticalAlignment="Center" />
-                            <TextBox Text="{Binding Busca.Termo, UpdateSourceTrigger=PropertyChanged}"
-                                     Width="240" Margin="12,0,0,0"
-                                     VerticalAlignment="Center"
-                                     VerticalContentAlignment="Center"
-                                     Padding="6,3"
-                                     AutomationProperties.Name="Termo da busca no acervo">
-                                <TextBox.InputBindings>
-                                    <!-- Enter procura. Sem isto o usuario digita
-                                         e nao acontece nada, que e o formato de
-                                         "parece quebrado" mais barato de evitar. -->
-                                    <KeyBinding Key="Return" Command="{Binding Busca.ProcurarCommand}" />
-                                </TextBox.InputBindings>
-                            </TextBox>
-                            <Button Content="Procurar"
-                                    Style="{DynamicResource Toolbar.Button}"
-                                    Command="{Binding Busca.ProcurarCommand}"
-                                    Margin="8,0,0,0"
-                                    ToolTip="Procura assunto e remetente no que ja foi varrido"
-                                    AutomationProperties.Name="Procurar no acervo" />
-                            <Button Content="Limpar"
-                                    Style="{DynamicResource Toolbar.Button}"
-                                    Command="{Binding Busca.LimparCommand}"
-                                    Margin="6,0,0,0"
-                                    AutomationProperties.Name="Limpar a busca" />
-                            <TextBlock Text="{Binding Busca.Achados.Count, StringFormat={}{0} achado(s)}"
-                                       Style="{DynamicResource Text.Muted}"
-                                       Margin="12,0,0,0" VerticalAlignment="Center"
-                                       Visibility="{Binding Busca.Procurou,
-                                                    Converter={StaticResource BoolToVis},
-                                                    FallbackValue=Collapsed}" />
-                        </StackPanel>
-
-                        <!-- QUANTOS DESTES SAO PALPITE.
-                             A busca ganhou um segundo passe tolerante a erro
-                             de digitacao e a flexao. Medido em 29/08 sobre o
-                             acervo real: erro de digitacao subiu de 0,4% para
-                             93,8%, e flexao de 0% para 100%.
-                             O ganho tem preco, e o preco e ruido. Uma lista
-                             que misturasse os dois diria "a busca achou"
-                             quando o certo e "a busca achou algo parecido":
-                             a mesma familia de defeito que este projeto passou
-                             uma serie de revisoes corrigindo. -->
-                        <!-- O DIARIO DE BUSCAS, DECLARADO NA TELA.
-                             O dono autorizou a coleta em 30/08. Autorizar nao
-                             e o mesmo que querer esquecer que ela existe: a
-                             faixa diz que esta anotando, quantas, e ONDE o
-                             arquivo esta. Arquivo que o usuario nao sabe
-                             localizar e arquivo que ele nao pode apagar, e
-                             poder apagar era metade do acordo.
-
-                             So o texto digitado entra ali. Nenhum assunto,
-                             nenhum remetente, nenhum EntryID. -->
-                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
-                                    Visibility="{Binding Busca.RegistrandoBuscas,
-                                                 Converter={StaticResource BoolToVis},
-                                                 FallbackValue=Collapsed}">
-                            <TextBlock Text="{Binding Busca.FraseDoDiario}"
-                                       TextWrapping="Wrap"
-                                       FontSize="11"
-                                       MaxWidth="520"
-                                       Foreground="{DynamicResource Brush.Text.Secondary}"
-                                       AutomationProperties.Name="O que o diario de buscas anota" />
-                            <!-- DESLIGAR E APAGAR SAO DOIS BOTOES, e a
-                                 primeira versao desta faixa so tinha o
-                                 segundo. Apagar tira o que ja foi coletado, e
-                                 a busca seguinte recria o arquivo: apagar
-                                 nunca chega a ser "pare de coletar". Retirar
-                                 consentimento precisa de botao proprio. -->
-                            <Button Content="{Binding Busca.RotuloDoInterruptor}"
-                                    Style="{DynamicResource Toolbar.Button}"
-                                    Command="{Binding Busca.AlternarDiarioCommand}"
-                                    Margin="8,0,0,0"
-                                    VerticalAlignment="Top"
-                                    ToolTip="Liga ou desliga o registro das suas buscas. Fica valendo depois de fechar o Iris."
-                                    AutomationProperties.Name="Ligar ou desligar o registro de buscas" />
-                            <Button Content="Apagar registro"
-                                    Style="{DynamicResource Toolbar.Button}"
-                                    Command="{Binding Busca.ApagarDiarioCommand}"
-                                    Margin="8,0,0,0"
-                                    VerticalAlignment="Top"
-                                    ToolTip="Apaga o arquivo de buscas anotadas"
-                                    AutomationProperties.Name="Apagar o diario de buscas" />
-                        </StackPanel>
-
-                        <TextBlock Text="{Binding Busca.FalhaDoDiario}"
-                                   TextWrapping="Wrap"
-                                   FontSize="11"
-                                   Margin="0,4,0,0"
-                                   Foreground="{DynamicResource Brush.Error}"
-                                   Visibility="{Binding Busca.TemFalhaDoDiario,
-                                                Converter={StaticResource BoolToVis},
-                                                FallbackValue=Collapsed}"
-                                   AutomationProperties.Name="Falha do diario de buscas" />
-
-                        <TextBlock Text="{Binding Busca.FraseDosAproximados}"
-                                   TextWrapping="Wrap"
-                                   FontSize="11"
-                                   Margin="0,6,0,0"
-                                   Foreground="{DynamicResource Brush.Text.Secondary}"
-                                   Visibility="{Binding Busca.TemAproximados,
-                                                Converter={StaticResource BoolToVis},
-                                                FallbackValue=Collapsed}"
-                                   AutomationProperties.Name="Quantos achados sao aproximados" />
-
-                        <!-- Altura limitada: o acervo tem mil linhas, e uma
-                             lista sem teto empurraria a lista de mensagens
-                             para fora da tela. -->
-                        <ItemsControl ItemsSource="{Binding Busca.Achados}"
-                                      MaxHeight="160" Margin="0,8,0,0">
-                            <ItemsControl.Template>
-                                <ControlTemplate TargetType="ItemsControl">
-                                    <ScrollViewer VerticalScrollBarVisibility="Auto">
-                                        <ItemsPresenter />
-                                    </ScrollViewer>
-                                </ControlTemplate>
-                            </ItemsControl.Template>
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate>
-                                    <Grid Margin="0,0,0,4">
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="*" />
-                                            <ColumnDefinition Width="Auto" />
-                                        </Grid.ColumnDefinitions>
-                                        <StackPanel Grid.Column="0">
-                                            <TextBlock Text="{Binding Assunto}"
-                                                       FontSize="12"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       Foreground="{DynamicResource Brush.Text.Primary}" />
-                                            <StackPanel Orientation="Horizontal">
-                                                <TextBlock Text="{Binding Remetente}"
-                                                           FontSize="11"
-                                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                                <TextBlock Text="{Binding Pasta, StringFormat={} · {0}}"
-                                                           FontSize="11"
-                                                           Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                                <!-- "pode ja ter sido apagada": e o
-                                                     que impede o resultado de parecer
-                                                     o estado corrente da caixa. -->
-                                                <!-- A MARCA NA LINHA, e nao so no rodape:
-                                                     quem le uma lista le linha a linha,
-                                                     e um contador no rodape nao diz QUAL
-                                                     das quinze e o palpite. -->
-                                                <TextBlock Text=" · aproximado"
-                                                           FontSize="11"
-                                                           FontStyle="Italic"
-                                                           Foreground="{DynamicResource Brush.Text.Secondary}"
-                                                           Visibility="{Binding Aproximado,
-                                                                        Converter={StaticResource BoolToVis},
-                                                                        FallbackValue=Collapsed}"
-                                                           AutomationProperties.Name="Este achado casou por aproximacao" />
-                                                <TextBlock Text="{Binding Aviso, StringFormat={} · {0}}"
-                                                           FontSize="11"
-                                                           Foreground="{DynamicResource Brush.Error}"
-                                                           Visibility="{Binding TemAviso,
-                                                                        Converter={StaticResource BoolToVis},
-                                                                        FallbackValue=Collapsed}" />
-                                            </StackPanel>
-                                        </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding Quando}"
-                                                   FontSize="11" Margin="12,0,0,0"
-                                                   VerticalAlignment="Top"
-                                                   Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                    </Grid>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
-
-                        <TextBlock Text="{Binding Busca.Ressalva}"
-                                   TextWrapping="Wrap"
-                                   FontSize="12"
-                                   Margin="0,6,0,0"
-                                   Foreground="{DynamicResource Brush.Text.Secondary}"
-                                   Visibility="{Binding Busca.TemRessalva,
-                                                Converter={StaticResource BoolToVis},
-                                                FallbackValue=Collapsed}"
-                                   AutomationProperties.Name="Ressalva da busca" />
-                    </StackPanel>
-                </StackPanel>
-            </Border>
-
-            <!-- O cache que nao abre nao pode virar tela vazia silenciosa:
-                 vazio e indistinguivel de "nao ha nada guardado". -->
-            <Border Grid.Row="2"
-                    Visibility="{Binding AcervoIndisponivel, Converter={StaticResource NullToVis},
-                                         FallbackValue=Collapsed}"
-                    Background="{DynamicResource Brush.Surface.1}"
-                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                    BorderThickness="0,1,0,0"
-                    Padding="16,8">
-                <TextBlock Text="{Binding AcervoIndisponivel}"
-                           TextWrapping="Wrap"
-                           FontSize="12"
-                           Foreground="{DynamicResource Brush.Text.Secondary}"
-                           AutomationProperties.Name="Acervo indisponivel" />
-            </Border>
 
             <!-- A FAIXA DA IA.
 
@@ -1586,285 +1991,7 @@
                  tem bindings. -->
             <local:FaixaDaIa Grid.Row="3" DataContext="{Binding Assistente}" />
 
-            <!-- ============ Tarefas ============
-                 A Fase 5 em uma frase: a sugestao preenche o campo, VOCE
-                 confirma, o Iris cria. Sao dois passos de proposito, e o do
-                 meio e o que impede a lista de tarefas de encher de linha que
-                 ninguem pediu.
 
-                 "Desta mensagem" NAO chama a IA. Ele copia o assunto da
-                 mensagem selecionada para o campo. Extrair tarefa de um corpo
-                 com o assistente e uma OPERACAO NOVA, e a cerimonia de
-                 ativacao autoriza operacoes nomeadas sobre pastas escolhidas:
-                 reusar a autorizacao do resumo para isso alargaria uma
-                 permissao que ninguem concordou em alargar.
-
-                 NAO HA CAMPO DE RESPONSAVEL, e a ausencia e a funcionalidade.
-                 Tarefa atribuida e pedido enviado por e-mail, e o Iris nao
-                 envia. Ver o comentario do TaskWriting. -->
-            <Border Grid.Row="4"
-                    Background="{DynamicResource Brush.Surface.1}"
-                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                    BorderThickness="0,1,0,0"
-                    Padding="16,8">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <TextBlock Text="TAREFAS"
-                                   Style="{DynamicResource Text.Muted}"
-                                   VerticalAlignment="Center" />
-                        <Button Content="Abrir"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding Tarefas.AbrirCommand}"
-                                Margin="12,0,0,0"
-                                ToolTip="Le a pasta de tarefas do Outlook. Ela nao aparece na arvore de pastas."
-                                AutomationProperties.Name="Abrir as tarefas" />
-                        <Button Content="Atualizar"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding Tarefas.AtualizarCommand}"
-                                Margin="6,0,0,0"
-                                AutomationProperties.Name="Atualizar as tarefas" />
-                        <TextBlock Text="{Binding Tarefas.Resumo}"
-                                   Style="{DynamicResource Text.Muted}"
-                                   Margin="12,0,0,0" VerticalAlignment="Center" />
-                        <ProgressBar IsIndeterminate="True"
-                                     Width="90" Height="3" Margin="12,0,0,0"
-                                     BorderThickness="0"
-                                     Background="{DynamicResource Brush.Surface.3}"
-                                     Foreground="{DynamicResource Brush.Accent}"
-                                     VerticalAlignment="Center"
-                                     Visibility="{Binding Tarefas.Carregando,
-                                                  Converter={StaticResource BoolToVis},
-                                                  FallbackValue=Collapsed}"
-                                     AutomationProperties.Name="Lendo as tarefas" />
-                    </StackPanel>
-
-                    <!-- PROPOR e CRIAR: dois controles, e nunca um so. -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
-                                Visibility="{Binding Tarefas.TemPasta,
-                                             Converter={StaticResource BoolToVis},
-                                             FallbackValue=Collapsed}">
-                        <TextBox Text="{Binding Tarefas.NovoAssunto, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="280"
-                                 VerticalContentAlignment="Center"
-                                 ToolTip="O que e para fazer"
-                                 AutomationProperties.Name="Assunto da nova tarefa" />
-                        <Button Content="Desta mensagem"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding ProporTarefaCommand}"
-                                Margin="6,0,0,0"
-                                ToolTip="Copia o assunto da mensagem selecionada para o campo. Nao cria nada, e nao usa a IA."
-                                AutomationProperties.Name="Propor tarefa desta mensagem" />
-                        <Button Content="Criar"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding Tarefas.CriarCommand}"
-                                Margin="6,0,0,0"
-                                ToolTip="Cria a tarefa na pasta de tarefas do Outlook"
-                                AutomationProperties.Name="Criar a tarefa" />
-                        <Button Content="Concluir"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding Tarefas.ConcluirCommand}"
-                                Margin="18,0,0,0"
-                                ToolTip="Marca a tarefa selecionada como concluida"
-                                AutomationProperties.Name="Concluir a tarefa selecionada" />
-                        <TextBlock Text="{Binding Tarefas.AvisoDaSelecionada}"
-                                   Style="{DynamicResource Text.Muted}"
-                                   TextWrapping="Wrap" MaxWidth="360"
-                                   Margin="12,0,0,0" VerticalAlignment="Center"
-                                   AutomationProperties.Name="Por que esta tarefa nao pode ser concluida aqui" />
-                    </StackPanel>
-
-                    <ListBox ItemsSource="{Binding Tarefas.Tarefas}"
-                             SelectedItem="{Binding Tarefas.Selecionada}"
-                             MaxHeight="150"
-                             Background="Transparent"
-                             BorderThickness="0"
-                             AutomationProperties.Name="Tarefas lidas">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="0,1">
-                                    <TextBlock Text="{Binding Prazo}"
-                                               Width="110"
-                                               FontSize="12"
-                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                    <TextBlock Text="{Binding Assunto}"
-                                               FontSize="12"
-                                               TextTrimming="CharacterEllipsis"
-                                               MaxWidth="420" />
-                                    <!-- O aviso de atribuida fica na LINHA, e nao
-                                         so no rodape: quem le a lista precisa
-                                         saber quais linhas pertencem a uma
-                                         negociacao da qual o Iris nao participa. -->
-                                    <TextBlock Text="atribuida"
-                                               FontSize="11" Margin="8,0,0,0"
-                                               VerticalAlignment="Center"
-                                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                                               Visibility="{Binding Atribuida,
-                                                            Converter={StaticResource BoolToVis},
-                                                            FallbackValue=Collapsed}" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                    </ListBox>
-
-                    <TextBlock Text="{Binding Tarefas.Erro}"
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Margin="0,4,0,0"
-                               Foreground="{DynamicResource Brush.Error}"
-                               Visibility="{Binding Tarefas.TemErro,
-                                            Converter={StaticResource BoolToVis},
-                                            FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Falha nas tarefas" />
-                </StackPanel>
-            </Border>
-
-            <!-- ============ Contatos ============
-                 A FAIXA QUE PRECISA FALAR QUANDO NAO TEM NADA A MOSTRAR.
-
-                 Medido em 28/08/2026: esta pasta tem 0 itens nesta caixa, com
-                 a organizacao inteira endereçavel — porque os contatos
-                 corporativos vivem no GAL, e o GAL esta fora de escopo pela
-                 §8.
-
-                 Entao a lista vazia aqui e o caso NORMAL, e nao o caso de
-                 erro. Uma faixa que mostrasse a lista vazia e calasse estaria
-                 afirmando ausencia a partir de nao ter olhado — sobre
-                 pessoas. Por isso a ressalva tem lugar fixo e proprio, acima
-                 da lista, e nao aparece so quando alguem lembra.
-
-                 As duas etapas sao as mesmas da Fase 5: "Deste remetente"
-                 preenche o formulario, e o "Criar" e outro botao. E o aviso de
-                 ficha repetida AVISA — nao bloqueia: a busca so enxerga o que
-                 esta leitura trouxe, nunca o GAL, e recusar com essa base
-                 seria transformar "nao encontrei" em "nao existe". -->
-            <Border Grid.Row="5"
-                    Background="{DynamicResource Brush.Surface.1}"
-                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                    BorderThickness="0,1,0,0"
-                    Padding="16,8">
-                <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                        <TextBlock Text="CONTATOS"
-                                   Style="{DynamicResource Text.Muted}"
-                                   VerticalAlignment="Center" />
-                        <Button Content="Abrir"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding Contatos.AbrirCommand}"
-                                Margin="12,0,0,0"
-                                ToolTip="Le a pasta pessoal de Contatos. Ela nao aparece na arvore de pastas."
-                                AutomationProperties.Name="Abrir os contatos" />
-                        <Button Content="Atualizar"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding Contatos.AtualizarCommand}"
-                                Margin="6,0,0,0"
-                                AutomationProperties.Name="Atualizar os contatos" />
-                        <TextBlock Text="{Binding Contatos.Resumo}"
-                                   Style="{DynamicResource Text.Muted}"
-                                   Margin="12,0,0,0" VerticalAlignment="Center" />
-                        <ProgressBar IsIndeterminate="True"
-                                     Width="90" Height="3" Margin="12,0,0,0"
-                                     BorderThickness="0"
-                                     Background="{DynamicResource Brush.Surface.3}"
-                                     Foreground="{DynamicResource Brush.Accent}"
-                                     VerticalAlignment="Center"
-                                     Visibility="{Binding Contatos.Carregando,
-                                                  Converter={StaticResource BoolToVis},
-                                                  FallbackValue=Collapsed}"
-                                     AutomationProperties.Name="Lendo os contatos" />
-                    </StackPanel>
-
-                    <!-- A RESSALVA, ACIMA DA LISTA E NAO ABAIXO.
-                         Ela explica o que a lista NAO diz, e quem le de cima
-                         para baixo precisa dela antes de tirar conclusao do
-                         que ve, ou da falta do que ve. -->
-                    <TextBlock Text="{Binding Contatos.Ressalva}"
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Margin="0,0,0,6"
-                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                               Visibility="{Binding Contatos.TemRessalva,
-                                            Converter={StaticResource BoolToVis},
-                                            FallbackValue=Collapsed}"
-                               AutomationProperties.Name="O que esta leitura de contatos nao alcanca" />
-
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
-                                Visibility="{Binding Contatos.TemPasta,
-                                             Converter={StaticResource BoolToVis},
-                                             FallbackValue=Collapsed}">
-                        <TextBox Text="{Binding Contatos.NovoNome, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="170"
-                                 VerticalContentAlignment="Center"
-                                 ToolTip="Nome do contato"
-                                 AutomationProperties.Name="Nome do novo contato" />
-                        <TextBox Text="{Binding Contatos.NovoEmail, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="190" Margin="6,0,0,0"
-                                 VerticalContentAlignment="Center"
-                                 ToolTip="Endereco de e-mail"
-                                 AutomationProperties.Name="E-mail do novo contato" />
-                        <TextBox Text="{Binding Contatos.NovaEmpresa, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="140" Margin="6,0,0,0"
-                                 VerticalContentAlignment="Center"
-                                 ToolTip="Empresa"
-                                 AutomationProperties.Name="Empresa do novo contato" />
-                        <Button Content="Deste remetente"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding ProporContatoCommand}"
-                                Margin="6,0,0,0"
-                                ToolTip="Copia o remetente da mensagem selecionada para o formulario. Nao cria nada, e nao usa a IA."
-                                AutomationProperties.Name="Propor contato deste remetente" />
-                        <Button Content="Criar"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding Contatos.CriarCommand}"
-                                Margin="6,0,0,0"
-                                ToolTip="Cria o contato na pasta pessoal de Contatos"
-                                AutomationProperties.Name="Criar o contato" />
-                    </StackPanel>
-
-                    <!-- O AVISO DE FICHA REPETIDA. Aviso, e nao recusa: o botao
-                         "Criar" ao lado continua habilitado de proposito. -->
-                    <TextBlock Text="{Binding Contatos.Aviso}"
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Margin="0,0,0,6"
-                               Foreground="{DynamicResource Brush.Text.Secondary}"
-                               Visibility="{Binding Contatos.TemAviso,
-                                            Converter={StaticResource BoolToVis},
-                                            FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Ja ha ficha com este endereco" />
-
-                    <ItemsControl ItemsSource="{Binding Contatos.Contatos}"
-                                  AutomationProperties.Name="Contatos lidos">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel Orientation="Horizontal" Margin="0,1">
-                                    <TextBlock Text="{Binding Nome}"
-                                               Width="170" FontSize="12"
-                                               TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding Email}"
-                                               Width="230" FontSize="12"
-                                               TextTrimming="CharacterEllipsis"
-                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                    <TextBlock Text="{Binding Empresa}"
-                                               FontSize="12"
-                                               TextTrimming="CharacterEllipsis"
-                                               MaxWidth="200"
-                                               Foreground="{DynamicResource Brush.Text.Secondary}" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
-
-                    <TextBlock Text="{Binding Contatos.Erro}"
-                               TextWrapping="Wrap"
-                               FontSize="12"
-                               Margin="0,4,0,0"
-                               Foreground="{DynamicResource Brush.Error}"
-                               Visibility="{Binding Contatos.TemErro,
-                                            Converter={StaticResource BoolToVis},
-                                            FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Falha nos contatos" />
-                </StackPanel>
-            </Border>
 
         </Grid>
     </Border>

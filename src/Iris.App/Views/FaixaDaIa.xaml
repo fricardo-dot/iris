@@ -147,13 +147,42 @@
                                Visibility="{Binding TemAviso, Converter={StaticResource BoolToVis},
                                                     FallbackValue=Collapsed}"
                                AutomationProperties.Name="Situacao da IA" />
-                    <TextBlock Text="{Binding Reconciliacao.Aviso}"
-                               Style="{DynamicResource Text.Secondary}"
+                    <!-- O AVISO INTEIRO, e o botao que o encolhe.
+
+                         Ele dizia "este aviso nao desaparece sozinho", e era
+                         verdade: nao havia como dizer que se viu. Um paragrafo
+                         permanente e um paragrafo que se aprende a nao ler.
+
+                         Reconhecer NAO desfaz a ambiguidade nem a esconde: ela
+                         vira a marca curta logo abaixo. E envio ambiguo NOVO
+                         faz o paragrafo voltar inteiro, porque o que se guarda
+                         e o NUMERO reconhecido, e nao um "ja vi". -->
+                    <StackPanel Margin="0,4,0,0"
+                                Visibility="{Binding TemAvisoDaReconciliacao,
+                                                     Converter={StaticResource BoolToVis},
+                                                     FallbackValue=Collapsed}">
+                        <TextBlock Text="{Binding Reconciliacao.Aviso}"
+                                   Style="{DynamicResource Text.Secondary}"
+                                   TextWrapping="Wrap"
+                                   AutomationProperties.Name="Envios sem desfecho conhecido" />
+                        <Button Content="Eu vi este aviso"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding ReconhecerAmbiguasCommand}"
+                                HorizontalAlignment="Left" Margin="0,4,0,0"
+                                ToolTip="Encolhe o aviso. A ambiguidade continua registrada, e um envio novo traz o texto de volta."
+                                AutomationProperties.Name="Reconhecer os envios sem desfecho" />
+                    </StackPanel>
+
+                    <!-- A MARCA CURTA, depois de reconhecido. Ela nao some: a
+                         ambiguidade continua sendo verdade, e o que mudou foi
+                         so o tamanho com que ela e dita. -->
+                    <TextBlock Text="{Binding Reconciliacao.Marca}"
+                               Style="{DynamicResource Text.Muted}"
                                TextWrapping="Wrap" Margin="0,4,0,0"
-                               Visibility="{Binding TemAvisoDaReconciliacao,
+                               Visibility="{Binding TemMarcaDaReconciliacao,
                                                     Converter={StaticResource BoolToVis},
                                                     FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Envios sem desfecho conhecido" />
+                               AutomationProperties.Name="Envios sem desfecho conhecido, ja reconhecidos" />
                 </StackPanel>
             </Border>
 

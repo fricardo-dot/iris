@@ -121,91 +121,86 @@ Public Class BindingsDaJanelaTests
     End Sub
 
     ''' <summary>
-    ''' <b>A faixa do acervo e a da IA não moram na mesma linha da grade.</b>
+    ''' <b>O ACERVO SAIU DA LINHA 2, E ISTO SUBSTITUI DOIS TESTES.</b>
+    '''
+    ''' Em 30/08/2026 a faixa do acervo foi para o <b>rodapé da lista de
+    ''' mensagens</b>, ao lado do "13 de 13". O motivo é de leitura, e não de
+    ''' arrumação: "13 de 13" e "0 itens guardados" são duas contagens da
+    ''' <i>mesma pasta</i>, e estavam a meia tela de distância uma da outra.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>O DEFEITO QUE ESTE TESTE FECHA</b>
+    ''' <b>OS DOIS TESTES QUE ISTO APOSENTA, E POR QUÊ</b>
     '''
-    ''' As duas ficavam em <c>Grid.Row="2"</c>. Num <c>Grid</c> isso significa
-    ''' <b>empilhadas</b>, e a da IA — declarada depois, e com fundo próprio —
-    ''' pintava por cima. <b>A faixa do acervo nunca foi vista na tela</b>, e a
-    ''' pendência da Fase 2 que dizia exatamente isso não era falta de dado: era
-    ''' uma linha de grade faltando.
+    ''' <c>O_acervo_e_a_IA_nao_dividem_a_LINHA_da_grade</c> e
+    ''' <c>A_agenda_e_o_acervo_se_EXCLUEM_na_mesma_linha</c> cobravam que a
+    ''' borda do acervo declarasse uma linha da grade raiz diferente da IA, e
+    ''' que ela excluísse a agenda por <c>MostrarAcervo</c>.
     '''
-    ''' Ninguém notou porque as duas tinham visibilidade condicional: a do
-    ''' acervo só aparecia havendo ressalva, e a da IA cobria justamente quando
-    ''' aparecia. Duas condições escondendo uma sobreposição.
+    ''' Os dois nasceram de um defeito real: o acervo e a IA ficaram
+    ''' empilhados na mesma linha, e a faixa do acervo <b>passou uma fase
+    ''' inteira sem nunca ter sido vista</b>. Não eram testes decorativos.
     '''
-    ''' ------------------------------------------------------------------
-    ''' <b>POR QUE ESTE TESTE LÊ TEXTO, E NÃO PIXEL</b>
+    ''' <b>Mas eles cobravam a FORMA do conserto, e não a propriedade.</b> A
+    ''' propriedade é "a faixa do acervo não pode ser coberta por outra". Com
+    ''' ela dentro do rodapé da lista, ela não tem mais irmão nenhum na grade
+    ''' raiz — o empilhamento deixou de ser possível, em vez de ser evitado.
     '''
-    ''' O jeito honesto seria instanciar a <c>MainWindow</c> e medir os
-    ''' retângulos, como o <c>Aviso_e_resultado_NAO_se_cobrem</c> faz dentro da
-    ''' faixa da IA. A janela exige broker, cache e sessão, e montar tudo isso
-    ''' para conferir um número de linha custaria mais do que vale.
-    '''
-    ''' Então ele lê o XAML e cobra a propriedade que causou o defeito: as duas
-    ''' faixas, que aparecem <b>ao mesmo tempo</b>, declaram linhas diferentes.
-    ''' Não prova ausência de sobreposição em geral — prova que esta não voltou.
+    ''' Apagá-los sem substituto seria perder a cobertura; mantê-los seria
+    ''' cobrar um layout que não existe mais. Este teste é o substituto, e
+    ''' cobra o que sobrou de verdadeiro: <b>o acervo está na tela, dentro do
+    ''' rodapé, e a linha 2 da grade raiz ficou só com a agenda.</b>
     ''' </summary>
     <TestMethod>
-    Public Sub O_acervo_e_a_IA_nao_dividem_a_LINHA_da_grade()
+    Public Sub O_acervo_mora_no_rodape_da_lista_e_nao_na_grade_raiz()
         Dim xaml = LerXaml()
 
-        Dim daIa = Text.RegularExpressions.Regex.Match(
-            xaml, "<local:FaixaDaIa\s+Grid\.Row=""(\d+)""")
-        Assert.IsTrue(daIa.Success, "nao achei a faixa da IA na janela")
+        StringAssert.Contains(xaml, "{Binding Acervo.VarrerCommand}",
+            "a faixa do acervo sumiu da janela")
+        StringAssert.Contains(xaml, "{Binding Acervo.Ressalva}",
+            "a ressalva do acervo sumiu: a contagem sem ela vira afirmacao " &
+            "sobre a caixa, e nao sobre o cache")
 
-        Dim doAcervo = Text.RegularExpressions.Regex.Match(
-            xaml, "<Border Grid\.Row=""(\d+)""\s*?
-\s*Visibility=""\{Binding MostrarAcervo,")
-        Assert.IsTrue(doAcervo.Success, "nao achei a faixa do acervo na janela")
+        ' NENHUM filho DIRETO da grade raiz depende de MostrarAcervo. Filho
+        ' direto abre com doze espacos -- o mesmo recorte dos testes das
+        ' faixas de tarefas e contatos.
+        Dim raiz = xaml.Split(CChar(vbLf)).
+                   Where(Function(l) l.StartsWith("            <") AndAlso
+                                     Not l.StartsWith("             ")).ToList()
 
-        Assert.AreNotEqual(doAcervo.Groups(1).Value, daIa.Groups(1).Value,
-            "as duas faixas voltaram para a mesma linha da grade, e a de baixo " &
-            "cobre a de cima -- foi assim que a faixa do acervo passou a fase " &
-            "inteira sem nunca ter sido vista")
+        Dim linhaDoAcervo = raiz.Where(Function(l) l.Contains("MostrarAcervo")).Count()
+        Assert.AreEqual(0, linhaDoAcervo,
+            "o acervo voltou a ser uma faixa da grade raiz. Se foi de " &
+            "proposito, os dois testes que este substituiu precisam voltar: " &
+            "eles cobravam a exclusao contra a IA e contra a agenda.")
+
+        ' CONTROLE: o recorte acha a grade raiz. Sem isto, uma mudanca de
+        ' indentacao esvaziaria a lista e a assercao acima passaria por nao
+        ' olhar nada -- o bloqueio que nunca bloqueia.
+        Assert.AreEqual(1, raiz.Where(Function(l) l.Contains("Grid.Row=""3""")).Count(),
+            "o recorte por indentacao parou de achar a faixa da IA: ele nao " &
+            "esta mais olhando a grade raiz")
     End Sub
 
-
     ''' <summary>
-    ''' <b>A agenda e o acervo dividem a linha 2, e por isso a exclusao tem
-    ''' de ser DECLARADA.</b>
+    ''' <b>A agenda ficou sozinha na linha 2.</b>
     '''
-    ''' ------------------------------------------------------------------
-    ''' Quando a Fase 6 entrou, a agenda passou a ocupar a mesma linha do
-    ''' acervo. E deliberado: sao o mesmo lugar da janela mudando de assunto
-    ''' conforme a pasta selecionada. E e exatamente a situacao que produziu
-    ''' o defeito de 2026 -- duas bordas na mesma linha, cada uma com sua
-    ''' condicao, esperando nao coincidir.
-    '''
-    ''' A diferenca e que agora a exclusao nao e esperanca: o acervo depende
-    ''' de <c>MostrarAcervo</c>, que e <c>Acervo IsNot Nothing AndAlso Not
-    ''' Agenda.TemPasta</c>. Uma condicao, num lugar, que da para ler.
+    ''' Era ela e o acervo, e a exclusão entre os dois era declarada por
+    ''' <c>MostrarAcervo</c>. Com o acervo no rodapé da lista, sobrou uma —
+    ''' e este teste existe para o dia em que alguém puser outra coisa ali
+    ''' sem lembrar que aquela linha já tem dono.
     ''' </summary>
     <TestMethod>
-    Public Sub A_agenda_e_o_acervo_se_EXCLUEM_na_mesma_linha()
-        Dim xaml = LerXaml()
+    Public Sub A_agenda_esta_sozinha_na_linha_2()
+        Dim raiz = LerXaml().Split(CChar(vbLf)).
+                   Where(Function(l) l.StartsWith("            <") AndAlso
+                                     Not l.StartsWith("             ")).ToList()
 
-        Dim daAgenda = Text.RegularExpressions.Regex.Match(
-            xaml, "<Border Grid\.Row=""(\d+)""\s*
-\s*Visibility=""\{Binding Agenda\.TemPasta,")
-        Assert.IsTrue(daAgenda.Success,
-            "nao achei a faixa da agenda, ou ela deixou de depender de Agenda.TemPasta")
-
-        Dim doAcervo = Text.RegularExpressions.Regex.Match(
-            xaml, "<Border Grid\.Row=""(\d+)""\s*
-\s*Visibility=""\{Binding MostrarAcervo,")
-        Assert.IsTrue(doAcervo.Success,
-            "a faixa do acervo voltou a depender de algo que nao exclui a agenda")
-
-        Assert.AreEqual(daAgenda.Groups(1).Value, doAcervo.Groups(1).Value,
-            "controle: as duas TEM de estar na mesma linha. Em linhas diferentes, " &
-            "este teste deixa de proteger o que ele diz proteger")
-
-        ' E a exclusao existe do lado do ViewModel, e nao so no XAML.
-        Assert.IsNotNull(GetType(MainViewModel).GetProperty("MostrarAcervo"),
-            "MostrarAcervo sumiu do MainViewModel, e a exclusao virou coincidencia")
+        Dim ocupantes = raiz.Where(Function(l) l.Contains("Grid.Row=""2""")).Count()
+        Assert.AreEqual(1, ocupantes,
+            "a linha 2 da grade raiz tem " & ocupantes & " ocupante(s) diretos. " &
+            "Duas bordas na mesma linha se empilham e a de cima cobre a de " &
+            "baixo: foi assim que a faixa do acervo passou uma fase inteira " &
+            "sem nunca ter sido vista.")
     End Sub
 
     ''' <summary>
@@ -503,47 +498,7 @@ Public Class BindingsDaJanelaTests
             "o botao de concluir pode ficar desabilitado sem a tela dizer por que")
     End Sub
 
-    ''' <summary>
-    ''' <b>A faixa de tarefas tem linha própria.</b>
-    '''
-    ''' O acervo e a agenda dividem a linha 2 porque são mutuamente exclusivos
-    ''' — a pasta selecionada é de calendário ou não é. As tarefas não têm essa
-    ''' exclusão: a pasta delas nem aparece na árvore. Numa linha compartilhada
-    ''' elas empilhariam sobre o vizinho, que é <i>exatamente</i> o defeito que
-    ''' escondeu a faixa do acervo.
-    ''' </summary>
-    <TestMethod>
-    Public Sub A_faixa_de_tarefas_NAO_divide_linha_com_ninguem()
-        ' A GRADE RAIZ, E NAO O ARQUIVO INTEIRO. O primeiro corte deste teste
-        ' contava Grid.Row="4" no XAML todo e falhou por causa de uma grade
-        ' ANINHADA -- a do compositor, que tem linhas proprias e nada a ver com
-        ' esta. Um teste que acusa colisao onde nao ha e um teste que sera
-        ' desligado na primeira vez que atrapalhar.
-        '
-        ' O recorte usa a INDENTACAO: filho direto da grade raiz abre com doze
-        ' espacos. E um proxy, e nao um parser -- e por isso a mensagem de
-        ' falha manda conferir, em vez de afirmar.
-        Dim raiz = LerXaml().Split(CChar(vbLf)).
-                   Where(Function(l) l.StartsWith("            <") AndAlso
-                                     Not l.StartsWith("             ")).ToList()
-
-        Dim ocupantes = raiz.Where(Function(l) l.Contains("Grid.Row=""4""")).Count()
-
-        Assert.AreEqual(1, ocupantes,
-            "a linha 4 da grade raiz tem " & ocupantes & " ocupante(s) diretos. " &
-            "Duas bordas na mesma linha se empilham e a de cima cobre a de " &
-            "baixo -- foi assim que a faixa do acervo ficou dias invisivel. " &
-            "Confira se o recorte por indentacao ainda vale antes de mexer no numero.")
-
-        ' CONTROLE: o recorte acha os vizinhos conhecidos. Sem isto, uma
-        ' mudanca de indentacao esvaziaria a lista e o teste passaria por
-        ' nao olhar nada -- o bloqueio que nunca bloqueia.
-        Assert.AreEqual(1, raiz.Where(Function(l) l.Contains("Grid.Row=""3""")).Count(),
-            "o recorte por indentacao parou de achar a faixa da IA: ele nao " &
-            "esta mais olhando a grade raiz, e a assercao acima virou fumaca")
-    End Sub
-
-    ''' <summary>
+  ''' <summary>
     ''' <b>A RESSALVA DOS CONTATOS TEM LUGAR FIXO NA TELA.</b>
     '''
     ''' Nesta caixa a pasta pessoal de Contatos tem zero itens, e a
@@ -598,31 +553,7 @@ Public Class BindingsDaJanelaTests
             "confirmacao, e ficha repetida nao some sozinha")
     End Sub
 
-    ''' <summary>
-    ''' <b>A faixa de contatos tem linha propria.</b>
-    '''
-    ''' Mesmo recorte por indentacao do teste das tarefas, e mesmo controle:
-    ''' sem ele, uma mudanca de formatacao esvaziaria a lista e o teste
-    ''' passaria por nao olhar nada.
-    ''' </summary>
-    <TestMethod>
-    Public Sub A_faixa_de_contatos_NAO_divide_linha_com_ninguem()
-        Dim raiz = LerXaml().Split(CChar(vbLf)).
-                   Where(Function(l) l.StartsWith("            <") AndAlso
-                                     Not l.StartsWith("             ")).ToList()
-
-        Dim ocupantes = raiz.Where(Function(l) l.Contains("Grid.Row=""5""")).Count()
-
-        Assert.AreEqual(1, ocupantes,
-            "a linha 5 da grade raiz tem " & ocupantes & " ocupante(s) diretos. " &
-            "Duas bordas na mesma linha se empilham e a de cima cobre a de baixo.")
-
-        Assert.AreEqual(1, raiz.Where(Function(l) l.Contains("Grid.Row=""4""")).Count(),
-            "o recorte por indentacao parou de achar a faixa das tarefas: ele " &
-            "nao esta mais olhando a grade raiz, e a assercao acima virou fumaca")
-    End Sub
-
-    ''' <summary>
+  ''' <summary>
     ''' <b>O GRAU DO ACHADO CHEGA NA TELA — nos dois lugares.</b>
     '''
     ''' A busca ganhou um segundo passe tolerante a erro de digitação e a
@@ -688,6 +619,70 @@ Public Class BindingsDaJanelaTests
         StringAssert.Contains(xaml, "{Binding Busca.TemFalhaDoDiario,",
             "a falha do diario nao chega a tela: amostra furada que ninguem " &
             "sabe que e furada")
+    End Sub
+
+    ''' <summary>
+    ''' <b>TAREFAS, CONTATOS E BUSCA SÃO PAINÉIS, E CADA UM TEM SEU BOTÃO.</b>
+    '''
+    ''' Em 30/08/2026 os três saíram das linhas fixas da grade raiz e viraram
+    ''' painéis sobre a janela, com botão na barra de título. As faixas
+    ''' empurravam a lista de mensagens para cima o tempo todo — e as de
+    ''' tarefas e contatos já nasciam com um botão "Abrir", porque as pastas
+    ''' delas nem aparecem na árvore.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>OS DOIS TESTES QUE ISTO SUBSTITUI</b>
+    '''
+    ''' <c>A_faixa_de_tarefas_NAO_divide_linha_com_ninguem</c> e a irmã dos
+    ''' contatos contavam ocupantes das linhas 4 e 5 da grade raiz. Elas
+    ''' protegiam contra empilhamento — o defeito que deixou a faixa do
+    ''' acervo invisível por uma fase inteira.
+    '''
+    ''' <b>Com painéis, empilhar deixou de ser possível em vez de ser
+    ''' evitado:</b> cada um tem o próprio <c>Panel.ZIndex</c> e a própria
+    ''' condição de visibilidade, e dois abertos ao mesmo tempo é
+    ''' comportamento pedido, não acidente. Contar linha de grade passou a
+    ''' cobrar um layout que não existe.
+    '''
+    ''' O que sobra de verdadeiro, e é o que este teste cobra: <b>cada painel
+    ''' é alcançável por um botão próprio, e fecha por um comando próprio.</b>
+    ''' Um painel sem botão é funcionalidade que existe e ninguém abre; um
+    ''' painel sem fechar é uma janela presa.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cada_painel_tem_botao_para_abrir_e_para_fechar()
+        Dim xaml = LerXaml()
+
+        For Each par In {("Busca", "a busca no acervo"),
+                         ("Tarefas", "as tarefas"),
+                         ("Contatos", "os contatos")}
+            StringAssert.Contains(xaml, "{Binding Alternar" & par.Item1 & "Command}",
+                "nao ha botao para abrir " & par.Item2 & ": o painel existe e " &
+                "ninguem alcanca")
+            StringAssert.Contains(xaml, "{Binding Fechar" & par.Item1 & "Command}",
+                "nao ha como fechar " & par.Item2 & ", e o painel cobre a janela")
+            StringAssert.Contains(xaml, "{Binding " & par.Item1 & "Aberta,",
+                "o painel de " & par.Item2 & " nao depende do proprio estado")
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>E o clique fora fecha os três.</b>
+    '''
+    ''' O retângulo escuro atrás do painel não é enfeite: ele diz, sem texto,
+    ''' que o resto não responde — e clicar nele é o gesto que todo mundo
+    ''' tenta primeiro. Um painel que só fecha pelo botão ensina o usuário a
+    ''' desconfiar do clique fora nos outros também.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_clique_fora_fecha_os_paineis()
+        Dim xaml = LerXaml()
+
+        Dim quantos = Regex.Matches(xaml, "<MouseBinding MouseAction=""LeftClick""").Count
+        Assert.AreEqual(3, quantos,
+            "achei " & quantos & " retangulo(s) que fecham por clique fora, e " &
+            "ha tres paineis. Um painel que so fecha pelo botao ensina a " &
+            "desconfiar do clique fora nos outros.")
     End Sub
 
     Private Shared Function LerXaml() As String

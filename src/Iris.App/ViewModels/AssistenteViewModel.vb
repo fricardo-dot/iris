@@ -159,14 +159,77 @@ Namespace Global.Iris.App.ViewModels
             ' — VB e case-insensitive, e a atribuicao vira o parametro para ele
             ' mesmo. O compilador nao avisa; o sintoma aparece longe, como uma
             ' propriedade Nothing na primeira leitura.
-            Me.Reconciliacao = reconciliacao
+            ' RECONHECIMENTO APLICADO NA CONSTRUCAO, e nao lido pela tela a
+            ' cada binding: ele mora em disco, e a tela pergunta muitas vezes.
+            Me.Reconciliacao = reconciliacao.ComReconhecimento(LerReconhecidas())
+
+            ReconhecerAmbiguasCommand = New RelayCommand(AddressOf ReconhecerAmbiguas,
+                                                        Function() Reconciliacao.TemNovidade)
+        End Sub
+
+        ''' <summary>
+        ''' <b>"Eu vi este aviso."</b>
+        '''
+        ''' Não desfaz a ambiguidade, e não some com ela: grava quantas já foram
+        ''' vistas, para o parágrafo virar ícone. Envio ambíguo novo faz o
+        ''' parágrafo voltar inteiro.
+        ''' </summary>
+        Public ReadOnly Property ReconhecerAmbiguasCommand As IRelayCommand
+
+        ''' <summary>
+        ''' Onde o reconhecimento fica. Ao lado do cache, e em texto: o dono
+        ''' precisa poder olhar e apagar, como no diário de buscas.
+        ''' </summary>
+        Friend Shared Function CaminhoDoReconhecimento() As String
+            Return IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Iris", "ambiguas-reconhecidas.txt")
+        End Function
+
+        ''' <summary>
+        ''' Quantas o dono já reconheceu. <b>Falha ao ler vale ZERO</b> — não
+        ''' conseguir ler o reconhecimento não é ter reconhecido, e o custo de
+        ''' errar para este lado é mostrar um aviso a mais.
+        ''' </summary>
+        Friend Shared Function LerReconhecidas() As Integer
+            Try
+                Dim caminho = CaminhoDoReconhecimento()
+                If Not IO.File.Exists(caminho) Then Return 0
+                Dim n As Integer
+                If Integer.TryParse(IO.File.ReadAllText(caminho).Trim(), n) Then
+                    Return Math.Max(0, n)
+                End If
+                Return 0
+            Catch
+                Return 0
+            End Try
+        End Function
+
+        Private Sub ReconhecerAmbiguas()
+            Try
+                Dim caminho = CaminhoDoReconhecimento()
+                IO.Directory.CreateDirectory(IO.Path.GetDirectoryName(caminho))
+                IO.File.WriteAllText(caminho, Reconciliacao.Ambiguas.ToString())
+                Reconciliacao = Reconciliacao.ComReconhecimento(Reconciliacao.Ambiguas)
+            Catch
+                ' NAO CONSEGUIU GRAVAR: o aviso FICA. Reconhecimento que nao
+                ' persiste seria pior que nenhum -- o parágrafo sumiria nesta
+                ' sessao e voltaria na proxima, ensinando que o botao nao
+                ' funciona.
+            End Try
+
+            OnPropertyChanged(NameOf(Reconciliacao))
+            OnPropertyChanged(NameOf(TemAvisoDaReconciliacao))
+            OnPropertyChanged(NameOf(TemMarcaDaReconciliacao))
+            OnPropertyChanged(NameOf(TemAlgoADizer))
+            ReconhecerAmbiguasCommand.NotifyCanExecuteChanged()
         End Sub
 
         ' ==============================================================
         ' O estado
 
         ''' <summary>O que aconteceu na reconciliação da abertura.</summary>
-        Public ReadOnly Property Reconciliacao As ReconciliationResult
+        Public Property Reconciliacao As ReconciliationResult
 
         ''' <summary>
         ''' <b>O que a cerimônia de ativação tem a dizer — sempre visível.</b>
@@ -323,6 +386,17 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property TemAvisoDaReconciliacao As Boolean
             Get
                 Return Reconciliacao.Aviso.Length > 0
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' A versão curta, para quando o dono já reconheceu. Ela <b>não</b>
+        ''' substitui a longa: as duas nunca aparecem juntas, e qual das duas
+        ''' aparece é o reconhecimento que decide.
+        ''' </summary>
+        Public ReadOnly Property TemMarcaDaReconciliacao As Boolean
+            Get
+                Return Reconciliacao.TemMarca
             End Get
         End Property
 
@@ -1008,10 +1082,24 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property Ambiguas As Integer
 
-        Private Sub New(terminou As Boolean, ambiguas As Integer)
+        Private Sub New(terminou As Boolean, ambiguas As Integer,
+                        Optional reconhecidas As Integer = 0)
             Me.Terminou = terminou
             Me.Ambiguas = ambiguas
+            Me.Reconhecidas = reconhecidas
         End Sub
+
+        ''' <summary>
+        ''' O mesmo resultado, com o reconhecimento do dono aplicado.
+        '''
+        ''' Devolve um objeto novo em vez de mudar este: o resultado da
+        ''' reconciliação é o que o banco disse, e o reconhecimento é o que a
+        ''' pessoa disse. Misturar os dois num só objeto mutável faria a segunda
+        ''' leitura não saber mais qual era qual.
+        ''' </summary>
+        Public Function ComReconhecimento(reconhecidas As Integer) As ReconciliationResult
+            Return New ReconciliationResult(Terminou, Ambiguas, reconhecidas)
+        End Function
 
         ''' <summary>
         ''' Roda a reconciliação. <b>Não lança</b>: falha aqui fecha o egress em
@@ -1031,6 +1119,79 @@ Namespace Global.Iris.App.ViewModels
             Return New ReconciliationResult(False, 0)
         End Function
 
+        ''' <summary>
+        ''' <b>Quantas ambíguas o dono já reconheceu ter visto.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE ISTO EXISTE</b>
+        '''
+        ''' O aviso dizia, com razão, "este aviso não desaparece sozinho" — e não
+        ''' desaparecia mesmo, porque <b>não havia como dizer que se viu</b>. Isso
+        ''' estava anotado no ESCOPO como dívida desde antes: a divulgação
+        ''' ambígua ficava na tela para sempre, e um parágrafo permanente é um
+        ''' parágrafo que se aprende a não ler.
+        '''
+        ''' Esconder atrás de um ícone <b>sem</b> reconhecimento seria pior: uma
+        ''' divulgação não reconhecida deixaria de ser dita. O reconhecimento é o
+        ''' que torna o ícone honesto.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>E RECONHECER O QUE JÁ HÁ NÃO SILENCIA O QUE VIER</b>
+        '''
+        ''' Guarda-se o <b>número</b> reconhecido, e não um "já vi" booleano. Se
+        ''' aparecerem envios ambíguos novos, <c>Ambiguas</c> passa o
+        ''' reconhecido e o texto volta inteiro.
+        '''
+        ''' Um booleano teria calado a próxima ambiguidade com o clique da
+        ''' anterior — que é a forma mais silenciosa possível de perder uma
+        ''' divulgação.
+        ''' </summary>
+        Public ReadOnly Property Reconhecidas As Integer
+
+        ''' <summary>
+        ''' Há ambiguidade que o dono <b>ainda não</b> reconheceu?
+        '''
+        ''' É isto que decide entre o parágrafo e o ícone — e não o fato de
+        ''' haver ambiguidade, que continua verdadeiro depois de reconhecida.
+        ''' </summary>
+        Public ReadOnly Property TemNovidade As Boolean
+            Get
+                Return Ambiguas > Reconhecidas
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' O ícone, quando tudo o que há já foi reconhecido. <b>Não some</b>: a
+        ''' ambiguidade continua sendo verdade, e o que mudou foi só o tamanho
+        ''' com que ela é dita.
+        ''' </summary>
+        Public ReadOnly Property Marca As String
+            Get
+                ' O "Not Terminou" E REDUNDANTE HOJE, e esta escrito porque
+                ' redundancia que ninguem sabe que e redundante vira armadilha.
+                '
+                ' Os dois caminhos que deixam Terminou falso -- NaoRodou e o
+                ' Catch do Rodar -- carregam Ambiguas = 0, entao a segunda
+                ' condicao ja os pega. Foi medido desfazendo-o: o teste
+                ' Nao_ter_conferido_nao_vira_marca continuou passando.
+                '
+                ' Ele fica porque a pergunta que importa aqui e "eu conferi?",
+                ' e amarra-la ao zero e depender de uma coincidencia dos
+                ' construtores. Se um dia Terminou=False vier com contagem, a
+                ' marca nao pode aparecer: "nao sei" nao se reconhece.
+                If Not Terminou OrElse Ambiguas = 0 OrElse TemNovidade Then Return ""
+                Return If(Ambiguas = 1,
+                          "⚠ 1 envio à IA sem desfecho conhecido (você já viu este aviso)",
+                          $"⚠ {Ambiguas} envios à IA sem desfecho conhecido (você já viu este aviso)")
+            End Get
+        End Property
+
+        Public ReadOnly Property TemMarca As Boolean
+            Get
+                Return Marca.Length > 0
+            End Get
+        End Property
+
         ''' <summary>O que a tela diz sobre isso. Vazio quando não há o que dizer.</summary>
         Public ReadOnly Property Aviso As String
             Get
@@ -1039,6 +1200,11 @@ Namespace Global.Iris.App.ViewModels
                            "Enquanto isso, a IA externa fica desligada."
                 End If
                 If Ambiguas = 0 Then Return ""
+
+                ' JA RECONHECIDO VIRA MARCA, e a marca mora noutra propriedade.
+                ' O texto inteiro volta sozinho se aparecer ambiguidade nova.
+                If Not TemNovidade Then Return ""
+
                 If Ambiguas = 1 Then
                     Return "Um envio à IA ficou sem desfecho conhecido numa execução " &
                            "anterior. Pode ter saído conteúdo, e não dá para saber. " &

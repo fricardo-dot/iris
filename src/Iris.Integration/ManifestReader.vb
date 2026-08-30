@@ -132,8 +132,14 @@ Namespace Global.Iris.Integration
                     ' BuscaNoAcervo na revisao anterior, e esta superficie ficou
                     ' para tras: a revisao seguinte achou aqui, com TRES testes
                     ' prendendo a formulacao errada.
-                    Return "Esta pasta não tem acervo publicado. Isso não quer dizer " &
-                           "que ninguém tentou varrer."
+                    ' DUAS LINHAS, e a quebra faz trabalho: a primeira frase e o
+                    ' FATO (nao ha acervo publicado), e a segunda e a ressalva
+                    ' sobre o que esse fato NAO significa. Numa linha so, a
+                    ' ressalva era lida como continuacao da frase e perdia forca;
+                    ' separada, ela e uma correcao explicita do que a primeira
+                    ' linha sugere.
+                    Return "Esta pasta não tem acervo publicado." & Environment.NewLine &
+                           "Isso não quer dizer que ninguém tentou varrer."
                 End If
                 Dim base As String
                 Select Case Cobertura

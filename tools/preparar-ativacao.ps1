@@ -34,8 +34,14 @@
 #>
 [CmdletBinding()]
 param(
+    # UMA OU VARIAS. Autorizar tres pastas eram tres execucoes, e cada uma
+    # reescrevia a ativacao inteira -- entao a terceira apagava as duas
+    # primeiras, em silencio. Nao era so trabalho repetido: era uma armadilha.
+    #
+    # O ato deliberado nao muda: os nomes continuam saindo daqui, escritos por
+    # voce. O que sai e a repeticao, que so acrescentava chance de errar.
     [Parameter(Mandatory = $true)]
-    [string] $Pasta,
+    [string[]] $Pasta,
 
     [string] $Modelo = "google/gemini-3.7-flash",
 
@@ -68,6 +74,19 @@ param(
     #
     # Continua opt-in: sem esta chave, nada e gravado.
     [switch] $Salvar
+,
+
+    # Substitui uma ativacao que ja existe.
+    #
+    # A recusa em sobrescrever e proposital: trocar em silencio a lista de
+    # pastas autorizadas seria trocar o que voce assinou sem lhe dizer. Mas o
+    # unico caminho que sobrava era APAGAR o arquivo a mao -- e apagar destroi
+    # o registro do que estava autorizado antes, que e justamente o que se
+    # quer poder conferir depois.
+    #
+    # Com esta chave a antiga vira ativacao-AAAAMMDD-HHMMSS.json ao lado, e a
+    # nova entra. O ato continua deliberado: sem a chave, nada e trocado.
+    [switch] $Substituir
 )
 
 $ErrorActionPreference = 'Stop'
@@ -86,13 +105,33 @@ $Provedores = @($Provedores |
     ForEach-Object { $_.Trim() } |
     Where-Object { $_ })
 
+# E O MESMO VALE PARA -Pasta, que virou lista depois do -Provedores.
+#
+# Eu escrevi o comentario acima, e nao apliquei a licao ao parametro que
+# acabei de transformar em arranjo. O sintoma foi identico e igualmente
+# acusador: "Nao achei nenhuma pasta chamada 'Caixa de Entrada,0. E-mails
+# Lidos,1. Backup'" -- o roteiro imprimindo o proprio defeito como se fosse
+# erro de quem digitou.
+#
+# RESSALVA QUE NAO DA PARA CONTORNAR AQUI: nome de pasta PODE conter virgula,
+# e nesse caso esta divisao quebra o nome em dois e nenhum dos dois existe. O
+# roteiro vai dizer que nao achou, e o motivo sera este. Chamar com
+# `-File` e virgula nao tem como distinguir os dois casos -- quem tiver pasta
+# com virgula no nome precisa chamar sem `-File`:
+#   powershell -Command "& '...\preparar-ativacao.ps1' -Pasta 'A, com virgula'"
+$Pasta = @($Pasta |
+    ForEach-Object { $_ -split ',' } |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { $_ })
+
 if (-not $Provedores) {
     Write-Host "Nenhum provedor informado." -ForegroundColor Red
     exit 1
 }
 
 Write-Host ""
-Write-Host "Procurando a pasta '$Pasta' no Outlook (somente leitura)..." -ForegroundColor Cyan
+Write-Host ("Procurando {0} pasta(s) no Outlook (somente leitura): {1}" -f `
+    $Pasta.Count, (($Pasta | ForEach-Object { "'$_'" }) -join ", ")) -ForegroundColor Cyan
 
 $outlook = $null
 $ns = $null
@@ -116,7 +155,7 @@ $script:ramosCegos = 0
 function Percorrer($pastas, $trilha) {
     foreach ($f in $pastas) {
         $caminho = if ($trilha) { "$trilha\$($f.Name)" } else { $f.Name }
-        if ($f.Name -eq $Pasta) {
+        if ($Pasta -contains $f.Name) {
             [void]$achadas.Add([pscustomobject]@{
                 Caminho = $caminho
                 EntryId = $f.EntryID
@@ -130,26 +169,54 @@ function Percorrer($pastas, $trilha) {
 
 Percorrer $ns.Folders ""
 
-if ($achadas.Count -eq 0) {
-    if ($script:ramosCegos -gt 0) {
-        Write-Host ("Nao achei pasta chamada '{0}' -- e {1} ramo(s) da arvore nao" -f $Pasta, $script:ramosCegos) -ForegroundColor Red
-        Write-Host "  pude percorrer. Ela pode estar num deles." -ForegroundColor Red
-    } else {
-        Write-Host "Nao achei nenhuma pasta chamada '$Pasta'." -ForegroundColor Red
+# CADA NOME PEDIDO TEM DE RESOLVER PARA EXATAMENTE UMA PASTA.
+#
+# Conferido nome a nome, e nao no total: com dois nomes pedidos, um achado
+# duas vezes e outro nenhuma, o total daria dois e pareceria certo. Somar
+# antes de conferir esconde os dois erros de uma vez.
+$alvos = @()
+$problema = $false
+
+foreach ($nome in $Pasta) {
+    $doNome = @($achadas | Where-Object { $_.Caminho -eq $nome -or $_.Caminho.EndsWith("\$nome") })
+
+    if ($doNome.Count -eq 0) {
+        if ($script:ramosCegos -gt 0) {
+            Write-Host ("Nao achei pasta chamada '{0}' -- e {1} ramo(s) da arvore nao" -f $nome, $script:ramosCegos) -ForegroundColor Red
+            Write-Host "  pude percorrer. Ela pode estar num deles." -ForegroundColor Red
+        } else {
+            Write-Host "Nao achei nenhuma pasta chamada '$nome'." -ForegroundColor Red
+        }
+        $problema = $true
+        continue
     }
+
+    if ($doNome.Count -gt 1) {
+        Write-Host "Achei MAIS DE UMA pasta chamada '$nome':" -ForegroundColor Yellow
+        $doNome | Format-Table Caminho, Itens -AutoSize
+        Write-Host "Renomeie uma delas, ou me diga qual. Escolher por voce seria" -ForegroundColor Yellow
+        Write-Host "autorizar uma pasta que talvez nao seja a que voce quis." -ForegroundColor Yellow
+        $problema = $true
+        continue
+    }
+
+    $alvos += $doNome[0]
+}
+
+# NENHUMA PASTA SE UMA FALHOU.
+#
+# Autorizar o subconjunto que deu certo seria pior que falhar: voce pediu
+# tres, o arquivo sai com duas, e a ativacao passa a dizer menos do que voce
+# assinou -- sem que nada na tela mostre a diferenca depois.
+if ($problema) {
+    Write-Host ""
+    Write-Host "Nenhuma pasta foi autorizada. Corrija os nomes acima e rode de novo." -ForegroundColor Red
     exit 1
 }
 
-if ($achadas.Count -gt 1) {
-    Write-Host "Achei MAIS DE UMA pasta com esse nome:" -ForegroundColor Yellow
-    $achadas | Format-Table Caminho, Itens -AutoSize
-    Write-Host "Renomeie uma delas, ou me diga qual. Escolher por voce seria" -ForegroundColor Yellow
-    Write-Host "autorizar uma pasta que talvez nao seja a que voce quis." -ForegroundColor Yellow
-    exit 1
+foreach ($a in $alvos) {
+    Write-Host "Achei: $($a.Caminho)  ($($a.Itens) itens)" -ForegroundColor Green
 }
-
-$alvo = $achadas[0]
-Write-Host "Achei: $($alvo.Caminho)  ($($alvo.Itens) itens)" -ForegroundColor Green
 Write-Host ""
 
 # ---------------------------------------------------------------------------
@@ -221,7 +288,7 @@ $json = [ordered]@{
     exigirRetencaoZero            = $true
     provedoresPermitidos          = $Provedores
     operacoes                     = @("Resumir", "Redigir")
-    pastas                        = @(@{ storeId = $alvo.StoreId; entryId = $alvo.EntryId })
+    pastas                        = @($alvos | ForEach-Object { @{ storeId = $_.StoreId; entryId = $_.EntryId } })
     rotulos                       = @()
     leituras                      = @("Absent")
     contentBits                   = @(0)
@@ -243,10 +310,33 @@ Write-Host "----- fim do JSON --------" -ForegroundColor Cyan
 Write-Host ""
 
 if ($Salvar) {
-    if (Test-Path $destino) {
+    if ((Test-Path $destino) -and -not $Substituir) {
         Write-Host "JA EXISTE uma ativacao em $destino." -ForegroundColor Red
-        Write-Host "Nao vou sobrescrever: apague a antiga se for essa a intencao." -ForegroundColor Red
+        Write-Host "Nao vou sobrescrever em silencio: a lista de pastas autorizadas" -ForegroundColor Red
+        Write-Host "e o que voce assinou, e troca-la calado seria trocar a sua" -ForegroundColor Red
+        Write-Host "assinatura." -ForegroundColor Red
+        Write-Host ""
+        Write-Host "Repita com -Substituir. A antiga NAO e apagada: vira" -ForegroundColor Yellow
+        Write-Host "ativacao-AAAAMMDD-HHMMSS.json ao lado, para voce poder" -ForegroundColor Yellow
+        Write-Host "conferir depois o que estava autorizado antes." -ForegroundColor Yellow
         exit 1
+    }
+
+    if ((Test-Path $destino) -and $Substituir) {
+        # GUARDA A ANTIGA ANTES DE ESCREVER, e so escreve se a copia deu certo.
+        # Perder o registro do que estava autorizado seria perder a unica coisa
+        # que responde "o que eu tinha assinado antes?".
+        $carimbo = (Get-Date).ToString("yyyyMMdd-HHmmss")
+        $guardada = Join-Path (Split-Path $destino) "ativacao-$carimbo.json"
+        try {
+            Copy-Item $destino $guardada -ErrorAction Stop
+            Write-Host "A ativacao anterior foi guardada em:" -ForegroundColor Cyan
+            Write-Host "  $guardada" -ForegroundColor Cyan
+        } catch {
+            Write-Host "NAO consegui guardar a ativacao anterior: $($_.Exception.Message)" -ForegroundColor Red
+            Write-Host "Nao vou substituir sem ter salvo a antiga." -ForegroundColor Red
+            exit 1
+        }
     }
     $pastaDestino = Split-Path $destino
     New-Item -ItemType Directory -Force $pastaDestino | Out-Null

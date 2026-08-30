@@ -14,6 +14,27 @@
 
     <PlatformTarget>AnyCPU</PlatformTarget>
     <Prefer32Bit>false</Prefer32Bit>
+
+    <!-- O ícone gravado no cabeçalho do EXE. É este que a barra de tarefas e
+         o Explorer usam.
+
+         O arquivo é GERADO por tools/gerar-icone.py, com as cores do
+         Themes/Tokens.xaml. Binário versionado que ninguém sabe reproduzir
+         vira intocável no dia em que a paleta mudar. -->
+    <ApplicationIcon>iris.ico</ApplicationIcon>
+
+    <!-- E só isto. A janela NÃO declara Icon=, e não é esquecimento:
+
+         1. Ela tem chrome próprio: barra de título desenhada à mão, com os
+            botões de minimizar e fechar. Não há barra padrão onde um ícone
+            de janela apareceria.
+         2. A barra de tarefas usa o ícone do EXE, que é este aqui.
+
+         A primeira tentativa pôs Icon="iris.ico" no MainWindow, e o app
+         passou a MORRER no arranque: XamlParseException, "Cannot locate
+         resource". Acrescentar Resource Include="iris.ico" não resolveu.
+         Perseguir aquilo seria consertar um recurso para alimentar um
+         atributo que não pinta nada nesta janela. -->
   </PropertyGroup>
 
   <ItemGroup>

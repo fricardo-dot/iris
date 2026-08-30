@@ -129,6 +129,90 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property ProporContatoCommand As IRelayCommand
 
         ''' <summary>
+        ''' <b>A busca no acervo está aberta?</b>
+        '''
+        ''' Ela morava numa faixa fixa dentro do acervo, e ocupava altura o
+        ''' tempo todo para uma coisa que se usa de vez em quando — com a
+        ''' declaração do diário de buscas junto, que é um parágrafo inteiro.
+        ''' Virou uma lupa na barra de título, ao lado do estado da conexão.
+        '''
+        ''' <b>A declaração do diário foi junto, e isso é deliberado.</b> Ela
+        ''' é sobre a busca, e o lugar de uma ressalva é onde a coisa
+        ''' ressalvada acontece. Escondê-la numa tela de configurações seria
+        ''' a versão arrumadinha de escondê-la.
+        ''' </summary>
+        Public Property BuscaAberta As Boolean
+            Get
+                Return _buscaAberta
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_buscaAberta, value) Then
+                    OnPropertyChanged(NameOf(RotuloDaBusca))
+                End If
+            End Set
+        End Property
+        Private _buscaAberta As Boolean
+
+        Public ReadOnly Property RotuloDaBusca As String
+            Get
+                Return If(_buscaAberta, "Fechar a busca no acervo",
+                                        "Procurar no acervo")
+            End Get
+        End Property
+
+        Public ReadOnly Property AlternarBuscaCommand As IRelayCommand
+
+        ''' <summary>
+        ''' Fecha a busca. Existe separado do alternar porque o Esc e o clique
+        ''' fora só fecham — nunca abrem.
+        ''' </summary>
+        Public ReadOnly Property FecharBuscaCommand As IRelayCommand
+
+        ''' <summary>
+        ''' A faixa de tarefas aberta? Mesmo desenho da busca: um
+        ''' botão na barra de título, e o painel por cima.
+        '''
+        ''' Elas eram faixas fixas no rodapé da janela, cada uma numa linha
+        ''' própria da grade, empurrando a lista de mensagens para cima o
+        ''' tempo todo — para duas coisas que já nasceram com botão "Abrir",
+        ''' porque as pastas delas nem aparecem na árvore.
+        ''' </summary>
+        Public Property TarefasAberta As Boolean
+            Get
+                Return _tarefasAberta
+            End Get
+            Set(value As Boolean)
+                SetProperty(_tarefasAberta, value)
+            End Set
+        End Property
+        Private _tarefasAberta As Boolean
+
+        Public ReadOnly Property AlternarTarefasCommand As IRelayCommand
+        Public ReadOnly Property FecharTarefasCommand As IRelayCommand
+
+        ''' <summary>
+        ''' A faixa de contatos aberta? Mesmo desenho da busca: um
+        ''' botão na barra de título, e o painel por cima.
+        '''
+        ''' Elas eram faixas fixas no rodapé da janela, cada uma numa linha
+        ''' própria da grade, empurrando a lista de mensagens para cima o
+        ''' tempo todo — para duas coisas que já nasceram com botão "Abrir",
+        ''' porque as pastas delas nem aparecem na árvore.
+        ''' </summary>
+        Public Property ContatosAberta As Boolean
+            Get
+                Return _contatosAberta
+            End Get
+            Set(value As Boolean)
+                SetProperty(_contatosAberta, value)
+            End Set
+        End Property
+        Private _contatosAberta As Boolean
+
+        Public ReadOnly Property AlternarContatosCommand As IRelayCommand
+        Public ReadOnly Property FecharContatosCommand As IRelayCommand
+
+        ''' <summary>
         ''' <b>O acervo e a agenda dividem a mesma linha da janela, e nunca
         ''' aparecem juntos.</b>
         '''
@@ -250,6 +334,23 @@ Namespace Global.Iris.App.ViewModels
 
             ' PROPOR NAO CRIA, aqui tambem. E o remetente vem do que a lista ja
             ' leu -- nao ha leitura nova, e nao ha IA no caminho.
+            AlternarBuscaCommand = New RelayCommand(Sub() BuscaAberta = Not BuscaAberta,
+                                                   Function() Busca IsNot Nothing)
+            FecharBuscaCommand = New RelayCommand(Sub() BuscaAberta = False)
+
+            ' AS TRES SAO O MESMO PADRAO: botao na barra de titulo, painel por
+            ' cima, Esc e clique fora fecham. Tres estados separados e nao um
+            ' enum, porque nada impede duas abertas ao mesmo tempo -- e a
+            ' primeira coisa que alguem vai querer e comparar tarefa com
+            ' contato sem fechar uma para ver a outra.
+            AlternarTarefasCommand = New RelayCommand(Sub() TarefasAberta = Not TarefasAberta,
+                                                     Function() Tarefas IsNot Nothing)
+            FecharTarefasCommand = New RelayCommand(Sub() TarefasAberta = False)
+
+            AlternarContatosCommand = New RelayCommand(Sub() ContatosAberta = Not ContatosAberta,
+                                                       Function() Contatos IsNot Nothing)
+            FecharContatosCommand = New RelayCommand(Sub() ContatosAberta = False)
+
             ProporContatoCommand = New RelayCommand(
                 Sub() Contatos.ProporDoRemetente(
                     If(Detail?.SenderName, ""),
