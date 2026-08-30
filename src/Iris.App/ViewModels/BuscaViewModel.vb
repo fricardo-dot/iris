@@ -41,6 +41,7 @@ Namespace Global.Iris.App.ViewModels
     ''' </summary>
     Public NotInheritable Class BuscaViewModel
         Inherits ObservableObject
+        Implements IDisposable
 
         Private ReadOnly _busca As Func(Of String, ResultadoDaBusca)
 
@@ -302,10 +303,15 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property FraseDoDiario As String
             Get
                 If _diario Is Nothing Then Return ""
-                Dim n = BuscasRegistradas
-                Dim quantas = If(n.HasValue,
-                                 $"{n.Value} busca(s) anotada(s)",
-                                 "não consegui contar quantas")
+                ' O ESTADO E LIDO UMA VEZ SO.
+                '
+                ' A primeira versao chamava EstadoDoRegistro.HasValue e depois
+                ' EstadoDoRegistro.Value -- duas leituras do disco. Se a segunda
+                ' devolvesse Nothing (o marcador some entre uma e outra), o
+                ' .Value LANCA InvalidOperationException, de dentro de um getter
+                ' que a tela avalia. E se so mudasse de ligado para desligado, a
+                ' frase misturaria dois instantes.
+                Dim estado = EstadoDoRegistro
                 ' O CAMINHO TAMBEM PASSA PELA BARREIRA. Ele parecia inofensivo --
                 ' e uma propriedade que devolve texto -- e por isso ficou de fora
                 ' da primeira versao. A revisao externa perguntou por ele, e a
@@ -317,7 +323,7 @@ Namespace Global.Iris.App.ViewModels
                            ", em texto claro e sem prazo para sumir, até você " &
                            "apagar."
 
-                If Not EstadoDoRegistro.HasValue Then
+                If Not estado.HasValue Then
                     ' NAO E "DESLIGADO". E "nao consegui conferir", e a tela
                     ' nao pode atribuir ao dono uma escolha que ele nao fez.
                     Return "Não consegui conferir se o registro de buscas está " &
@@ -325,10 +331,18 @@ Namespace Global.Iris.App.ViewModels
                            "anotado." & onde
                 End If
 
-                If Not EstadoDoRegistro.Value Then
+                If Not estado.Value Then
                     Return "O registro de buscas está DESLIGADO — nada novo " &
                            "está sendo anotado." & onde
                 End If
+
+                ' A CONTAGEM SO AQUI. Ela le o arquivo, e os outros dois ramos
+                ' nao a usam -- contar para nao mostrar e trabalho na thread da
+                ' interface por nada.
+                Dim n = BuscasRegistradas
+                Dim quantas = If(n.HasValue,
+                                 $"{n.Value} busca(s) anotada(s)",
+                                 "não consegui contar quantas")
 
                 Return "As suas buscas estão sendo anotadas nesta máquina: " &
                        quantas & ", em " & caminho & ". " &
@@ -453,6 +467,17 @@ Namespace Global.Iris.App.ViewModels
             ' "o diario nao esta fazendo o que promete".
             If motivo IsNot Nothing Then _falhaAoApagar = motivo
             AvisarDiario()
+        End Sub
+
+        ''' <summary>
+        ''' <b>O diário segura um handle do sistema (o mutex entre processos).</b>
+        '''
+        ''' Ele já implementava <c>IDisposable</c> e <b>ninguém chamava</b> — a
+        ''' revisão externa apontou que eu tinha criado a possibilidade de
+        ''' descarte e parado ali. Possibilidade não descarta nada.
+        ''' </summary>
+        Public Sub Dispose() Implements IDisposable.Dispose
+            TryCast(_diario, IDisposable)?.Dispose()
         End Sub
 
         Private Sub Limpar()

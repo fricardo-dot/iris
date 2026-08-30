@@ -945,6 +945,7 @@ Namespace Global.Iris.App.ViewModels
             Tarefas.Dispose()
             RemoveHandler Contatos.PropertyChanged, AddressOf OnContatosChanged
             Contatos.Dispose()
+            Busca.Dispose()
             _watcher.Dispose()
             Composer.Dispose()
             Detail.Dispose()

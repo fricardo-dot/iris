@@ -451,8 +451,15 @@ Public Class BuscaToleranteTests
         Assert.IsTrue(vm.TemFalhaDoDiario,
             "engoliu a falha do diário E não avisou -- o usuário fica achando " &
             "que está sendo anotado quando não está")
-        Assert.IsTrue(vm.FraseDoDiario.Length >= 0,
-            "ate o Caminho explode neste duplo: a frase tem de sobreviver")
+        ' A PRIMEIRA VERSAO DESTA ASSERCAO ERA TAUTOLOGICA:
+        '     Assert.IsTrue(vm.FraseDoDiario.Length >= 0, ...)
+        ' que e verdadeiro para qualquer string. Ela pegava a EXCECAO durante a
+        ' avaliacao, e so; nao dizia nada sobre o que a frase virou. Segunda
+        ' assercao tautologica minha nesta serie, e a revisao externa achou as
+        ' duas.
+        StringAssert.Contains(vm.FraseDoDiario, "não consegui",
+            "ate o Caminho explode neste duplo: a frase tem de sobreviver E " &
+            "dizer que nao conseguiu, em vez de afirmar um estado que ninguem leu")
 
         ' E os outros caminhos tambem: ler contagem, alternar, apagar.
         Assert.IsNull(vm.BuscasRegistradas)

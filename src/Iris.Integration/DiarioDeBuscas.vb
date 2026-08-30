@@ -149,8 +149,16 @@ Namespace Global.Iris.Integration
         ''' e a revisão externa apontou os três casos: outra instância anexa,
         ''' outra instância apaga, alguém edita o arquivo. Um <c>stat</c> é
         ''' barato; varrer o arquivo é que não era.
+        '''
+        ''' <b>E o que ele AINDA não pega, dito em vez de escondido:</b> uma
+        ''' substituição por conteúdo de <i>mesmo tamanho</i> dentro da
+        ''' resolução do relógio do sistema de arquivos. A data de criação foi
+        ''' acrescentada e pega o apagar-e-recriar; edição no lugar, com o mesmo
+        ''' tamanho e no mesmo instante, escaparia. Pegar isso exigiria somar o
+        ''' conteúdo — que é justamente a varredura que este carimbo existe para
+        ''' evitar. O uso normal é só append, e append muda o tamanho.
         ''' </summary>
-        Private _carimbo As (Tamanho As Long, Quando As DateTime)?
+        Private _carimbo As (Tamanho As Long, Quando As DateTime, Nasceu As DateTime)?
 
         Public Sub New(Optional caminho As String = Nothing,
                        Optional agora As Func(Of DateTimeOffset) = Nothing)
@@ -222,8 +230,24 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Public Function Desligar() As String Implements IDiarioDeBuscas.Desligar
             Dim segurou = False
+            Dim porque As String = Nothing
             Try
-                segurou = Segurar()
+                segurou = Segurar(porque)
+
+                ' SEM A TRAVA, NAO DESLIGA -- e esta linha faltava.
+                '
+                ' O primeiro corte chamava Segurar e IGNORAVA o retorno, e a
+                ' revisao externa achou a corrida pelo outro lado: com a espera
+                ' estourada, o Desligar criava o marcador sem exclusao e
+                ' devolvia SUCESSO, enquanto o Registrar do outro processo --
+                ' que ja tinha conferido Ligado -- seguia e gravava.
+                '
+                ' Dizer "desliguei" sem ter desligado e pior que recusar: quem
+                ' recusa tenta de novo, quem foi enganado nao tenta.
+                If Not segurou Then
+                    Return "não consegui desligar agora (" & porque & "). Tente de novo."
+                End If
+
                 Directory.CreateDirectory(Path.GetDirectoryName(_marcador))
                 File.WriteAllText(_marcador,
                     "Enquanto este arquivo existir, o Iris nao anota buscas." &
@@ -260,15 +284,25 @@ Namespace Global.Iris.Integration
         ''' entre processos sumia exatamente quando havia disputa, que é a única
         ''' hora em que ela serve.
         ''' </summary>
-        Private Function Segurar() As Boolean
+        Private Function Segurar(ByRef motivo As String) As Boolean
+            motivo = Nothing
             Try
-                Return _entreProcessos.WaitOne(TimeSpan.FromMilliseconds(250))
+                If _entreProcessos.WaitOne(TimeSpan.FromMilliseconds(250)) Then Return True
+                motivo = "outra janela do Iris estava escrevendo"
+                Return False
             Catch ex As AbandonedMutexException
-                ' Outro processo morreu segurando a trava. O arquivo pode ter
-                ' meia linha; o leitor pula linha quebrada, e o append continua
-                ' valendo. Seguir e melhor que parar.
+                ' Outro processo morreu segurando a trava. No .NET isto quer
+                ' dizer que ESTA thread adquiriu -- entao o Release depois esta
+                ' certo. O arquivo pode ter meia linha; o leitor pula linha
+                ' quebrada, e o append continua valendo.
                 Return True
-            Catch
+            Catch ex As Exception
+                ' TIMEOUT E FALHA DE INFRAESTRUTURA NAO SAO A MESMA COISA.
+                ' O primeiro corte devolvia False para os dois, e o chamador
+                ' dizia "outra janela estava escrevendo" sobre um mutex
+                ' descartado ou um handle quebrado -- diagnostico errado no
+                ' lugar onde a pessoa vai procurar o motivo.
+                motivo = "a trava do registro falhou (" & ex.GetType().Name & ")"
                 Return False
             End Try
         End Function
@@ -308,15 +342,15 @@ Namespace Global.Iris.Integration
                     .aproximados = aproximados})
 
                 SyncLock _trava
-                    segurou = Segurar()
+                    Dim porque As String = Nothing
+                    segurou = Segurar(porque)
 
                     ' NAO CONSEGUIU A TRAVA: RECUSA, e nao grava solto.
                     ' Uma busca nao anotada e um buraco na amostra, e o leitor
                     ' o mostra como linha ilegivel ou ausencia; uma escrita
                     ' concorrente sem trava e corrupcao silenciosa.
                     If Not segurou Then
-                        _ultimaFalha = "não consegui anotar a busca (outra janela " &
-                                       "do Iris estava escrevendo)"
+                        _ultimaFalha = "não consegui anotar a busca (" & porque & ")"
                         _contagem = Nothing
                         Return
                     End If
@@ -401,11 +435,11 @@ Namespace Global.Iris.Integration
         ''' não existe ou não se deixa olhar. Arquivo ausente tem carimbo
         ''' próprio — senão "sumiu" e "não consegui ver" ficariam iguais.
         ''' </summary>
-        Private Function CarimboAtual() As (Tamanho As Long, Quando As DateTime)?
+        Private Function CarimboAtual() As (Tamanho As Long, Quando As DateTime, Nasceu As DateTime)?
             Try
                 Dim fi As New FileInfo(_caminho)
-                If Not fi.Exists Then Return (-1L, DateTime.MinValue)
-                Return (fi.Length, fi.LastWriteTimeUtc)
+                If Not fi.Exists Then Return (-1L, DateTime.MinValue, DateTime.MinValue)
+                Return (fi.Length, fi.LastWriteTimeUtc, fi.CreationTimeUtc)
             Catch
                 Return Nothing
             End Try
@@ -415,10 +449,10 @@ Namespace Global.Iris.Integration
             Dim segurou = False
             Try
                 SyncLock _trava
-                    segurou = Segurar()
+                    Dim porque As String = Nothing
+                    segurou = Segurar(porque)
                     If Not segurou Then
-                        Return "não consegui apagar agora (outra janela do Iris " &
-                               "estava escrevendo). Tente de novo."
+                        Return "não consegui apagar agora (" & porque & "). Tente de novo."
                     End If
 
                     If File.Exists(_caminho) Then File.Delete(_caminho)

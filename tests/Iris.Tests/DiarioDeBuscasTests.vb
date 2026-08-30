@@ -328,6 +328,78 @@ Public Class DiarioDeBuscasTests
     ''' CONTROLE: sem nada armado, a mesma gravação passa. Sem isto, um
     ''' <c>Registrar</c> que nunca gravasse passaria no teste de cima.
     ''' </summary>
+    ''' <summary>
+    ''' <b>SEM A TRAVA, DESLIGAR RECUSA — em vez de mentir que desligou.</b>
+    '''
+    ''' O teste que faltava, e a revisão externa nomeou o buraco: o
+    ''' <c>Desligar</c> chamava <c>Segurar</c> e <b>ignorava o retorno</b>. Com
+    ''' a espera estourada ele criava o marcador sem exclusão e devolvia
+    ''' sucesso — enquanto outro processo, que já tinha conferido
+    ''' <c>Ligado</c>, seguia e gravava.
+    '''
+    ''' E o teste da corrida não pegava isso, porque ele escrevia o marcador
+    ''' direto em vez de chamar <c>Desligar</c>.
+    '''
+    ''' Aqui outra thread segura o mutex por mais tempo que a espera. Dizer
+    ''' "desliguei" sem ter desligado é pior que recusar: quem recusa tenta de
+    ''' novo, quem foi enganado não tenta.
+    '''
+    ''' <b>Controle negativo:</b> tirando o <c>If Not segurou Then Return</c> do
+    ''' <c>Desligar</c>, este teste cai.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Sem_a_trava_desligar_RECUSA()
+        Dim d = Novo()
+        Dim nome As String
+        Using sha = Security.Cryptography.SHA256.Create()
+            Dim bytes = sha.ComputeHash(Text.Encoding.UTF8.GetBytes(Arquivo().ToLowerInvariant()))
+            nome = "Iris.buscas." & Convert.ToHexString(bytes, 0, 12)
+        End Using
+
+        Dim segurando As New Threading.ManualResetEventSlim(False)
+        Dim solte As New Threading.ManualResetEventSlim(False)
+
+        Dim outra As New Threading.Thread(
+            Sub()
+                Using m As New Threading.Mutex(False, nome)
+                    m.WaitOne()
+                    segurando.Set()
+                    solte.Wait(TimeSpan.FromSeconds(10))
+                    m.ReleaseMutex()
+                End Using
+            End Sub)
+        outra.IsBackground = True
+        outra.Start()
+
+        Try
+            Assert.IsTrue(segurando.Wait(TimeSpan.FromSeconds(5)),
+                          "a outra thread nao chegou a segurar a trava")
+
+            Dim motivo = d.Desligar()
+
+            Assert.IsNotNull(motivo,
+                "disse que desligou sem ter conseguido a trava. Uma retirada " &
+                "de consentimento anunciada e nao efetivada e pior que uma recusa.")
+            Assert.IsTrue(d.Ligado,
+                "marcou como desligado sem exclusao: o outro processo pode " &
+                "estar gravando agora mesmo")
+        Finally
+            solte.Set()
+            outra.Join(TimeSpan.FromSeconds(5))
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' CONTROLE: com a trava livre, o mesmo <c>Desligar</c> funciona. Sem
+    ''' isto, um <c>Desligar</c> que recusasse sempre passaria no teste acima.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_com_a_trava_livre_desligar_funciona()
+        Dim d = Novo()
+        Assert.IsNull(d.Desligar())
+        Assert.IsFalse(d.Ligado)
+    End Sub
+
     <TestMethod>
     Public Sub Controle_sem_a_janela_a_gravacao_acontece()
         Dim d = Novo()
