@@ -55,10 +55,37 @@ Namespace Global.Iris.App.ViewModels
         ''' camada de apresentação não instancia leitor de cache. A segunda é
         ''' que sem isto não haveria teste — o construtor abriria banco.
         ''' </summary>
-        Public Sub New(busca As Func(Of String, ResultadoDaBusca))
+        ''' <summary>
+        ''' O diário é <b>opcional</b>, e a tela funciona inteira sem ele.
+        '''
+        ''' Não é gosto por injeção: registrar o que uma pessoa procura é coleta
+        ''' de comportamento, e ela tem de poder não existir. Um diário
+        ''' obrigatório seria uma decisão do código sobre uma coisa que é do
+        ''' dono da caixa.
+        ''' </summary>
+        Private ReadOnly _diario As IDiarioDeBuscas
+        Private _falhaAoApagar As String = ""
+
+        Public ReadOnly Property Diario As IDiarioDeBuscas
+            Get
+                Return _diario
+            End Get
+        End Property
+
+        Public ReadOnly Property RegistrandoBuscas As Boolean
+            Get
+                Return _diario IsNot Nothing
+            End Get
+        End Property
+
+        Public Sub New(busca As Func(Of String, ResultadoDaBusca),
+                       Optional diario As IDiarioDeBuscas = Nothing)
+            _diario = diario
             _busca = busca
             ProcurarCommand = New RelayCommand(AddressOf Procurar, Function() _busca IsNot Nothing)
             LimparCommand = New RelayCommand(AddressOf Limpar, Function() Procurou)
+            ApagarDiarioCommand = New RelayCommand(AddressOf ApagarDiario,
+                                                   Function() _diario IsNot Nothing)
         End Sub
 
         Public ReadOnly Property Achados As New ObservableCollection(Of LinhaAchada)()
@@ -143,6 +170,59 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' Quantas buscas o diário já anotou, ou <c>Nothing</c> se não deu para
+        ''' contar. <b>Arquivo travado não é arquivo vazio</b> — a tela diz "não
+        ''' consegui contar", e não "zero".
+        ''' </summary>
+        Public ReadOnly Property BuscasRegistradas As Integer?
+            Get
+                Return _diario?.Quantas()
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>A frase que impede a coleta de ser silenciosa.</b>
+        '''
+        ''' O dono autorizou o registro; isso não é o mesmo que ele querer
+        ''' esquecer que ele existe. A tela diz que está anotando, quantas, e
+        ''' onde o arquivo está — porque um arquivo que o usuário não sabe
+        ''' localizar é um arquivo que ele não pode apagar, e poder apagar era
+        ''' metade do acordo.
+        ''' </summary>
+        Public ReadOnly Property FraseDoDiario As String
+            Get
+                If _diario Is Nothing Then Return ""
+                Dim n = BuscasRegistradas
+                Dim quantas = If(n.HasValue,
+                                 $"{n.Value} busca(s) anotada(s)",
+                                 "não consegui contar quantas")
+                Return $"As suas buscas estão sendo anotadas nesta máquina — " &
+                       quantas & ", em " & _diario.Caminho &
+                       ". Só o texto digitado; nenhum assunto de mensagem."
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' O diário falhou ao anotar. Aparece porque diário que morre calado
+        ''' produz amostra furada que ninguém sabe que é furada.
+        ''' </summary>
+        Public ReadOnly Property FalhaDoDiario As String
+            Get
+                If Not String.IsNullOrWhiteSpace(_falhaAoApagar) Then Return _falhaAoApagar
+                Return If(_diario?.UltimaFalha, "")
+            End Get
+        End Property
+
+        Public ReadOnly Property TemFalhaDoDiario As Boolean
+            Get
+                Return Not String.IsNullOrWhiteSpace(FalhaDoDiario)
+            End Get
+        End Property
+
+        ''' <summary>Apaga o diário. É do dono, e ele apaga quando quiser.</summary>
+        Public ReadOnly Property ApagarDiarioCommand As IRelayCommand
+
         Public ReadOnly Property SemAchados As Boolean
             Get
                 Return _procurou AndAlso Achados.Count = 0
@@ -185,10 +265,35 @@ Namespace Global.Iris.App.ViewModels
             Procurou = True
             Ressalva = r.Ressalva
             Aproximados = r.Achados.Where(Function(x) x.Grau <> GrauDoAchado.Exato).Count()
+
+            ''' DEPOIS DE A TELA ESTAR MONTADA, e nunca antes.
+            '''
+            ''' O diário não pode entrar no caminho entre procurar e mostrar: se
+            ''' ele demorar, quem espera é o usuário. E ele não lança — a
+            ''' garantia mora no <see cref="DiarioDeBuscasEmArquivo"/> —, mas
+            ''' pôr a chamada aqui embaixo faz a ordem ser óbvia para quem lê,
+            ''' em vez de depender de lembrar daquela garantia.
+            _diario?.Registrar(_termo, Achados.Count - Aproximados, Aproximados)
+            OnPropertyChanged(NameOf(BuscasRegistradas))
+            OnPropertyChanged(NameOf(FalhaDoDiario))
+            OnPropertyChanged(NameOf(TemFalhaDoDiario))
             OnPropertyChanged(NameOf(SemAchados))
             OnPropertyChanged(NameOf(Aproximados))
             OnPropertyChanged(NameOf(TemAproximados))
             OnPropertyChanged(NameOf(FraseDosAproximados))
+        End Sub
+
+        Private Sub ApagarDiario()
+            If _diario Is Nothing Then Return
+            Dim motivo = _diario.Apagar()
+            ''' A falha entra pelo MESMO lugar da falha de escrita, e nao
+            ''' numa propriedade nova: sao a mesma coisa para quem le --
+            ''' "o diario nao esta fazendo o que promete".
+            _falhaAoApagar = If(motivo, "")
+            OnPropertyChanged(NameOf(BuscasRegistradas))
+            OnPropertyChanged(NameOf(FraseDoDiario))
+            OnPropertyChanged(NameOf(FalhaDoDiario))
+            OnPropertyChanged(NameOf(TemFalhaDoDiario))
         End Sub
 
         Private Sub Limpar()

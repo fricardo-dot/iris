@@ -1419,6 +1419,45 @@
                              quando o certo e "a busca achou algo parecido":
                              a mesma familia de defeito que este projeto passou
                              uma serie de revisoes corrigindo. -->
+                        <!-- O DIARIO DE BUSCAS, DECLARADO NA TELA.
+                             O dono autorizou a coleta em 30/08. Autorizar nao
+                             e o mesmo que querer esquecer que ela existe: a
+                             faixa diz que esta anotando, quantas, e ONDE o
+                             arquivo esta. Arquivo que o usuario nao sabe
+                             localizar e arquivo que ele nao pode apagar, e
+                             poder apagar era metade do acordo.
+
+                             So o texto digitado entra ali. Nenhum assunto,
+                             nenhum remetente, nenhum EntryID. -->
+                        <StackPanel Orientation="Horizontal" Margin="0,6,0,0"
+                                    Visibility="{Binding Busca.RegistrandoBuscas,
+                                                 Converter={StaticResource BoolToVis},
+                                                 FallbackValue=Collapsed}">
+                            <TextBlock Text="{Binding Busca.FraseDoDiario}"
+                                       TextWrapping="Wrap"
+                                       FontSize="11"
+                                       MaxWidth="520"
+                                       Foreground="{DynamicResource Brush.Text.Secondary}"
+                                       AutomationProperties.Name="O que o diario de buscas anota" />
+                            <Button Content="Apagar registro"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Busca.ApagarDiarioCommand}"
+                                    Margin="8,0,0,0"
+                                    VerticalAlignment="Top"
+                                    ToolTip="Apaga o arquivo de buscas anotadas"
+                                    AutomationProperties.Name="Apagar o diario de buscas" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding Busca.FalhaDoDiario}"
+                                   TextWrapping="Wrap"
+                                   FontSize="11"
+                                   Margin="0,4,0,0"
+                                   Foreground="{DynamicResource Brush.Error}"
+                                   Visibility="{Binding Busca.TemFalhaDoDiario,
+                                                Converter={StaticResource BoolToVis},
+                                                FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="Falha do diario de buscas" />
+
                         <TextBlock Text="{Binding Busca.FraseDosAproximados}"
                                    TextWrapping="Wrap"
                                    FontSize="11"

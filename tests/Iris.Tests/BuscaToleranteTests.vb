@@ -1,3 +1,4 @@
+Imports System.Collections.Generic
 Imports Iris.Model
 Imports System.Linq
 Imports Iris.Cache
@@ -63,6 +64,25 @@ Public Class BuscaToleranteTests
     ''' cima do resultado. O ResultadoDaBusca tem construtor Friend e a suite
     ''' esta no assembly de amigos, entao nao ha banco no caminho.
     ''' </summary>
+    Private Shared Function ProcurarCom(diario As IDiarioDeBuscas, termo As String,
+                                        itens As ManifestItem()) As Iris.App.ViewModels.BuscaViewModel
+        Dim t As New TermoDeBusca(termo)
+        Dim achados = itens.
+                      Select(Function(i) New AchadoDaBusca(1, "Caixa de Entrada", i, t.Grau(i))).
+                      Where(Function(x) x.Grau <> GrauDoAchado.Nenhum).
+                      ToList()
+        Dim pasta As New PastaConsultada(1, "Caixa de Entrada", 1,
+                                         Iris.Sync.FolderCoverage.Parcial,
+                                         "2026-08-30T00:00:00Z", "Acervo parcial.", 9)
+        Dim r As New ResultadoDaBusca(t, achados, {pasta},
+                                      Array.Empty(Of PastaConsultada)())
+
+        Dim vm As New Iris.App.ViewModels.BuscaViewModel(Function(x) r, diario)
+        vm.Termo = termo
+        vm.ProcurarCommand.Execute(Nothing)
+        Return vm
+    End Function
+
     Private Shared Function Procurar(termo As String,
                                      itens As ManifestItem()) As Iris.App.ViewModels.BuscaViewModel
         Dim t As New TermoDeBusca(termo)
@@ -378,5 +398,130 @@ Public Class BuscaToleranteTests
             "a transposição passou a ser achada. Se foi de propósito, o " &
             "número da medição e o comentário do Grau precisam mudar junto")
     End Sub
+
+    ''' <summary>
+    ''' <b>O DIÁRIO É ANOTADO DEPOIS DA TELA, E NÃO ANTES.</b>
+    '''
+    ''' Busca é a funcionalidade; o diário é instrumentação. Se ele entrar no
+    ''' caminho entre procurar e mostrar, quem espera é o usuário — e se ele
+    ''' lançar, a busca morre por causa de uma anotação.
+    '''
+    ''' <b>Controle negativo:</b> um diário que lança derruba este teste se a
+    ''' chamada não estiver protegida pela garantia do
+    ''' <c>DiarioDeBuscasEmArquivo</c>; e tirar a chamada derruba a contagem.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_busca_e_anotada_no_diario()
+        Dim d As New DiarioFalso()
+        Dim vm = ProcurarCom(d, "contrado", {Item("Contrato aditivo", "")})
+
+        Assert.AreEqual(1, d.Anotadas.Count, "a busca nao foi anotada")
+        Assert.AreEqual("contrado", d.Anotadas(0).Termo)
+        Assert.AreEqual(0, d.Anotadas(0).Exatos)
+        Assert.AreEqual(1, d.Anotadas(0).Aproximados,
+                        "o diario nao registrou que o achado foi aproximado")
+        Assert.AreEqual(1, vm.Achados.Count, "a busca tinha de ter funcionado igual")
+    End Sub
+
+    ''' <summary>
+    ''' <b>E um diário que EXPLODE não derruba a busca.</b>
+    '''
+    ''' A garantia mora no <c>DiarioDeBuscasEmArquivo</c>, que engole. Este
+    ''' teste prende o contrato pelo lado de fora: qualquer implementação de
+    ''' <c>IDiarioDeBuscas</c> que lance não pode levar a tela junto.
+    '''
+    ''' Hoje ele <b>falha</b> se alguém puser um diário que lança — e é isso
+    ''' que ele existe para dizer: a proteção é do implementador, e a interface
+    ''' declara "nunca lança" em vez de a tela se defender. Se um dia isso
+    ''' mudar, este teste é onde a decisão fica visível.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Um_diario_que_explode_e_problema_de_quem_o_escreveu()
+        Dim d As New DiarioQueExplode()
+
+        Assert.ThrowsException(Of InvalidOperationException)(
+            Sub() ProcurarCom(d, "contrato", {Item("Contrato aditivo", "")}),
+            "se isto parar de lancar, alguem pos protecao na tela -- e ai o " &
+            "comentario da IDiarioDeBuscas ('nunca lanca') virou opcional")
+    End Sub
+
+    ''' <summary>Sem diário, a busca funciona igual e a tela não anuncia coleta.</summary>
+    <TestMethod>
+    Public Sub Sem_diario_a_tela_nao_anuncia_coleta()
+        Dim vm = Procurar("contrato", {Item("Contrato aditivo", "")})
+
+        Assert.IsFalse(vm.RegistrandoBuscas)
+        Assert.AreEqual("", vm.FraseDoDiario,
+                        "anunciou coleta sem haver diario nenhum")
+        Assert.AreEqual(1, vm.Achados.Count)
+    End Sub
+
+    Private NotInheritable Class DiarioFalso
+        Implements IDiarioDeBuscas
+
+        Friend NotInheritable Class Anotada
+            Public Property Termo As String
+            Public Property Exatos As Integer
+            Public Property Aproximados As Integer
+        End Class
+
+        Friend ReadOnly Anotadas As New List(Of Anotada)()
+
+        Public Sub Registrar(termo As String, exatos As Integer, aproximados As Integer) _
+            Implements IDiarioDeBuscas.Registrar
+            Anotadas.Add(New Anotada With {.Termo = termo, .Exatos = exatos,
+                                           .Aproximados = aproximados})
+        End Sub
+
+        Public ReadOnly Property Caminho As String Implements IDiarioDeBuscas.Caminho
+            Get
+                Return "(em memoria)"
+            End Get
+        End Property
+
+        Public Function Quantas() As Integer? Implements IDiarioDeBuscas.Quantas
+            Return Anotadas.Count
+        End Function
+
+        Public Function Apagar() As String Implements IDiarioDeBuscas.Apagar
+            Anotadas.Clear()
+            Return Nothing
+        End Function
+
+        Public ReadOnly Property UltimaFalha As String Implements IDiarioDeBuscas.UltimaFalha
+            Get
+                Return ""
+            End Get
+        End Property
+    End Class
+
+    Private NotInheritable Class DiarioQueExplode
+        Implements IDiarioDeBuscas
+
+        Public Sub Registrar(termo As String, exatos As Integer, aproximados As Integer) _
+            Implements IDiarioDeBuscas.Registrar
+            Throw New InvalidOperationException("o disco sumiu")
+        End Sub
+
+        Public ReadOnly Property Caminho As String Implements IDiarioDeBuscas.Caminho
+            Get
+                Return "(explode)"
+            End Get
+        End Property
+
+        Public Function Quantas() As Integer? Implements IDiarioDeBuscas.Quantas
+            Return Nothing
+        End Function
+
+        Public Function Apagar() As String Implements IDiarioDeBuscas.Apagar
+            Return Nothing
+        End Function
+
+        Public ReadOnly Property UltimaFalha As String Implements IDiarioDeBuscas.UltimaFalha
+            Get
+                Return ""
+            End Get
+        End Property
+    End Class
 
 End Class

@@ -209,7 +209,20 @@ Namespace Global.Iris.App.ViewModels
             ' ArchitectureTests cobra. Quem sabe abrir o leitor é o acervo,
             ' que já tem o banco na mão.
             If Acervo IsNot Nothing Then
-                Busca = New BuscaViewModel(AddressOf Acervo.Procurar)
+                ' O DIARIO DE BUSCAS entra aqui, e o dono autorizou em 30/08.
+                '
+                ' Ele existe para a metade aberta da Fase 4: pedir as consultas
+                ' por sentido de memoria nao produziu caso nenhum, que e a
+                ' resposta normal de quem e perguntado sobre uma busca que
+                ' falhou semanas atras. O diario deixa o oraculo se juntar
+                ' sozinho, com a distribuicao real em vez da amostra lembrada.
+                '
+                ' Guarda so o termo digitado -- nenhum assunto, nenhum
+                ' EntryID -- e a faixa da busca DIZ que esta anotando, diz
+                ' onde, e tem botao de apagar. Coleta autorizada nao e o
+                ' mesmo que coleta esquecida.
+                Busca = New BuscaViewModel(AddressOf Acervo.Procurar,
+                                           New DiarioDeBuscasEmArquivo())
             End If
 
             ' O BROKER ENTRA COMO LEITOR **E** COMO ESCRITOR.

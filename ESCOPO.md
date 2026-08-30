@@ -564,18 +564,46 @@ falhou semanas atrás.
 ferramenta fica; o arquivo em branco fica. No dia em que uma busca falhar por
 sentido, são duas linhas para registrá-la, e a medição responde.
 
-#### O caminho alternativo, que é decisão do dono
+#### O método forte — AUTORIZADO E CONSTRUÍDO em 30/08/2026
 
-Pedir de memória é o método mais fraco possível de coletar oráculo. O método
-forte é **passivo**: o Iris registrar localmente as buscas que o dono realmente
-faz e se ele achou o que queria. Em algumas semanas o oráculo se junta sozinho,
-com a distribuição real das buscas dele em vez da amostra do que ele lembrou.
+Pedir de memória é o método mais fraco possível de coletar oráculo. O forte é
+**passivo**: o Iris anota localmente as buscas que o dono realmente faz. Em
+algumas semanas o oráculo se junta sozinho, com a distribuição real das buscas
+dele em vez da amostra do que ele lembrou num dia.
 
-**Não está feito, e não vou fazer sem pedir.** Registrar o que uma pessoa
-procura é coleta de comportamento — é local, é metadado, e ainda assim é uma
-decisão dela, não minha. Fica aqui como proposta, com o custo declarado: um
-arquivo local a mais, nenhum egress, e o dono podendo ler e apagar quando
-quiser.
+**O dono autorizou em 30/08.** O que foi construído:
+
+- `DiarioDeBuscasEmArquivo` — uma linha por busca em
+  `%LOCALAPPDATA%\Iris\buscas.jsonl`. Guarda **o instante, o termo digitado e
+  quantos achados saíram**. Não guarda assunto, remetente, `EntryID` nem pasta,
+  e o `Registrar` **não tem parâmetro onde caberia** — há teste por reflexão que
+  cai se alguém acrescentar um.
+- Texto e não SQLite **de propósito**: o dono precisa poder abrir no Bloco de
+  Notas e apagar, e tabela dentro de banco não atende a isso.
+- **A tela declara a coleta**: diz que está anotando, quantas, **onde o arquivo
+  está**, e tem botão de apagar. Autorizar não é o mesmo que querer esquecer
+  que existe — e arquivo que o dono não sabe localizar é arquivo que ele não
+  pode apagar.
+- **O diário nunca derruba a busca.** É o único lugar deste projeto onde engolir
+  exceção é o comportamento certo — busca é a funcionalidade, diário é
+  instrumentação. Mas engolir não é esconder: o motivo fica guardado e a tela
+  mostra, porque instrumentação que morre calada produz amostra furada que
+  ninguém sabe que é furada.
+
+**O sinal é a REFORMULAÇÃO, e não o clique.** A tela de busca não abre
+resultado — só mostra. Isso parecia limitação e é vantagem: o que interessa não
+é qual mensagem foi aberta, é o dono ter **trocado de palavra**. Digitar
+"cobrança", não achar, digitar "fatura" e parar é a falha semântica inteira — e
+com isso o diário não precisa registrar assunto de mensagem nenhuma.
+
+`tools/ler-diario-de-buscas.py` transforma o diário em candidatos: duas buscas
+seguidas, dentro de três minutos, a primeira achando pouco ou nada, a segunda
+achando, **e sem palavra em comum** — porque "contrato" → "contrato aditivo" é
+refino da mesma busca, e vocabulário é justamente o que se quer medir. Ele
+também lista as que falharam e não foram reformuladas: são sinal com um lado só.
+
+**E ele produz CANDIDATO, não prova.** Só o dono confirma que duas buscas eram a
+mesma intenção. A saída é lista para revisar, não número para publicar.
 
 As decisões 4, 5, 6 e 7 — qual ato autoriza indexação em massa, retenção,
 identidade do índice, orçamento — continuam abertas e **só passam a valer se

@@ -653,6 +653,37 @@ Public Class BindingsDaJanelaTests
             "nao diz quais")
     End Sub
 
+    ''' <summary>
+    ''' <b>A COLETA SE DECLARA NA TELA.</b>
+    '''
+    ''' O dono autorizou o diário de buscas em 30/08. Autorizar não é o mesmo
+    ''' que querer esquecer que ele existe — e um registro de comportamento que
+    ''' some da vista é exatamente o que ninguém deveria aceitar de software
+    ''' nenhum, inclusive deste.
+    '''
+    ''' Três coisas, e as três são necessárias: que está anotando, <b>onde</b> o
+    ''' arquivo está, e um botão de apagar. Sem o caminho, o dono não consegue
+    ''' localizar o que autorizou; sem o botão, não consegue desfazer. Poder
+    ''' apagar era metade do acordo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_diario_de_buscas_se_declara_na_tela()
+        Dim xaml = LerXaml()
+
+        StringAssert.Contains(xaml, "{Binding Busca.FraseDoDiario}",
+            "a tela nao diz que esta anotando as buscas: coleta autorizada " &
+            "virou coleta silenciosa")
+        StringAssert.Contains(xaml, "{Binding Busca.ApagarDiarioCommand}",
+            "nao ha como apagar o registro pela tela, e poder apagar era " &
+            "metade do acordo com o dono")
+        StringAssert.Contains(xaml, "{Binding Busca.RegistrandoBuscas,",
+            "sem a visibilidade a faixa aparece mesmo quando nao ha diario, " &
+            "e passa a anunciar uma coleta que nao acontece")
+        StringAssert.Contains(xaml, "{Binding Busca.TemFalhaDoDiario,",
+            "a falha do diario nao chega a tela: amostra furada que ninguem " &
+            "sabe que e furada")
+    End Sub
+
     Private Shared Function LerXaml() As String
         If _xaml IsNot Nothing Then Return _xaml
         Dim d = New DirectoryInfo(AppContext.BaseDirectory)
