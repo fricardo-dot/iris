@@ -26,3 +26,7 @@ ativacao.json
 # Bytecode do Python das ferramentas.
 __pycache__/
 *.pyc
+
+# As consultas por sentido tem assunto REAL de mensagem real.
+# O exemplo (consultas-por-sentido.exemplo.json) e versionado; este nao.
+tools/consultas-por-sentido.json

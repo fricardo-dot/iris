@@ -1,0 +1,63 @@
+{
+  "_": [
+    "AS CONSULTAS QUE SO O DONO DA CAIXA PODE ESCREVER.",
+    "",
+    "Este e o EXEMPLO, com dados inventados. O de verdade fica em",
+    "  tools/consultas-por-sentido.json",
+    "que esta no .gitignore, porque ele contem assunto real de mensagem real.",
+    "",
+    "PARA QUE SERVE",
+    "",
+    "A medicao de 29/08 provou que a busca textual resolve o que ela promete,",
+    "e consertou o que faltava por letra: erro de digitacao e flexao. O que",
+    "ninguem mediu -- e que nenhum harness consegue medir sozinho -- e a busca",
+    "por SENTIDO: voce digita uma palavra e a mensagem certa usa outra.",
+    "",
+    "Isso e julgamento. So voce sabe que a mensagem sobre 'fatura' era a que",
+    "voce queria quando digitou 'cobranca'. Com dez ou quinze linhas destas, a",
+    "pergunta 'vale a pena indexar?' vira um numero. Sem elas, qualquer",
+    "resposta e palpite -- inclusive a minha.",
+    "",
+    "COMO PREENCHER",
+    "",
+    "  digitei -- o que voce digitaria naturalmente na busca",
+    "  queria  -- um pedaco do assunto REAL da mensagem que voce queria achar,",
+    "             suficiente para identifica-la. Nao precisa ser o assunto",
+    "             inteiro; precisa ser unico o bastante.",
+    "  porque  -- opcional, uma linha. Ajuda a ler o resultado depois.",
+    "",
+    "Escreva os casos em que a busca ERRA. Os que acertam nao ensinam nada --",
+    "e se voce nao tiver certeza, ponha assim mesmo: a ferramenta diz qual e",
+    "qual, e o caso que acerta vira controle positivo de graca.",
+    "",
+    "NADA SAI DA MAQUINA. A ferramenta le este arquivo e o cache local, e",
+    "imprime so agregados."
+  ],
+  "consultas": [
+    {
+      "digitei": "cobranca do fornecedor",
+      "queria": "Fatura 4471 vencendo",
+      "porque": "eu penso 'cobranca', o assunto diz 'fatura'"
+    },
+    {
+      "digitei": "aumento de preco",
+      "queria": "Reajuste da tabela 2026",
+      "porque": "'reajuste' e a palavra deles, 'aumento' e a minha"
+    },
+    {
+      "digitei": "quando entregam",
+      "queria": "Prazo de embarque revisado",
+      "porque": "eu procuro pela pergunta, nao pelo termo do assunto"
+    },
+    {
+      "digitei": "problema no lote",
+      "queria": "Nao conformidade - amostra 8812",
+      "porque": "'nao conformidade' e o nome formal do que eu chamo de problema"
+    },
+    {
+      "digitei": "ferias do time",
+      "queria": "Escala de recesso - dezembro",
+      "porque": "sinonimo, e o assunto nem tem a palavra que eu usaria"
+    }
+  ]
+}

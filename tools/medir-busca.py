@@ -402,6 +402,108 @@ def conferir():
           % len(dados["casos"]))
 
 
+def por_sentido(corpus, caminho):
+    """A METADE QUE NENHUM HARNESS MEDE SOZINHO.
+
+    O round-trip deste arquivo deriva consultas do proprio assunto, entao ele
+    so enxerga falha por LETRA. Falha por SENTIDO -- digitar "cobranca" e
+    querer a mensagem que diz "fatura" -- exige alguem dizer qual era a
+    mensagem certa. E julgamento, e so o dono da caixa tem.
+
+    Esta funcao le esse julgamento de tools/consultas-por-sentido.json e
+    responde a pergunta que decide a metade aberta da Fase 4:
+
+        de N consultas por sentido, quantas a busca textual erra?
+
+    Zero erro quer dizer que indexar nao compra nada aqui. Erro alto quer
+    dizer que compra -- e ai as decisoes 4, 5, 6 e 7 do ESCOPO passam a
+    valer a pena discutir. Antes disso, discuti-las e escolher a
+    implementacao antes do requisito."""
+    import json
+
+    if not os.path.exists(caminho):
+        print("nao achei %s" % caminho)
+        print("")
+        print("Copie tools/consultas-por-sentido.exemplo.json para esse nome e")
+        print("troque os casos inventados pelos seus. Dez ou quinze bastam.")
+        print("O arquivo esta no .gitignore: ele tem assunto real.")
+        return
+
+    with io.open(caminho, encoding="utf-8") as f:
+        dados = json.load(f)
+
+    consultas = dados.get("consultas", [])
+    if not consultas:
+        print("o arquivo nao tem nenhuma consulta")
+        return
+
+    achou_exato = achou_aprox = nao_achou = ambigua = nao_localizei = 0
+    perdidas = []
+
+    for c in consultas:
+        digitei = c.get("digitei", "")
+        queria = normalizar(c.get("queria", ""))
+        if not digitei or not queria:
+            continue
+
+        # A MENSAGEM CERTA e a que contem o trecho informado. Se mais de uma
+        # contem, o caso e ambiguo e NAO conta -- nem a favor nem contra.
+        alvos = [(a, r) for a, r in corpus if queria in normalizar(a)]
+
+        # ZERO NAO E AMBIGUIDADE. A primeira versao juntava os dois num
+        # contador so, e sao coisas diferentes: zero quer dizer que o trecho
+        # que voce escreveu nao casa com nenhuma mensagem do acervo -- erro de
+        # digitacao no trecho, ou mensagem fora da janela varrida. Mais de uma
+        # quer dizer que o trecho nao identifica. Colapsar as duas seria, de
+        # novo, ausencia virando a mesma coisa que excesso.
+        if len(alvos) == 0:
+            nao_localizei += 1
+            perdidas.append("  NAO LOCALIZEI a mensagem alvo: %s"
+                            % ascii(c.get("queria", "")))
+            continue
+        if len(alvos) > 1:
+            ambigua += 1
+            perdidas.append("  AMBIGUA (%d mensagens casam o trecho): %s"
+                            % (len(alvos), ascii(c.get("queria", ""))))
+            continue
+
+        g = grau(digitei, alvos[0][0], alvos[0][1])
+        if g == 1:
+            achou_exato += 1
+        elif g == 2:
+            achou_aprox += 1
+        else:
+            nao_achou += 1
+            perdidas.append("  NAO ACHOU: digitei %s" % ascii(digitei))
+
+    validas = achou_exato + achou_aprox + nao_achou
+    print("BUSCA POR SENTIDO -- o julgamento que so o dono da caixa tem")
+    print("consultas no arquivo: %d | validas: %d | ambiguas: %d | "
+          "alvo nao localizado: %d"
+          % (len(consultas), validas, ambigua, nao_localizei))
+    print("")
+    if validas:
+        print("  achou exato       %3d  (%.0f%%)"
+              % (achou_exato, 100.0 * achou_exato / validas))
+        print("  achou aproximado  %3d  (%.0f%%)"
+              % (achou_aprox, 100.0 * achou_aprox / validas))
+        print("  NAO ACHOU         %3d  (%.0f%%)"
+              % (nao_achou, 100.0 * nao_achou / validas))
+    print("")
+    for l in perdidas:
+        print(l)
+    print("")
+    print("COMO LER ESTE NUMERO:")
+    print("  NAO ACHOU baixo  -> indexar nao compra nada aqui, e a Fase 4")
+    print("                      continua fechada com evidencia dos dois lados.")
+    print("  NAO ACHOU alto   -> compra, e as decisoes 4/5/6/7 do ESCOPO")
+    print("                      passam a valer a pena discutir.")
+    print("")
+    print("RESSALVA: a amostra e a que voce escreveu. Ela mede o que voce")
+    print("lembrou de procurar, e nao a distribuicao das suas buscas reais.")
+    print("Um numero destes decide o SENTIDO da resposta, nao a magnitude.")
+
+
 def main():
     global TOLERANCIA
 
@@ -409,7 +511,9 @@ def main():
         conferir()
         return
 
-    argumentos = [a for a in sys.argv[1:] if a != "--sem-tolerancia"]
+    # Toda flag fora, e nao so a que eu lembrei: a primeira versao filtrava
+    # so --sem-tolerancia, e --por-sentido virou "caminho do cache".
+    argumentos = [a for a in sys.argv[1:] if not a.startswith("--")]
     TOLERANCIA = "--sem-tolerancia" not in sys.argv
 
     caminho = argumentos[0] if argumentos else os.path.join(
@@ -525,9 +629,20 @@ def main():
     print("escolhida a mao, sem lexico -- ela mostra que existe morfologia fora")
     print("do alcance do radical, e nao mede o tamanho desse buraco.")
     print("")
-    print("NAO MEDIDO: consulta por sinonimo ou parafrase. E onde embeddings")
-    print("ganhariam, e decidir que uma responde a outra e julgamento -- so o")
-    print("dono da caixa pode dizer. Esta medicao cobre a metade mecanica.")
+    print("NAO MEDIDO AQUI: consulta por sinonimo ou parafrase. E onde")
+    print("embeddings ganhariam, e decidir que uma responde a outra e")
+    print("julgamento -- so o dono da caixa pode dizer.")
+    print("")
+    print("Para medir essa metade:  python tools/medir-busca.py --por-sentido")
+
+    # A metade que depende do julgamento do dono, quando ela existir.
+    if "--por-sentido" in sys.argv:
+        print("")
+        print("=" * 58)
+        print("")
+        por_sentido(corpus, os.path.join(
+            os.path.dirname(os.path.abspath(__file__)),
+            "consultas-por-sentido.json"))
 
 
 if __name__ == "__main__":
