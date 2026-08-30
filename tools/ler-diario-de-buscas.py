@@ -120,11 +120,20 @@ def episodios(buscas, janela_min):
 
 
 def classificar(buscas, pouco=POUCO, janela_min=JANELA_MINUTOS):
-    """Devolve (pares, orfas).
+    """Devolve (pares, orfas, refinos).
 
-    pares: (primeira_que_falhou, a_que_achou, minutos, cadeia_do_meio)
-    orfas: buscas que falharam e nao tiveram sucesso depois no episodio."""
-    pares, orfas = [], []
+    pares:   (primeira_que_falhou, a_que_achou, minutos, cadeia_do_meio)
+    orfas:   falharam e nao tiveram sucesso depois no episodio
+    refinos: falharam, mas a que achou era so a mesma busca com mais palavras
+
+    TODA BUSCA QUE FALHOU CAI EM UMA DAS TRES LISTAS, e isso e o conserto.
+    A primeira versao descartava os refinos em silencio -- "contrato" -> 0
+    seguido de "contrato aditivo" -> 3 nao virava par (por ser refino) nem
+    orfa (porque houve sucesso): sumia. A revisao externa achou, e o pior e
+    que o autoteste nao pegava, porque so conferia que NAO havia par.
+
+    Sumir e a coisa que esta ferramenta existe para nao fazer."""
+    pares, orfas, refinos = [], [], []
 
     for bloco in episodios(sorted(buscas, key=lambda d: d["_t"]), janela_min):
         falhas = []
@@ -136,6 +145,7 @@ def classificar(buscas, pouco=POUCO, janela_min=JANELA_MINUTOS):
             # ACHOU. As falhas acumuladas se pareiam com esta -- menos as
             # que sao so refino dela, que nao sao troca de vocabulario.
             candidatas = [f for f in falhas if not e_refino(f["termo"], b["termo"])]
+            refinos.extend(f for f in falhas if e_refino(f["termo"], b["termo"]))
             if candidatas:
                 primeira = candidatas[0]
                 minutos = (b["_t"] - primeira["_t"]).total_seconds() / 60.0
@@ -144,7 +154,7 @@ def classificar(buscas, pouco=POUCO, janela_min=JANELA_MINUTOS):
 
         orfas.extend(falhas)
 
-    return pares, orfas
+    return pares, orfas, refinos
 
 
 def ler(caminho):
@@ -181,34 +191,43 @@ def autoteste():
         if not ok:
             falhas.append(nome)
 
+    def total(p, o, r):
+        """Toda falha tem de aparecer em alguma lista."""
+        return len(o) + len(r) + sum(1 + len(x[3]) for x in p)
+
     # CADEIA: o caso que a primeira versao perdia.
-    p, o = classificar([reg(0, "cobranca", 0), reg(1, "boleto", 0), reg(2, "fatura", 5)])
+    p, o, r = classificar([reg(0, "cobranca", 0), reg(1, "boleto", 0), reg(2, "fatura", 5)])
     conferir("cadeia produz um par", len(p) == 1)
     conferir("cadeia pareia a PRIMEIRA falha", p and p[0][0]["termo"] == "cobranca")
     conferir("cadeia guarda o meio", p and [x["termo"] for x in p[0][3]] == ["boleto"])
     conferir("cadeia nao deixa orfa", not o)
 
-    # REFINO nao e troca de vocabulario.
-    p, o = classificar([reg(0, "contrato", 0), reg(1, "contrato aditivo", 3)])
+    conferir("cadeia nao perde falha", total(p, o, r) == 2)
+
+    # REFINO nao e troca de vocabulario -- MAS NAO SOME.
+    p, o, r = classificar([reg(0, "contrato", 0), reg(1, "contrato aditivo", 3)])
     conferir("refino nao vira par", not p)
+    conferir("refino NAO SOME", len(r) == 1 and r[0]["termo"] == "contrato")
+    conferir("refino nao vira orfa", not o)
+    conferir("refino nao perde falha", total(p, o, r) == 1)
 
     # PALAVRA EM COMUM com troca E par -- o caso que a regra antiga perdia.
-    p, o = classificar([reg(0, "contrato fornecedor", 0), reg(1, "acordo fornecedor", 4)])
+    p, o, r = classificar([reg(0, "contrato fornecedor", 0), reg(1, "acordo fornecedor", 4)])
     conferir("troca com contexto comum vira par", len(p) == 1)
 
     # FORA DA JANELA: episodios diferentes.
-    p, o = classificar([reg(0, "cobranca", 0), reg(30, "fatura", 5)])
+    p, o, r = classificar([reg(0, "cobranca", 0), reg(30, "fatura", 5)])
     conferir("fora da janela nao pareia", not p)
     conferir("fora da janela vira orfa", len(o) == 1)
 
     # DESISTIU: falhou e acabou.
-    p, o = classificar([reg(0, "jacare bicicleta", 0)])
+    p, o, r = classificar([reg(0, "jacare bicicleta", 0)])
     conferir("desistencia vira orfa", len(o) == 1 and not p)
 
     # POUCO: com o padrao 0, uma busca com 1 achado e SUCESSO.
-    p, o = classificar([reg(0, "unica", 1), reg(1, "outra", 5)])
+    p, o, r = classificar([reg(0, "unica", 1), reg(1, "outra", 5)])
     conferir("um achado conta como sucesso por padrao", not p and not o)
-    p, o = classificar([reg(0, "unica", 1), reg(1, "outra", 5)], pouco=1)
+    p, o, r = classificar([reg(0, "unica", 1), reg(1, "outra", 5)], pouco=1)
     conferir("--pouco 1 muda a classificacao", len(p) == 1)
 
     if falhas:
@@ -216,7 +235,7 @@ def autoteste():
         for f in falhas:
             print("  " + f)
         raise SystemExit(1)
-    print("autoteste: %d casos, todos passam" % 9)
+    print("autoteste: %d casos, todos passam" % 13)
 
 
 def main():
@@ -251,7 +270,7 @@ def main():
         return
 
     buscas, ruins = ler(caminho)
-    pares, orfas = classificar(buscas, pouco=pouco)
+    pares, orfas, refinos = classificar(buscas, pouco=pouco)
 
     print("DIARIO DE BUSCAS -> candidatos a consulta por sentido")
     print("buscas anotadas: %d%s | 'achou pouco' = ate %d resultado(s)"
@@ -299,6 +318,18 @@ def main():
         print("Estas SAO sinal, com um lado so: a busca nao achou e a pessoa")
         print("desistiu. Se voce lembrar qual mensagem queria em alguma delas,")
         print("ela vira uma linha completa.")
+
+    if refinos:
+        print("")
+        print("REFINADAS, E NAO TROCADAS (%d):" % len(refinos))
+        print("Falharam, e a busca seguinte era a MESMA com mais palavras --")
+        print("refino, e nao troca de vocabulario. Nao entram como candidato, e")
+        print("aparecem aqui para nao sumirem de toda saida.")
+        for b in refinos[:10]:
+            print("  %-28s (%d achados)"
+                  % (repr(b["termo"]), b.get("exatos", 0) + b.get("aproximados", 0)))
+        if len(refinos) > 10:
+            print("  ... e mais %d" % (len(refinos) - 10))
 
 
 if __name__ == "__main__":

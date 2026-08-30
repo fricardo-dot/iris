@@ -36,7 +36,19 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' é furada.</item>
 ''' </list>
 ''' </summary>
+''' <summary>
+''' <b>&lt;DoNotParallelize&gt; porque esta classe usa o CrashInjection.</b>
+'''
+''' Ele e estado ESTATICO e compartilhado. Sem isto, o ponto armado por um
+''' teste daqui vaza para os outros que estiverem rodando ao mesmo tempo --
+''' e foi o que aconteceu: quatro testes desta mesma classe cairam de uma
+''' vez, com falhas que nao tinham nada a ver com o que eles testam.
+'''
+''' A regra ja existia (ver <c>ParalelismoDaSuiteTests</c>); o que faltou
+''' foi lembrar dela ao acrescentar a injecao.
+''' </summary>
 <TestClass>
+<DoNotParallelize>
 Public Class DiarioDeBuscasTests
 
     Private _pasta As String
@@ -253,9 +265,116 @@ Public Class DiarioDeBuscasTests
 
         ' CONTROLE: sem marcador, esta ligado. Sem isto, um Ligado que
         ' devolvesse False sempre passaria na assercao de cima.
-        Assert.IsTrue(Novo().Ligado = False OrElse True)
+        '
+        ' A PRIMEIRA VERSAO DESTE CONTROLE ERA TAUTOLOGICA:
+        '     Assert.IsTrue(Novo().Ligado = False OrElse True)
+        ' que e verdadeiro sempre, para qualquer implementacao. Um controle
+        ' que nao pode falhar nao e controle -- e a revisao externa o achou
+        ' exatamente onde ele fingia estar protegendo.
         d.Ligar()
         Assert.IsTrue(d.Ligado, "controle: sem marcador tem de estar ligado")
+    End Sub
+
+    ''' <summary>
+    ''' <b>DESLIGAR FECHA A JANELA ENTRE CONFERIR E GRAVAR.</b>
+    '''
+    ''' A revisão externa achou uma corrida real: o <c>Registrar</c> conferia
+    ''' <c>Ligado</c>, esperava a trava, e nesse meio-tempo outro processo podia
+    ''' desligar — a busca era anotada <b>depois</b> da retirada do
+    ''' consentimento.
+    '''
+    ''' Aqui o desligamento acontece por fora, como faria a outra janela, e a
+    ''' gravação seguinte tem de recusar.
+    '''
+    ''' <b>Controle negativo:</b> tirando a segunda conferência de dentro da
+    ''' trava, este teste continua passando — porque num só processo a janela é
+    ''' estreita demais para o teste abrir. O que ele prende é a <i>ordem</i>: o
+    ''' marcador criado por fora vale imediatamente.
+    ''' </summary>
+    ''' <summary>
+    ''' <b>DESLIGAR NO MEIO DA GRAVAÇÃO IMPEDE A GRAVAÇÃO.</b>
+    '''
+    ''' Este é o teste que faltava, e o controle negativo do irmão dele foi
+    ''' quem mostrou: com a guarda de dentro da trava removida, o teste do
+    ''' marcador continuava passando — porque num só processo a janela é
+    ''' estreita demais para abrir sozinha, e a guarda de entrada já pegava.
+    '''
+    ''' O ponto de injeção abre a janela: a ação armada desliga o diário
+    ''' <i>depois</i> da conferência de entrada e <i>antes</i> da gravação,
+    ''' exatamente como a outra janela do Iris faria.
+    '''
+    ''' <b>Controle negativo:</b> tirando o <c>If Not Ligado Then Return</c>
+    ''' de dentro da trava, este teste cai — e agora cai de verdade.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Desligar_NO_MEIO_da_gravacao_impede_a_gravacao()
+        Dim d = Novo()
+        Try
+            Iris.Cache.CrashInjection.Armar(
+                Iris.Cache.CrashInjection.EntreConferirOConsentimentoEGravar,
+                Sub() File.WriteAllText(Arquivo() & ".desligado", "x"))
+
+            d.Registrar("no meio da janela", 1, 0)
+
+            Assert.AreEqual(0, d.Quantas(),
+                "anotou uma busca depois de o consentimento ser retirado no " &
+                "meio da gravacao. Uma retirada que admite 'mais uma' nao e retirada.")
+        Finally
+            Iris.Cache.CrashInjection.Desarmar()
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' CONTROLE: sem nada armado, a mesma gravação passa. Sem isto, um
+    ''' <c>Registrar</c> que nunca gravasse passaria no teste de cima.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_sem_a_janela_a_gravacao_acontece()
+        Dim d = Novo()
+        d.Registrar("sem janela", 1, 0)
+        Assert.AreEqual(1, d.Quantas())
+    End Sub
+
+    <TestMethod>
+    Public Sub Marcador_criado_por_fora_vale_na_hora()
+        Dim d = Novo()
+        d.Registrar("antes", 1, 0)
+        Assert.AreEqual(1, d.Quantas(), "controle: anotou antes de desligar")
+
+        ' Como outra janela do Iris faria: o marcador aparece no disco.
+        File.WriteAllText(Arquivo() & ".desligado", "x")
+
+        d.Registrar("depois", 1, 0)
+        Assert.AreEqual(1, d.Quantas(),
+            "anotou depois de o consentimento ser retirado por fora")
+    End Sub
+
+    ''' <summary>
+    ''' <b>A contagem enxerga o que OUTRA instância escreveu.</b>
+    '''
+    ''' O cache em memória era cego: uma vez contado, ele devolvia o mesmo
+    ''' número para sempre. Duas janelas do Iris, ou uma edição por fora, e a
+    ''' tela mostrava um número de antes — a revisão externa listou os três
+    ''' casos.
+    '''
+    ''' <b>Controle negativo:</b> tirando o carimbo do
+    ''' <c>DiarioDeBuscasEmArquivo</c>, este teste cai.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_contagem_enxerga_a_escrita_de_outra_instancia()
+        Dim a = Novo()
+        Dim b = Novo()
+
+        a.Registrar("uma", 1, 0)
+        Assert.AreEqual(1, b.Quantas(), "controle: b viu a primeira")
+
+        a.Registrar("outra", 1, 0)
+        Assert.AreEqual(2, b.Quantas(),
+            "b continuou mostrando o número de antes: cache cego")
+
+        a.Apagar()
+        Assert.AreEqual(0, b.Quantas(),
+            "b continuou contando linhas de um arquivo que já não existe")
     End Sub
 
     <TestMethod>

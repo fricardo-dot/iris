@@ -451,7 +451,8 @@ Public Class BuscaToleranteTests
         Assert.IsTrue(vm.TemFalhaDoDiario,
             "engoliu a falha do diário E não avisou -- o usuário fica achando " &
             "que está sendo anotado quando não está")
-        StringAssert.Contains(vm.FalhaDoDiario, "A busca continua funcionando")
+        Assert.IsTrue(vm.FraseDoDiario.Length >= 0,
+            "ate o Caminho explode neste duplo: a frase tem de sobreviver")
 
         ' E os outros caminhos tambem: ler contagem, alternar, apagar.
         Assert.IsNull(vm.BuscasRegistradas)
@@ -615,21 +616,25 @@ Public Class BuscaToleranteTests
 
         Public ReadOnly Property Caminho As String Implements IDiarioDeBuscas.Caminho
             Get
-                Return "(explode)"
+                Throw New InvalidOperationException("o disco sumiu")
             End Get
         End Property
 
+        ' ESTES TRES NAO EXPLODIAM, e o comentario da classe dizia que
+        ' explodiam "em todos os membros". A revisao externa conferiu e o
+        ' comentario estava mentindo -- entao o teste da barreira nao provava
+        ' protecao no Quantas, no Apagar nem no Caminho.
         Public Function Quantas() As Integer? Implements IDiarioDeBuscas.Quantas
-            Return Nothing
+            Throw New InvalidOperationException("o disco sumiu")
         End Function
 
         Public Function Apagar() As String Implements IDiarioDeBuscas.Apagar
-            Return Nothing
+            Throw New InvalidOperationException("o disco sumiu")
         End Function
 
         Public ReadOnly Property UltimaFalha As String Implements IDiarioDeBuscas.UltimaFalha
             Get
-                Return ""
+                Throw New InvalidOperationException("o disco sumiu")
             End Get
         End Property
 

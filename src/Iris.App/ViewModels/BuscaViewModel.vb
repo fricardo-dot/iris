@@ -204,13 +204,24 @@ Namespace Global.Iris.App.ViewModels
             End Try
         End Sub
 
+        ''' <summary>
+        ''' Leitura protegida que <b>não escreve nada</b>.
+        '''
+        ''' A primeira versão gravava a falha em <c>_falhaAoApagar</c> daqui — e
+        ''' isso é efeito colateral dentro de um <i>getter</i>: ler
+        ''' <c>Registrando</c> mudava o estado da tela, sem notificar ninguém, e
+        ''' o aviso ficava preso para sempre porque sucesso nenhum o limpava. A
+        ''' revisão externa apontou os três problemas de uma vez.
+        '''
+        ''' A falha agora é registrada só nos caminhos de <b>ação</b> — e o
+        ''' principal deles, o <c>Registrar</c>, roda a cada busca, então uma
+        ''' falha persistente aparece de qualquer jeito.
+        ''' </summary>
         Private Function Protegido(Of T)(leitura As Func(Of T), quandoFalha As T) As T
             If _diario Is Nothing Then Return quandoFalha
             Try
                 Return leitura()
-            Catch ex As Exception
-                _falhaAoApagar = "o registro de buscas falhou (" & ex.GetType().Name &
-                                 "). A busca continua funcionando."
+            Catch
                 Return quandoFalha
             End Try
         End Function
@@ -218,6 +229,7 @@ Namespace Global.Iris.App.ViewModels
         Private Sub AvisarDiario()
             OnPropertyChanged(NameOf(BuscasRegistradas))
             OnPropertyChanged(NameOf(FraseDoDiario))
+            OnPropertyChanged(NameOf(EstadoDoRegistro))
             OnPropertyChanged(NameOf(Registrando))
             OnPropertyChanged(NameOf(RotuloDoInterruptor))
             OnPropertyChanged(NameOf(FalhaDoDiario))
@@ -239,9 +251,33 @@ Namespace Global.Iris.App.ViewModels
         ''' problema: a busca seguinte recriava o arquivo, então apagar nunca
         ''' chegava a ser "pare de coletar".
         ''' </summary>
+        ''' <summary>
+        ''' <b>Três estados, e não dois.</b> Ligado, desligado pelo dono, e
+        ''' <i>não consegui conferir</i>.
+        '''
+        ''' A primeira versão colapsava os dois últimos em <c>False</c>, e a
+        ''' tela dizia "o registro está DESLIGADO" quando na verdade ninguém
+        ''' tinha conseguido ler o marcador. Afirmar uma escolha do dono que ele
+        ''' não fez é a mesma família de defeito que este projeto corrigiu em
+        ''' seis lugares — ausência virando fato —, aplicada ao consentimento.
+        '''
+        ''' <c>Nothing</c> vale como <b>não anota</b>: falha fechada.
+        ''' </summary>
+        Public ReadOnly Property EstadoDoRegistro As Boolean?
+            Get
+                If _diario Is Nothing Then Return Nothing
+                Try
+                    Return _diario.Ligado
+                Catch
+                    Return Nothing
+                End Try
+            End Get
+        End Property
+
+        ''' <summary>Está anotando agora? Falha ao conferir vale como não.</summary>
         Public ReadOnly Property Registrando As Boolean
             Get
-                Return Protegido(Function() _diario.Ligado, False)
+                Return EstadoDoRegistro.GetValueOrDefault(False)
             End Get
         End Property
 
@@ -270,14 +306,32 @@ Namespace Global.Iris.App.ViewModels
                 Dim quantas = If(n.HasValue,
                                  $"{n.Value} busca(s) anotada(s)",
                                  "não consegui contar quantas")
-                If Not Registrando Then
+                ' O CAMINHO TAMBEM PASSA PELA BARREIRA. Ele parecia inofensivo --
+                ' e uma propriedade que devolve texto -- e por isso ficou de fora
+                ' da primeira versao. A revisao externa perguntou por ele, e a
+                ' resposta e a mesma dos outros: a barreira vale para TODA
+                ' chamada, ou nao e barreira.
+                Dim caminho = Protegido(Function() _diario.Caminho, "(não consegui ler o caminho)")
+
+                Dim onde = " O que já foi anotado continua em " & caminho &
+                           ", em texto claro e sem prazo para sumir, até você " &
+                           "apagar."
+
+                If Not EstadoDoRegistro.HasValue Then
+                    ' NAO E "DESLIGADO". E "nao consegui conferir", e a tela
+                    ' nao pode atribuir ao dono uma escolha que ele nao fez.
+                    Return "Não consegui conferir se o registro de buscas está " &
+                           "ligado — por segurança, nada novo está sendo " &
+                           "anotado." & onde
+                End If
+
+                If Not EstadoDoRegistro.Value Then
                     Return "O registro de buscas está DESLIGADO — nada novo " &
-                           "está sendo anotado. O que já foi anotado continua " &
-                           "em " & _diario.Caminho & " até você apagar."
+                           "está sendo anotado." & onde
                 End If
 
                 Return "As suas buscas estão sendo anotadas nesta máquina: " &
-                       quantas & ", em " & _diario.Caminho & ". " &
+                       quantas & ", em " & caminho & ". " &
                        "Fica gravado o TEXTO INTEIRO que você digita, em texto " &
                        "claro, sem prazo para sumir — e o que se digita numa " &
                        "busca costuma ser nome de pessoa, número de contrato ou " &
@@ -332,16 +386,16 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End Try
 
-            ''' EXATOS PRIMEIRO, E NÃO POR ESTÉTICA.
-            '''
-            ''' A busca ganhou um segundo passe tolerante a erro de digitação e
-            ''' a flexão (medido em 29/08: 0,4% para 93,8%, e 0% para 100%). Um
-            ''' achado aproximado é um palpite bom, e palpite no topo da lista
-            ''' empurra a certeza para baixo da dobra: quem olha os três
-            ''' primeiros resultados veria três palpites.
-            '''
-            ''' Estável dentro de cada grupo — a ordem das pastas e do
-            ''' manifesto continua valendo, e não é esta linha que a decide.
+            ' EXATOS PRIMEIRO, E NÃO POR ESTÉTICA.
+            '
+            ' A busca ganhou um segundo passe tolerante a erro de digitação e
+            ' a flexão (medido em 29/08: 0,4% para 93,8%, e 0% para 100%). Um
+            ' achado aproximado é um palpite bom, e palpite no topo da lista
+            ' empurra a certeza para baixo da dobra: quem olha os três
+            ' primeiros resultados veria três palpites.
+            '
+            ' Estável dentro de cada grupo — a ordem das pastas e do
+            ' manifesto continua valendo, e não é esta linha que a decide.
             Achados.Clear()
             For Each a In r.Achados.OrderBy(Function(x) If(x.Grau = GrauDoAchado.Exato, 0, 1))
                 Achados.Add(New LinhaAchada(a))
@@ -351,22 +405,27 @@ Namespace Global.Iris.App.ViewModels
             Ressalva = r.Ressalva
             Aproximados = r.Achados.Where(Function(x) x.Grau <> GrauDoAchado.Exato).Count()
 
-            ''' DEPOIS DE A TELA ESTAR MONTADA, e nunca antes.
-            '''
-            ''' O diário não pode entrar no caminho entre procurar e mostrar: se
-            ''' ele demorar, quem espera é o usuário. E ele não lança — a
-            ''' garantia mora no <see cref="DiarioDeBuscasEmArquivo"/> —, mas
-            ''' pôr a chamada aqui embaixo faz a ordem ser óbvia para quem lê,
-            ''' em vez de depender de lembrar daquela garantia.
-            ''' O INTERRUPTOR E CONFERIDO AQUI TAMBEM, e nao so dentro do
-            ''' diario. E a mesma licao da barreira logo acima: um
-            ''' desligamento que so a implementacao atual respeita para de
-            ''' valer no dia em que a implementacao mudar -- e o que esta em
-            ''' jogo aqui e consentimento retirado, que e a pior coisa para
-            ''' se confiar a uma so camada.
-            '''
-            ''' A duplicacao e barata e o teste prova as duas: o duplo da
-            ''' suite NAO confere Ligado, de proposito.
+            ' DEPOIS DE A TELA ESTAR MONTADA, e nunca antes.
+            '
+            ' O diário não pode entrar no caminho entre procurar e mostrar: se
+            ' ele demorar, quem espera é o usuário. E ele não lança — a
+            ' garantia mora no <see cref="DiarioDeBuscasEmArquivo"/> —, mas
+            ' pôr a chamada aqui embaixo faz a ordem ser óbvia para quem lê,
+            ' em vez de depender de lembrar daquela garantia.
+            ' O INTERRUPTOR E CONFERIDO AQUI TAMBEM, e nao so dentro do
+            ' diario. E a mesma licao da barreira logo acima: um
+            ' desligamento que so a implementacao atual respeita para de
+            ' valer no dia em que a implementacao mudar -- e o que esta em
+            ' jogo aqui e consentimento retirado, que e a pior coisa para
+            ' se confiar a uma so camada.
+            '
+            ' A duplicacao e barata e o teste prova as duas: o duplo da
+            ' suite NAO confere Ligado, de proposito.
+            ' Falha de ontem nao vale para a busca de hoje: sem isto, uma
+            ' excecao passageira deixava o aviso preso para sempre, porque
+            ' sucesso nenhum o limpava.
+            _falhaAoApagar = ""
+
             If Registrando Then
                 Protegido(Sub() _diario.Registrar(_termo, Achados.Count - Aproximados, Aproximados))
             End If
@@ -389,9 +448,9 @@ Namespace Global.Iris.App.ViewModels
             If _diario Is Nothing Then Return
             Dim motivo As String = Nothing
             Protegido(Sub() motivo = _diario.Apagar())
-            ''' A falha entra pelo MESMO lugar da falha de escrita, e nao
-            ''' numa propriedade nova: sao a mesma coisa para quem le --
-            ''' "o diario nao esta fazendo o que promete".
+            ' A falha entra pelo MESMO lugar da falha de escrita, e nao
+            ' numa propriedade nova: sao a mesma coisa para quem le --
+            ' "o diario nao esta fazendo o que promete".
             If motivo IsNot Nothing Then _falhaAoApagar = motivo
             AvisarDiario()
         End Sub
@@ -402,12 +461,12 @@ Namespace Global.Iris.App.ViewModels
             Procurou = False
             Ressalva = ""
 
-            ''' A CONTAGEM DE APROXIMADOS TAMBÉM, e ela tinha sido esquecida.
-            '''
-            ''' Sem esta linha, limpar uma busca que tinha palpites deixava na
-            ''' tela "3 destes casaram por aproximação" sobre uma lista vazia —
-            ''' uma ressalva verdadeira ontem, falsa agora, e do tipo que
-            ''' ninguém confere porque ressalva parece inofensiva.
+            ' A CONTAGEM DE APROXIMADOS TAMBÉM, e ela tinha sido esquecida.
+            '
+            ' Sem esta linha, limpar uma busca que tinha palpites deixava na
+            ' tela "3 destes casaram por aproximação" sobre uma lista vazia —
+            ' uma ressalva verdadeira ontem, falsa agora, e do tipo que
+            ' ninguém confere porque ressalva parece inofensiva.
             Aproximados = 0
 
             OnPropertyChanged(NameOf(SemAchados))

@@ -108,7 +108,7 @@ Namespace Global.Iris.Integration
 
     ''' <summary>O diário de verdade, em arquivo.</summary>
     Public NotInheritable Class DiarioDeBuscasEmArquivo
-        Implements IDiarioDeBuscas
+        Implements IDiarioDeBuscas, IDisposable
 
         Private ReadOnly _caminho As String
         Private ReadOnly _marcador As String
@@ -140,16 +140,34 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Private _contagem As Integer?
 
+        ''' <summary>
+        ''' O carimbo do arquivo quando a contagem foi feita: tamanho e
+        ''' instante da última escrita.
+        '''
+        ''' <b>O cache sem carimbo era cache cego.</b> Duas janelas do Iris, ou
+        ''' uma edição por fora, deixavam a tela mostrando um número de antes —
+        ''' e a revisão externa apontou os três casos: outra instância anexa,
+        ''' outra instância apaga, alguém edita o arquivo. Um <c>stat</c> é
+        ''' barato; varrer o arquivo é que não era.
+        ''' </summary>
+        Private _carimbo As (Tamanho As Long, Quando As DateTime)?
+
         Public Sub New(Optional caminho As String = Nothing,
                        Optional agora As Func(Of DateTimeOffset) = Nothing)
             _caminho = If(caminho, CaminhoPadrao())
             _marcador = _caminho & ".desligado"
             _agora = If(agora, Function() DateTimeOffset.Now)
-            _entreProcessos = New Mutex(initiallyOwned:=False,
-                                        name:="Iris.buscas." &
-                                              _caminho.Replace("\"c, "_"c).
-                                                       Replace("/"c, "_"c).
-                                                       Replace(":"c, "_"c))
+            ' NOME CURTO E DETERMINISTICO. O caminho inteiro sanitizado
+            ' podia estourar o limite de nome de objeto do kernel e fazer o
+            ' CONSTRUTOR lancar -- e ai o diario derrubaria a aplicacao no
+            ' arranque, que e o oposto do que ele promete. Os testes usam
+            ' caminho temporario curto e nunca teriam pego.
+            Using sha = Security.Cryptography.SHA256.Create()
+                Dim bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(_caminho.ToLowerInvariant()))
+                _entreProcessos = New Mutex(initiallyOwned:=False,
+                                            name:="Iris.buscas." &
+                                                  Convert.ToHexString(bytes, 0, 12))
+            End Using
         End Sub
 
         ''' <summary>
@@ -191,8 +209,21 @@ Namespace Global.Iris.Integration
             End Get
         End Property
 
+        ''' <summary>
+        ''' <b>Desligar entra na MESMA trava que gravar.</b>
+        '''
+        ''' Sem isto havia uma corrida real, e a revisão externa a classificou
+        ''' como ALTO: o <c>Registrar</c> conferia <c>Ligado</c>, esperava o
+        ''' mutex, e nesse meio-tempo outro processo desligava — a busca era
+        ''' anotada <b>depois</b> de o dono retirar o consentimento.
+        '''
+        ''' Uma retirada de consentimento que admite "mais uma" não é uma
+        ''' retirada.
+        ''' </summary>
         Public Function Desligar() As String Implements IDiarioDeBuscas.Desligar
+            Dim segurou = False
             Try
+                segurou = Segurar()
                 Directory.CreateDirectory(Path.GetDirectoryName(_marcador))
                 File.WriteAllText(_marcador,
                     "Enquanto este arquivo existir, o Iris nao anota buscas." &
@@ -202,6 +233,8 @@ Namespace Global.Iris.Integration
                 Return Nothing
             Catch ex As Exception
                 Return "não consegui desligar o registro (" & ex.GetType().Name & ")"
+            Finally
+                Soltar(segurou)
             End Try
         End Function
 
@@ -213,6 +246,40 @@ Namespace Global.Iris.Integration
                 Return "não consegui ligar o registro (" & ex.GetType().Name & ")"
             End Try
         End Function
+
+        ''' <summary>
+        ''' Pega a trava entre processos, ou devolve <c>False</c>.
+        '''
+        ''' <b>Espera curta, e recusa em vez de forçar.</b> Ela roda na thread
+        ''' da interface: dois segundos de espera — o valor da primeira versão —
+        ''' seriam dois segundos de janela congelada por causa de uma anotação.
+        ''' Anexar uma linha leva microssegundos; 250 ms já é folga enorme.
+        '''
+        ''' E quem chama <b>tem</b> de olhar o retorno. A primeira versão
+        ''' ignorava o <c>False</c> e gravava assim mesmo — ou seja, a exclusão
+        ''' entre processos sumia exatamente quando havia disputa, que é a única
+        ''' hora em que ela serve.
+        ''' </summary>
+        Private Function Segurar() As Boolean
+            Try
+                Return _entreProcessos.WaitOne(TimeSpan.FromMilliseconds(250))
+            Catch ex As AbandonedMutexException
+                ' Outro processo morreu segurando a trava. O arquivo pode ter
+                ' meia linha; o leitor pula linha quebrada, e o append continua
+                ' valendo. Seguir e melhor que parar.
+                Return True
+            Catch
+                Return False
+            End Try
+        End Function
+
+        Private Sub Soltar(segurou As Boolean)
+            If Not segurou Then Return
+            Try
+                _entreProcessos.ReleaseMutex()
+            Catch
+            End Try
+        End Sub
 
         ''' <summary>
         ''' Uma linha, anexada. <b>Append e não reescrita</b>: uma queda no meio
@@ -241,19 +308,35 @@ Namespace Global.Iris.Integration
                     .aproximados = aproximados})
 
                 SyncLock _trava
-                    Try
-                        segurou = _entreProcessos.WaitOne(TimeSpan.FromSeconds(2))
-                    Catch ex As AbandonedMutexException
-                        ' Outro processo morreu segurando a trava. O arquivo
-                        ' pode ter meia linha; o leitor pula linha quebrada, e
-                        ' o append continua valendo. Seguir e melhor que parar.
-                        segurou = True
-                    End Try
+                    segurou = Segurar()
+
+                    ' NAO CONSEGUIU A TRAVA: RECUSA, e nao grava solto.
+                    ' Uma busca nao anotada e um buraco na amostra, e o leitor
+                    ' o mostra como linha ilegivel ou ausencia; uma escrita
+                    ' concorrente sem trava e corrupcao silenciosa.
+                    If Not segurou Then
+                        _ultimaFalha = "não consegui anotar a busca (outra janela " &
+                                       "do Iris estava escrevendo)"
+                        _contagem = Nothing
+                        Return
+                    End If
+
+                    ' O CONSENTIMENTO E CONFERIDO DENTRO DA TRAVA, e nao so na
+                    ' entrada. Entre a conferencia de fora e este ponto, outro
+                    ' processo pode ter desligado -- e anotar depois disso e
+                    ' anotar sem consentimento.
+                    '
+                    ' A janela e estreita demais para um teste de um processo so
+                    ' abrir sozinho -- o primeiro controle negativo desta guarda
+                    ' PASSOU por isso. O ponto de injecao a abre.
+                    Iris.Cache.CrashInjection.Talvez(
+                        Iris.Cache.CrashInjection.EntreConferirOConsentimentoEGravar)
+                    If Not Ligado Then Return
 
                     Directory.CreateDirectory(Path.GetDirectoryName(_caminho))
                     File.AppendAllText(_caminho, linha & Environment.NewLine, Encoding.UTF8)
 
-                    If _contagem.HasValue Then _contagem = _contagem.Value + 1
+                    _contagem = Nothing   ' recontar; outra janela pode ter escrito
                     _ultimaFalha = ""
                 End SyncLock
             Catch ex As Exception
@@ -265,12 +348,7 @@ Namespace Global.Iris.Integration
                     _contagem = Nothing
                 End SyncLock
             Finally
-                If segurou Then
-                    Try
-                        _entreProcessos.ReleaseMutex()
-                    Catch
-                    End Try
-                End If
+                Soltar(segurou)
             End Try
         End Sub
 
@@ -284,8 +362,13 @@ Namespace Global.Iris.Integration
         ''' de acontecer.
         ''' </summary>
         Public Function Quantas() As Integer? Implements IDiarioDeBuscas.Quantas
+            Dim atual = CarimboAtual()
+
             SyncLock _trava
-                If _contagem.HasValue Then Return _contagem
+                If _contagem.HasValue AndAlso _carimbo.HasValue AndAlso
+                   atual.HasValue AndAlso _carimbo.Value.Equals(atual.Value) Then
+                    Return _contagem
+                End If
             End SyncLock
 
             Dim lido As Integer?
@@ -308,22 +391,38 @@ Namespace Global.Iris.Integration
 
             SyncLock _trava
                 _contagem = lido
+                _carimbo = CarimboAtual()
             End SyncLock
             Return lido
+        End Function
+
+        ''' <summary>
+        ''' Tamanho e instante da última escrita, ou <c>Nothing</c> se o arquivo
+        ''' não existe ou não se deixa olhar. Arquivo ausente tem carimbo
+        ''' próprio — senão "sumiu" e "não consegui ver" ficariam iguais.
+        ''' </summary>
+        Private Function CarimboAtual() As (Tamanho As Long, Quando As DateTime)?
+            Try
+                Dim fi As New FileInfo(_caminho)
+                If Not fi.Exists Then Return (-1L, DateTime.MinValue)
+                Return (fi.Length, fi.LastWriteTimeUtc)
+            Catch
+                Return Nothing
+            End Try
         End Function
 
         Public Function Apagar() As String Implements IDiarioDeBuscas.Apagar
             Dim segurou = False
             Try
                 SyncLock _trava
-                    Try
-                        segurou = _entreProcessos.WaitOne(TimeSpan.FromSeconds(2))
-                    Catch ex As AbandonedMutexException
-                        segurou = True
-                    End Try
+                    segurou = Segurar()
+                    If Not segurou Then
+                        Return "não consegui apagar agora (outra janela do Iris " &
+                               "estava escrevendo). Tente de novo."
+                    End If
 
                     If File.Exists(_caminho) Then File.Delete(_caminho)
-                    _contagem = 0
+                    _contagem = Nothing
                     _ultimaFalha = ""
                 End SyncLock
                 Return Nothing
@@ -333,14 +432,18 @@ Namespace Global.Iris.Integration
                 End SyncLock
                 Return "não consegui apagar (" & ex.GetType().Name & ")"
             Finally
-                If segurou Then
-                    Try
-                        _entreProcessos.ReleaseMutex()
-                    Catch
-                    End Try
-                End If
+                Soltar(segurou)
             End Try
         End Function
+
+        ''' <summary>
+        ''' O mutex é um handle do sistema. Uma instância de vida longa não
+        ''' pesa; a suíte cria dezenas, e handle acumulado até a finalização é
+        ''' sujeira que ninguém vê até ver.
+        ''' </summary>
+        Public Sub Dispose() Implements IDisposable.Dispose
+            _entreProcessos.Dispose()
+        End Sub
     End Class
 
 End Namespace

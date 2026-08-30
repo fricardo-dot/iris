@@ -48,6 +48,22 @@ Namespace Global.Iris.Cache
         Public Const DepoisDeReceberAntesDeMarcarDrenada As String =
             "depois-de-receber-antes-de-marcar-drenada"
 
+        ''' <summary>
+        ''' A janela entre conferir o consentimento e gravar a busca.
+        '''
+        ''' Existe porque a revisão externa achou uma corrida real ali: outro
+        ''' processo pode desligar o registro depois de a conferência passar,
+        ''' e a busca seria anotada <b>depois</b> da retirada do
+        ''' consentimento.
+        '''
+        ''' O primeiro controle negativo daquele conserto <b>passou</b>: num
+        ''' só processo a janela é estreita demais para o teste abrir. Este
+        ''' ponto a abre — a ação armada desliga o diário, como a outra
+        ''' janela faria.
+        ''' </summary>
+        Public Const EntreConferirOConsentimentoEGravar As String =
+            "entre-conferir-o-consentimento-e-gravar"
+
         Private Shared _ponto As String
         Private Shared _acao As Action
 
