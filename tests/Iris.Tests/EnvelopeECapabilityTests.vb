@@ -823,4 +823,61 @@ Public Class EnvelopeECapabilityTests
         Assert.AreEqual(AssistOperation.Redigir, e.Operacao)
     End Sub
 
+
+    ' ==================================================================
+    ' O CONTROLE DO LOTE (Fase 7)
+
+    ''' <summary>
+    ''' <b>O controle vai no corpo e não entra em <c>Itens</c>.</b>
+    '''
+    ''' Ele não é uma mensagem da caixa: não foi aprovado pelo portão, não tem
+    ''' <c>ChangeKey</c> e não tem versão a conferir. Se entrasse, a capability
+    ''' passaria a cobrir um item que não existe, e o consumo — que compara itens
+    ''' e versões com o que foi autorizado — teria de aprender a fingir que ele
+    ''' existe.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_controle_viaja_no_corpo_e_NAO_entra_nos_itens()
+        Dim montado = LoteDeClassificacao.Preparar({New ItemKey("a", "s")})
+
+        Dim r = New EnvelopeBuilder().Montar(
+            AssistOperation.Classificar, "instrucao",
+            {Parte(1), montado.ParteDoControle()})
+
+        Assert.IsTrue(r.Ok, $"{r.Recusa}")
+        Assert.AreEqual(1, r.Envelope.Itens.Count)
+        Assert.AreEqual(1, r.Envelope.Versoes.Count)
+
+        Dim json = Text.Encoding.UTF8.GetString(r.Envelope.Bytes())
+        ' Sem o acento: o Utf8JsonWriter escapa nao-ASCII, entao comparar o
+        ' texto inteiro compararia com ú no lugar do u.
+        StringAssert.Contains(json, "mensagem de controle do Iris")
+        StringAssert.Contains(json, montado.FichaDoControle)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A isenção é estreita, e este é o controle negativo dela.</b>
+    '''
+    ''' Uma parte com conteúdo e <b>sem</b> item seria egresso que ninguém
+    ''' auditou — exatamente o que a capability existe para impedir. Sem esta
+    ''' guarda, "parte sem item não entra em Itens" viraria um jeito de mandar
+    ''' qualquer coisa sem autorização nenhuma.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Parte_SEM_item_que_nao_e_o_controle_nao_viaja()
+        Dim intrusa As New MessagePart(Nothing, "", "assunto", "de", {"para"},
+                                       "o corpo de alguém, sem item nenhum", True, "xpto")
+
+        Dim r = New EnvelopeBuilder().Montar(
+            AssistOperation.Classificar, "instrucao", {Parte(1), intrusa})
+
+        Assert.IsTrue(r.Ok, $"{r.Recusa}")
+        Assert.AreEqual(1, r.Envelope.Itens.Count)
+        Assert.IsTrue(r.Envelope.Truncado, "a parte recusada tem de aparecer na conta")
+        Assert.AreEqual(1, r.Envelope.Omitidas)
+
+        Dim json = Text.Encoding.UTF8.GetString(r.Envelope.Bytes())
+        Assert.IsFalse(json.Contains("sem item nenhum"),
+                       "conteúdo saiu sem nenhum item que a capability cubra")
+    End Sub
 End Class

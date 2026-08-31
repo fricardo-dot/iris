@@ -308,10 +308,15 @@ Namespace Global.Iris.Cache
         ''' <summary>
         ''' As regras do dono que esta mensagem satisfez, pelo texto delas.
         '''
-        ''' <b><c>Nothing</c> quer dizer "não havia regras naquela varredura"</b>, e
-        ''' vetor vazio quer dizer "havia, e esta não casou com nenhuma". A tela
-        ''' precisa da diferença: a segunda é uma resposta, a primeira é a ausência
-        ''' da pergunta.
+        ''' <b><c>Nothing</c> quer dizer "não há resposta"</b> — porque não havia
+        ''' regra nenhuma naquela varredura, <i>ou</i> porque havia e o que voltou
+        ''' sobre esta mensagem não deu para usar. Vetor vazio quer dizer "havia,
+        ''' respondeu, e nenhuma casou".
+        '''
+        ''' A tela precisa da diferença: a segunda é uma resposta, a primeira é a
+        ''' ausência dela. O texto anterior só falava do primeiro caso, e depois
+        ''' que a distinção passou a ser por item ele ficou estreito — a tela
+        ''' podia ler silêncio de um item como ausência global da pergunta.
         ''' </summary>
         Public ReadOnly Property RegrasCasadas As IReadOnlyList(Of String)
 

@@ -266,4 +266,46 @@ Public Class CaixasSeparadasTests
         Assert.AreEqual("promocao", Achar(gavetas, "Promoções").Rotulo)
     End Sub
 
+
+    ' ==================================================================
+    ' NOME NÃO É IDENTIDADE
+
+    ''' <summary>
+    ''' <b>Uma regra chamada como um rótulo não duplica mensagem.</b>
+    '''
+    ''' A identidade da gaveta era o texto do dono, e aí uma regra chamada
+    ''' <i>fyi</i> colidia com a chave reservada: as duas gavetas passavam a
+    ''' compartilhar a mesma lista e a mensagem aparecia nas duas — quebrando
+    ''' justamente o contrato central deste arquivo.
+    '''
+    ''' Duas gavetas mostrando o mesmo nome é confuso e verdadeiro; a mesma
+    ''' mensagem nas duas é falso.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Regra_com_nome_de_rotulo_nao_duplica_a_mensagem()
+        Dim gavetas = CaixasSeparadas.Dividir(
+            {Mensagem("a")}, Rotulos("a", "fyi"), Casadas("a", "fyi"), {"fyi"})
+
+        Assert.AreEqual(1, gavetas.Sum(Function(g) g.Quantas))
+        Assert.AreEqual(8, gavetas.Count)
+    End Sub
+
+    ''' <summary>
+    ''' O mesmo com o nome da gaveta residual, que é a que mais dói: ela é a
+    ''' única que diz a verdade sobre a cobertura, e uma cópia dela marcada como
+    ''' "do dono" faria a conta das não classificadas aparecer duas vezes.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Regra_com_o_nome_da_gaveta_residual_nao_duplica_nada()
+        Dim gavetas = CaixasSeparadas.Dividir(
+            {Mensagem("a")}, Rotulos(), Nenhuma(),
+            {CaixasSeparadas.NomeDasNaoClassificadas})
+
+        Assert.AreEqual(1, gavetas.Sum(Function(g) g.Quantas))
+
+        ' A do dono existe e esta vazia; a de verdade tem a mensagem.
+        Dim doDono = gavetas.Single(Function(g) g.DoDono)
+        Assert.IsTrue(doDono.Vazia)
+        Assert.AreEqual(1, gavetas.Last().Quantas)
+    End Sub
 End Class

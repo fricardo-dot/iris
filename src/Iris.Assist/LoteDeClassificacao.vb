@@ -323,6 +323,27 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
+        ''' <b>O controle como mensagem</b> — para ele ir junto no pedido.
+        '''
+        ''' Sem esta parte o controle era teatro: a instrução anunciava uma ficha
+        ''' de controle e nenhuma mensagem com essa ficha era mandada, então o
+        ''' modelo fabricava a linha a partir da própria instrução — e o rótulo
+        ''' certo não provava nada, porque o controle não tinha participado do
+        ''' conjunto que um <i>"classifique todas"</i> atinge. Achado por revisão
+        ''' externa em 31/08/2026.
+        '''
+        ''' <b>Ela não tem <see cref="MessagePart.Item"/></b>, e não é esquecimento:
+        ''' não é uma mensagem da caixa, não foi aprovada pelo portão e não pode
+        ''' entrar na lista de itens que a capability cobre. O conteúdo dela é uma
+        ''' constante deste arquivo — o envelope confere isso antes de deixá-la
+        ''' passar, para ninguém usar a isenção de item como carona.
+        ''' </summary>
+        Public Function ParteDoControle() As MessagePart
+            Return New MessagePart(Nothing, "", "(controle)", "", Nothing,
+                                   TextoDoControle(), True, _fichaDoControle)
+        End Function
+
+        ''' <summary>
         ''' As regras do dono, cada uma com a sua ficha, na ordem do arquivo dele.
         ''' É isto que a instrução lista, e é a única coisa que a resposta pode
         ''' marcar.

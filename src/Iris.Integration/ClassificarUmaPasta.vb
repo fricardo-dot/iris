@@ -145,11 +145,25 @@ Namespace Global.Iris.Integration
                     Return ResultadoDaClassificacao.Parou(MotivoDaClassificacao.RegrasDemais)
                 End If
 
-                Dim partes = conteudo(Pedidos(montado, chavesDoLote))
-                If partes Is Nothing OrElse partes.Count = 0 Then
+                Dim lidas = conteudo(Pedidos(montado, chavesDoLote))
+                If lidas Is Nothing OrElse lidas.Count = 0 Then
                     r.LoteSemConteudo(chavesDoLote.Count)
                     Continue For
                 End If
+
+                ' O CONTROLE VAI JUNTO, E QUEM O ACRESCENTA E DAQUI.
+                '
+                ' Ele nao estava sendo mandado: a instrucao anunciava a ficha do
+                ' controle e nenhuma mensagem com essa ficha ia no pedido, entao o
+                ' modelo fabricava a linha a partir da propria instrucao. O rotulo
+                ' certo nao provava nada, porque o controle nao participava do
+                ' conjunto que um "classifique todas" atinge. Achado por revisao
+                ' externa em 31/08/2026.
+                '
+                ' A borda nao o monta porque a borda le o Outlook, e o controle nao
+                ' esta no Outlook.
+                Dim partes As New List(Of MessagePart)(lidas)
+                partes.Add(montado.ParteDoControle())
 
                 Dim conferido = montado.Conferir(envio(montado.Instrucao(), partes))
                 If Not conferido.IdentidadesConferem Then
@@ -159,6 +173,15 @@ Namespace Global.Iris.Integration
 
                 Gravar(daPasta.Chave, geracao, ativacao, quando,
                        conferido, regras, r)
+
+                ' REVARRIDA NO MEIO PARA O LACO AQUI, e nao no fim.
+                '
+                ' Antes o laco seguia ate o ultimo lote e so entao declarava a
+                ' passagem obsoleta: os corpos dos lotes seguintes eram lidos e
+                ' MANDADOS, e todas as gravacoes eram recusadas do mesmo jeito.
+                ' Custo e divulgacao depois de a passagem ja saber que nada mais
+                ' pode valer. Achado por revisao externa em 31/08/2026.
+                If r.Obsoleta Then Exit For
             Next
 
             Return r.Fechar()
@@ -256,6 +279,15 @@ Namespace Global.Iris.Integration
             Public Sub LoteSemConteudo(quantos As Integer)
                 _naoClassificados += quantos
             End Sub
+
+            ''' <summary>
+            ''' A pasta foi revarrida no meio: nada mais vale, e o laço para.
+            ''' </summary>
+            Public ReadOnly Property Obsoleta As Boolean
+                Get
+                    Return _geracaoErrada
+                End Get
+            End Property
 
             Public Sub LoteGravado(feito As ResultadoDaGravacao, conferido As LoteClassificado)
                 If Not feito.Gravou Then

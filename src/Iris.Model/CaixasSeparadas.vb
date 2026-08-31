@@ -71,6 +71,10 @@ Namespace Global.Iris.Model
 
         Public Const NomeDasNaoClassificadas As String = "Ainda não classificadas"
 
+        ' A identidade interna da gaveta residual. Nao e o nome dela: nome vem
+        ' do dono ou desta classe, e nome nao pode ser chave de nada.
+        Private Const IdDoResto As String = "resto"
+
         ''' <summary>
         ''' Divide.
         '''
@@ -97,48 +101,57 @@ Namespace Global.Iris.Model
             Dim doDono = If(regrasDoDono, CType(Array.Empty(Of String)(),
                                                 IReadOnlyList(Of String)))
 
-            ' As gavetas nascem TODAS, e vazias. Uma gaveta que so aparece
-            ' quando tem conteudo faz a tela mudar de forma a cada varredura --
-            ' e faz "nenhuma mensagem espera voce" ficar indistinguivel de
-            ' "ninguem perguntou".
+            ' A IDENTIDADE DA GAVETA NAO E O TEXTO DO DONO.
+            '
+            ' Ela era, e isso duplicava mensagem: uma regra chamada "fyi" -- ou
+            ' "Ainda nao classificadas" -- colidia com uma chave reservada, as
+            ' duas gavetas passavam a compartilhar a MESMA lista, e a mensagem
+            ' aparecia nas duas. Quebrava justamente o contrato central deste
+            ' arquivo. Achado por revisao externa em 31/08/2026.
+            '
+            ' A identidade agora e a POSICAO ("d0", "d1", ...) para as do dono, e
+            ' um prefixo para as reservadas. O texto dele e so o que a tela
+            ' mostra -- texto de fora nunca deveria ter sido chave de nada.
+            '
+            ' As gavetas nascem TODAS, e vazias. Uma gaveta que so aparece quando
+            ' tem conteudo faz a tela mudar de forma a cada varredura -- e faz
+            ' "nenhuma mensagem espera voce" ficar indistinguivel de "ninguem
+            ' perguntou".
             Dim gavetas As New List(Of Gaveta)()
-            Dim porNome As New Dictionary(Of String, List(Of MensagemNaFila))(StringComparer.Ordinal)
-            Dim nomesNaOrdem As New List(Of String)()
+            Dim porId As New Dictionary(Of String, List(Of MensagemNaFila))(StringComparer.Ordinal)
+            Dim idsNaOrdem As New List(Of String)()
+            Dim textoDoDono As New List(Of String)()
 
             For Each regra In doDono
                 Dim limpa = If(regra, "").Trim()
-                If limpa.Length = 0 OrElse porNome.ContainsKey(limpa) Then Continue For
-                porNome(limpa) = New List(Of MensagemNaFila)()
-                nomesNaOrdem.Add(limpa)
-            Next
+                If limpa.Length = 0 Then Continue For
+                If textoDoDono.Contains(limpa) Then Continue For
 
-            Dim primeiraDoDono = nomesNaOrdem.Count
+                Dim id = "d" & textoDoDono.Count
+                textoDoDono.Add(limpa)
+                porId(id) = New List(Of MensagemNaFila)()
+                idsNaOrdem.Add(id)
+            Next
 
             For Each chaveDoRotulo In Ordem
-                porNome(chaveDoRotulo) = New List(Of MensagemNaFila)()
-                nomesNaOrdem.Add(chaveDoRotulo)
+                porId("l" & chaveDoRotulo) = New List(Of MensagemNaFila)()
+                idsNaOrdem.Add("l" & chaveDoRotulo)
             Next
 
-            porNome(NomeDasNaoClassificadas) = New List(Of MensagemNaFila)()
-            nomesNaOrdem.Add(NomeDasNaoClassificadas)
+            porId(IdDoResto) = New List(Of MensagemNaFila)()
+            idsNaOrdem.Add(IdDoResto)
 
             For Each m In todas
                 If m Is Nothing OrElse m.Chave Is Nothing Then Continue For
-                porNome(GavetaDe(m, comRotulo, comRegra, doDono)).Add(m)
+                porId(GavetaDe(m, comRotulo, comRegra, textoDoDono)).Add(m)
             Next
 
-            For i = 0 To nomesNaOrdem.Count - 1
-                Dim chaveDaGaveta = nomesNaOrdem(i)
-                Dim daRegra = i < primeiraDoDono
-                Dim rotuloDela = If(daRegra OrElse
-                                    chaveDaGaveta = NomeDasNaoClassificadas,
-                                    "", chaveDaGaveta)
-
+            For Each id In idsNaOrdem
                 gavetas.Add(New Gaveta(
-                    NomeVisivel(chaveDaGaveta, daRegra),
-                    rotuloDela,
-                    daRegra,
-                    porNome(chaveDaGaveta).
+                    NomeDaGaveta(id, textoDoDono),
+                    RotuloDaGaveta(id),
+                    id.StartsWith("d", StringComparison.Ordinal),
+                    porId(id).
                         OrderByDescending(Function(m) m.Quando.GetValueOrDefault()).
                         ThenBy(Function(m) m.Assunto, StringComparer.Ordinal).
                         ToList()))
@@ -154,19 +167,18 @@ Namespace Global.Iris.Model
                 m As MensagemNaFila,
                 rotulos As IReadOnlyDictionary(Of ItemKey, String),
                 regrasCasadas As IReadOnlyDictionary(Of ItemKey, IReadOnlyList(Of String)),
-                regrasDoDono As IReadOnlyList(Of String)) As String
+                textoDoDono As IReadOnlyList(Of String)) As String
 
             Dim minhas As IReadOnlyList(Of String) = Nothing
             If regrasCasadas.TryGetValue(m.Chave, minhas) AndAlso minhas IsNot Nothing Then
                 ' A ORDEM DO ARQUIVO DELE DECIDE, e nao a ordem em que o modelo
                 ' devolveu as regras casadas. A segunda nao quer dizer nada; a
                 ' primeira ele escreveu.
-                For Each regra In regrasDoDono
-                    Dim limpa = If(regra, "").Trim()
-                    If limpa.Length = 0 Then Continue For
+                For i = 0 To textoDoDono.Count - 1
+                    Dim limpa = textoDoDono(i)
                     If minhas.Any(Function(r) String.Equals(If(r, "").Trim(), limpa,
                                                             StringComparison.Ordinal)) Then
-                        Return limpa
+                        Return "d" & i
                     End If
                 Next
             End If
@@ -174,20 +186,36 @@ Namespace Global.Iris.Model
             Dim rotuloDela As String = Nothing
             If rotulos.TryGetValue(m.Chave, rotuloDela) AndAlso
                Ordem.Contains(rotuloDela) Then
-                Return rotuloDela
+                Return "l" & rotuloDela
             End If
 
             ' ROTULO QUE NAO ESTA NA LISTA CAI AQUI, e nao numa gaveta propria.
             ' Ele so pode ter vindo de um banco gravado por uma versao com outro
             ' conjunto de rotulos, e inventar uma gaveta para ele mostraria ao
             ' dono uma categoria que este programa nao sabe explicar.
-            Return NomeDasNaoClassificadas
+            Return IdDoResto
         End Function
 
-        Private Shared Function NomeVisivel(chave As String, daRegra As Boolean) As String
-            If daRegra Then Return chave
-            Dim nome As String = Nothing
-            Return If(Nomes.TryGetValue(chave, nome), nome, chave)
+        ''' <summary>
+        ''' O que a tela mostra. <b>Duas gavetas podem mostrar o mesmo nome</b> —
+        ''' se o dono escrever uma regra chamada <i>fyi</i>, ele vai ver duas
+        ''' "fyi", e isso é confuso e verdadeiro. O que não pode acontecer é a
+        ''' mesma mensagem estar nas duas, e é disso que a identidade separada
+        ''' cuida.
+        ''' </summary>
+        Private Shared Function NomeDaGaveta(id As String,
+                                             textoDoDono As IReadOnlyList(Of String)) As String
+            If id = IdDoResto Then Return NomeDasNaoClassificadas
+            If id.StartsWith("d", StringComparison.Ordinal) Then
+                Return textoDoDono(Integer.Parse(id.Substring(1),
+                                                 Globalization.CultureInfo.InvariantCulture))
+            End If
+            Return Nomes(id.Substring(1))
+        End Function
+
+        Private Shared Function RotuloDaGaveta(id As String) As String
+            If id.StartsWith("l", StringComparison.Ordinal) Then Return id.Substring(1)
+            Return ""
         End Function
 
     End Class

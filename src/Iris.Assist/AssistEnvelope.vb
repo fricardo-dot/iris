@@ -79,6 +79,26 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Public ReadOnly Property Ficha As String
 
+        ''' <summary>
+        ''' <b>Parte sem <see cref="Item"/>: o controle do lote, e só ele.</b>
+        '''
+        ''' O controle não é uma mensagem da caixa — não foi aprovado pelo portão
+        ''' e não pode entrar na lista de itens que a capability cobre. Mas uma
+        ''' parte com conteúdo e sem item seria egresso que ninguém auditou, que é
+        ''' exatamente o que a capability existe para impedir.
+        '''
+        ''' Então a isenção é <b>estreita</b>: sem item, o corpo tem de ser a
+        ''' constante do <c>LoteDeClassificacao</c>. Qualquer outra coisa não é o
+        ''' controle e não passa.
+        ''' </summary>
+        Friend ReadOnly Property EhOControle As Boolean
+            Get
+                Return Item Is Nothing AndAlso
+                       String.Equals(Corpo, LoteDeClassificacao.TextoDoControle(),
+                                     StringComparison.Ordinal)
+            End Get
+        End Property
+
         Friend Sub New(item As ItemKey, changeKey As String, assunto As String,
                        remetente As String, destinatarios As IEnumerable(Of String),
                        corpo As String, corpoCompleto As Boolean,
@@ -314,6 +334,15 @@ Namespace Global.Iris.Assist
             ' mensagem que caberia no resultado final. Isso e desperdicio, nao
             ' vazamento, e fica declarado em vez de escondido.
             For Each p In partes
+                ' PARTE SEM ITEM QUE NAO E O CONTROLE NAO ENTRA. Ela seria
+                ' conteudo saindo sem nenhum item que a capability cubra --
+                ' egresso que ninguem auditou. Nao e truncamento: e recusa da
+                ' parte, e ela conta como omitida para a conta nao mentir.
+                If p.Item Is Nothing AndAlso Not p.EhOControle Then
+                    omitidas += 1
+                    Continue For
+                End If
+
                 Dim tentativa = New List(Of MessagePart)(entram) From {p}
                 If Serializar(operacao, instrucao, tentativa, partes.Count - tentativa.Count,
                               False).Length > _teto Then
@@ -334,9 +363,22 @@ Namespace Global.Iris.Assist
                 Return New EnvelopeResult(Nothing, EnvelopeRefusal.NemVazioCabe)
             End If
 
+            ' O CONTROLE FICA DE FORA DE Itens E DE Versoes.
+            '
+            ' Ele nao e uma mensagem da caixa: nao foi aprovado pelo portao, nao
+            ' tem ChangeKey e nao tem versao a conferir. Se entrasse, a capability
+            ' passaria a cobrir um item que nao existe, e o consumo -- que compara
+            ' itens e versoes com o que foi autorizado -- teria de aprender a
+            ' fingir que ele existe.
+            '
+            ' (Comentario AQUI, e nao dentro da lista de argumentos: em VB a
+            ' continuacao implicita nao aceita uma linha so de comentario.)
+            Dim daCaixa = entram.Where(Function(p) p.Item IsNot Nothing).ToList()
+
             Return New EnvelopeResult(
-                New AssistEnvelope(bytes, operacao, entram.Select(Function(p) p.Item),
-                                   entram.Select(Function(p) p.ChangeKey),
+                New AssistEnvelope(bytes, operacao,
+                                   daCaixa.Select(Function(p) p.Item),
+                                   daCaixa.Select(Function(p) p.ChangeKey),
                                    truncado, omitidas, incompleto),
                 EnvelopeRefusal.Nenhuma)
         End Function
