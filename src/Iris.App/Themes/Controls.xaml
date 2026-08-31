@@ -204,4 +204,92 @@
         <Setter Property="Padding" Value="{StaticResource Pad.Card}" />
     </Style>
 
+    <!-- ==================================================================
+         AS BARRAS DE ROLAGEM
+
+         A do Windows tem 17 pixels, trilho cinza e duas setas nas pontas.
+         Numa janela que ja tem arvore, lista, leitor e a faixa da IA, isso
+         sao quatro trilhos cinzas disputando atencao com o conteudo — e as
+         setas ninguem usa desde que a roda do mouse existe.
+
+         SEM x:Key: e estilo implicito, e vale para toda ScrollBar da janela.
+         Um estilo com chave teria de ser aplicado barra por barra, dentro de
+         templates que nem sao meus (o ScrollViewer do WPF cria as dele), e a
+         metade que eu esquecesse ficaria com a barra do Windows ao lado da
+         nova — pior que nao ter mexido.
+
+         O polegar aparece discreto e ESCURECE no mouse: barra que so aparece
+         no hover parece elegante e esconde a informacao de onde se esta na
+         lista, que e metade do motivo de ela existir.
+         ================================================================== -->
+    <Style x:Key="Rolagem.Polegar" TargetType="Thumb">
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <!-- Fundo transparente na borda de fora: da area de clique
+                         maior que o desenho, sem engordar o desenho. -->
+                    <Border Background="Transparent" Padding="2">
+                        <Border x:Name="Desenho" CornerRadius="3"
+                                Background="{DynamicResource Brush.Border}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Desenho" Property="Background"
+                                    Value="{DynamicResource Brush.Text.Muted}" />
+                        </Trigger>
+                        <Trigger Property="IsDragging" Value="True">
+                            <Setter TargetName="Desenho" Property="Background"
+                                    Value="{DynamicResource Brush.Text.Secondary}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="ScrollBar">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Width" Value="10" />
+        <Setter Property="MinWidth" Value="10" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <!-- UMA LINHA SO, e nao tres: sem RepeatButton de seta em
+                         cima e embaixo, a pista inteira e do polegar. -->
+                    <Grid Background="{TemplateBinding Background}">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageUpCommand"
+                                              Opacity="0" IsTabStop="False" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource Rolagem.Polegar}" />
+                            </Track.Thumb>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageDownCommand"
+                                              Opacity="0" IsTabStop="False" />
+                            </Track.IncreaseRepeatButton>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="Orientation" Value="Horizontal">
+                            <Setter TargetName="PART_Track" Property="IsDirectionReversed"
+                                    Value="False" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <Trigger Property="Orientation" Value="Horizontal">
+                <Setter Property="Width" Value="Auto" />
+                <Setter Property="MinWidth" Value="0" />
+                <Setter Property="Height" Value="10" />
+                <Setter Property="MinHeight" Value="10" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
 </ResourceDictionary>

@@ -774,6 +774,22 @@ Namespace Global.Iris.App.ViewModels
             ' defeito duas telas abaixo do aviso sobre ele.
             CopiarCommand.NotifyCanExecuteChanged()
             OnPropertyChanged(NameOf(PodeCopiar))
+
+            ' E O ENVIAR PARA RASCUNHO -- O MESMO DEFEITO, DUAS TELAS ABAIXO
+            ' DO PARAGRAFO QUE O DESCREVE.
+            '
+            ' PodeEnviarParaRascunho depende do compositor estar EDITAVEL, e
+            ' o compositor e a unica coisa da lista que muda por fora: abrir
+            ' uma resposta e o que liga o botao. Sem estas linhas, quem
+            ' clicava em Responder via o botao continuar apagado -- e a frase
+            ' embaixo dele continuar mandando abrir uma resposta que ja
+            ' estava aberta.
+            '
+            ' O evento Mudou do rascunho ja chegava aqui. So nao saia daqui.
+            EnviarParaRascunhoCommand?.NotifyCanExecuteChanged()
+            OnPropertyChanged(NameOf(PodeEnviarParaRascunho))
+            OnPropertyChanged(NameOf(PorQueNaoEnvia))
+            OnPropertyChanged(NameOf(TemMotivoParaNaoEnviar))
         End Sub
 
         ''' <summary>

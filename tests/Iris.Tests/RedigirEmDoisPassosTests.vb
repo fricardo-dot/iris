@@ -205,4 +205,71 @@ Public Class RedigirEmDoisPassosTests
             "botão apagado e nenhuma explicação: promete e não diz o que falta")
     End Function
 
+    ''' <summary>
+    ''' <b>O botão ACORDA quando a resposta é aberta.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ESTE TESTE OUVE O EVENTO, E NÃO PERGUNTA A PROPRIEDADE</b>
+    '''
+    ''' <c>PodeEnviarParaRascunho</c> estava <b>certa</b> o tempo todo — ela
+    ''' lê o compositor na hora, e <c>CanExecute</c> a chama na hora
+    ''' também. Perguntar qualquer uma das duas responde <c>True</c> mesmo
+    ''' com o botão apagado na tela: <b>escrevi essa versão primeiro, e ela
+    ''' passou com o defeito no lugar.</b>
+    '''
+    ''' Quem fica desatualizado é o <b>botão</b>. O WPF guarda a última
+    ''' resposta e só reconsulta quando <c>CanExecuteChanged</c> chega — e o
+    ''' compositor é a única coisa da lista que muda por fora do
+    ''' assistente. O evento do rascunho já chegava ao <c>Avisar</c>; ele é
+    ''' que não repassava, e quem clicava em Responder via o botão continuar
+    ''' apagado e a frase embaixo continuar mandando abrir uma resposta que
+    ''' já estava aberta.
+    '''
+    ''' É a terceira vez nesta base, e o parágrafo que descreve a armadilha
+    ''' está <b>duas telas acima da linha que faltava</b>.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Abrir_a_resposta_ACORDA_o_botao_de_enviar() As Task
+        Dim r As New AssistenteViewModelTests.RascunhoFalso() With {.PodeEditar = False}
+        Dim p As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "O RESUMO"}
+        Dim vm = AssistenteViewModelTests.Montar(AssistenteViewModelTests.Ativacao(), p,
+                                                 AssistenteViewModelTests.Pronta(),
+                                                 Nothing, r)
+
+        Await vm.Resumir()
+        p.Texto = "A RESPOSTA"
+        Await vm.Redigir()
+
+        Assert.IsFalse(vm.EnviarParaRascunhoCommand.CanExecute(Nothing),
+            "sem compositor aberto o botao tem de estar apagado")
+        StringAssert.Contains(vm.PorQueNaoEnvia, "Responder",
+            "e a frase tem de dizer o que fazer")
+
+        Dim cutucadas = 0
+        AddHandler vm.EnviarParaRascunhoCommand.CanExecuteChanged,
+            Sub(remetente As Object, arg As EventArgs) cutucadas += 1
+
+        Dim frases = 0
+        AddHandler vm.PropertyChanged,
+            Sub(remetente As Object, arg As ComponentModel.PropertyChangedEventArgs)
+                If arg.PropertyName = NameOf(AssistenteViewModel.PorQueNaoEnvia) Then
+                    frases += 1
+                End If
+            End Sub
+
+        ' O usuario clica em Responder: o compositor entra em edicao.
+        r.PodeEditar = True
+
+        Assert.AreNotEqual(0, cutucadas,
+            "o BOTAO nao foi avisado. Ele guarda a ultima resposta e fica " &
+            "apagado ate alguem mandar reconsultar")
+        Assert.AreNotEqual(0, frases,
+            "a frase que manda abrir uma resposta ficou na tela depois de a " &
+            "resposta ter sido aberta")
+
+        Assert.AreEqual("", vm.PorQueNaoEnvia)
+        vm.EnviarParaRascunho()
+        Assert.AreEqual("A RESPOSTA", r.Texto, "e ai ele funciona")
+    End Function
+
 End Class

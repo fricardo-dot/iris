@@ -436,6 +436,70 @@
                                            HorizontalAlignment="Left" VerticalAlignment="Center" />
 
                                 <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                    <!-- O ACERVO, EM UM ICONE.
+
+                                         Ele era um bloco: rotulo ACERVO, botao "Varrer esta
+                                         pasta", a contagem, e duas linhas explicando que pasta
+                                         sem acervo publicado nao quer dizer pasta nao varrida.
+                                         Quatro linhas de rodape para uma acao que se usa uma vez
+                                         por pasta, comendo altura da lista de mensagens.
+
+                                         Agora e um icone e um numero, na MESMA linha do
+                                         "13 de 13" — que era a razao de o acervo ter vindo para
+                                         ca em 30/08: as duas contagens falam da mesma pasta, uma
+                                         ao vivo e a outra do cache, e a diferenca entre elas tem
+                                         de caber num olhar.
+
+                                         A CONTAGEM FICA VISIVEL, e a explicacao vai para a dica.
+                                         Numero sozinho seria afirmacao sobre a CAIXA; ele e sobre
+                                         o CACHE, e a ressalva e o que diz qual dos dois. Esconder
+                                         a contagem tambem economizaria espaco e tiraria o unico
+                                         motivo de o icone estar aqui em vez de num menu. -->
+                                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center"
+                                                Margin="0,0,12,0"
+                                                Visibility="{Binding MostrarAcervo, Converter={StaticResource BoolToVis},
+                                                                     FallbackValue=Collapsed}">
+                                        <Button Style="{StaticResource CaptionButton}"
+                                                Width="26" Height="22" FontSize="13"
+                                                Content="&#xE81C;"
+                                                Command="{Binding Acervo.VarrerCommand}"
+                                                AutomationProperties.Name="Varrer esta pasta">
+                                            <Button.ToolTip>
+                                                <StackPanel MaxWidth="380">
+                                                    <TextBlock Text="Varrer esta pasta"
+                                                               FontWeight="SemiBold" />
+                                                    <TextBlock Text="Le a pasta inteira e guarda o que viu no cache."
+                                                               TextWrapping="Wrap" Margin="0,2,0,0" />
+                                                    <!-- A RESSALVA MORA NA DICA, e nao sumiu: ela e o que
+                                                         separa "esta pasta nao tem acervo" de "ninguem
+                                                         tentou varrer esta pasta". -->
+                                                    <TextBlock Text="{Binding Acervo.Ressalva}"
+                                                               TextWrapping="Wrap" Margin="0,6,0,0"
+                                                               Visibility="{Binding Acervo.Ressalva,
+                                                                                    Converter={StaticResource NullToVis},
+                                                                                    FallbackValue=Collapsed}" />
+                                                </StackPanel>
+                                            </Button.ToolTip>
+                                        </Button>
+                                        <TextBlock Text="{Binding Acervo.Itens}"
+                                                   Style="{StaticResource Text.Muted}"
+                                                   Margin="4,0,0,0" VerticalAlignment="Center"
+                                                   ToolTip="Itens guardados no acervo desta pasta"
+                                                   AutomationProperties.Name="Itens guardados no acervo" />
+                                        <!-- Varrer bloqueia e demora: sem sinal na tela, "esta
+                                             lendo" e "travou" sao a mesma coisa para quem olha. -->
+                                        <ProgressBar IsIndeterminate="True"
+                                                     Width="60" Height="3" Margin="8,0,0,0"
+                                                     BorderThickness="0"
+                                                     Background="{DynamicResource Brush.Surface.3}"
+                                                     Foreground="{DynamicResource Brush.Accent}"
+                                                     VerticalAlignment="Center"
+                                                     Visibility="{Binding Acervo.Varrendo,
+                                                                  Converter={StaticResource BoolToVis},
+                                                                  FallbackValue=Collapsed}"
+                                                     AutomationProperties.Name="Varrendo" />
+                                    </StackPanel>
+
                                     <TextBlock Text="carregando…" Style="{StaticResource Text.Muted}"
                                                VerticalAlignment="Center" Margin="0,0,12,0"
                                                Visibility="{Binding Messages.IsLoading, Converter={StaticResource BoolToVis}}" />
@@ -448,86 +512,42 @@
                                 </StackPanel>
                             </Grid>
 
-                            <!-- O ACERVO, JUNTO COM O CONTADOR DA LISTA.
+                            <!-- A FALHA NAO VAI PARA DENTRO DA DICA.
 
-                               Ele era uma faixa propria embaixo da janela, e falava da
-                               MESMA pasta que a lista logo acima — "13 de 13" e "0 itens
-                               guardados" sao duas contagens do mesmo lugar, e estavam a
-                               meia tela de distancia uma da outra.
-
-                               Aqui as duas ficam lado a lado, e a diferenca entre elas —
-                               o que a lista mostra ao vivo contra o que o cache guardou —
-                               passa a ser visivel de um olhar, em vez de exigir memoria. -->
-                            <Border Margin="0,8,0,0" Padding="0,8,0,0"
-                                    BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                                    BorderThickness="0,1,0,0"
-                                    Visibility="{Binding MostrarAcervo, Converter={StaticResource BoolToVis},
-                                                         FallbackValue=Collapsed}">
-                                <StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                <TextBlock Text="ACERVO"
-                                           Style="{DynamicResource Text.Muted}"
-                                           VerticalAlignment="Center" />
-                                <Button Content="Varrer esta pasta"
-                                        Style="{DynamicResource Toolbar.Button}"
-                                        Command="{Binding Acervo.VarrerCommand}"
-                                        Margin="12,0,0,0"
-                                        ToolTip="Le a pasta inteira e guarda o que viu no cache"
-                                        AutomationProperties.Name="Varrer esta pasta" />
-                                <TextBlock Text="{Binding Acervo.Itens, StringFormat={}{0} itens guardados}"
-                                           Style="{DynamicResource Text.Muted}"
-                                           Margin="12,0,0,0" VerticalAlignment="Center" />
-                                <!-- Varrer bloqueia e demora: sem sinal na tela, "esta
-                                     lendo" e "travou" sao a mesma coisa para quem olha. -->
-                                <ProgressBar IsIndeterminate="True"
-                                             Width="90" Height="3" Margin="12,0,0,0"
-                                             BorderThickness="0"
-                                             Background="{DynamicResource Brush.Surface.3}"
-                                             Foreground="{DynamicResource Brush.Accent}"
-                                             VerticalAlignment="Center"
-                                             Visibility="{Binding Acervo.Varrendo,
-                                                          Converter={StaticResource BoolToVis},
-                                                          FallbackValue=Collapsed}"
-                                             AutomationProperties.Name="Varrendo" />
-                            </StackPanel>
-                            <TextBlock Text="{Binding Acervo.Ressalva}"
-                                       TextWrapping="Wrap"
-                                       FontSize="12"
-                                       Foreground="{DynamicResource Brush.Text.Secondary}"
-                                       Visibility="{Binding Acervo.Ressalva, Converter={StaticResource NullToVis},
-                                                            FallbackValue=Collapsed}"
-                                       AutomationProperties.Name="Ressalva do acervo" />
+                                 A ressalva explica um estado normal e cabe onde so
+                                 se le quando se procura. Isto aqui e a atualizacao do
+                                 acervo tendo FALHADO, e ninguem passa o mouse num icone
+                                 para descobrir que algo quebrou. Custa zero linha
+                                 enquanto nada quebra. -->
                             <TextBlock Text="{Binding Acervo.Travado}"
                                        TextWrapping="Wrap"
-                                       FontSize="12"
-                                       Margin="0,4,0,0"
+                                       FontSize="12" Margin="0,6,0,0"
                                        Foreground="{DynamicResource Brush.Text.Secondary}"
                                        Visibility="{Binding Acervo.Travado, Converter={StaticResource NullToVis},
                                                             FallbackValue=Collapsed}"
                                        AutomationProperties.Name="Falha na atualizacao do acervo" />
 
-                            <!-- ==================== BUSCA ====================
-                                 Ela mora AQUI, junto do acervo, e nao junto da lista:
-                                 a lista le ao vivo do Outlook e a busca le do cache.
-                                 Poe-la ao lado da lista faria o usuario esperar que
-                                 ela procurasse na caixa, e ela procura no ACERVO:
-                                 so metadados, sem corpo, e so o que ja foi varrido.
-                                 Duas fontes diferentes com a mesma cara enganam em
-                                 silencio.
+                        <!-- ==================== BUSCA ====================
+                             Ela mora AQUI, junto do acervo, e nao junto da lista:
+                             a lista le ao vivo do Outlook e a busca le do cache.
+                             Poe-la ao lado da lista faria o usuario esperar que
+                             ela procurasse na caixa, e ela procura no ACERVO:
+                             so metadados, sem corpo, e so o que ja foi varrido.
+                             Duas fontes diferentes com a mesma cara enganam em
+                             silencio.
 
-                                 NAO se escreve aqui quanto tempo o acervo cobre. A
-                                 janela de 31 dias medida em 28/08 e do OUTLOOK, e o
-                                 cache foi desenhado para acumular alem dela. Fixar
-                                 "um mes" no comentario seria gravar como permanente
-                                 um numero que e do provedor e muda sozinho.
+                             NAO se escreve aqui quanto tempo o acervo cobre. A
+                             janela de 31 dias medida em 28/08 e do OUTLOOK, e o
+                             cache foi desenhado para acumular alem dela. Fixar
+                             "um mes" no comentario seria gravar como permanente
+                             um numero que e do provedor e muda sozinho.
 
-                                 A ressalva fica visivel SEMPRE que houve busca, e
-                                 nao so quando ela nao acha: uma ressalva que so
-                                 aparece no vazio ensina a le-la como "nao achei", e
-                                 ela diz outra coisa - onde se procurou, com que
-                                 alcance, e que o corpo nao e procuravel. -->
-                                </StackPanel>
-                            </Border>
+                             A ressalva fica visivel SEMPRE que houve busca, e
+                             nao so quando ela nao acha: uma ressalva que so
+                             aparece no vazio ensina a le-la como "nao achei", e
+                             ela diz outra coisa - onde se procurou, com que
+                             alcance, e que o corpo nao e procuravel. -->
+
                             <!-- O CACHE QUE NAO ABRE fica no mesmo lugar do acervo, e nao
                                 numa faixa propria: e o mesmo assunto, e quando ele
                                 aparece o outro nao aparece. Na grade raiz eles eram duas
