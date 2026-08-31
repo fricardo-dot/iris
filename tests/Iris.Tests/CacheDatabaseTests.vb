@@ -343,6 +343,7 @@ Public Class CacheDatabaseTests
     ''' .db de verdade na versao 1, que prova mais e envelhece pior.
     ''' </summary>
     Private Shared Sub FingirVersao1(db As CacheDatabase)
+        Executar(db, "DROP TABLE label_observation")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN sender_address")
@@ -363,6 +364,7 @@ Public Class CacheDatabaseTests
     ''' degrau novo é justamente o que ninguém rodou ainda.
     ''' </summary>
     Private Shared Sub FingirVersao2(db As CacheDatabase)
+        Executar(db, "DROP TABLE label_observation")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN sender_address")
@@ -381,6 +383,7 @@ Public Class CacheDatabaseTests
     ''' subir a escada inteira esconde qual degrau quebrou.
     ''' </summary>
     Private Shared Sub FingirVersao3(db As CacheDatabase)
+        Executar(db, "DROP TABLE label_observation")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN sender_address")
@@ -388,6 +391,15 @@ Public Class CacheDatabaseTests
         Executar(db, "ALTER TABLE scan_stage DROP COLUMN conversation_index")
         Executar(db, "ALTER TABLE scan_stage DROP COLUMN sender_address")
         Executar(db, "PRAGMA user_version = 3")
+    End Sub
+
+    ''' <summary>
+    ''' Devolve um banco de hoje ao formato da <b>versão 4</b>: a tabela dos
+    ''' rótulos sai inteira.
+    ''' </summary>
+    Private Shared Sub FingirVersao4(db As CacheDatabase)
+        Executar(db, "DROP TABLE label_observation")
+        Executar(db, "PRAGMA user_version = 4")
     End Sub
 
     Private Shared Sub Executar(db As CacheDatabase, sql As String)
@@ -778,6 +790,38 @@ Public Class CacheDatabaseTests
                      "  attempt_number, stage, rows_read, started_at) " &
                      "VALUES (1, 1, 1, 'u', 1, 0, 1, 'publicada', 1123, " &
                      "        '2026-08-27T00:00:00.0000000+00:00')")
+    End Sub
+
+    ''' <summary>
+    ''' <b>O degrau 4 → 5, sozinho.</b>
+    '''
+    ''' Ele CRIA uma tabela, e não acrescenta coluna — é o primeiro assim, e
+    ''' por isso vale exercitá-lo separado: os degraus anteriores não provam
+    ''' nada sobre <c>CREATE TABLE</c> dentro de uma migração.
+    '''
+    ''' Como os outros deste arquivo, o fixture finge a versão por subtração:
+    ''' prova que o degrau executa e recria a tabela, não que um banco
+    ''' realmente produzido pela versão 4 migra.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_migracao_4_para_5_recria_a_tabela_dos_rotulos()
+        Dim falha As OpenFailure = Nothing
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"{falha}")
+            FingirVersao4(db)
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"a migracao 4 -> 5 devia ter deixado abrir: {falha}")
+
+            For Each coluna In {"incarnation_key", "generation_key", "label",
+                                "confidence", "activation_id", "observed_at"}
+                Assert.IsTrue(TemColuna(db, "label_observation", coluna),
+                    $"label_observation.{coluna} nao chegou pela migracao 4 -> 5")
+            Next
+        End Using
     End Sub
 
 End Class

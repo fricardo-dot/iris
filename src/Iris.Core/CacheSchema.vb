@@ -208,6 +208,39 @@ Namespace Global.Iris.Core
                 Col("created_at", "TEXT", obrigatoria:=True)
             }))
 
+            ' O ROTULO DA IA, COMO OBSERVACAO.
+            '
+            ' Pende da ENCARNACAO, como o metadado: um rotulo e sobre a
+            ' mensagem que estava naquela pasta naquela geracao. Geracao nova
+            ' invalida a anterior de graca, que e o comportamento que o resto
+            ' do acervo ja tem.
+            '
+            ' SEM JUSTIFICATIVA, E NAO POR ECONOMIA. "Por que este rotulo" cita
+            ' o corpo, e o D1 diz que o cache guarda metadado. Rotulo e
+            ' confianca sao metadado; a frase que os explica nao e.
+            '
+            ' UM ROTULO POR ENCARNACAO POR GERACAO, e o indice e UNICO. Sem
+            ' isso, reclassificar a mesma geracao acrescentaria uma segunda
+            ' linha em vez de substituir, e a leitura teria de escolher entre
+            ' duas -- escolha que nao tem criterio e some no meio de uma
+            ' consulta.
+            '
+            ' A ATIVACAO FICA JUNTO. Sem ela, um rotulo gravado sob uma
+            ' autorizacao vencida ou revogada seria indistinguivel de um
+            ' recente -- e o dono nao teria como saber sob que regra a
+            ' classificacao dele foi feita.
+            t.Add(New SchemaTable("label_observation", {
+                Col("label_key", "INTEGER", pk:=True, obrigatoria:=True),
+                Col("incarnation_key", "INTEGER", obrigatoria:=True, refs:="incarnation", aoExcluir:=DeleteAction.Cascade),
+                Col("generation_key", "INTEGER", obrigatoria:=True, refs:="generation"),
+                Col("label", "TEXT", obrigatoria:=True,
+                    check:="label IN ('precisa_de_mim','aguardando','fyi','notificacao','promocao','newsletter')"),
+                Col("confidence", "REAL", obrigatoria:=True,
+                    check:="confidence >= 0 AND confidence <= 1"),
+                Col("activation_id", "TEXT", obrigatoria:=True),
+                Col("observed_at", "TEXT", obrigatoria:=True)
+            }, {Indice("incarnation_key", "generation_key")}))
+
             ' Idempotência: o localizador é único DENTRO da pasta.
             t.Add(New SchemaTable("incarnation", {
                 Col("incarnation_key", "INTEGER", pk:=True, obrigatoria:=True),

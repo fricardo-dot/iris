@@ -26,7 +26,8 @@ Namespace Global.Iris.Cache
         '    conversation_index e sender_address -- a Fase 3 pergunta 'quem
         '    falou por ultimo nesta conversa', e ate aqui o cache nao sabia
         '    responder nem o que e uma conversa nem quem e um remetente.
-        Public Const SchemaVersion As Integer = 4
+        ' 5: label_observation -- o rotulo da IA, por encarnacao e geracao.
+        Public Const SchemaVersion As Integer = 5
 
         ''' <summary>
         ''' <b>Os passos de migração conhecidos, e só eles.</b>
@@ -97,6 +98,12 @@ Namespace Global.Iris.Cache
         ' ActivationRecord.Congelar, que devolvia ToList() tipado como
         ' IReadOnlyList -- e um TryCast reabria a lista de operacoes
         ' autorizadas. ReadOnlyDictionary e Array.AsReadOnly nao tem volta.
+        ' A MIGRACAO 4 CRIA UMA TABELA, e repete a DDL em vez de chamar o
+        ' gerador. O gerador produz a forma de HOJE: uma migracao que o
+        ' chamasse passaria a criar outra coisa no dia em que a tabela
+        ' mudasse, e bancos migrados em datas diferentes ficariam diferentes
+        ' entre si.
+        '
         ' A MIGRACAO 3 NAO CRIA INDICE, e e de proposito. O CREATE INDEX de
         ' conversation_id vale para banco NOVO; num banco migrado a coluna
         ' nasce toda nula, e indice sobre coluna nula so ocupa espaco ate a
@@ -113,6 +120,18 @@ Namespace Global.Iris.Cache
                     {2, Array.AsReadOnly(New String() {
                         "ALTER TABLE generation ADD COLUMN discarded INTEGER " &
                         "CHECK (discarded IS NULL OR discarded >= 0)"
+                    })},
+                    {4, Array.AsReadOnly(New String() {
+                        "CREATE TABLE label_observation (" &
+                        "  label_key INTEGER PRIMARY KEY, " &
+                        "  incarnation_key INTEGER NOT NULL REFERENCES incarnation(incarnation_key) ON DELETE CASCADE, " &
+                        "  generation_key INTEGER NOT NULL REFERENCES generation(generation_key), " &
+                        "  label TEXT NOT NULL CHECK (label IN ('precisa_de_mim','aguardando','fyi','notificacao','promocao','newsletter')), " &
+                        "  confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1), " &
+                        "  activation_id TEXT NOT NULL, " &
+                        "  observed_at TEXT NOT NULL)",
+                        "CREATE UNIQUE INDEX ux_label_observation_1 ON label_observation " &
+                        "  (incarnation_key, generation_key)"
                     })},
                     {3, Array.AsReadOnly(New String() {
                         "ALTER TABLE metadata_observation ADD COLUMN conversation_id TEXT",
