@@ -195,10 +195,21 @@ Namespace Global.Iris.Model
         ''' dias</i>.
         ''' </summary>
         Public Function Explicar() As String
-            Dim linhas = Parcelas.Select(
-                Function(p) $"{p.Frase}: {p.Valor.ToString("0.#", CultureInfo.InvariantCulture)}")
+            Dim linhas = Parcelas.Select(Function(p) $"{p.Frase}: {Numero(p.Valor)}")
             Return String.Join(Environment.NewLine, linhas) & Environment.NewLine &
-                   $"total: {Total.ToString("0.#", CultureInfo.InvariantCulture)}"
+                   $"total: {Numero(Total)}"
+        End Function
+
+        ''' <summary>
+        ''' <b>O mesmo formato para a parcela e para o total.</b>
+        '''
+        ''' Um arredondamento mais curto no total do que nas parcelas faria os
+        ''' números da tela não fecharem — e "conferível" quer dizer conferível com
+        ''' papel e caneta, sobre o que está escrito ali. Com os pesos inteiros de
+        ''' hoje isso não aparece; com o primeiro peso fracionário, apareceria.
+        ''' </summary>
+        Private Shared Function Numero(valor As Double) As String
+            Return valor.ToString("0.###", CultureInfo.InvariantCulture)
         End Function
 
     End Class

@@ -332,22 +332,27 @@ Public Class FilaViewModelTests
     ''' Uma ordenação que também filtrasse esconderia justamente o caso em que a
     ''' nota errou — e o dono não teria como descobrir que ela errou.
     ''' </summary>
+    ''' <summary>Chave e dias de cada linha, para comparar CONJUNTOS iguais.</summary>
+    Private Shared Function Retrato(vm As FilaViewModel) As List(Of String)
+        Return vm.Minhas.Concat(vm.Deles).
+               Select(Function(l) l.Conversa & "|" & l.Dias).
+               OrderBy(Function(x) x, StringComparer.Ordinal).ToList()
+    End Function
+
     <TestMethod>
     Public Sub Ligar_a_prioridade_NAO_esconde_nem_apaga_os_dias()
         Dim vm = ComPrioridade()
         vm.Atualizar()
-        Dim antes = vm.Minhas.Count
-        Dim diasAntes = vm.Minhas.Select(Function(l) l.Dias).OrderBy(Function(d) d).ToList()
+        Dim antes = Retrato(vm)
 
         vm.PorPrioridade = True
 
-        Assert.IsTrue(antes > 0, "controle: o cenário tinha de produzir linhas")
-        Assert.AreEqual(antes, vm.Minhas.Count, "a ordenação escondeu linha")
-        CollectionAssert.AreEqual(
-            diasAntes,
-            vm.Minhas.Select(Function(l) l.Dias).OrderBy(Function(d) d).ToList(),
-            "a ordenação mexeu nos dias")
-        Assert.IsTrue(vm.Minhas.All(Function(l) l.Espera.Length > 0),
+        Assert.IsTrue(antes.Count > 0, "controle: o cenário tinha de produzir linhas")
+        ' AS MESMAS LINHAS, e nao "a mesma quantidade de dias": duas conversas
+        ' com a mesma idade podiam ser trocadas uma pela outra sem ninguem ver.
+        CollectionAssert.AreEqual(antes, Retrato(vm),
+            "a ordenação escondeu, trocou ou mexeu nos dias de alguma linha")
+        Assert.IsTrue(vm.Minhas.Concat(vm.Deles).All(Function(l) l.Espera.Length > 0),
                       "a coluna de espera sumiu de alguma linha")
     End Sub
 
@@ -397,6 +402,128 @@ Public Class FilaViewModelTests
 
         Assert.AreEqual(2, vm.Minhas.First().Dias,
             "a de dois dias que espera resposta não passou na frente da de vinte")
+    End Sub
+
+
+    ''' <summary>
+    ''' <b>Ligar a prioridade não relê o acervo.</b>
+    '''
+    ''' Chamar <c>Atualizar</c> ali montava a fila de novo, e entre a primeira
+    ''' carga e o clique pode ter chegado mensagem, mudado o relógio ou entrado
+    ''' uma dispensa: linhas apareciam, sumiam ou mudavam de idade. O botão dizia
+    ''' "reordena" e trocava o conteúdo.
+    '''
+    ''' O leitor aqui devolve <b>coisas diferentes</b> a cada chamada, de
+    ''' propósito: é o que faz o defeito aparecer.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ligar_a_prioridade_nao_vai_buscar_o_acervo_DE_NOVO()
+        Dim leituras = 0
+        Dim vm As New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados)
+                leituras += 1
+                If leituras = 1 Then Return Duas()
+                Return Montar({Msg("terceira", "mais@fora.com", 5)}, viuOsEnviados:=True)
+            End Function,
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
+
+        vm.Atualizar()
+        Dim antes = Retrato(vm)
+
+        vm.PorPrioridade = True
+
+        Assert.AreEqual(1, leituras, "o botão de ordenar foi ao acervo de novo")
+        CollectionAssert.AreEqual(antes, Retrato(vm))
+    End Sub
+
+    ''' <summary>
+    ''' <b>A nota que ordena é a mesma que a tela mostra — a MESMA avaliação.</b>
+    '''
+    ''' Ela era calculada duas vezes: uma na chave da ordenação e outra no
+    ''' construtor da linha. É a mesma função em código, e não a mesma avaliação:
+    ''' as fontes do rótulo e das regras são delegates, e nada promete que
+    ''' devolvem o mesmo duas vezes.
+    '''
+    ''' O rótulo aqui alterna a cada chamada. Com duas avaliações, a linha é
+    ''' ordenada com uma nota e mostra outra.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_nota_que_ORDENA_e_a_que_a_tela_MOSTRA()
+        ' SO A PRIMEIRA CHAMADA diz "precisa_de_mim". Alternar por paridade nao
+        ' serviria: com duas avaliacoes, a paridade de cada linha se repete e as
+        ' duas contas coincidem por acidente.
+        Dim chamadas = 0
+        Dim vm = ComPrioridade(
+            Function(k)
+                chamadas += 1
+                Return If(chamadas = 1, "precisa_de_mim", "fyi")
+            End Function)
+
+        vm.PorPrioridade = True
+
+        ' Com uma avaliacao so, toda linha com "precisa_de_mim" mostra os 20
+        ' pontos na explicacao. Com duas, metade delas mostra a outra conta.
+        For Each l In vm.Minhas.Concat(vm.Deles)
+            Dim tem = l.PorQue.Contains("alguém espera uma resposta sua")
+            Assert.AreEqual(tem, l.Pontos >= PrioridadeDaFila.PorEsperarResposta,
+                "a nota da ordem e a da explicação vieram de avaliações diferentes")
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>Empate completo não troca de lugar entre duas leituras.</b>
+    '''
+    ''' Nota, dias e assunto iguais deixavam a ordem por conta de como o acervo
+    ''' enumerou — e ela troca. O último critério é a conversa, que é única.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Empate_COMPLETO_nao_troca_de_lugar()
+        Dim invertido = False
+        Dim iguais = {Msg("aaa", "um@fora.com", 5), Msg("bbb", "dois@fora.com", 5)}
+
+        Dim vm As New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados)
+                Dim quais = If(invertido, iguais.Reverse().ToArray(), iguais)
+                Return Montar(quais, viuOsEnviados:=True)
+            End Function,
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
+
+        vm.PorPrioridade = True
+        Dim antes = vm.Minhas.Concat(vm.Deles).Select(Function(l) l.Conversa).ToList()
+
+        invertido = True
+        vm.Atualizar()
+        Dim depois = vm.Minhas.Concat(vm.Deles).Select(Function(l) l.Conversa).ToList()
+
+        CollectionAssert.AreEqual(antes, depois,
+            "duas linhas empatadas trocaram de lugar porque o acervo as enumerou " &
+            "em outra ordem")
+    End Sub
+
+    ''' <summary>
+    ''' <b>As parcelas escritas na tela somam o total escrito na tela.</b>
+    '''
+    ''' "Conferível" quer dizer conferível com papel e caneta, sobre o que está
+    ''' ali. Um arredondamento mais curto no total do que nas parcelas faria os
+    ''' números não fecharem — hoje não aparece, porque os pesos são inteiros;
+    ''' com o primeiro peso fracionário, apareceria.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Os_numeros_ESCRITOS_fecham_a_conta()
+        Dim vm = ComPrioridade(Function(k) "precisa_de_mim")
+        vm.PorPrioridade = True
+
+        For Each l In vm.Minhas.Concat(vm.Deles)
+            Dim linhas = l.PorQue.Split({vbCr, vbLf}, StringSplitOptions.RemoveEmptyEntries)
+            Dim soma = linhas.Where(Function(x) Not x.StartsWith("total:")).
+                       Sum(Function(x) Double.Parse(x.Substring(x.LastIndexOf(": ") + 2),
+                                                    Globalization.CultureInfo.InvariantCulture))
+            Dim total = Double.Parse(linhas.Last().Substring("total: ".Length),
+                                     Globalization.CultureInfo.InvariantCulture)
+
+            Assert.AreEqual(total, soma, 0.0001,
+                "as parcelas escritas não somam o total escrito")
+        Next
     End Sub
 
 End Class

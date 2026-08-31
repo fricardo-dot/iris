@@ -38,6 +38,13 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _abrir As Action(Of ItemKey)
         Private ReadOnly _rotulo As Func(Of ItemKey, String)
         Private ReadOnly _regrasCasadas As Func(Of ItemKey, Integer)
+        ' AS DUAS PARCELAS QUE FALTAVAM CHEGAR AQUI.
+        '
+        ' A pontuacao sabia contar prazo e pessoa proxima, e a fila nunca as
+        ' passava: duas parcelas que nenhum caminho conseguia produzir. Parcela
+        ' inalcancavel e o mesmo defeito de guardar um dado que ninguem le.
+        Private ReadOnly _pessoaProxima As Func(Of ItemKey, Boolean)
+        Private ReadOnly _prazo As Func(Of ItemKey, DateTimeOffset?)
 
         Public Sub New(montar As Func(Of MinhasIdentidades, DateTimeOffset, TimeZoneInfo,
                                        IEnumerable(Of String), MinhasIdentidades,
@@ -48,7 +55,9 @@ Namespace Global.Iris.App.ViewModels
                        fuso As TimeZoneInfo,
                        Optional abrir As Action(Of ItemKey) = Nothing,
                        Optional rotulo As Func(Of ItemKey, String) = Nothing,
-                       Optional regrasCasadas As Func(Of ItemKey, Integer) = Nothing)
+                       Optional regrasCasadas As Func(Of ItemKey, Integer) = Nothing,
+                       Optional pessoaProxima As Func(Of ItemKey, Boolean) = Nothing,
+                       Optional prazo As Func(Of ItemKey, DateTimeOffset?) = Nothing)
             _montar = montar
             _dispensas = If(dispensas, New DispensasDaFila())
             _identidades = If(identidades, Function() New MinhasIdentidades({}))
@@ -57,6 +66,8 @@ Namespace Global.Iris.App.ViewModels
             _abrir = abrir
             _rotulo = rotulo
             _regrasCasadas = regrasCasadas
+            _pessoaProxima = pessoaProxima
+            _prazo = prazo
 
             AtualizarCommand = New RelayCommand(AddressOf Atualizar)
         End Sub
@@ -73,10 +84,20 @@ Namespace Global.Iris.App.ViewModels
                 Return _porPrioridade
             End Get
             Set(value As Boolean)
-                If SetProperty(_porPrioridade, value) Then Atualizar()
+                ' REORDENA O QUE ESTA NA TELA, e nao rele o acervo.
+                '
+                ' Chamar Atualizar aqui montava a fila de novo, e entre a primeira
+                ' carga e o clique pode ter chegado mensagem, mudado o relogio ou
+                ' entrado uma dispensa: linhas apareciam, sumiam ou mudavam de
+                ' idade. O botao dizia "reordena" e trocava o conteudo. Achado por
+                ' revisao externa em 31/08/2026.
+                If SetProperty(_porPrioridade, value) Then Repovoar()
             End Set
         End Property
         Private _porPrioridade As Boolean
+
+        ' O ULTIMO RETRATO LIDO. E dele que a reordenacao parte.
+        Private _ultimo As ResultadoDaFila
 
         ''' <summary>As conversas em que pode ser a vez do dono.</summary>
         Public ReadOnly Property Minhas As New ObservableCollection(Of LinhaNaTela)()
@@ -176,13 +197,37 @@ Namespace Global.Iris.App.ViewModels
             Frase = FraseDe(r)
             Ressalva = RessalvaDe(r)
 
+            _ultimo = r
             If Not r.Respondeu Then Return
 
-            For Each l In NaOrdem(r.Minhas())
-                Minhas.Add(New LinhaNaTela(l, Me))
+            Povoar(r)
+        End Sub
+
+        ''' <summary>
+        ''' Redesenha as duas listas a partir do retrato que já está na mão.
+        ''' <b>Sem tocar no acervo</b> — ver o motivo em <see cref="PorPrioridade"/>.
+        ''' </summary>
+        Private Sub Repovoar()
+            ' NUNCA LIDA AINDA: aqui ler e o certo, e nao ha o que reordenar.
+            ' A promessa e "ligar a ordem nao TROCA o que esta na tela"; com a
+            ' tela vazia nao ha nada a trocar, e recusar-se a ler deixaria o
+            ' dono com uma lista vazia sem entender por que.
+            If _ultimo Is Nothing Then
+                Atualizar()
+                Return
+            End If
+            If Not _ultimo.Respondeu Then Return
+            Minhas.Clear()
+            Deles.Clear()
+            Povoar(_ultimo)
+        End Sub
+
+        Private Sub Povoar(r As ResultadoDaFila)
+            For Each par In NaOrdem(r.Minhas())
+                Minhas.Add(New LinhaNaTela(par.Linha, par.Nota, Me))
             Next
-            For Each l In NaOrdem(r.Deles())
-                Deles.Add(New LinhaNaTela(l, Me))
+            For Each par In NaOrdem(r.Deles())
+                Deles.Add(New LinhaNaTela(par.Linha, par.Nota, Me))
             Next
         End Sub
 
@@ -199,16 +244,41 @@ Namespace Global.Iris.App.ViewModels
         ''' é o padrão.
         ''' </summary>
         Private Function NaOrdem(linhas As IEnumerable(Of LinhaDaFila)) _
-                                  As IEnumerable(Of LinhaDaFila)
-            If Not PorPrioridade Then Return linhas
+                                  As IEnumerable(Of LinhaComNota)
 
-            ' DESEMPATE ESTAVEL, e nao "o que vier". Duas linhas com a mesma nota
-            ' trocando de lugar a cada atualizacao fariam a tela se reorganizar
-            ' sozinha, e ai ninguem acha nada duas vezes.
-            Return linhas.OrderByDescending(Function(l) Nota(l).Total).
-                          ThenByDescending(Function(l) l.Dias).
-                          ThenBy(Function(l) l.Assunto, StringComparer.Ordinal)
+            ' A NOTA E CALCULADA UMA VEZ SO, e a MESMA viaja para a tela.
+            '
+            ' Antes ela era calculada duas: uma na chave da ordenacao e outra no
+            ' construtor da linha. E a mesma funcao em codigo, e nao a mesma
+            ' avaliacao -- as fontes do rotulo e das regras sao delegates, e nada
+            ' promete que devolvem o mesmo duas vezes. A linha podia ser ordenada
+            ' com 22 pontos e mostrar 2, que e exatamente a divergencia entre
+            ' ordem e explicacao que esta fase existe para impedir. Achado por
+            ' revisao externa em 31/08/2026.
+            Dim comNota = linhas.Select(Function(l) New LinhaComNota(l, Nota(l))).ToList()
+            If Not PorPrioridade Then Return comNota
+
+            ' DESEMPATE ATE O FIM. Nota, dias, assunto -- e a CONVERSA, que e
+            ' unica. Sem o ultimo criterio, duas linhas iguais nos tres primeiros
+            ' campos dependiam da ordem em que o acervo as enumerou, e trocavam de
+            ' lugar entre duas atualizacoes -- justamente o que o comentario
+            ' anterior dizia impedir.
+            Return comNota.OrderByDescending(Function(x) x.Nota.Total).
+                           ThenByDescending(Function(x) x.Linha.Dias).
+                           ThenBy(Function(x) x.Linha.Assunto, StringComparer.Ordinal).
+                           ThenBy(Function(x) x.Linha.Conversa, StringComparer.Ordinal)
         End Function
+
+        ''' <summary>Uma linha e a nota dela, calculada uma vez.</summary>
+        Private NotInheritable Class LinhaComNota
+            Public ReadOnly Property Linha As LinhaDaFila
+            Public ReadOnly Property Nota As Prioridade
+
+            Public Sub New(linha As LinhaDaFila, nota As Prioridade)
+                Me.Linha = linha
+                Me.Nota = nota
+            End Sub
+        End Class
 
         ''' <summary>
         ''' A nota de uma linha. <b>A mesma função que ordena é a que explica</b> —
@@ -219,7 +289,10 @@ Namespace Global.Iris.App.ViewModels
             Return PrioridadeDaFila.Pontuar(
                 linha.Dias,
                 If(_rotulo Is Nothing, "", _rotulo(linha.Chave)),
-                If(_regrasCasadas Is Nothing, 0, _regrasCasadas(linha.Chave)))
+                If(_regrasCasadas Is Nothing, 0, _regrasCasadas(linha.Chave)),
+                _pessoaProxima IsNot Nothing AndAlso _pessoaProxima(linha.Chave),
+                If(_prazo Is Nothing, Nothing, _prazo(linha.Chave)),
+                _relogio())
         End Function
 
         ''' <summary>
@@ -350,11 +423,13 @@ Namespace Global.Iris.App.ViewModels
         ''' <summary>A conta aberta, em português, uma parcela por linha.</summary>
         Public ReadOnly Property PorQue As String
 
-        Friend Sub New(linha As LinhaDaFila, dona As FilaViewModel)
+        Friend Sub New(linha As LinhaDaFila, nota As Prioridade, dona As FilaViewModel)
             _linha = linha
             _dona = dona
 
-            Dim nota = dona.Nota(linha)
+            ' A NOTA VEM PRONTA, e e a MESMA que ordenou. Recalcula-la aqui
+            ' deixaria a ordem e a explicacao virem de duas avaliacoes
+            ' diferentes.
             Pontos = nota.Total
             PorQue = nota.Explicar()
 
