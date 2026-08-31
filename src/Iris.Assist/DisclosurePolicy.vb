@@ -269,8 +269,29 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Item As ItemKey
         Public ReadOnly Property Pasta As FolderKey
         Public ReadOnly Property Leitura As LabelReading
-        ''' <summary>Tem anexo. Anexo está fora desta fase, e nega.</summary>
+        ''' <summary>
+        ''' Tem anexo <b>de verdade</b> — arquivo que alguém mandou. Nega.
+        '''
+        ''' <b>Imagem embutida não entra aqui</b>, e a mudança tem número: medido
+        ''' em 30/08/2026 numa pasta real, <b>zero</b> de 13 mensagens estavam
+        ''' sem anexo nenhum, e <b>dez</b> tinham só logo de assinatura. Negar
+        ''' qualquer <c>Attachments.Count &gt; 0</c> recusava 13 de 13 — não era
+        ''' guarda rigorosa, era guarda olhando a coisa errada.
+        '''
+        ''' O que as embutidas fazem em vez de negar está em
+        ''' <see cref="Embutidas"/>.
+        ''' </summary>
         Public ReadOnly Property TemAnexo As Boolean
+
+        ''' <summary>
+        ''' Quantas imagens embutidas a mensagem tem. <b>Não nega</b> — é
+        ''' declarada.
+        '''
+        ''' Precisa ser declarada porque a distinção não é a que se gostaria:
+        ''' uma captura de tela colada no corpo é embutida também, e some do
+        ''' resumo sem esta contagem. <c>Nothing</c> é "não contei".
+        ''' </summary>
+        Public ReadOnly Property Embutidas As Integer?
 
         ''' <param name="temAnexo">
         ''' Obrigatório, e não opcional com padrão <c>False</c>. O padrão fazia o
@@ -279,11 +300,12 @@ Namespace Global.Iris.Assist
         ''' declarando ausência de anexo que ninguém tinha verificado.
         ''' </param>
         Public Sub New(item As ItemKey, pasta As FolderKey, leitura As LabelReading,
-                       temAnexo As Boolean)
+                       temAnexo As Boolean, Optional embutidas As Integer? = Nothing)
             Me.Item = item
             Me.Pasta = pasta
             Me.Leitura = leitura
             Me.TemAnexo = temAnexo
+            Me.Embutidas = embutidas
         End Sub
     End Class
 
@@ -511,6 +533,14 @@ Namespace Global.Iris.Assist
                     "Uma das mensagens está em outra pasta que não a autorizada."))
             End If
 
+            ' ANEXO DE VERDADE NEGA; IMAGEM EMBUTIDA NAO.
+            '
+            ' A distincao esta no MessageSnapshots.Anexado, e o motivo dela tem
+            ' numero: sem ela, 13 de 13 mensagens de uma pasta real eram
+            ' recusadas por causa de logo de assinatura.
+            '
+            ' As embutidas nao passam caladas -- elas viajam ate a tela e sao
+            ' declaradas no resumo. Ver ContentPipeline.
             If m.TemAnexo Then
                 v.Add(New DisclosureViolation(DisclosureReason.AnexoForaDeEscopo, m.Item,
                     "Mensagem com anexo. Anexo não é tratado nesta fase, por inteiro."))

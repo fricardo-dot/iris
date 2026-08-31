@@ -24,6 +24,7 @@ Casos reais desta base, todos custando tempo de depuração:
 | `pasta` | função `Pasta()` | "tipo não pode ser inferido" |
 | `destino` | função `Destino()` | "tipo não pode ser inferido" |
 | `Contatos` | módulo `Contatos` do modelo | "ForaDoAlcance não é membro de ObservableCollection" |
+| `anexado` | função `Anexado()` | "tipo não pode ser inferido" |
 
 O `reconciliacao` é o pior da lista e merece nome: num construtor,
 `Reconciliacao = reconciliacao` atribui o **parâmetro a ele mesmo**, a

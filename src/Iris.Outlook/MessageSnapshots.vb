@@ -69,6 +69,15 @@ Namespace Global.Iris.Outlook
                         ErrorKind.Unexpected, "sem PR_CHANGE_KEY")
                 End If
 
+                ' UMA visita so aos anexos, e o resultado guardado: contar
+                ' embutidas e percorrer a colecao, e percorrer duas vezes
+                ' pagaria o COM duas vezes pela mesma resposta.
+                ' NAO se chama `anexado`: eclipsaria a funcao Anexado -- VB e
+                ' case-insensitive, e o erro sai como "tipo nao pode ser
+                ' inferido", que nao diz nada sobre o problema. 14a vez
+                ' nesta base; a tabela do CLAUDE.md tem a lista.
+                Dim osAnexos = Anexado(mail)
+
                 Dim corpo = Texto(Function() mail.Body)
                 Dim completo = Not String.IsNullOrEmpty(corpo)
 
@@ -78,7 +87,8 @@ Namespace Global.Iris.Outlook
                                         Texto(Function() mail.SenderName),
                                         Destinatarios(mail),
                                         corpo, ehHtml:=False, corpoCompleto:=completo,
-                                        temAnexo:=Anexado(mail)))
+                                        temAnexo:=osAnexos.Real,
+                                        embutidas:=osAnexos.Embutidas))
             Finally
                 ' `mail` e o MESMO objeto que `obj`: liberar os dois seria
                 ' liberar a mesma referencia duas vezes. So `obj` e liberado.
@@ -98,14 +108,19 @@ Namespace Global.Iris.Outlook
         ''' que recusa. Devolver zero seria transformar "não consegui contar" em
         ''' "não tem" — falha aberta, exatamente a que o 3.0 já custou uma vez.
         ''' </summary>
-        Private Function Anexado(mail As OL.MailItem) As Boolean?
+        ''' <summary>
+        ''' Separa anexo de verdade de imagem embutida. A regra mora no
+        ''' <see cref="ClassificacaoDeAnexo"/>, e não aqui, porque o portão
+        ''' precisa dela também — duas cópias divergem, e quando divergirem o
+        ''' portão autoriza por um critério e a captura usa outro.
+        ''' </summary>
+        Private Function Anexado(mail As OL.MailItem) As (Real As Boolean?, Embutidas As Integer?)
             Dim anexos As OL.Attachments = Nothing
             Try
                 anexos = mail.Attachments
-                If anexos Is Nothing Then Return Nothing
-                Return anexos.Count > 0
+                Return ClassificacaoDeAnexo.Contar(anexos)
             Catch
-                Return Nothing
+                Return (Nothing, Nothing)
             Finally
                 ComHelpers.Release(anexos)
             End Try

@@ -17,11 +17,25 @@ Namespace Global.Iris.Model
 
         Public ReadOnly Property Item As ItemKey
         ''' <summary><c>Nothing</c> = não deu para saber.</summary>
+        ''' <summary>
+        ''' Tem anexo <b>de verdade</b> — arquivo que alguém mandou.
+        ''' <c>Nothing</c> = não deu para saber, e o portão fecha.
+        ''' </summary>
         Public ReadOnly Property Tem As Boolean?
 
-        Public Sub New(item As ItemKey, tem As Boolean?)
+        ''' <summary>
+        ''' Quantas imagens <b>embutidas</b> — as que o corpo referencia por
+        ''' <c>cid:</c>, tipicamente logo de assinatura. Não bloqueiam; são
+        ''' declaradas no resumo, porque uma captura de tela colada no corpo é
+        ''' embutida do mesmo jeito.
+        ''' </summary>
+        Public ReadOnly Property Embutidas As Integer?
+
+        Public Sub New(item As ItemKey, tem As Boolean?,
+                       Optional embutidas As Integer? = Nothing)
             Me.Item = item
             Me.Tem = tem
+            Me.Embutidas = embutidas
         End Sub
 
     End Class

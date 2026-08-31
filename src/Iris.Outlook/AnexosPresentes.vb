@@ -27,7 +27,8 @@ Namespace Global.Iris.Outlook
                             As OperationResult(Of IReadOnlyList(Of AttachmentPresence))
             Dim saida As New List(Of AttachmentPresence)()
             For Each item In items
-                saida.Add(New AttachmentPresence(item, LerUm(ns, item)))
+                Dim lido = LerUm(ns, item)
+                saida.Add(New AttachmentPresence(item, lido.Real, lido.Embutidas))
             Next
             Return OperationResult(Of IReadOnlyList(Of AttachmentPresence)).Ok(saida)
         End Function
@@ -37,7 +38,12 @@ Namespace Global.Iris.Outlook
         ''' próprias e liberados em ordem inversa. <c>obj.Attachments.Count</c>
         ''' deixaria dois RCWs sem dono numa linha só.
         ''' </summary>
-        Private Function LerUm(ns As OL.NameSpace, item As ItemKey) As Boolean?
+        ''' <summary>
+        ''' Anexo de verdade e imagens embutidas, pela mesma regra que a captura
+        ''' do corpo usa. Ver <see cref="ClassificacaoDeAnexo"/>.
+        ''' </summary>
+        Private Function LerUm(ns As OL.NameSpace, item As ItemKey) _
+                               As (Real As Boolean?, Embutidas As Integer?)
             Dim obj As Object = Nothing
             Dim mail As OL.MailItem = Nothing
             Dim anexos As OL.Attachments = Nothing
@@ -45,18 +51,17 @@ Namespace Global.Iris.Outlook
                 Try
                     obj = ns.GetItemFromID(item.EntryId, item.StoreId)
                 Catch ex As COMException
-                    Return Nothing
+                    Return (Nothing, Nothing)
                 End Try
-                If obj Is Nothing Then Return Nothing
+                If obj Is Nothing Then Return (Nothing, Nothing)
 
                 mail = TryCast(obj, OL.MailItem)
-                If mail Is Nothing Then Return Nothing
+                If mail Is Nothing Then Return (Nothing, Nothing)
 
                 anexos = mail.Attachments
-                If anexos Is Nothing Then Return Nothing
-                Return anexos.Count > 0
+                Return ClassificacaoDeAnexo.Contar(anexos)
             Catch
-                Return Nothing
+                Return (Nothing, Nothing)
             Finally
                 ComHelpers.Release(anexos)
                 ' `mail` e o mesmo objeto que `obj`.

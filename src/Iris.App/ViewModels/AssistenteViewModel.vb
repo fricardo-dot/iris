@@ -296,6 +296,69 @@ Namespace Global.Iris.App.ViewModels
         ''' link clicável, não vira comando. É a barreira da §29.5, e ela mora
         ''' aqui e no XAML, não numa instrução ao modelo.
         ''' </summary>
+        ''' <summary>
+        ''' <b>O que NÃO foi lido para produzir este resultado.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE ELA PRECISOU EXISTIR</b>
+        '''
+        ''' Até 30/08/2026 o portão negava qualquer mensagem com anexo, e imagem
+        ''' embutida contava como anexo. Medido numa pasta real: <b>13 de 13</b>
+        ''' mensagens recusadas, dez delas só por causa do logo da assinatura.
+        '''
+        ''' A regra passou a distinguir — e é aí que esta propriedade entra. Uma
+        ''' <b>captura de tela colada no corpo</b> é embutida do mesmo jeito que
+        ''' um logo, e pode carregar o teor inteiro da mensagem. Deixar de negar
+        ''' sem declarar teria trocado uma recusa honesta por um resumo
+        ''' silenciosamente parcial.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>CURTA DE PROPÓSITO</b>
+        '''
+        ''' Numa caixa corporativa quase toda mensagem tem logo de assinatura,
+        ''' então esta linha aparece quase sempre. Ressalva que aparece sempre e
+        ''' é longa vira ruído — e ruído ensina a não ler a ressalva de verdade.
+        ''' Uma linha, um número, sem adjetivo.
+        ''' </summary>
+        Public Property RessalvaDoConteudo As String
+            Get
+                Return _ressalvaDoConteudo
+            End Get
+            Private Set(value As String)
+                SetProperty(_ressalvaDoConteudo, If(value, ""))
+                OnPropertyChanged(NameOf(TemRessalvaDoConteudo))
+            End Set
+        End Property
+        Private _ressalvaDoConteudo As String = ""
+
+        Public ReadOnly Property TemRessalvaDoConteudo As Boolean
+            Get
+                Return _ressalvaDoConteudo.Length > 0
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' A frase, a partir do que as classificações disseram.
+        '''
+        ''' <c>Nothing</c> em alguma delas vira "não sei quantas" — e não some,
+        ''' nem vira zero. É a mesma regra das outras contagens desta base.
+        ''' </summary>
+        Friend Shared Function DizerOQueFicouDeFora(
+                msgs As IReadOnlyList(Of MessageClassification)) As String
+            If msgs Is Nothing OrElse msgs.Count = 0 Then Return ""
+
+            If msgs.Any(Function(m) Not m.Embutidas.HasValue) Then
+                Return "Não sei quantas imagens embutidas esta mensagem tem; " &
+                       "nenhuma delas foi lida."
+            End If
+
+            Dim total = msgs.Sum(Function(m) m.Embutidas.Value)
+            If total = 0 Then Return ""
+            Return If(total = 1,
+                      "1 imagem embutida não foi lida.",
+                      $"{total} imagens embutidas não foram lidas.")
+        End Function
+
         Public Property Resultado As String
             Get
                 Return _resultado
@@ -815,9 +878,23 @@ Namespace Global.Iris.App.ViewModels
             Dim antesDoPedido = If(_rascunho Is Nothing, Nothing, _rascunho.Texto)
             Dim sessaoDoPedido = If(_rascunho Is Nothing, 0L, _rascunho.Sessao)
 
+            ' A CLASSIFICACAO E CAPTURADA DE PASSAGEM.
+            '
+            ' O Pedir ja a pede para o portao; envolve-la aqui evita ir ao COM
+            ' uma segunda vez so para contar imagem embutida -- e evita que a
+            ' contagem venha de uma leitura DIFERENTE da que o portao aprovou,
+            ' que e como uma ressalva passa a falar de outra mensagem.
+            Dim classificadas As IReadOnlyList(Of MessageClassification) = Nothing
+            RessalvaDoConteudo = ""
+
             Await Pedir(_contexto.Pedido(operacao),
-                        AddressOf _contexto.Classificar,
+                        Function()
+                            classificadas = _contexto.Classificar()
+                            Return classificadas
+                        End Function,
                         Function() _contexto.Montar(operacao, instrucao))
+
+            If TemResultado Then RessalvaDoConteudo = DizerOQueFicouDeFora(classificadas)
 
             If operacao <> AssistOperation.Redigir Then Return
             If _rascunho Is Nothing OrElse Not TemResultado Then Return

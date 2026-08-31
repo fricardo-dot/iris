@@ -56,10 +56,22 @@ Namespace Global.Iris.Model
         ''' </summary>
         Public ReadOnly Property TemAnexo As Boolean?
 
+        ''' <summary>
+        ''' Quantas imagens <b>embutidas</b> a mensagem tem — as que o corpo
+        ''' referencia por <c>cid:</c>, tipicamente logo de assinatura.
+        '''
+        ''' Elas não bloqueiam o resumo, e por isso precisam ser <b>declaradas</b>:
+        ''' uma captura de tela colada no corpo é embutida também, e some do
+        ''' resumo sem esta contagem.
+        '''
+        ''' <c>Nothing</c> é "não consegui contar", e não zero.
+        ''' </summary>
+        Public ReadOnly Property Embutidas As Integer?
+
         Friend Sub New(item As ItemKey, changeKey As String, assunto As String,
                        remetente As String, destinatarios As IEnumerable(Of String),
                        corpo As String, ehHtml As Boolean, corpoCompleto As Boolean,
-                       temAnexo As Boolean?)
+                       temAnexo As Boolean?, Optional embutidas As Integer? = Nothing)
             Me.Item = item
             Me.ChangeKey = If(changeKey, "")
             Me.Assunto = If(assunto, "")
@@ -70,6 +82,7 @@ Namespace Global.Iris.Model
             Me.EhHtml = ehHtml
             Me.CorpoCompleto = corpoCompleto
             Me.TemAnexo = temAnexo
+            Me.Embutidas = embutidas
         End Sub
 
     End Class

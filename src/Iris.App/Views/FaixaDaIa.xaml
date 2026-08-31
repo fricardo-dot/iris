@@ -235,6 +235,25 @@
                                        TextWrapping="Wrap"
                                        AutomationProperties.Name="Resposta da IA" />
                         </ScrollViewer>
+
+                        <!-- O QUE NAO FOI LIDO PARA PRODUZIR ISTO.
+
+                             Imagem embutida deixou de bloquear o resumo em
+                             30/08 — ela bloqueava 13 de 13 mensagens de uma
+                             pasta real, por causa de logo de assinatura. Mas
+                             uma captura de tela colada no corpo e embutida do
+                             mesmo jeito, e pode carregar a mensagem inteira.
+
+                             Uma linha, um numero, sem adjetivo: numa caixa
+                             corporativa ela aparece quase sempre, e ressalva
+                             longa que aparece sempre vira ruido. -->
+                        <TextBlock Text="{Binding RessalvaDoConteudo}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Visibility="{Binding TemRessalvaDoConteudo,
+                                                        Converter={StaticResource BoolToVis},
+                                                        FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="O que nao foi lido para este resultado" />
                     </StackPanel>
                 </Border>
             </Border>

@@ -89,19 +89,20 @@ Namespace Global.Iris.App.ViewModels
             Return r.Value.Select(
                 Function(l) New MessageClassification(
                     l.Item, sel.Pasta, l,
-                    temAnexo:=TemAnexo(anexo, l.Item.EntryId))).ToList()
+                    temAnexo:=TemAnexo(anexo, l.Item.EntryId),
+                    embutidas:=Embutidas(anexo, l.Item.EntryId))).ToList()
         End Function
 
         ''' <summary>
         ''' Item sem resposta, ou com resposta <c>Nothing</c>, conta como
         ''' <b>tem anexo</b>. Fechado por falta de prova.
         ''' </summary>
-        Private Shared Function TemAnexo(mapa As Dictionary(Of String, Boolean?),
+        Private Shared Function TemAnexo(mapa As Dictionary(Of String, AttachmentPresence),
                                          chave As String) As Boolean
-            Dim tem As Boolean? = Nothing
-            If Not mapa.TryGetValue(chave, tem) Then Return True
-            If Not tem.HasValue Then Return True
-            Return tem.Value
+            Dim p As AttachmentPresence = Nothing
+            If Not mapa.TryGetValue(chave, p) OrElse p Is Nothing Then Return True
+            If Not p.Tem.HasValue Then Return True
+            Return p.Tem.Value
         End Function
 
         ''' <summary>
@@ -112,15 +113,28 @@ Namespace Global.Iris.App.ViewModels
         ''' prova, como o resto da §29.
         ''' </summary>
         Private Function Anexos(itens As IReadOnlyList(Of ItemKey)) _
-                                As Dictionary(Of String, Boolean?)
-            Dim saida As New Dictionary(Of String, Boolean?)(StringComparer.Ordinal)
+                                As Dictionary(Of String, AttachmentPresence)
+            Dim saida As New Dictionary(Of String, AttachmentPresence)(StringComparer.Ordinal)
             Dim r = _broker.GetAttachmentPresenceAsync(itens, CancellationToken.None).
                     GetAwaiter().GetResult()
             If Not r.Succeeded Then Return saida
             For Each p In r.Value
-                saida(p.Item.EntryId) = p.Tem
+                saida(p.Item.EntryId) = p
             Next
             Return saida
+        End Function
+
+        ''' <summary>
+        ''' Quantas imagens embutidas. <c>Nothing</c> quando não houve resposta
+        ''' para o item — e <c>Nothing</c> aqui não fecha nada, porque embutida
+        ''' não bloqueia: ele só faz a tela dizer "não sei quantas" em vez de
+        ''' "nenhuma".
+        ''' </summary>
+        Private Shared Function Embutidas(mapa As Dictionary(Of String, AttachmentPresence),
+                                          chave As String) As Integer?
+            Dim p As AttachmentPresence = Nothing
+            If Not mapa.TryGetValue(chave, p) OrElse p Is Nothing Then Return Nothing
+            Return p.Embutidas
         End Function
 
         ''' <summary>

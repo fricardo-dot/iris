@@ -34,10 +34,25 @@ Namespace Global.Iris.Assist
         Public ReadOnly Property Recusa As ContentRefusal
         Public ReadOnly Property Parte As MessagePart
 
-        Friend Sub New(ok As Boolean, recusa As ContentRefusal, parte As MessagePart)
+        ''' <summary>
+        ''' <b>Quantas imagens embutidas ficaram de fora deste conteúdo.</b>
+        '''
+        ''' Elas não bloqueiam — logo de assinatura não é conteúdo que um resumo
+        ''' perca. Mas uma captura de tela colada no corpo é embutida do mesmo
+        ''' jeito, e pode carregar a mensagem inteira. Este número existe para a
+        ''' tela poder dizer o que não foi lido, em vez de o leitor achar que
+        ''' leu tudo.
+        '''
+        ''' <c>Nothing</c> é "não contei" — e a tela diz isso, não zero.
+        ''' </summary>
+        Public ReadOnly Property EmbutidasNaoLidas As Integer?
+
+        Friend Sub New(ok As Boolean, recusa As ContentRefusal, parte As MessagePart,
+                       Optional embutidas As Integer? = Nothing)
             Me.Ok = ok
             Me.Recusa = recusa
             Me.Parte = parte
+            Me.EmbutidasNaoLidas = embutidas
         End Sub
     End Class
 
@@ -159,12 +174,25 @@ Namespace Global.Iris.Assist
             ' isso fecha a corrida em vez de so repeti-la.
             '
             ' Nothing tambem para: "nao deu para contar" nao e "nao tem".
+            '
+            ' E `TemAnexo` aqui quer dizer ANEXO DE VERDADE, desde 30/08/2026:
+            ' imagem embutida deixou de negar, porque negava 13 de 13 mensagens
+            ' de uma pasta real por causa de logo de assinatura. Ver o
+            ' MessageSnapshots.Anexado.
             If m.TemAnexo Is Nothing OrElse m.TemAnexo.Value Then
                 Return Recusar(ContentRefusal.Anexo)
             End If
 
-            Return Preparar(m.Item, m.ChangeKey, m.Assunto, m.Remetente,
-                            m.Destinatarios, m.Corpo, m.EhHtml, m.CorpoCompleto)
+            ' AS EMBUTIDAS VIAJAM COM O CONTEUDO, e nao ficam para tras.
+            '
+            ' Sem isto a mudanca acima teria trocado uma recusa honesta por um
+            ' resumo silenciosamente parcial -- exatamente a familia de defeito
+            ' que esta base passou a serie inteira corrigindo.
+            Dim preparado = Preparar(m.Item, m.ChangeKey, m.Assunto, m.Remetente,
+                                     m.Destinatarios, m.Corpo, m.EhHtml, m.CorpoCompleto)
+            If Not preparado.Ok Then Return preparado
+            Return New ContentResult(True, ContentRefusal.Nenhuma, preparado.Parte,
+                                     m.Embutidas)
         End Function
 
         ''' <param name="changeKey">
