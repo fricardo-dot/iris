@@ -61,9 +61,29 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Public ReadOnly Property CorpoCompleto As Boolean
 
+        ''' <summary>
+        ''' <b>A ficha do lote de classificação</b>, quando houver uma.
+        '''
+        ''' É o único identificador que sai desta máquina, e ele existe porque a
+        ''' resposta precisa dizer <i>de quem</i> está falando: sem ele o modelo
+        ''' devolve seis rótulos e nenhuma forma de saber a qual mensagem cada um
+        ''' pertence. Ver <c>LoteDeClassificacao</c>.
+        '''
+        ''' <b>Vazia para resumir e redigir</b>, e aí não é serializada. Escrever
+        ''' um campo vazio nessas operações mudaria os bytes — e o hash — de
+        ''' envelopes que já existem, sem nada em troca: uma mensagem só não
+        ''' precisa ser nomeada.
+        '''
+        ''' O <see cref="Item"/> continua <b>não</b> saindo: ele é a identidade
+        ''' real, e a ficha existe justamente para não ter de mandá-la.
+        ''' </summary>
+        Public ReadOnly Property Ficha As String
+
         Friend Sub New(item As ItemKey, changeKey As String, assunto As String,
                        remetente As String, destinatarios As IEnumerable(Of String),
-                       corpo As String, corpoCompleto As Boolean)
+                       corpo As String, corpoCompleto As Boolean,
+                       Optional ficha As String = Nothing)
+            Me.Ficha = If(ficha, "")
             Me.Item = item
             Me.ChangeKey = If(changeKey, "")
             Me.Assunto = If(assunto, "")
@@ -350,6 +370,10 @@ Namespace Global.Iris.Assist
                     w.WriteStartArray("mensagens")
                     For Each p In partes
                         w.WriteStartObject()
+                        ' A FICHA SO APARECE QUANDO EXISTE. Escreve-la vazia nas
+                        ' outras operacoes mudaria os bytes -- e o hash -- de
+                        ' envelopes que ja existem, sem nada em troca.
+                        If p.Ficha.Length > 0 Then w.WriteString("ficha", p.Ficha)
                         w.WriteString("assunto", p.Assunto)
                         w.WriteString("de", p.Remetente)
                         w.WriteStartArray("para")

@@ -26,6 +26,7 @@ Casos reais desta base, todos custando tempo de depuração:
 | `Contatos` | módulo `Contatos` do modelo | "ForaDoAlcance não é membro de ObservableCollection" |
 | `anexado` | função `Anexado()` | "tipo não pode ser inferido" |
 | `confianca` | função `Confianca()` | "Double não pode ser indexado" |
+| `Count` (propriedade) | extensão LINQ `Count(Of T)` | "Integer não pode ser indexado" |
 | `lote` | função `Lote()` do teste | "tipo não pode ser inferido a partir de expressão contendo `lote`" |
 | `chave` | função `Chave()` do teste | "argumento não especificado para o parâmetro `id`" |
 

@@ -613,6 +613,24 @@ Namespace Global.Iris.Assist
         End Function
 
         ''' <summary>
+        ''' O nome do fio para um rótulo — <b>a mesma tabela, lida ao contrário</b>.
+        '''
+        ''' Quem grava no cache precisa deste nome, e a tentação era escrever um
+        ''' <c>Select Case</c> lá. Duas tabelas divergem, e esta divergência sairia
+        ''' como um CHECK violado no SQLite — longe de quem a causou.
+        '''
+        ''' <see cref="Rotulo.Desconhecido"/> devolve vazio, e vazio não passa no
+        ''' CHECK da tabela: é a recusa chegando cedo em vez de virar um rótulo
+        ''' inventado.
+        ''' </summary>
+        Public Shared Function NomeDoRotulo(rotulo As Rotulo) As String
+            For Each par In RotulosConhecidos
+                If par.Value = rotulo Then Return par.Key.ToLowerInvariant()
+            Next
+            Return ""
+        End Function
+
+        ''' <summary>
         ''' <b>A instrução do lote</b> — e a lista de rótulos sai da <b>mesma
         ''' tabela</b> que valida a resposta. Duas listas divergiriam com o tempo,
         ''' e a divergência é silenciosa: o modelo devolveria um rótulo que a

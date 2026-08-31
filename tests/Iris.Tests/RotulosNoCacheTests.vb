@@ -438,8 +438,9 @@ Public Class RotulosNoCacheTests
                    Dim pasta = Varrer(db, "f-1", {"a", "b"}, rodada:=1)
                    Dim geracao = GeracaoPublicada(db, pasta)
 
-                   ' "a" foi classificada num lote SEM regras; "b", num lote COM
-                   ' regras que ela nao satisfez.
+                   ' "a" nao teve resposta sobre regras; "b" teve, e nao casou
+                   ' nenhuma -- e diz isso com uma lista VAZIA, explicitamente.
+                   ' Estar fora do mapa e "ninguem respondeu", e nao "nao casou".
                    Dim cache = New RotulosNoCache(db)
                    cache.Gravar(pasta, geracao, "ativacao-1", Quando,
                                 New Dictionary(Of String, String) From {{"f-1-a", "fyi"}},
@@ -447,12 +448,13 @@ Public Class RotulosNoCacheTests
                    cache.Gravar(pasta, geracao, "ativacao-2", Quando,
                                 New Dictionary(Of String, String) From {{"f-1-b", "fyi"}},
                                 New Dictionary(Of String, Double?)(),
-                                New Dictionary(Of String, IReadOnlyList(Of String))())
+                                New Dictionary(Of String, IReadOnlyList(Of String)) From {
+                                    {"f-1-b", Array.Empty(Of String)()}})
 
                    Dim lidos = New RotulosNoCache(db).Publicados(pasta)
 
                    Assert.IsNull(lidos("f-1-a").RegrasCasadas,
-                                 "lote sem regras nao pode parecer lote que nao casou")
+                                 "sem resposta nao pode parecer resposta que nao casou")
                    Assert.IsNotNull(lidos("f-1-b").RegrasCasadas)
                    Assert.AreEqual(0, lidos("f-1-b").RegrasCasadas.Count)
                End Sub)

@@ -130,15 +130,22 @@ Namespace Global.Iris.Cache
                     If confiancas IsNot Nothing AndAlso
                        confiancas.TryGetValue(par.Key, lida) Then confianca = lida
 
-                    ' NULO E "nao havia regras nesta varredura". Vetor vazio e
-                    ' "havia, e esta mensagem nao casou com nenhuma" -- que e uma
+                    ' NULO E "ninguem respondeu sobre as regras nesta mensagem".
+                    ' Vetor vazio e "respondeu, e nenhuma casou" -- que e uma
                     ' informacao, e nao a ausencia dela.
+                    '
+                    ' A DISTINCAO E POR ITEM, e nao pelo lote inteiro. A versao
+                    ' anterior punha vetor vazio em todo item ausente do mapa, e
+                    ' entao a mensagem cuja resposta sobre regras nao deu para usar
+                    ' -- o que um "nao responda as regras do dono" produz -- ficava
+                    ' gravada como "perguntei e nao casou nada". Item fora do mapa
+                    ' agora e nulo; quem quer dizer "nenhuma casou" poe a lista
+                    ' vazia, explicitamente.
                     Dim casadas As String = Nothing
-                    If regras IsNot Nothing Then
-                        Dim minhas As IReadOnlyList(Of String) = Nothing
-                        If Not regras.TryGetValue(par.Key, minhas) Then
-                            minhas = Array.Empty(Of String)()
-                        End If
+                    Dim minhas As IReadOnlyList(Of String) = Nothing
+                    If regras IsNot Nothing AndAlso
+                       regras.TryGetValue(par.Key, minhas) AndAlso
+                       minhas IsNot Nothing Then
                         casadas = JsonSerializer.Serialize(minhas)
                     End If
 
