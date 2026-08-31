@@ -343,6 +343,12 @@ Public Class CacheDatabaseTests
     ''' .db de verdade na versao 1, que prova mais e envelhece pior.
     ''' </summary>
     Private Shared Sub FingirVersao1(db As CacheDatabase)
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN sender_address")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN conversation_id")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN conversation_index")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN sender_address")
         Executar(db, "ALTER TABLE disclosure_log DROP COLUMN http_status")
         Executar(db, "ALTER TABLE generation DROP COLUMN discarded")
         Executar(db, "PRAGMA user_version = 1")
@@ -357,8 +363,31 @@ Public Class CacheDatabaseTests
     ''' degrau novo é justamente o que ninguém rodou ainda.
     ''' </summary>
     Private Shared Sub FingirVersao2(db As CacheDatabase)
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN sender_address")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN conversation_id")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN conversation_index")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN sender_address")
         Executar(db, "ALTER TABLE generation DROP COLUMN discarded")
         Executar(db, "PRAGMA user_version = 2")
+    End Sub
+
+    ''' <summary>
+    ''' Devolve um banco de hoje ao formato da <b>versão 3</b>: só as três
+    ''' colunas da migração 3→4 saem.
+    '''
+    ''' Mesmo motivo do 2→3: o degrau novo é o que ninguém rodou ainda, e
+    ''' subir a escada inteira esconde qual degrau quebrou.
+    ''' </summary>
+    Private Shared Sub FingirVersao3(db As CacheDatabase)
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
+        Executar(db, "ALTER TABLE metadata_observation DROP COLUMN sender_address")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN conversation_id")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN conversation_index")
+        Executar(db, "ALTER TABLE scan_stage DROP COLUMN sender_address")
+        Executar(db, "PRAGMA user_version = 3")
     End Sub
 
     Private Shared Sub Executar(db As CacheDatabase, sql As String)

@@ -225,6 +225,17 @@ Namespace Global.Iris.Core
             ' METADADO — o que o 2.1 promete guardar, e faltava no modelo.
             ' Medido (§18.3): 349 bytes por mensagem, 11,7 MB para a caixa
             ' inteira. SEM corpo e SEM anexo (D1).
+            ' CONVERSATION_ID, CONVERSATION_INDEX E SENDER_ADDRESS entraram em
+            ' 31/08: sao o que permite responder "quem falou por ultimo nesta
+            ' conversa, e ha quanto tempo" -- as duas filas da Fase 3 -- sem
+            ' chamada de IA nenhuma. Metadado, e nao corpo: o D1 continua
+            ' valendo.
+            '
+            ' SEM INDICE em conversation_id, e por enquanto. Indice declarado
+            ' aqui nasce no banco NOVO e nao no migrado -- migracao e ALTER
+            ' TABLE, e os dois bancos ficariam com formas diferentes. Ele entra
+            ' junto com a consulta que precisa dele, na mesma migracao, quando
+            ' a fila da Fase 3 existir.
             t.Add(New SchemaTable("metadata_observation", {
                 Col("metadata_key", "INTEGER", pk:=True, obrigatoria:=True),
                 Col("incarnation_key", "INTEGER", obrigatoria:=True, refs:="incarnation", aoExcluir:=DeleteAction.Cascade),
@@ -236,7 +247,10 @@ Namespace Global.Iris.Core
                 Col("size_bytes", "INTEGER"),
                 Col("has_attachments", "INTEGER", check:="has_attachments IN (0,1)"),
                 Col("is_unread", "INTEGER", check:="is_unread IN (0,1)"),
-                Col("message_class", "TEXT")
+                Col("message_class", "TEXT"),
+                Col("conversation_id", "TEXT"),
+                Col("conversation_index", "TEXT"),
+                Col("sender_address", "TEXT")
             }, Nothing, {Indice("incarnation_key")}))
 
             t.Add(New SchemaTable("association", {
@@ -346,7 +360,10 @@ Namespace Global.Iris.Core
                 Col("size_bytes", "INTEGER"),
                 Col("has_attachments", "INTEGER", check:="has_attachments IN (0,1)"),
                 Col("is_unread", "INTEGER", check:="is_unread IN (0,1)"),
-                Col("message_class", "TEXT")
+                Col("message_class", "TEXT"),
+                Col("conversation_id", "TEXT"),
+                Col("conversation_index", "TEXT"),
+                Col("sender_address", "TEXT")
             }, {Indice("attempt_key", "provider_entry_id")}))
 
             ' O resultado PUBLICADO. Imutável.

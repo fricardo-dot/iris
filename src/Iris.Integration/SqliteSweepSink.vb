@@ -94,7 +94,10 @@ Namespace Global.Iris.Integration
                 .SizeBytes = l.SizeBytes,
                 .HasAttachments = l.HasAttachments,
                 .IsUnread = l.IsUnread,
-                .MessageClass = l.MessageClass}
+                .MessageClass = l.MessageClass,
+                .ConversationId = l.ConversationId,
+                .ConversationIndex = l.ConversationIndex,
+                .SenderAddress = l.SenderAddress}
         End Function
 
         ''' <summary>

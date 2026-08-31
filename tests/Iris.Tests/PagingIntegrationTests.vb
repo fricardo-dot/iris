@@ -78,7 +78,7 @@ Public Class PagingIntegrationTests
         End Using
     End Function
 
-    Private Shared Async Function AbrirBrokerAsync() As Task(Of OutlookBroker)
+    Friend Shared Async Function AbrirBrokerAsync() As Task(Of OutlookBroker)
         Dim broker As New OutlookBroker(New NullLog())
         broker.Start()
         Dim estado = Await broker.ConnectAsync(CancellationToken.None)
@@ -109,7 +109,7 @@ Public Class PagingIntegrationTests
     End Function
 
     ''' <summary>Caixa de Entrada do store padrão.</summary>
-    Private Shared Async Function AcharEntradaAsync(broker As OutlookBroker) As Task(Of FolderKey)
+    Friend Shared Async Function AcharEntradaAsync(broker As OutlookBroker) As Task(Of FolderKey)
         Dim stores = Await broker.GetStoresAsync(CancellationToken.None)
         Assert.IsTrue(stores.Succeeded, "GetStoresAsync falhou")
         Assert.IsTrue(stores.Value.Count > 0, "nenhum store")

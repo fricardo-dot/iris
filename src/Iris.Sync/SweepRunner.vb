@@ -25,6 +25,12 @@ Namespace Global.Iris.Sync
         Public Property HasAttachments As Boolean?
         Public Property IsUnread As Boolean?
         Public Property MessageClass As String
+        ''' <summary>A conversa. Vazio e "nao deu para ler", nunca "conversa propria".</summary>
+        Public Property ConversationId As String
+        ''' <summary>A posicao na conversa. Guardada antes de ser usada.</summary>
+        Public Property ConversationIndex As String
+        ''' <summary>O endereco do remetente, que e o que decide a direcao.</summary>
+        Public Property SenderAddress As String
     End Class
 
     ''' <summary>

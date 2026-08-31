@@ -166,7 +166,10 @@ Namespace Global.Iris.Integration.Outlook
                 .SizeBytes = CType(m.SizeBytes, Long?),
                 .HasAttachments = m.HasAttachments,
                 .IsUnread = m.IsUnread,
-                .MessageClass = m.MessageClass}
+                .MessageClass = m.MessageClass,
+                .ConversationId = m.ConversationId,
+                .ConversationIndex = m.ConversationIndex,
+                .SenderAddress = m.SenderAddress}
         End Function
 
     End Class

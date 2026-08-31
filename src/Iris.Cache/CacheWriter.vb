@@ -18,6 +18,9 @@ Namespace Global.Iris.Cache
         Public Property HasAttachments As Boolean?
         Public Property IsUnread As Boolean?
         Public Property MessageClass As String
+        Public Property ConversationId As String
+        Public Property ConversationIndex As String
+        Public Property SenderAddress As String
     End Class
 
     Public Enum PublishOutcome
@@ -131,8 +134,9 @@ Namespace Global.Iris.Cache
                     Executar(tx, "INSERT INTO scan_stage (attempt_key, provider_entry_id, " &
                         "page_number, cursor_after, search_key, internet_message_id, subject, " &
                         "sender_name, received_at, last_modified_at, size_bytes, has_attachments, " &
-                        "is_unread, message_class) " &
-                        "VALUES ($a,$p,$n,$c,$sk,$mid,$s,$sn,$r,$lm,$sz,$ha,$iu,$mc) " &
+                        "is_unread, message_class, conversation_id, conversation_index, " &
+                        "sender_address) " &
+                        "VALUES ($a,$p,$n,$c,$sk,$mid,$s,$sn,$r,$lm,$sz,$ha,$iu,$mc,$ci,$cx,$sa) " &
                         "ON CONFLICT (attempt_key, provider_entry_id) DO NOTHING",
                         ("$a", CObj(attemptKey)), ("$p", CObj(l.ProviderEntryId)),
                         ("$n", CObj(pagina)), ("$c", CObj(cursorDepois)),
@@ -142,7 +146,9 @@ Namespace Global.Iris.Cache
                         ("$sz", If(l.SizeBytes.HasValue, CObj(l.SizeBytes.Value), Nothing)),
                         ("$ha", If(l.HasAttachments.HasValue, CObj(If(l.HasAttachments.Value, 1, 0)), Nothing)),
                         ("$iu", If(l.IsUnread.HasValue, CObj(If(l.IsUnread.Value, 1, 0)), Nothing)),
-                        ("$mc", CObj(l.MessageClass)))
+                        ("$mc", CObj(l.MessageClass)),
+                        ("$ci", CObj(l.ConversationId)), ("$cx", CObj(l.ConversationIndex)),
+                        ("$sa", CObj(l.SenderAddress)))
                 Next
 
                 ' rows_read e DERIVADO, nao incrementado. Incrementar conta
@@ -505,10 +511,12 @@ Namespace Global.Iris.Cache
             Executar(tx,
                 "INSERT INTO metadata_observation (incarnation_key, generation_key, subject, " &
                 "  sender_name, received_at, last_modified_at, size_bytes, has_attachments, " &
-                "  is_unread, message_class) " &
+                "  is_unread, message_class, conversation_id, conversation_index, " &
+                "  sender_address) " &
                 "SELECT i.incarnation_key, $g, s.subject, s.sender_name, s.received_at, " &
                 "       s.last_modified_at, s.size_bytes, s.has_attachments, s.is_unread, " &
-                "       s.message_class " &
+                "       s.message_class, s.conversation_id, s.conversation_index, " &
+                "       s.sender_address " &
                 "FROM incarnation i JOIN scan_stage s " &
                 "  ON s.provider_entry_id = i.provider_entry_id " &
                 "WHERE i.folder_key = $f AND s.attempt_key = $a",

@@ -22,7 +22,11 @@ Namespace Global.Iris.Cache
         ''' </summary>
         ' 2: disclosure_log ganhou http_status.
         ' 3: generation ganhou discarded.
-        Public Const SchemaVersion As Integer = 3
+        ' 4: metadata_observation e scan_stage ganharam conversation_id,
+        '    conversation_index e sender_address -- a Fase 3 pergunta 'quem
+        '    falou por ultimo nesta conversa', e ate aqui o cache nao sabia
+        '    responder nem o que e uma conversa nem quem e um remetente.
+        Public Const SchemaVersion As Integer = 4
 
         ''' <summary>
         ''' <b>Os passos de migração conhecidos, e só eles.</b>
@@ -93,6 +97,11 @@ Namespace Global.Iris.Cache
         ' ActivationRecord.Congelar, que devolvia ToList() tipado como
         ' IReadOnlyList -- e um TryCast reabria a lista de operacoes
         ' autorizadas. ReadOnlyDictionary e Array.AsReadOnly nao tem volta.
+        ' A MIGRACAO 3 NAO CRIA INDICE, e e de proposito. O CREATE INDEX de
+        ' conversation_id vale para banco NOVO; num banco migrado a coluna
+        ' nasce toda nula, e indice sobre coluna nula so ocupa espaco ate a
+        ' primeira varredura -- que quem migra vai fazer de qualquer jeito,
+        ' porque ate ela a conversa e desconhecida.
         Private Shared ReadOnly _migracoes As IReadOnlyDictionary(Of Integer, IReadOnlyList(Of String)) =
             New ObjectModel.ReadOnlyDictionary(Of Integer, IReadOnlyList(Of String))(
                 New Dictionary(Of Integer, IReadOnlyList(Of String)) From {
@@ -104,6 +113,14 @@ Namespace Global.Iris.Cache
                     {2, Array.AsReadOnly(New String() {
                         "ALTER TABLE generation ADD COLUMN discarded INTEGER " &
                         "CHECK (discarded IS NULL OR discarded >= 0)"
+                    })},
+                    {3, Array.AsReadOnly(New String() {
+                        "ALTER TABLE metadata_observation ADD COLUMN conversation_id TEXT",
+                        "ALTER TABLE metadata_observation ADD COLUMN conversation_index TEXT",
+                        "ALTER TABLE metadata_observation ADD COLUMN sender_address TEXT",
+                        "ALTER TABLE scan_stage ADD COLUMN conversation_id TEXT",
+                        "ALTER TABLE scan_stage ADD COLUMN conversation_index TEXT",
+                        "ALTER TABLE scan_stage ADD COLUMN sender_address TEXT"
                     })}
                 })
 

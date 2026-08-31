@@ -66,6 +66,19 @@ Namespace Global.Iris.Outlook
         ''' </summary>
         Private Const TagEntryIdLongo As String = "http://schemas.microsoft.com/mapi/proptag/0x66700102"
 
+        ' PR_CONVERSATION_ID e PR_CONVERSATION_INDEX, PELA PROPTAG.
+        '
+        ' Medido em 31/08 na caixa real: os NOMES "ConversationID" e
+        ' "ConversationIndex" sao recusados pela Table -- 40 linhas, zero
+        ' conversas -- enquanto "SenderEmailAddress" passa nas 40. Nome de
+        ' propriedade do Object Model e proptag nao sao a mesma porta, e so
+        ' a medicao diz qual delas esta aberta.
+        '
+        ' Sao BINARIAS (0x...0102), como o EntryID longo logo acima, e voltam
+        ' como vetor de bytes -- ComoEntryId ja sabe passa-las para hex.
+        Private Const TagConversa As String = "http://schemas.microsoft.com/mapi/proptag/0x30130102"
+        Private Const TagIndiceDaConversa As String = "http://schemas.microsoft.com/mapi/proptag/0x00710102"
+
         ' Ordem das colunas pedidas à Table. Índice fixo só é seguro porque
         ' TODAS foram confirmadas contra o Outlook real (tools/q1-colunas.ps1):
         ' aceitas E devolvendo valor não nulo em 40 itens.
@@ -77,6 +90,32 @@ Namespace Global.Iris.Outlook
         Private Const ColNaoLida As Integer = 5
         Private Const ColClasse As Integer = 6
         Private Const ColAnexo As Integer = 7
+
+        ' AS EXTRAS ENTRAM NO FIM, E EM CASCATA.
+        '
+        ' Os indices acima sao posicoes fixas no vetor que a Table devolve, e
+        ' uma coluna recusada no MEIO deslocaria todas as seguintes -- assunto
+        ' viraria remetente, sem erro nenhum, so dado trocado. Por isso as
+        ' novas vao no fim.
+        '
+        ' E por isso a adicao PARA NA PRIMEIRA RECUSA em vez de tentar as
+        ' seguintes: se a nona for recusada e a decima aceita, a decima ocupa
+        ' a posicao nove e todo mundo le o campo errado. Parar mantem a
+        ' regra simples: as primeiras _extras estao la, nesta ordem, e o
+        ' resto nao existe.
+        '
+        ' A ORDEM E POR IMPORTANCIA. O endereco vem primeiro porque sem ele
+        ' a direcao da mensagem e sempre "nao sei", e sem direcao nao ha fila
+        ' nenhuma -- nem a minha, nem a deles. A conversa vem depois, e o
+        ' indice por ultimo, que e o unico que ninguem usa ainda.
+        Private Const ColEnderecoDoRemetente As Integer = 8
+        Private Const ColConversa As Integer = 9
+        Private Const ColIndiceDaConversa As Integer = 10
+
+        ' Os nomes, na MESMA ordem dos indices. Uma lista so, para a ordem
+        ' nao poder divergir entre quem adiciona e quem le.
+        Private ReadOnly ColunasExtras As String() =
+            {"SenderEmailAddress", TagConversa, TagIndiceDaConversa}
 
         Private Function CampoDeOrdenacao(sort As MessageSort) As (Campo As String, Descendente As Boolean)
             Select Case sort
@@ -268,6 +307,9 @@ Namespace Global.Iris.Outlook
                 .Key = New ItemKey(linha.EntryId, storeId),
                 .Subject = linha.Subject,
                 .SenderName = linha.SenderName,
+                .ConversationId = linha.ConversationId,
+                .ConversationIndex = linha.ConversationIndex,
+                .SenderAddress = linha.SenderAddress,
                 .ReceivedTime = linha.ReceivedTime,
                 .SizeBytes = linha.SizeBytes,
                 .HasAttachments = linha.HasAttachments,
@@ -395,6 +437,10 @@ Namespace Global.Iris.Outlook
             Return linhas.Sum(Function(l) If(l Is Nothing, 0, l.Fabricadas))
         End Function
 
+        ' CONVERSATIONID, CONVERSATIONINDEX E SENDEREMAILADDRESS sao
+        ' propriedades ESCALARES: nao criam RCW proprio, entao nao ha o que
+        ' liberar. O perigo da R7 e a colecao ou o objeto no MEIO da cadeia,
+        ' e aqui nao ha meio -- o mail ja tem dono.
         Private Function ResumirDoItem(mail As OL.MailItem, storeId As String,
                                        ByRef fabricadas As Integer) As MailSummary
             Dim anexos = ContarAnexos(mail, fabricadas)
@@ -410,6 +456,9 @@ Namespace Global.Iris.Outlook
                 .HasAttachments = anexos > 0,
                 .IsUnread = BooleanoDoItem(Function() mail.UnRead, fabricadas),
                 .MessageClass = TextoDoItem(Function() mail.MessageClass, fabricadas),
+                .ConversationId = TextoDoItem(Function() mail.ConversationID, fabricadas),
+                .ConversationIndex = TextoDoItem(Function() mail.ConversationIndex, fabricadas),
+                .SenderAddress = TextoDoItem(Function() mail.SenderEmailAddress, fabricadas),
                 .Content = ContentState.MetadataOnly
             }
         End Function
@@ -575,6 +624,9 @@ Namespace Global.Iris.Outlook
             Public Property IsUnread As Boolean
             Public Property HasAttachments As Boolean
             Public Property MessageClass As String = ""
+            Public Property ConversationId As String = ""
+            Public Property ConversationIndex As String = ""
+            Public Property SenderAddress As String = ""
 
             ''' <summary>
             ''' <b>Quantas células desta linha vieram ausentes e viraram valor.</b>
@@ -639,12 +691,58 @@ Namespace Global.Iris.Outlook
                     AdicionarColuna(colunas, "UnRead")
                     AdicionarColuna(colunas, "MessageClass")
                     AdicionarColuna(colunas, TagAnexo)
+
+                    ' O ENDERECO E A CONVERSA, ate onde o provider deixar.
+                    '
+                    ' Medido em 31/08 na caixa real: as tres foram recusadas, e a
+                    ' pagina inteira veio sem conversa e sem endereco. Recusa aqui
+                    ' NAO e falha da varredura -- e uma pasta cujas conversas o
+                    ' Iris nao monta pelo caminho rapido. Melhor ausente do que
+                    ' adivinhada, e a medicao esta em ConversaMedicaoTests.
+                    _extras = TentarExtras(colunas)
                 Finally
                     ComHelpers.Release(colunas)
                 End Try
 
                 _table.Sort("ReceivedTime", True)
             End Sub
+
+            ''' <summary>
+            ''' <b>Quantas colunas extras esta Table aceitou</b>, das três, na
+            ''' ordem de <c>ColunasExtras</c>.
+            '''
+            ''' Campo além desta contagem fica vazio, e vazio quer dizer <b>não deu
+            ''' para ler</b> em todo o resto do caminho — a fila não inventa
+            ''' conversa a partir de assunto, nem direção a partir de pasta.
+            ''' </summary>
+            Private _extras As Integer
+
+            ''' <summary>
+            ''' Adiciona as extras <b>em ordem, parando na primeira recusa</b>, e
+            ''' devolve quantas entraram.
+            '''
+            ''' Parar é o que mantém os índices honestos: pular uma recusada e
+            ''' seguir faria a seguinte ocupar a posição da que faltou, e todo
+            ''' mundo leria o campo errado — sem erro nenhum, só dado trocado.
+            ''' </summary>
+            Private Shared Function TentarExtras(colunas As OL.Columns) As Integer
+                Dim entraram = 0
+                For Each nome In ColunasExtras
+                    Try
+                        AdicionarColuna(colunas, nome)
+                    Catch ex As Exception
+                        ' QUALQUER excecao, e nao so a recusa conhecida: o "nao deu"
+                        ' aqui e barato e bem definido, e estreitar para HRESULTs
+                        ' previstos derrubaria a LISTAGEM INTEIRA de uma pasta cujo
+                        ' provider recusa de um jeito novo. Trocar a lista de
+                        ' e-mails por uma pasta que nao abre, para nao perder um
+                        ' campo de fila, seria a troca errada.
+                        Return entraram
+                    End Try
+                    entraram += 1
+                Next
+                Return entraram
+            End Function
 
             ''' <summary>
             ''' <c>Columns.Add</c> DEVOLVE um objeto COM. Ignorar o retorno
@@ -727,7 +825,10 @@ Namespace Global.Iris.Outlook
                         .SizeBytes = ComoInteiro(bruto(r, ColTamanho)),
                         .IsUnread = ComoBooleano(bruto(r, ColNaoLida)),
                         .MessageClass = ComoTexto(bruto(r, ColClasse)),
-                        .HasAttachments = ComoBooleano(bruto(r, ColAnexo))
+                        .HasAttachments = ComoBooleano(bruto(r, ColAnexo)),
+                        .SenderAddress = If(_extras > 0, ComoTexto(bruto(r, ColEnderecoDoRemetente)), ""),
+                        .ConversationId = If(_extras > 1, ComoEntryId(bruto(r, ColConversa)), ""),
+                        .ConversationIndex = If(_extras > 2, ComoEntryId(bruto(r, ColIndiceDaConversa)), "")
                     }
                     convertida.Fabricadas = Fabricadas
                     linhas.Add(convertida)

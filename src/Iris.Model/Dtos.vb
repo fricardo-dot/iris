@@ -86,6 +86,41 @@ Namespace Global.Iris.Model
         Public Property IsUnread As Boolean
 
         ''' <summary>
+        ''' <b>A conversa a que esta mensagem pertence.</b>
+        '''
+        ''' Vazio quer dizer <b>não deu para ler</b>, e não "conversa própria":
+        ''' juntar as vazias faria de todas as mensagens ilegíveis uma conversa
+        ''' só, com dez pessoas diferentes dentro. Quem lê trata vazio como
+        ''' fora da fila.
+        '''
+        ''' <b>Nunca o assunto.</b> "RES: CM CÚRCUMA" existe em três conversas
+        ''' diferentes numa caixa real, e casar por assunto não dá erro: dá
+        ''' pendência que some, ou que nunca fecha.
+        ''' </summary>
+        Public Property ConversationId As String = ""
+
+        ''' <summary>
+        ''' A posição desta mensagem <b>dentro</b> da conversa.
+        '''
+        ''' A fila da Fase 3 não usa: ela só precisa de quem falou por último,
+        ''' e isso a data responde. Entra agora porque é lido de graça na
+        ''' mesma visita, e é o que resolve thread ramificada depois — quando
+        ''' precisar, os dados já estarão gravados em vez de exigir uma
+        ''' varredura nova da caixa inteira.
+        ''' </summary>
+        Public Property ConversationIndex As String = ""
+
+        ''' <summary>
+        ''' <b>O endereço do remetente</b> — o que decide a direção.
+        '''
+        ''' <c>SenderName</c> não serve: nome de exibição repete, muda, e não
+        ''' identifica ninguém. Numa organização Exchange isto chega como X.500
+        ''' e não como SMTP, e <see cref="MinhasIdentidades"/> compara a cadeia
+        ''' como veio, justamente por isso.
+        ''' </summary>
+        Public Property SenderAddress As String = ""
+
+        ''' <summary>
         ''' NAO existe IsProtected aqui, e a ausencia e deliberada.
         '''
         ''' A Q1 mediu que Permission nao vem por coluna de Table, e o
