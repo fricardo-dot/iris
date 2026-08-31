@@ -711,9 +711,24 @@ Public Class CacheDatabaseTests
     ''' quebrou — e o degrau novo é justamente o que ninguém rodou ainda.
     '''
     ''' Achado por revisão externa em 31/08/2026.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>E O QUE ELE NÃO PROVA</b>
+    '''
+    ''' O fixture finge a versão 3 por <b>subtração</b>: parte do banco de
+    ''' hoje e tira seis colunas. O resultado é um híbrido — tem tudo o
+    ''' mais da versão 4 — então isto prova que <i>o degrau executa e
+    ''' recria as colunas</i>, e não que um banco realmente produzido pela
+    ''' versão 3 migra.
+    '''
+    ''' A alternativa seria guardar um arquivo <c>.db</c> de verdade na
+    ''' versão 3, que prova mais e envelhece pior — é a mesma escolha que
+    ''' <see cref="FingirVersao1"/> já documenta. Para seis colunas
+    ''' <c>TEXT</c> anuláveis e sem índice, a diferença não morde; se elas
+    ''' ganharem restrição ou <i>default</i>, morde.
     ''' </summary>
     <TestMethod>
-    Public Sub A_migracao_3_para_4_traz_as_colunas_da_conversa()
+    Public Sub A_migracao_3_para_4_recria_as_colunas_da_conversa()
         Dim falha As OpenFailure = Nothing
 
         Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)

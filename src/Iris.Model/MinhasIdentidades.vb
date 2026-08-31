@@ -52,10 +52,21 @@ Namespace Global.Iris.Model
             If enderecos Is Nothing Then Return
             For Each e In enderecos
                 Dim normal = Normalizar(e)
-                ' Linha sem forma de endereco nao entra: o arquivo e editado a
-                ' mao, e uma anotacao solta virando "identidade" faria o dono
-                ' casar com qualquer remetente que se lesse igual.
-                If TemFormaDeEndereco(normal) Then _enderecos.Add(normal)
+                ' TUDO QUE O DONO ESCREVEU ENTRA, e a forma so e exigida do
+                ' remetente que chega.
+                '
+                ' Filtrar aqui parecia simetrico e era pior: o arquivo e editado
+                ' a mao, e uma forma legitima que eu nao previ -- "EX:/O=...",
+                ' X.400, endereco de provedor que nao e Exchange -- sumia em
+                ' SILENCIO. O arquivo continuava la, parecendo certo, com menos
+                ' identidades do que ele escreveu.
+                '
+                ' E nao ha risco no outro sentido: anotacao solta so casaria com
+                ' um remetente que se lesse igual, e remetente sem forma de
+                ' endereco nunca chega a ser comparado.
+                '
+                ' Achado por revisao externa em 31/08/2026.
+                If normal.Length > 0 Then _enderecos.Add(normal)
             Next
         End Sub
 
@@ -143,7 +154,12 @@ Namespace Global.Iris.Model
         ''' </summary>
         Friend Shared Function TemFormaDeEndereco(normal As String) As Boolean
             If normal.Length = 0 Then Return False
-            Return normal.Contains("@"c) OrElse normal.StartsWith("/", StringComparison.Ordinal)
+            ' "/o=" e nao so o "/" inicial: o X.500 tambem aparece prefixado,
+            ' como "EX:/O=...", e exigir que comece com barra recusaria essa
+            ' forma -- transformando a propria mensagem do dono em "nao sei".
+            Return normal.Contains("@"c) OrElse
+                   normal.StartsWith("/", StringComparison.Ordinal) OrElse
+                   normal.Contains("/o=")
         End Function
 
         ''' <summary>As identidades, para a tela mostrar o que está valendo.</summary>

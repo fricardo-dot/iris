@@ -108,9 +108,17 @@ Namespace Global.Iris.Outlook
         ' a direcao da mensagem e sempre "nao sei", e sem direcao nao ha fila
         ' nenhuma -- nem a minha, nem a deles. A conversa vem depois, e o
         ' indice por ultimo, que e o unico que ninguem usa ainda.
-        Private Const ColEnderecoDoRemetente As Integer = 8
-        Private Const ColConversa As Integer = 9
-        Private Const ColIndiceDaConversa As Integer = 10
+        ' QUANTAS COLUNAS FIXAS EXISTEM -- e o Abrir tem de adicionar
+        ' exatamente isto. O numero aparecia solto na conta da largura do
+        ' vetor, e uma nona coluna fixa deixaria os dois lugares discordando:
+        ' a defesa contra vetor curto passaria a acusar uma extra que nao
+        ' existe, e derrubaria a listagem no unico caso que ela existe para
+        ' tolerar.
+        Private Const QuantasFixas As Integer = ColAnexo + 1
+
+        Private Const ColEnderecoDoRemetente As Integer = QuantasFixas
+        Private Const ColConversa As Integer = QuantasFixas + 1
+        Private Const ColIndiceDaConversa As Integer = QuantasFixas + 2
 
         ' Os nomes, na MESMA ordem dos indices. Uma lista so, para a ordem
         ' nao poder divergir entre quem adiciona e quem le.
@@ -822,7 +830,7 @@ Namespace Global.Iris.Outlook
                 '
                 ' Nao foi observado no Outlook medido: e defesa, e nao conserto.
                 Dim largura = bruto.GetUpperBound(1) - bruto.GetLowerBound(1) + 1
-                Dim extras = Math.Min(_extras, Math.Max(0, largura - 8))
+                Dim extras = Math.Min(_extras, Math.Max(0, largura - QuantasFixas))
                 Dim linhas As New List(Of TableRow)(Math.Max(0, ultima - primeira + 1))
 
                 For r = primeira To ultima

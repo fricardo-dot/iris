@@ -393,4 +393,68 @@ Public Class RedigirEmDoisPassosTests
             "recusou calado: o usuario clicou e nada aconteceu sem explicacao")
     End Function
 
+    ''' <summary>
+    ''' <b>Dois cliques abriam duas respostas.</b>
+    '''
+    ''' A guarda de geração fala da <b>mensagem</b>, e os dois cliques falam
+    ''' da mesma — então os dois passavam por ela. Com o compositor fechado,
+    ''' cada um começava a abrir uma resposta, e o último a continuar
+    ''' escrevia no compositor que estivesse ativo, possivelmente criado pela
+    ''' outra abertura.
+    '''
+    ''' Achado por revisão externa em 31/08/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Dois_cliques_abrem_UMA_resposta_so() As Task
+        Dim r As New AssistenteViewModelTests.RascunhoFalso() With {.PodeEditar = False}
+        Dim p As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "O RESUMO"}
+        Dim vm = AssistenteViewModelTests.Montar(AssistenteViewModelTests.Ativacao(), p,
+                                                 AssistenteViewModelTests.Pronta(),
+                                                 Nothing, r)
+
+        Await vm.Resumir()
+        p.Texto = "A RESPOSTA"
+        Await vm.Redigir()
+
+        ' Os dois cliques, sem esperar o primeiro terminar.
+        Dim um = vm.EnviarParaRascunho()
+        Dim dois = vm.EnviarParaRascunho()
+        Await Task.WhenAll(um, dois)
+
+        Assert.AreEqual(1, r.Aberturas,
+            "dois cliques abriram duas respostas: o segundo tinha de ser recusado")
+        Assert.AreEqual("A RESPOSTA", r.Texto)
+    End Function
+
+    ''' <summary>
+    ''' <b>Sessão nova do Outlook invalida o envio em andamento.</b>
+    '''
+    ''' <c>EsquecerASessao</c> limpava a memória e <b>não tocava na
+    ''' geração</b>, então um envio que atravessasse a substituição da sessão
+    ''' passava pela guarda intacto — e escrevia num rascunho cuja identidade
+    ''' já não valia. Sessão nova é a troca de contexto mais forte que existe,
+    ''' mais forte que trocar de mensagem.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Sessao_nova_no_meio_da_abertura_RECUSA_o_envio() As Task
+        Dim r As New AssistenteViewModelTests.RascunhoFalso() With {
+            .PodeEditar = False, .Texto = "nao me toque"}
+        Dim p As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "O RESUMO"}
+        Dim vm = AssistenteViewModelTests.Montar(AssistenteViewModelTests.Ativacao(), p,
+                                                 AssistenteViewModelTests.Pronta(),
+                                                 Nothing, r)
+
+        Await vm.Resumir()
+        p.Texto = "A RESPOSTA"
+        Await vm.Redigir()
+
+        r.NoMeioDaAbertura = Sub() vm.EsquecerASessao()
+        Await vm.EnviarParaRascunho()
+
+        Assert.AreEqual("nao me toque", r.Texto,
+            "a sessao do Outlook foi substituida e a resposta foi escrita " &
+            "assim mesmo")
+        Assert.IsFalse(vm.PodeDesfazer)
+    End Function
+
 End Class

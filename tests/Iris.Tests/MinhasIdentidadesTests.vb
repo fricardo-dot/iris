@@ -257,15 +257,40 @@ Public Class MinhasIdentidadesTests
     End Sub
 
     ''' <summary>
-    ''' Linha solta no arquivo não vira identidade. Ele é editado à mão, e
-    ''' uma anotação virando "identidade" faria o dono casar com qualquer
-    ''' remetente que se lesse igual.
+    ''' <b>O que o dono escreveu não é descartado em silêncio.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ESTE TESTE COBRAVA O CONTRÁRIO, E ESTAVA ERRADO</b>
+    '''
+    ''' A primeira versão exigia que o construtor filtrasse por forma, e
+    ''' isso parecia simétrico com a exigência feita ao remetente. Não é: o
+    ''' arquivo é editado à mão, e uma forma legítima que eu não previ —
+    ''' <c>EX:/O=...</c>, X.400, endereço de provedor que não é Exchange —
+    ''' sumia sem aviso. O arquivo continuava lá, parecendo certo, com
+    ''' menos identidades do que o dono escreveu.
+    '''
+    ''' A proteção contra anotação solta não precisa morar aqui: remetente
+    ''' sem forma de endereço nunca chega a ser comparado, então uma
+    ''' anotação no conjunto <b>não casa com nada</b>. Guardá-la é inócuo;
+    ''' descartá-la, não.
+    '''
+    ''' Achado por revisão externa em 31/08/2026.
     ''' </summary>
     <TestMethod>
-    Public Sub Anotacao_solta_no_arquivo_NAO_vira_identidade()
-        Dim eu = Minhas("ricardo@empresa.com", "meu email do trabalho")
+    Public Sub O_que_o_dono_escreveu_NAO_e_descartado_em_silencio()
+        Dim eu = Minhas("ricardo@empresa.com", "EX:/O=EMPRESA/CN=RECIPIENTS/CN=rf",
+                        "meu email do trabalho")
 
-        Assert.AreEqual(1, eu.Quantas, "a anotacao entrou no conjunto")
+        Assert.AreEqual(3, eu.Quantas,
+            "o construtor comeu uma linha que o dono escreveu de proposito")
+
+        Assert.AreEqual(Direcao.Minha, eu.DirecaoDe("EX:/O=EMPRESA/CN=RECIPIENTS/CN=rf"),
+            "o X.500 prefixado e uma forma legitima, e tem de casar")
+
+        ' E a anotacao nao casa com nada, porque remetente sem forma de
+        ' endereco nem chega a ser comparado.
+        Assert.AreEqual(Direcao.Desconhecida, eu.DirecaoDe("meu email do trabalho"),
+            "a anotacao guardada virou identidade ativa")
     End Sub
 
 End Class

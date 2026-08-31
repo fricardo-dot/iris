@@ -883,6 +883,12 @@ Namespace Global.Iris.App.ViewModels
         ''' é outra e as identidades deixam de valer.
         ''' </summary>
         Public Sub Trocou(chave As ItemKey)
+            ' FECHADO E FECHADO. Sem esta linha, um evento de selecao que
+            ' chegasse depois do Dispose -- e eles chegam, porque a janela
+            ' desmonta em ordem propria -- voltaria a disparar resumo
+            ' automatico num assistente que ninguem esta mais olhando.
+            If _descartado Then Return
+
             _geracao += 1
             Cancelar()
 
@@ -1054,6 +1060,18 @@ Namespace Global.Iris.App.ViewModels
         ''' desfazer, três telas abaixo, e falam de coisas diferentes.
         ''' </summary>
         Public Sub EsquecerASessao()
+            ' A GERACAO SOBE, E O QUE ESTIVER EM VOO E CANCELADO.
+            '
+            ' Sessao nova do Outlook e a troca de contexto mais forte que
+            ' existe -- mais forte que trocar de mensagem -- e este metodo
+            ' limpava a memoria sem tocar na geracao. Um resumo em voo voltava
+            ' e era publicado como se nada tivesse mudado, e um envio ao
+            ' rascunho atravessava a guarda de geracao intacto.
+            '
+            ' Achado por revisao externa em 31/08/2026.
+            _geracao += 1
+            Cancelar()
+
             _memoria.Clear()
             _ordem.Clear()
             _chaveAtual = Nothing
@@ -1170,6 +1188,11 @@ Namespace Global.Iris.App.ViewModels
                 _esperaDoResumo?.Dispose()
             Catch
             End Try
+            ' E O CAMPO VAI JUNTO. Deixa-lo apontando para um CTS descartado
+            ' fazia o Cancelar() seguinte -- que nao engole excecao como este
+            ' Dispose -- lancar ObjectDisposedException do nada, num caminho
+            ' que o usuario alcanca clicando em Cancelar depois de fechar.
+            _esperaDoResumo = Nothing
             If _pulso IsNot Nothing Then _pulso.Stop()
         End Sub
 
@@ -1505,8 +1528,29 @@ Namespace Global.Iris.App.ViewModels
             ' Achado por revisao externa em 31/08/2026. E a mesma familia da
             ' guarda de geracao do resumo: tudo que atravessa um Await precisa
             ' perguntar, do outro lado, se ainda esta falando da mesma coisa.
+            ' UM ENVIO POR VEZ. Com o compositor fechado, dois cliques abrem
+            ' duas respostas, e as duas passam pela guarda de geracao -- que
+            ' fala da MENSAGEM, e nao da instancia do compositor. O ultimo a
+            ' continuar escreve no que estiver aberto, que pode ser o da outra
+            ' abertura.
+            If _enviando Then Return
+            _enviando = True
+            Try
+
             Dim aEnviar = Resposta
             Dim minha = _geracao
+            ' NAO HA GUARDA DE SESSAO AQUI, e a ausencia e decidida.
+            '
+            ' Escrevi uma e ela NAO PODIA FALHAR: no ramo do compositor ja
+            ' aberto nao existe Await nenhum entre ler a sessao e escrever,
+            ' entao os dois lados da comparacao liam o mesmo valor. Guarda
+            ' que nunca dispara e o bloqueio que nunca bloqueia -- pior que
+            ' guarda nenhuma, porque parece cobertura.
+            '
+            ' O que a revisao externa apontou como risco de sessao esta
+            ' coberto por outras duas: _enviando impede a segunda abertura,
+            ' e EsquecerASessao agora sobe a geracao. E a sessao continua
+            ' valendo onde ela e a pergunta certa: no PodeDesfazer.
 
             ' NAO HA RESPOSTA ABERTA? ABRE UMA.
             '
@@ -1565,7 +1609,14 @@ Namespace Global.Iris.App.ViewModels
             Aviso = ""
             OnPropertyChanged(NameOf(PodeDesfazer))
             DesfazerCommand.NotifyCanExecuteChanged()
+
+            Finally
+                _enviando = False
+            End Try
         End Function
+
+        ''' <summary>Há um envio ao rascunho em andamento.</summary>
+        Private _enviando As Boolean
 
         ''' <summary>
         ''' Pede a operação. O resultado só é publicado se a geração ainda for a

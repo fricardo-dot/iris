@@ -299,11 +299,22 @@ Public Class AssistenteViewModelTests
         ''' </summary>
         Friend Property NoMeioDaAbertura As Action
 
-        Friend Function AbrirAsync() As Task Implements IRascunho.AbrirAsync
+        ''' <summary>
+        ''' <b>Suspende de verdade.</b> A primeira versão devolvia
+        ''' <c>Task.CompletedTask</c>, e então a troca de mensagem encenada
+        ''' por <see cref="NoMeioDaAbertura"/> acontecia por
+        ''' <i>reentrância</i> — antes de existir uma continuação pendente.
+        ''' Provava a guarda de geração e não a corrida.
+        '''
+        ''' O <c>Await Task.Yield()</c> força a continuação a voltar depois,
+        ''' que é o que o compositor de verdade faz.
+        ''' </summary>
+        Friend Async Function AbrirAsync() As Task Implements IRascunho.AbrirAsync
             Aberturas += 1
+            Await Task.Yield()
             If AbrirFunciona Then PodeEditar = True
             NoMeioDaAbertura?.Invoke()
-            Return Task.CompletedTask
+            Await Task.Yield()
         End Function
 
         ''' <summary>Fecha este rascunho e abre outro, vazio.</summary>
