@@ -70,7 +70,8 @@ Namespace Global.Iris.Model
                                       agora As DateTimeOffset,
                                       fuso As TimeZoneInfo,
                                       viuOsEnviados As Boolean,
-                                      dispensadas As IEnumerable(Of String)) As ResultadoDaFila
+                                      dispensadas As IEnumerable(Of String),
+                                      Optional remetentesIgnorados As MinhasIdentidades = Nothing) As ResultadoDaFila
 
             If Not viuOsEnviados Then Return ResultadoDaFila.SemOsEnviados()
 
@@ -114,11 +115,26 @@ Namespace Global.Iris.Model
 
             fora.ConversasDispensadas = dispensadasVistas.Count
 
+            ' O REMETENTE IGNORADO E CONFERIDO NA LINHA, E NAO NA MENSAGEM.
+            '
+            ' Tirar as mensagens dele antes de agrupar mudaria QUEM FALOU POR
+            ' ULTIMO: uma conversa que ele encerrou passaria a parecer
+            ' encerrada por outra pessoa, e a fila trocaria de lado sozinha.
+            ' A regra que o dono escreveu e "mensagem deste remetente
+            ' normalmente nao exige resposta", e isso e sobre a LINHA.
+            Dim ignorados = If(remetentesIgnorados, New MinhasIdentidades({}))
+
             Dim linhas As New List(Of LinhaDaFila)()
             For Each par In porConversa
                 Dim linha = Decidir(par.Key, par.Value, eu, agora, oFuso)
                 If linha Is Nothing Then
                     fora.ConversasSemDirecao += 1
+                ElseIf ignorados.DirecaoDe(linha.RemetenteDaUltima) = Direcao.Minha Then
+                    ' "Minha" aqui quer dizer "esta no conjunto" -- o mesmo
+                    ' casamento de endereco, com outro conjunto. Reaproveitar
+                    ' MinhasIdentidades traz de graca a normalizacao, o X.500 e
+                    ' a exigencia de forma.
+                    fora.ConversasDeRemetenteIgnorado += 1
                 Else
                     linhas.Add(linha)
                 End If
@@ -178,7 +194,7 @@ Namespace Global.Iris.Model
                                             StringComparer.Ordinal).First()
 
             Return New LinhaDaFila(conversa, escolhida.Chave, escolhida.Assunto,
-                                   escolhida.QuemEscreveu, maisNova,
+                                   escolhida.QuemEscreveu, escolhida.Remetente, maisNova,
                                    DiasDeCalendario(maisNova, agora, fuso), direcao)
         End Function
 
@@ -240,18 +256,27 @@ Namespace Global.Iris.Model
         ''' <summary>A última mensagem — é ela que a tela abre.</summary>
         Public ReadOnly Property Chave As ItemKey
         Public ReadOnly Property Assunto As String
+        ''' <summary>O nome de exibição de quem falou por último.</summary>
         Public ReadOnly Property Quem As String
+        ''' <summary>
+        ''' O <b>endereço</b> de quem falou por último. Existe para a regra
+        ''' "ignorar este remetente" ter em que se apoiar: nome de exibição
+        ''' repete e muda, e uma regra sobre nome atingiria quem não devia.
+        ''' </summary>
+        Public ReadOnly Property RemetenteDaUltima As String
         Public ReadOnly Property Quando As DateTimeOffset
         Public ReadOnly Property Dias As Integer
         Public ReadOnly Property Direcao As Direcao
 
         Friend Sub New(conversa As String, chave As ItemKey, assunto As String,
-                       quem As String, quando As DateTimeOffset, dias As Integer,
+                       quem As String, remetenteDaUltima As String,
+                       quando As DateTimeOffset, dias As Integer,
                        direcao As Direcao)
             Me.Conversa = conversa
             Me.Chave = chave
             Me.Assunto = assunto
             Me.Quem = quem
+            Me.RemetenteDaUltima = If(remetenteDaUltima, "")
             Me.Quando = quando
             Me.Dias = dias
             Me.Direcao = direcao
@@ -338,6 +363,11 @@ Namespace Global.Iris.Model
         Public Property ConversasSemDirecao As Integer
         ''' <summary>Conversas que o dono marcou como "não exige resposta".</summary>
         Public Property ConversasDispensadas As Integer
+        ''' <summary>
+        ''' Conversas cuja última mensagem é de um remetente que o dono mandou
+        ''' ignorar.
+        ''' </summary>
+        Public Property ConversasDeRemetenteIgnorado As Integer
     End Class
 
     ''' <summary>As duas filas, e a ressalva.</summary>

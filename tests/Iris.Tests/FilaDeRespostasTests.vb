@@ -498,4 +498,48 @@ Public Class FilaDeRespostasTests
         Assert.AreEqual(recente.Chave.EntryId, r.Linhas(0).Chave.EntryId)
     End Sub
 
+    ''' <summary>
+    ''' <b>Remetente ignorado tira a conversa que ELE encerrou.</b>
+    '''
+    ''' É a regra "mensagens deste remetente normalmente não exigem resposta",
+    ''' e ela resolve newsletter e notificação automática sem IA nenhuma.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Remetente_ignorado_sai_da_fila()
+        Dim r = FilaDeRespostas.Montar(
+            {Msg("boletim", "noreply@boletim.com", 30),
+             Msg("gente", "caroline@outra.com", 9)},
+            Eu(), Agora, Fuso, True, Nothing,
+            New MinhasIdentidades({"noreply@boletim.com"}))
+
+        Assert.AreEqual(1, r.Linhas.Count)
+        Assert.AreEqual("gente", r.Linhas(0).Conversa)
+        Assert.AreEqual(1, r.Fora.ConversasDeRemetenteIgnorado)
+    End Sub
+
+    ''' <summary>
+    ''' <b>E é conferido na LINHA, não na mensagem.</b>
+    '''
+    ''' Tirar as mensagens do remetente ignorado antes de agrupar mudaria quem
+    ''' falou por último: uma conversa que ele encerrou passaria a parecer
+    ''' encerrada por outra pessoa, e a fila trocaria de lado sozinha —
+    ''' inventando uma pendência a partir de uma regra que existe para tirar
+    ''' pendências.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_regra_do_remetente_nao_muda_QUEM_FALOU_POR_ULTIMO()
+        ' A conversa termina com o ignorado; antes dele falei eu.
+        Dim r = FilaDeRespostas.Montar(
+            {Msg("c1", "ricardo@empresa.com", 20),
+             Msg("c1", "noreply@boletim.com", 3)},
+            Eu(), Agora, Fuso, True, Nothing,
+            New MinhasIdentidades({"noreply@boletim.com"}))
+
+        Assert.AreEqual(0, r.Linhas.Count,
+            "a conversa voltou como aguardando: as mensagens do ignorado " &
+            "foram tiradas antes do agrupamento e a linha trocou de lado")
+        Assert.AreEqual(1, r.Fora.ConversasDeRemetenteIgnorado)
+        Assert.AreEqual(0, r.Fora.ConversasSemDirecao)
+    End Sub
+
 End Class
