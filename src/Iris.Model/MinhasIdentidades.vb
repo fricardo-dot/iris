@@ -52,7 +52,10 @@ Namespace Global.Iris.Model
             If enderecos Is Nothing Then Return
             For Each e In enderecos
                 Dim normal = Normalizar(e)
-                If normal.Length > 0 Then _enderecos.Add(normal)
+                ' Linha sem forma de endereco nao entra: o arquivo e editado a
+                ' mao, e uma anotacao solta virando "identidade" faria o dono
+                ' casar com qualquer remetente que se lesse igual.
+                If TemFormaDeEndereco(normal) Then _enderecos.Add(normal)
             Next
         End Sub
 
@@ -83,6 +86,18 @@ Namespace Global.Iris.Model
             Dim normal = Normalizar(remetente)
             If normal.Length = 0 Then Return Direcao.Desconhecida
 
+            ' SEM FORMA DE ENDERECO, "NAO SEI" -- e nao "do outro".
+            '
+            ' O passo anterior tira o nome de exibicao de "Fulano <f@x>". Numa
+            ' cadeia como "Diretoria <Regulatorio>" ele produz "regulatorio", que
+            ' nao esta no conjunto e viraria DoOutro. E ai a fila cobra do dono
+            ' uma resposta por uma leitura que nao deu certo -- justamente o
+            ' engano que o piso do conjunto vazio existe para impedir, entrando
+            ' pela porta dos fundos.
+            '
+            ' Achado por revisao externa em 31/08/2026.
+            If Not TemFormaDeEndereco(normal) Then Return Direcao.Desconhecida
+
             Return If(_enderecos.Contains(normal), Direcao.Minha, Direcao.DoOutro)
         End Function
 
@@ -112,6 +127,23 @@ Namespace Global.Iris.Model
             End If
 
             Return texto.ToLowerInvariant()
+        End Function
+
+        ''' <summary>
+        ''' <b>Isto se parece com um endereço?</b> — duas formas, e só duas.
+        '''
+        ''' SMTP tem <c>@</c>; X.500 começa com <c>/</c>. Qualquer outra coisa é
+        ''' uma leitura que não deu certo, e leitura que não deu certo responde
+        ''' "não sei".
+        '''
+        ''' <b>Não valida endereço</b>, e não deve: rejeitar um endereço
+        ''' estranho mas verdadeiro o transformaria em "não sei", e "não sei"
+        ''' custa uma linha incerta na fila. Errar para o lado da incerteza é
+        ''' barato; errar para o lado da afirmação não é.
+        ''' </summary>
+        Friend Shared Function TemFormaDeEndereco(normal As String) As Boolean
+            If normal.Length = 0 Then Return False
+            Return normal.Contains("@"c) OrElse normal.StartsWith("/", StringComparison.Ordinal)
         End Function
 
         ''' <summary>As identidades, para a tela mostrar o que está valendo.</summary>

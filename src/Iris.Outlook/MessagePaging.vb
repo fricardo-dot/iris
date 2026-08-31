@@ -812,6 +812,17 @@ Namespace Global.Iris.Outlook
             Friend Function ConverterLinhas(bruto As Object(,)) As List(Of TableRow)
                 Dim primeira = bruto.GetLowerBound(0)
                 Dim ultima = bruto.GetUpperBound(0)
+                ' QUANTAS COLUNAS O VETOR TEM DE VERDADE.
+                '
+                ' _extras diz quantas o Columns.Add aceitou, e nao quantas o
+                ' GetArray devolveu. Um provider que aceitasse a coluna e
+                ' entregasse a linha menor daria IndexOutOfRangeException aqui, e
+                ' derrubaria a LISTAGEM -- que e exatamente o que o desenho das
+                ' colunas extras evita em todo o resto do caminho.
+                '
+                ' Nao foi observado no Outlook medido: e defesa, e nao conserto.
+                Dim largura = bruto.GetUpperBound(1) - bruto.GetLowerBound(1) + 1
+                Dim extras = Math.Min(_extras, Math.Max(0, largura - 8))
                 Dim linhas As New List(Of TableRow)(Math.Max(0, ultima - primeira + 1))
 
                 For r = primeira To ultima
@@ -826,9 +837,9 @@ Namespace Global.Iris.Outlook
                         .IsUnread = ComoBooleano(bruto(r, ColNaoLida)),
                         .MessageClass = ComoTexto(bruto(r, ColClasse)),
                         .HasAttachments = ComoBooleano(bruto(r, ColAnexo)),
-                        .SenderAddress = If(_extras > 0, ComoTexto(bruto(r, ColEnderecoDoRemetente)), ""),
-                        .ConversationId = If(_extras > 1, ComoEntryId(bruto(r, ColConversa)), ""),
-                        .ConversationIndex = If(_extras > 2, ComoEntryId(bruto(r, ColIndiceDaConversa)), "")
+                        .SenderAddress = If(extras > 0, ComoTexto(bruto(r, ColEnderecoDoRemetente)), ""),
+                        .ConversationId = If(extras > 1, ComoEntryId(bruto(r, ColConversa)), ""),
+                        .ConversationIndex = If(extras > 2, ComoEntryId(bruto(r, ColIndiceDaConversa)), "")
                     }
                     convertida.Fabricadas = Fabricadas
                     linhas.Add(convertida)

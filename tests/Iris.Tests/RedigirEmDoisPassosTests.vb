@@ -346,4 +346,51 @@ Public Class RedigirEmDoisPassosTests
         Assert.IsTrue(vm.TemMotivoParaNaoEnviar)
     End Function
 
+    ''' <summary>
+    ''' <b>Trocar de mensagem enquanto a resposta abre NÃO escreve nada.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A CORRIDA QUE A ABERTURA CRIOU</b>
+    '''
+    ''' Enquanto o envio exigia um compositor já aberto, ele era síncrono e
+    ''' não havia janela. Fazer o botão <i>abrir</i> a resposta pôs um
+    ''' <c>Await</c> no meio — e tudo que atravessa um <c>Await</c> precisa
+    ''' perguntar, do outro lado, se ainda está falando da mesma coisa.
+    '''
+    ''' A sequência era: clica em enviar na mensagem A; o compositor de A
+    ''' começa a abrir; o usuário clica na B; o <c>Trocou</c> restaura a
+    ''' resposta de B; e o envio, que lia <c>Resposta</c> do outro lado do
+    ''' <c>Await</c>, escrevia <b>a resposta de B dentro do rascunho de
+    ''' A</b>.
+    '''
+    ''' Achado por revisão externa, e não pela suíte: o teste que existia
+    ''' encenava a abertura como instantânea.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Trocar_de_mensagem_enquanto_abre_NAO_escreve() As Task
+        Dim r As New AssistenteViewModelTests.RascunhoFalso() With {
+            .PodeEditar = False, .Texto = "o que ja estava no rascunho de A"}
+        Dim p As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "O RESUMO"}
+        Dim vm = AssistenteViewModelTests.Montar(AssistenteViewModelTests.Ativacao(), p,
+                                                 AssistenteViewModelTests.Pronta(),
+                                                 Nothing, r)
+        vm.Trocou(New ItemKey("E-A", "store-1"))
+
+        Await vm.Resumir()
+        p.Texto = "A RESPOSTA DE A"
+        Await vm.Redigir()
+
+        ' O usuario clica noutra mensagem EXATAMENTE enquanto a resposta abre.
+        r.NoMeioDaAbertura = Sub() vm.Trocou(New ItemKey("E-B", "store-1"))
+
+        Await vm.EnviarParaRascunho()
+
+        Assert.AreEqual("o que ja estava no rascunho de A", r.Texto,
+            "a resposta foi escrita num rascunho que e de outra mensagem")
+        Assert.IsFalse(vm.PodeDesfazer,
+            "nada foi aplicado, entao nao pode haver desfazer armado")
+        Assert.AreNotEqual("", vm.Aviso,
+            "recusou calado: o usuario clicou e nada aconteceu sem explicacao")
+    End Function
+
 End Class

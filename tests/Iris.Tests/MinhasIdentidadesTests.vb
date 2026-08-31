@@ -209,4 +209,63 @@ Public Class MinhasIdentidadesTests
         Assert.AreEqual(Direcao.Desconhecida, eu.DirecaoDe("ricardo@empresa.com"))
     End Sub
 
+    ''' <summary>
+    ''' <b>Cadeia sem forma de endereço é "não sei", e não "do outro".</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O PISO DO VAZIO ENTRANDO PELA PORTA DOS FUNDOS</b>
+    '''
+    ''' <c>Normalizar</c> tira o nome de exibição de <c>Fulano &lt;f@x&gt;</c>.
+    ''' Numa cadeia como <c>Diretoria &lt;Regulatorio&gt;</c> ele produz
+    ''' <c>regulatorio</c> — que não está no conjunto e virava <c>DoOutro</c>.
+    '''
+    ''' Ou seja: uma leitura que não deu certo produzia uma <b>afirmação</b>,
+    ''' e a fila cobrava do dono uma resposta por causa dela. É exatamente o
+    ''' engano que <see cref="Sem_identidade_nenhuma_a_resposta_e_NAO_SEI"/>
+    ''' impede pela porta da frente.
+    '''
+    ''' Achado por revisão externa em 31/08/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cadeia_sem_forma_de_endereco_e_NAO_SEI()
+        Dim eu = Minhas("ricardo@empresa.com")
+
+        Assert.AreEqual(Direcao.Desconhecida, eu.DirecaoDe("Diretoria <Regulatorio>"),
+            "extraiu o miolo de um par de sinais e afirmou que e de outra " &
+            "pessoa -- uma leitura que nao deu certo virando fato")
+        Assert.AreEqual(Direcao.Desconhecida, eu.DirecaoDe("Caroline Abreu"),
+            "nome sem endereco nenhum nao identifica ninguem")
+        Assert.AreEqual(Direcao.Desconhecida, eu.DirecaoDe("(remetente ilegivel)"))
+    End Sub
+
+    ''' <summary>
+    ''' <b>O controle da porta:</b> a exigência de forma não pode fechar as
+    ''' duas formas que valem. SMTP tem <c>@</c>; X.500 começa com <c>/</c>.
+    ''' Sem isto, um endurecimento a mais transformaria a fila inteira em
+    ''' "não sei" e o arquivo continuaria verde.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_exigencia_de_forma_NAO_fecha_as_duas_que_valem()
+        Const x500 = "/O=EXCHANGELABS/OU=EAG/CN=RECIPIENTS/CN=abc123"
+        Dim eu = Minhas("ricardo@empresa.com", x500)
+
+        Assert.AreEqual(Direcao.Minha, eu.DirecaoDe("ricardo@empresa.com"))
+        Assert.AreEqual(Direcao.Minha, eu.DirecaoDe(x500))
+        Assert.AreEqual(Direcao.DoOutro, eu.DirecaoDe("caroline@outra.com"),
+            "endereco valido de outra pessoa continua sendo dela, e nao um " &
+            "nao-sei por excesso de cautela")
+    End Sub
+
+    ''' <summary>
+    ''' Linha solta no arquivo não vira identidade. Ele é editado à mão, e
+    ''' uma anotação virando "identidade" faria o dono casar com qualquer
+    ''' remetente que se lesse igual.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Anotacao_solta_no_arquivo_NAO_vira_identidade()
+        Dim eu = Minhas("ricardo@empresa.com", "meu email do trabalho")
+
+        Assert.AreEqual(1, eu.Quantas, "a anotacao entrou no conjunto")
+    End Sub
+
 End Class

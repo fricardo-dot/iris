@@ -701,6 +701,54 @@ Public Class CacheDatabaseTests
             End Using
         End Using
     End Sub
+    ''' <summary>
+    ''' <b>O degrau 3 → 4, sozinho.</b>
+    '''
+    ''' <c>FingirVersao3</c> existia e <b>ninguém o chamava</b>: a migração
+    ''' 3→4 só era percorrida como parte da escada que começa na versão 1, e
+    ''' o comentário do fixture prometia uma cobertura que não existia.
+    ''' Escada inteira prova que o conjunto funciona e esconde qual degrau
+    ''' quebrou — e o degrau novo é justamente o que ninguém rodou ainda.
+    '''
+    ''' Achado por revisão externa em 31/08/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_migracao_3_para_4_traz_as_colunas_da_conversa()
+        Dim falha As OpenFailure = Nothing
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"{falha}")
+            FingirVersao3(db)
+        End Using
+        SqliteConnection.ClearAllPools()
+
+        Using db = CacheDatabase.Open(Caminho(), CacheSchema.Intended(), falha)
+            Assert.IsNotNull(db, $"a migracao 3 -> 4 devia ter deixado abrir: {falha}")
+
+            For Each tabela In {"metadata_observation", "scan_stage"}
+                For Each coluna In {"conversation_id", "conversation_index", "sender_address"}
+                    Assert.IsTrue(TemColuna(db, tabela, coluna),
+                        $"{tabela}.{coluna} nao chegou pela migracao 3 -> 4")
+                Next
+            Next
+        End Using
+    End Sub
+
+    ''' <summary>A tabela tem esta coluna? Por <c>PRAGMA table_info</c>.</summary>
+    Private Shared Function TemColuna(db As CacheDatabase, tabela As String,
+                                      coluna As String) As Boolean
+        Using cmd = db.Connection.CreateCommand()
+            cmd.CommandText = $"PRAGMA table_info({tabela})"
+            Using leitor = cmd.ExecuteReader()
+                While leitor.Read()
+                    If String.Equals(leitor.GetString(1), coluna, StringComparison.Ordinal) Then
+                        Return True
+                    End If
+                End While
+            End Using
+        End Using
+        Return False
+    End Function
 
     ''' <summary>Uma pasta e uma tentativa, para a geração do teste ter a que se prender.</summary>
     Private Shared Sub Semear(db As CacheDatabase)

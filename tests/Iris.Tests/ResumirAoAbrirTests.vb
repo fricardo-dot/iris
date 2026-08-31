@@ -153,12 +153,52 @@ Public Class ResumirAoAbrirTests
     End Function
 
     ''' <summary>
+    ''' <b>A ESPERA DEIXA PASSAR — o controle positivo do caminho lento.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ESTE TESTE FALTAVA, E A FALTA DELE ESCONDEU O RECURSO INTEIRO</b>
+    '''
+    ''' Todos os testes deste arquivo zeravam <c>EsperaAntesDeResumir</c>, e
+    ''' espera zero <b>pula o <c>Delay</c></b>. O único que usava espera real
+    ''' cobrava <i>zero chamadas</i> — e zero era exatamente o que o defeito
+    ''' produzia: a espera lia um <c>CancellationTokenSource</c> que era
+    ''' <c>Nothing</c> na maior parte do tempo, estourava dentro de uma task
+    ''' que ninguém aguardava, e o resumo automático nunca acontecia.
+    '''
+    ''' Em produção a espera é 800 ms, então <b>só</b> o caminho quebrado
+    ''' rodava. A suíte inteira verde, e o recurso nunca funcionou. Achado por
+    ''' revisão externa.
+    '''
+    ''' A espera aqui é curta mas <b>não é zero</b>, que é o ponto: o
+    ''' <c>Delay</c> tem de ser percorrido de verdade.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Depois_da_ESPERA_o_resumo_acontece() As Task
+        Dim p As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "o resumo"}
+        Dim vm = Montar(p)
+        vm.EsperaAntesDeResumir = TimeSpan.FromMilliseconds(20)
+        vm.ResumirAoAbrir = True
+
+        vm.Trocou(Chave(1))
+        Await vm.EsperarOResumoAutomatico()
+
+        Assert.AreEqual(1, p.Chamadas,
+            "a espera terminou e ninguem pediu nada: o caminho lento esta quebrado")
+        Assert.AreEqual("o resumo", vm.Resultado)
+    End Function
+
+    ''' <summary>
     ''' <b>Descer a lista com a seta não dispara um pedido por linha.</b>
     '''
-    ''' Aqui a espera é real — 5 segundos — e nenhuma das trocas chega a pedir,
-    ''' porque a seguinte cancela a espera da anterior antes de haver pedido.
-    ''' Cancelar depois não serviria: requisição que saiu não volta, e o duplo
-    ''' do provedor desta base existe para lembrar disso.
+    ''' A espera é real — 5 segundos — e nenhuma das oito trocas chega a pedir,
+    ''' porque a seguinte cancela a espera da anterior <b>antes</b> de haver
+    ''' pedido. Cancelar depois não serviria: requisição que saiu não volta, e
+    ''' o duplo do provedor desta base existe para lembrar disso.
+    '''
+    ''' O controle positivo do fim usa espera <b>curta e não nula</b>, e não
+    ''' zero: com zero ele passaria pelo atalho que pula o <c>Delay</c>, e
+    ''' provaria menos do que promete — foi assim que a versão anterior deste
+    ''' teste passou com a espera inteiramente quebrada.
     ''' </summary>
     <TestMethod>
     Public Async Function Descer_a_lista_depressa_NAO_dispara_um_pedido_por_linha() As Task
@@ -175,12 +215,12 @@ Public Class ResumirAoAbrirTests
             "oito linhas atravessadas viraram pedido: a espera nao esta " &
             "segurando nada")
 
-        ' E a ultima, com a espera zerada, resume -- senao este teste passaria
-        ' num assistente que simplesmente nunca resume.
-        vm.EsperaAntesDeResumir = TimeSpan.Zero
+        vm.EsperaAntesDeResumir = TimeSpan.FromMilliseconds(20)
         vm.Trocou(Chave(9))
         Await vm.EsperarOResumoAutomatico()
-        Assert.AreEqual(1, p.Chamadas, "a linha em que se para tem de ser resumida")
+        Assert.AreEqual(1, p.Chamadas,
+            "a linha em que se PARA tem de ser resumida -- e pelo caminho da " &
+            "espera, senao este teste passaria num assistente que nunca resume")
     End Function
 
     ''' <summary>

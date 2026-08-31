@@ -899,7 +899,16 @@ Namespace Global.Iris.App.ViewModels
             ' E, se o interruptor estiver ligado, resume sozinho. Sem Await:
             ' a troca de mensagem nao pode esperar por rede. Quem precisa
             ' esperar e o teste, por EsperarOResumoAutomatico.
-            _resumoAutomatico = ResumirSozinho(_geracao)
+            '
+            ' O CTS NOVO NASCE AQUI, e o anterior morre aqui: e a troca de
+            ' mensagem que cancela a espera da mensagem anterior, e essa e a
+            ' unica coisa que impede um pedido por linha atravessada.
+            Dim anterior = _esperaDoResumo
+            _esperaDoResumo = New CancellationTokenSource()
+            anterior?.Cancel()
+            anterior?.Dispose()
+
+            _resumoAutomatico = ResumirSozinho(_geracao, _esperaDoResumo.Token)
         End Sub
 
         ''' <summary>
@@ -966,6 +975,38 @@ Namespace Global.Iris.App.ViewModels
         Private _resumoAutomatico As Task = Task.CompletedTask
 
         ''' <summary>
+        ''' <b>O cancelamento DA ESPERA — e ele não é o do voo.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O PRIMEIRO CORTE USAVA <c>_cancelamento</c>, E ISSO NÃO FUNCIONA</b>
+        '''
+        ''' <c>_cancelamento</c> é criado dentro de <c>Pedir</c> e volta a
+        ''' <c>Nothing</c> quando o voo acaba. No momento em que a espera
+        ''' começa, ele é uma de duas coisas, e as duas quebram:
+        '''
+        ''' <list type="bullet">
+        ''' <item><b><c>Nothing</c></b>, no caso comum — nenhum voo em
+        ''' andamento. <c>_cancelamento.Token</c> lança
+        ''' <c>NullReferenceException</c> dentro de uma task que ninguém
+        ''' espera, e o resumo automático simplesmente não acontece.</item>
+        ''' <item><b>o CTS do voo anterior</b>, que o <c>Cancelar()</c> do
+        ''' próprio <c>Trocou</c> acabou de cancelar. O <c>Delay</c> nasce
+        ''' cancelado, e o resumo também não acontece.</item>
+        ''' </list>
+        '''
+        ''' O recurso ficou <b>inteiramente quebrado em produção</b> — a espera
+        ''' padrão é de 800 ms, então o caminho do <c>Delay</c> é o único que
+        ''' roda lá — e a suíte ficou verde porque <b>todos</b> os testes
+        ''' zeravam a espera e pulavam o <c>Delay</c>. O único que a usava
+        ''' cobrava <i>zero chamadas</i>, e zero era o que a exceção produzia.
+        ''' Teste verde não é prova, e o controle positivo do caminho lento é
+        ''' o que faltava.
+        '''
+        ''' Achado por revisão externa em 31/08/2026.
+        ''' </summary>
+        Private _esperaDoResumo As CancellationTokenSource
+
+        ''' <summary>
         ''' O resumo automático da última troca. Existe para o teste poder
         ''' esperá-lo: na janela ninguém espera, e é isso que se quer.
         ''' </summary>
@@ -978,7 +1019,8 @@ Namespace Global.Iris.App.ViewModels
         ''' é a memória: mensagem já resumida não se resume de novo, senão
         ''' ir e voltar na lista cobra duas vezes pelo mesmo texto.
         ''' </summary>
-        Private Async Function ResumirSozinho(minha As Integer) As Task
+        Private Async Function ResumirSozinho(minha As Integer,
+                                              paradaDaEspera As CancellationToken) As Task
             If Not ResumirAoAbrir Then Return
             If _chaveAtual Is Nothing Then Return
             If TemResultado Then Return
@@ -986,7 +1028,7 @@ Namespace Global.Iris.App.ViewModels
 
             Try
                 If EsperaAntesDeResumir > TimeSpan.Zero Then
-                    Await Task.Delay(EsperaAntesDeResumir, _cancelamento.Token)
+                    Await Task.Delay(EsperaAntesDeResumir, paradaDaEspera)
                 End If
             Catch ex As OperationCanceledException
                 Return
@@ -1080,6 +1122,12 @@ Namespace Global.Iris.App.ViewModels
 
         Public Sub Cancelar()
             _cancelamento?.Cancel()
+
+            ' E A ESPERA DO RESUMO AUTOMATICO. Sao dois cancelamentos porque
+            ' sao duas coisas: um voo em andamento, e uma espera que ainda nao
+            ' virou voo. Cancelar so o primeiro deixaria o botao Cancelar sem
+            ' efeito visivel e um pedido saindo logo depois.
+            _esperaDoResumo?.Cancel()
         End Sub
 
         Private _descartado As Boolean
@@ -1110,6 +1158,16 @@ Namespace Global.Iris.App.ViewModels
             _geracao += 1
             Try
                 _cancelamento?.Cancel()
+            Catch
+            End Try
+
+            ' A ESPERA TAMBEM. Fechar a janela com uma espera pendente
+            ' deixaria um Delay vivo por ate 800 ms e um pedido saindo
+            ' DEPOIS de a tela ter sumido -- conteudo indo para fora sem
+            ' ninguem para ver o resultado.
+            Try
+                _esperaDoResumo?.Cancel()
+                _esperaDoResumo?.Dispose()
             Catch
             End Try
             If _pulso IsNot Nothing Then _pulso.Stop()
@@ -1435,6 +1493,21 @@ Namespace Global.Iris.App.ViewModels
         Public Async Function EnviarParaRascunho() As Task
             If Not TemResposta OrElse _rascunho Is Nothing Then Return
 
+            ' O QUE FOI CLICADO FICA GUARDADO ANTES DO PRIMEIRO Await.
+            '
+            ' Abrir uma resposta e assincrono, e durante ele o usuario pode
+            ' trocar de mensagem. Sem estas duas linhas, a sequencia era:
+            ' clica em enviar na mensagem A, o compositor de A comeca a abrir,
+            ' o usuario clica na mensagem B, o Trocou restaura a resposta de B,
+            ' e o codigo abaixo -- que le Resposta AGORA -- escrevia a resposta
+            ' de B dentro do rascunho aberto para A.
+            '
+            ' Achado por revisao externa em 31/08/2026. E a mesma familia da
+            ' guarda de geracao do resumo: tudo que atravessa um Await precisa
+            ' perguntar, do outro lado, se ainda esta falando da mesma coisa.
+            Dim aEnviar = Resposta
+            Dim minha = _geracao
+
             ' NAO HA RESPOSTA ABERTA? ABRE UMA.
             '
             ' O botao dizia "enviar para rascunho" e exigia que o usuario
@@ -1466,16 +1539,28 @@ Namespace Global.Iris.App.ViewModels
                     Aviso = "A resposta não abriu. Tente Responder ali em cima."
                     Return
                 End If
+
+                ' E A MENSAGEM AINDA E A MESMA? A geracao muda a cada troca, e
+                ' o rascunho que acabou de abrir e o da mensagem que estava na
+                ' tela quando o botao foi clicado -- nao o da que esta agora.
+                If minha <> _geracao Then
+                    Aviso = "Você trocou de mensagem enquanto a resposta abria. " &
+                            "Nada foi escrito; clique em Enviar para rascunho de novo."
+                    Return
+                End If
             End If
 
             ''' O QUE ESTAVA LA FICA GUARDADO, e o Desfazer o devolve. A
             ''' sessao entra junto: fechar este rascunho e abrir outro com o
             ''' mesmo texto -- os dois vazios e o caso comum -- faria o
             ''' desfazer escrever numa mensagem que nao e esta.
+            ' O TEXTO CLICADO, e nao o que esta na tela agora. Sao a mesma
+            ' coisa quando nada aconteceu no meio -- e quando algo aconteceu,
+            ' a guarda de geracao acima ja saiu fora.
             _anterior = _rascunho.Texto
             _sessaoDaRedacao = _rascunho.Sessao
-            _rascunho.Texto = Resposta
-            _aplicado = Resposta
+            _rascunho.Texto = aEnviar
+            _aplicado = aEnviar
 
             Aviso = ""
             OnPropertyChanged(NameOf(PodeDesfazer))

@@ -292,9 +292,17 @@ Public Class AssistenteViewModelTests
         ''' </summary>
         Friend Property AbrirFunciona As Boolean = True
 
+        ''' <summary>
+        ''' Roda <b>durante</b> a abertura, entre o clique e a escrita. É o
+        ''' único jeito de encenar "o usuário trocou de mensagem enquanto a
+        ''' resposta abria" sem depender de tempo.
+        ''' </summary>
+        Friend Property NoMeioDaAbertura As Action
+
         Friend Function AbrirAsync() As Task Implements IRascunho.AbrirAsync
             Aberturas += 1
             If AbrirFunciona Then PodeEditar = True
+            NoMeioDaAbertura?.Invoke()
             Return Task.CompletedTask
         End Function
 
