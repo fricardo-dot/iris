@@ -295,4 +295,108 @@ Public Class FilaViewModelTests
         End Try
     End Sub
 
+
+    ' ==================================================================
+    ' A ORDEM POR PRIORIDADE (Fase 9)
+
+    ''' <summary>
+    ''' Duas conversas com a última palavra do outro lado: uma de vinte dias e
+    ''' uma de dois.
+    ''' </summary>
+    Private Shared Function Duas() As ResultadoDaFila
+        Return Montar({Msg("velha", "cliente@fora.com", 20),
+                       Msg("nova", "outro@fora.com", 2)}, viuOsEnviados:=True)
+    End Function
+
+    Private Shared Function ComPrioridade(Optional rotulo As Func(Of ItemKey, String) = Nothing) _
+                                          As FilaViewModel
+        Return New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados) Duas(),
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc,
+            rotulo:=rotulo)
+    End Function
+
+    ''' <summary>
+    ''' <b>Por padrão, a ordem é a da idade.</b> Ela é a única que não depende de
+    ''' opinião nenhuma, e a nota é feita de pesos que ninguém mediu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_ordem_por_prioridade_vem_DESLIGADA()
+        Assert.IsFalse(ComPrioridade().PorPrioridade)
+    End Sub
+
+    ''' <summary>
+    ''' <b>O controle negativo da fase.</b> Ligar a prioridade REORDENA e não
+    ''' esconde: as mesmas linhas, com os dias intactos.
+    '''
+    ''' Uma ordenação que também filtrasse esconderia justamente o caso em que a
+    ''' nota errou — e o dono não teria como descobrir que ela errou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ligar_a_prioridade_NAO_esconde_nem_apaga_os_dias()
+        Dim vm = ComPrioridade()
+        vm.Atualizar()
+        Dim antes = vm.Minhas.Count
+        Dim diasAntes = vm.Minhas.Select(Function(l) l.Dias).OrderBy(Function(d) d).ToList()
+
+        vm.PorPrioridade = True
+
+        Assert.IsTrue(antes > 0, "controle: o cenário tinha de produzir linhas")
+        Assert.AreEqual(antes, vm.Minhas.Count, "a ordenação escondeu linha")
+        CollectionAssert.AreEqual(
+            diasAntes,
+            vm.Minhas.Select(Function(l) l.Dias).OrderBy(Function(d) d).ToList(),
+            "a ordenação mexeu nos dias")
+        Assert.IsTrue(vm.Minhas.All(Function(l) l.Espera.Length > 0),
+                      "a coluna de espera sumiu de alguma linha")
+    End Sub
+
+    ''' <summary>
+    ''' A nota vem acompanhada da conta. Um número sozinho na tela é um palpite
+    ''' com cara de conta, e o dono que discordar não terá do que discordar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Toda_linha_carrega_a_nota_E_a_conta()
+        Dim vm = ComPrioridade()
+        vm.Atualizar()
+
+        Assert.IsTrue(vm.Minhas.Count > 0)
+        For Each l In vm.Minhas
+            StringAssert.Contains(l.PorQue, "esperando")
+            StringAssert.Contains(l.PorQue, "total:")
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>A explicação bate com a ordem.</b> A mesma função que ordena é a que
+    ''' explica — duas contas separadas divergiriam, e a divergência apareceria
+    ''' como uma tela cuja explicação não corresponde à própria ordem.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_ordem_segue_a_nota_que_a_tela_mostra()
+        Dim vm = ComPrioridade()
+        vm.PorPrioridade = True
+
+        Dim pontos = vm.Minhas.Select(Function(l) l.Pontos).ToList()
+        CollectionAssert.AreEqual(pontos.OrderByDescending(Function(p) p).ToList(), pontos,
+            "a ordem na tela não é a das notas que ela mostra")
+    End Sub
+
+    ''' <summary>
+    ''' O rótulo pesa: quem espera resposta sobe na frente de quem esperou mais
+    ''' tempo sem esperar nada. Vinte dias de FYI contra dois dias de "espera
+    ''' você" — e a segunda ganha, porque a diferença entre esperar e não esperar
+    ''' é maior que a diferença entre dois dias e vinte.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Quem_espera_resposta_sobe_na_frente_da_mais_velha()
+        Dim vm = ComPrioridade(
+            Function(k) If(k.EntryId = "E-nova", "precisa_de_mim", "fyi"))
+
+        vm.PorPrioridade = True
+
+        Assert.AreEqual(2, vm.Minhas.First().Dias,
+            "a de dois dias que espera resposta não passou na frente da de vinte")
+    End Sub
+
 End Class

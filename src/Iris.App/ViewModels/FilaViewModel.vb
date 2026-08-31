@@ -36,6 +36,8 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _fuso As TimeZoneInfo
         Private ReadOnly _identidades As Func(Of MinhasIdentidades)
         Private ReadOnly _abrir As Action(Of ItemKey)
+        Private ReadOnly _rotulo As Func(Of ItemKey, String)
+        Private ReadOnly _regrasCasadas As Func(Of ItemKey, Integer)
 
         Public Sub New(montar As Func(Of MinhasIdentidades, DateTimeOffset, TimeZoneInfo,
                                        IEnumerable(Of String), MinhasIdentidades,
@@ -44,18 +46,37 @@ Namespace Global.Iris.App.ViewModels
                        identidades As Func(Of MinhasIdentidades),
                        relogio As Func(Of DateTimeOffset),
                        fuso As TimeZoneInfo,
-                       Optional abrir As Action(Of ItemKey) = Nothing)
+                       Optional abrir As Action(Of ItemKey) = Nothing,
+                       Optional rotulo As Func(Of ItemKey, String) = Nothing,
+                       Optional regrasCasadas As Func(Of ItemKey, Integer) = Nothing)
             _montar = montar
             _dispensas = If(dispensas, New DispensasDaFila())
             _identidades = If(identidades, Function() New MinhasIdentidades({}))
             _relogio = If(relogio, Function() DateTimeOffset.Now)
             _fuso = If(fuso, TimeZoneInfo.Local)
             _abrir = abrir
+            _rotulo = rotulo
+            _regrasCasadas = regrasCasadas
 
             AtualizarCommand = New RelayCommand(AddressOf Atualizar)
         End Sub
 
         Public ReadOnly Property AtualizarCommand As IRelayCommand
+
+        ''' <summary>
+        ''' <b>Ordenar pela nota, ou pela idade?</b> Desligado por padrão: a idade
+        ''' é a ordem que não depende de opinião nenhuma, e a nota é feita de pesos
+        ''' que ninguém mediu.
+        ''' </summary>
+        Public Property PorPrioridade As Boolean
+            Get
+                Return _porPrioridade
+            End Get
+            Set(value As Boolean)
+                If SetProperty(_porPrioridade, value) Then Atualizar()
+            End Set
+        End Property
+        Private _porPrioridade As Boolean
 
         ''' <summary>As conversas em que pode ser a vez do dono.</summary>
         Public ReadOnly Property Minhas As New ObservableCollection(Of LinhaNaTela)()
@@ -157,13 +178,49 @@ Namespace Global.Iris.App.ViewModels
 
             If Not r.Respondeu Then Return
 
-            For Each l In r.Minhas()
+            For Each l In NaOrdem(r.Minhas())
                 Minhas.Add(New LinhaNaTela(l, Me))
             Next
-            For Each l In r.Deles()
+            For Each l In NaOrdem(r.Deles())
                 Deles.Add(New LinhaNaTela(l, Me))
             Next
         End Sub
+
+        ''' <summary>
+        ''' <b>A ordem por prioridade REORDENA, e não esconde.</b>
+        '''
+        ''' Ligar a prioridade muda quem aparece primeiro; não muda quem aparece,
+        ''' e não tira os dias de linha nenhuma. Uma ordenação que também filtrasse
+        ''' esconderia justamente o caso em que a nota errou — e o dono não teria
+        ''' como descobrir que ela errou.
+        '''
+        ''' Desligada, a ordem é a do <see cref="FilaDeRespostas"/>: mais antiga
+        ''' primeiro. Ela é a ordem que não depende de opinião nenhuma, e por isso
+        ''' é o padrão.
+        ''' </summary>
+        Private Function NaOrdem(linhas As IEnumerable(Of LinhaDaFila)) _
+                                  As IEnumerable(Of LinhaDaFila)
+            If Not PorPrioridade Then Return linhas
+
+            ' DESEMPATE ESTAVEL, e nao "o que vier". Duas linhas com a mesma nota
+            ' trocando de lugar a cada atualizacao fariam a tela se reorganizar
+            ' sozinha, e ai ninguem acha nada duas vezes.
+            Return linhas.OrderByDescending(Function(l) Nota(l).Total).
+                          ThenByDescending(Function(l) l.Dias).
+                          ThenBy(Function(l) l.Assunto, StringComparer.Ordinal)
+        End Function
+
+        ''' <summary>
+        ''' A nota de uma linha. <b>A mesma função que ordena é a que explica</b> —
+        ''' duas contas separadas divergiriam, e a divergência apareceria como uma
+        ''' tela cuja explicação não bate com a própria ordem.
+        ''' </summary>
+        Friend Function Nota(linha As LinhaDaFila) As Prioridade
+            Return PrioridadeDaFila.Pontuar(
+                linha.Dias,
+                If(_rotulo Is Nothing, "", _rotulo(linha.Chave)),
+                If(_regrasCasadas Is Nothing, 0, _regrasCasadas(linha.Chave)))
+        End Function
 
         ''' <summary>
         ''' <b>Uma frase por motivo, e elas dizem coisas diferentes.</b>
@@ -284,9 +341,22 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _linha As LinhaDaFila
         Private ReadOnly _dona As FilaViewModel
 
+        ''' <summary>
+        ''' A nota desta linha. <b>Só é produto acompanhada de
+        ''' <see cref="PorQue"/></b>: um número sozinho na tela é um palpite com
+        ''' cara de conta, e o dono que discordar não terá do que discordar.
+        ''' </summary>
+        Public ReadOnly Property Pontos As Double
+        ''' <summary>A conta aberta, em português, uma parcela por linha.</summary>
+        Public ReadOnly Property PorQue As String
+
         Friend Sub New(linha As LinhaDaFila, dona As FilaViewModel)
             _linha = linha
             _dona = dona
+
+            Dim nota = dona.Nota(linha)
+            Pontos = nota.Total
+            PorQue = nota.Explicar()
 
             ResponderCommand = New RelayCommand(Sub() dona.Abrir(linha.Chave))
             DispensarCommand = New RelayCommand(Sub() dona.Dispensar(Me))
