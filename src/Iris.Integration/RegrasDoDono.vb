@@ -76,7 +76,9 @@ Namespace Global.Iris.Integration
         End Property
 
         ''' <summary>
-        ''' As regras escritas, na ordem do arquivo, até o teto.
+        ''' As regras escritas, na ordem do arquivo. <b>Todas</b> — o teto quem
+        ''' aplica é quem monta o lote, e a frase "até o teto" que estava aqui
+        ''' contradizia o próprio parágrafo de baixo.
         '''
         ''' Uma por linha. Linha vazia e linha com <c>#</c> são ignoradas — o
         ''' cabeçalho é todo comentário, e um leitor que o engolisse acharia que
@@ -111,13 +113,22 @@ Namespace Global.Iris.Integration
         ''' dono com uma regra que ele não escreveu, e ele descobriria pelo
         ''' resultado. Devolve <c>False</c> se o arquivo já existe — nada do que
         ''' ele escreveu é tocado.
+        '''
+        ''' <b>E isso é o sistema de arquivos que garante, não um <c>Exists</c>.</b>
+        ''' Havia um <c>File.Exists</c> seguido de um <c>WriteAllLines</c>, que
+        ''' sobrescreve: se o dono criasse o arquivo entre as duas linhas, o que
+        ''' ele escreveu era truncado e substituído pelo cabeçalho. <c>CreateNew</c>
+        ''' falha se o arquivo existe, e a falha é a recusa. Achado por revisão
+        ''' externa em 31/08/2026.
         ''' </summary>
         Public Function Semear() As Boolean
             Try
-                If File.Exists(_caminho) Then Return False
-
                 Directory.CreateDirectory(Path.GetDirectoryName(_caminho))
-                File.WriteAllLines(_caminho, {
+
+                Using fs As New FileStream(_caminho, FileMode.CreateNew,
+                                           FileAccess.Write, FileShare.None)
+                    Using sw As New StreamWriter(fs, Encoding.UTF8)
+                        For Each linha In {
                     "# As suas regras, uma por linha, no maximo " & Maximo & ".",
                     "#",
                     "# Cada linha e uma PERGUNTA DE SIM OU NAO sobre a mensagem. O Iris",
@@ -135,7 +146,11 @@ Namespace Global.Iris.Integration
                     "#",
                     "# Uma regra vaga produz resultado vago -- e voce so descobre",
                     "# olhando a fila. Prefira a frase que voce diria em voz alta.",
-                    "#"}, Encoding.UTF8)
+                    "#"}
+                            sw.WriteLine(linha)
+                        Next
+                    End Using
+                End Using
                 Return True
             Catch
                 Return False

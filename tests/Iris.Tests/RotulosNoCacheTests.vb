@@ -521,4 +521,47 @@ Public Class RotulosNoCacheTests
                End Sub)
     End Sub
 
+    ''' <summary>
+    ''' <b>Lote vazio na geração errada não pode dizer que gravou.</b>
+    '''
+    ''' A saída do lote vazio vinha <i>antes</i> da conferência da geração, e
+    ''' devolvia <c>Gravou = True</c>. Assim "gravei zero rótulos na geração
+    ''' certa" e "recusei porque a geração está velha" saíam com a mesma cara —
+    ''' e a propriedade documentada diz que o segundo é falso. Achado por
+    ''' revisão externa em 31/08/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Lote_VAZIO_na_geracao_errada_nao_diz_que_gravou()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a"}, rodada:=1)
+                   Dim velha = GeracaoPublicada(db, pasta)
+                   Varrer(db, "f-1", {"a"}, rodada:=2, existente:=pasta)
+
+                   Dim r = New RotulosNoCache(db).Gravar(
+                       pasta, velha, "ativacao-1", Quando,
+                       New Dictionary(Of String, String)(), Nothing)
+
+                   Assert.IsFalse(r.Gravou)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' E o contraponto: lote vazio na geração <b>certa</b> gravou zero, e isso
+    ''' não é recusa. Sem este, a guarda acima poderia virar "vazio sempre
+    ''' falha" e ninguém notaria.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Lote_VAZIO_na_geracao_certa_gravou_zero()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a"}, rodada:=1)
+
+                   Dim r = New RotulosNoCache(db).Gravar(
+                       pasta, GeracaoPublicada(db, pasta), "ativacao-1", Quando,
+                       New Dictionary(Of String, String)(), Nothing)
+
+                   Assert.IsTrue(r.Gravou)
+                   Assert.AreEqual(0, r.Entraram)
+               End Sub)
+    End Sub
+
 End Class

@@ -25,6 +25,7 @@ Casos reais desta base, todos custando tempo de depuração:
 | `destino` | função `Destino()` | "tipo não pode ser inferido" |
 | `Contatos` | módulo `Contatos` do modelo | "ForaDoAlcance não é membro de ObservableCollection" |
 | `anexado` | função `Anexado()` | "tipo não pode ser inferido" |
+| `confianca` | função `Confianca()` | "Double não pode ser indexado" |
 | `lote` | função `Lote()` do teste | "tipo não pode ser inferido a partir de expressão contendo `lote`" |
 | `chave` | função `Chave()` do teste | "argumento não especificado para o parâmetro `id`" |
 

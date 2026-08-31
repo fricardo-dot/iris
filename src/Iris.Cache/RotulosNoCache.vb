@@ -77,25 +77,43 @@ Namespace Global.Iris.Cache
                                Optional regras As IReadOnlyDictionary(Of String, IReadOnlyList(Of String)) = Nothing) _
                                As ResultadoDaGravacao
 
-            If rotulos Is Nothing OrElse rotulos.Count = 0 Then Return ResultadoDaGravacao.Nada()
-
-            ' SO NA GERACAO PUBLICADA DESTA PASTA.
-            '
-            ' As duas chaves estrangeiras eram conferidas em separado, e nada
-            ' ligava uma a outra: dava para gravar a encarnacao da pasta A na
-            ' geracao da pasta B, e o registro ficava estruturalmente valido e
-            ' invisivel. Dava tambem para classificar uma geracao que deixou de
-            ' ser publicada enquanto o lote estava em voo -- e ai o trabalho
-            ' inteiro sumia sem ninguem saber.
-            '
-            ' Achado por revisao externa em 31/08/2026.
-            If Not EhAPublicada(folderKey, geracao) Then
-                Return ResultadoDaGravacao.GeracaoErrada()
-            End If
-
             Dim gravados = 0
             Dim foraDaPasta = 0
-            Using tx = _conn.BeginTransaction()
+
+            ' A TRANSACAO COMECA ANTES DA CONFERENCIA, e IMEDIATA.
+            '
+            ' A conferencia da geracao ficava fora da transacao, e entre ela e o
+            ' commit cabia uma publicacao de outra conexao: a chamada confirmava
+            ' G1, alguem publicava G2, e os rotulos entravam em G1 e ficavam
+            ' invisiveis -- com Gravou = True. Era exatamente o cenario que o
+            ' comentario abaixo dizia impedir. Achado por revisao externa em
+            ' 31/08/2026.
+            '
+            ' Deferred = False emite BEGIN IMMEDIATE: a trava de escrita e tomada
+            ' agora, e nao no primeiro INSERT. Com BEGIN comum, a leitura da
+            ' geracao aconteceria sob trava compartilhada e outra conexao ainda
+            ' poderia publicar entre ela e a escrita.
+            Using tx = _conn.BeginTransaction(Data.IsolationLevel.Serializable, deferred:=False)
+
+                ' SO NA GERACAO PUBLICADA DESTA PASTA.
+                '
+                ' As duas chaves estrangeiras eram conferidas em separado, e nada
+                ' ligava uma a outra: dava para gravar a encarnacao da pasta A na
+                ' geracao da pasta B, e o registro ficava estruturalmente valido e
+                ' invisivel.
+                '
+                ' E ISTO VEM ANTES DO LOTE VAZIO. Antes o lote vazio devolvia
+                ' Nada(), que diz Gravou = True, sem nem olhar a geracao -- e ai
+                ' "gravei zero rotulos na geracao certa" e "recusei porque a
+                ' geracao esta velha" saiam com a mesma cara.
+                If Not EhAPublicada(tx, folderKey, geracao) Then
+                    Return ResultadoDaGravacao.GeracaoErrada()
+                End If
+
+                If rotulos Is Nothing OrElse rotulos.Count = 0 Then
+                    Return ResultadoDaGravacao.Nada()
+                End If
+
                 For Each par In rotulos
                     Dim incarnation = IncarnationDe(tx, folderKey, par.Key)
                     If Not incarnation.HasValue Then
@@ -167,8 +185,10 @@ Namespace Global.Iris.Cache
         End Function
 
         ''' <summary>Esta geração é a publicada <b>desta</b> pasta?</summary>
-        Private Function EhAPublicada(folderKey As Long, geracao As Long) As Boolean
+        Private Function EhAPublicada(tx As SqliteTransaction,
+                                      folderKey As Long, geracao As Long) As Boolean
             Using cmd = _conn.CreateCommand()
+                cmd.Transaction = tx
                 cmd.CommandText =
                     "SELECT 1 FROM folder " &
                     "WHERE folder_key = $f AND published_generation_key = $g"
