@@ -54,6 +54,21 @@ Namespace Global.Iris.Integration
     ''' resposta: o texto continua valendo e aparece <i>sem</i> fontes, que é
     ''' honesto. Descartar a resposta por causa da citação daria a um e-mail o
     ''' poder de apagar a resposta a uma pergunta que o dono fez.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O QUE ESTA CLASSE NÃO GARANTE</b>
+    '''
+    ''' Ela escolhe as fontes e as entrega a uma borda. <b>Essa borda ainda não
+    ''' existe</b> — como o resto do caminho de assistência, ela está declarada
+    ''' como pendência no §28.2, porque não há para onde mandar. Os únicos
+    ''' chamadores hoje são os testes.
+    '''
+    ''' Isso limita o que a suíte prova: que a etapa 1 entrega no máximo oito
+    ''' chaves escolhidas aqui dentro. <b>Não prova</b> que a etapa 2 leia só
+    ''' aquelas — uma borda que enumerasse a caixa inteira passaria em todos os
+    ''' testes deste arquivo. A garantia "só sai o que a etapa 1 escolheu" vale
+    ''' até a fronteira do delegate, e quem escrever a borda herda o resto dela.
+    ''' Achado por revisão externa em 31/08/2026.
     ''' </summary>
     Public NotInheritable Class PerguntarAoAcervo
 
@@ -98,16 +113,23 @@ Namespace Global.Iris.Integration
         Public Function Responder(pergunta As String,
                                   perguntar As Perguntar) As RespostaDoAcervo
 
+            ' A COBERTURA E CALCULADA PRIMEIRO, e vale para toda saida daqui.
+            '
+            ' As duas recusas de entrada devolviam cobertura vazia, e o contrato de
+            ' RespostaDoAcervo diz que ela vem sempre. Um contrato com excecao
+            ' escondida no codigo e o mesmo que nao ter contrato. Achado por
+            ' revisao externa em 31/08/2026.
+            Dim cobertura = Cobrimento()
+
             If String.IsNullOrWhiteSpace(pergunta) Then
-                Return RespostaDoAcervo.Recusa(MotivoDaResposta.PerguntaVazia, "")
+                Return RespostaDoAcervo.Recusa(MotivoDaResposta.PerguntaVazia, cobertura)
             End If
             If perguntar Is Nothing Then
-                Return RespostaDoAcervo.Recusa(MotivoDaResposta.SemABorda, "")
+                Return RespostaDoAcervo.Recusa(MotivoDaResposta.SemABorda, cobertura)
             End If
 
             ' ETAPA 1: SO METADADO, SO AQUI DENTRO. Nada saiu ainda.
             Dim escolhidos = Candidatos(pergunta)
-            Dim cobertura = Cobrimento()
 
             If escolhidos.Count = 0 Then
                 ' NAO ACHAR NAO E "NAO EXISTE", e por isso nao se pergunta nada:
@@ -140,6 +162,14 @@ Namespace Global.Iris.Integration
             Dim citadas As IReadOnlyList(Of ItemKey) = Nothing
             Dim limpo = SemAsFontes(bruto, lote, escolhidos, citadas)
 
+            ' SO A LINHA DAS FONTES NAO E RESPOSTA. A conferencia de vazio ficava
+            ' antes de tirar a linha, entao uma resposta inteirinha feita de
+            ' "FONTES: ..." virava um sucesso com texto vazio -- e a tela mostraria
+            ' um retangulo em branco como se fosse a resposta.
+            If limpo.Length = 0 Then
+                Return RespostaDoAcervo.Recusa(MotivoDaResposta.SemResposta, cobertura)
+            End If
+
             Return RespostaDoAcervo.Feita(limpo, escolhidos, citadas, cobertura)
         End Function
 
@@ -165,10 +195,26 @@ Namespace Global.Iris.Integration
                                             ByRef citadas As IReadOnlyList(Of ItemKey)) As String
             citadas = Array.Empty(Of ItemKey)()
 
-            Dim linhas = bruto.Split({Environment.NewLine, vbLf}, StringSplitOptions.None).ToList()
-            Dim qual = linhas.FindLastIndex(
-                Function(l) l.TrimStart().StartsWith(MarcaDasFontes, StringComparison.Ordinal))
-            If qual < 0 Then Return bruto.Trim()
+            ' A ULTIMA LINHA NAO VAZIA, e nao "qualquer linha que comece assim".
+            '
+            ' Com FindLastIndex sobre o texto todo, uma resposta que contivesse
+            ' "FONTES: principais riscos do contrato" no meio perdia essa linha e
+            ' ainda ficava sem citacao -- o programa apagando um pedaco da resposta
+            ' que o dono pediu. Achado por revisao externa em 31/08/2026.
+            '
+            ' O CR sozinho tambem separa: ha modelo que devolve so ele, e uma
+            ' resposta assim viraria uma linha unica em que a marca fica no fim.
+            Dim linhas = bruto.Split({vbCrLf, vbLf, vbCr}, StringSplitOptions.None).ToList()
+
+            Dim qual = linhas.Count - 1
+            While qual >= 0 AndAlso linhas(qual).Trim().Length = 0
+                qual -= 1
+            End While
+
+            If qual < 0 OrElse Not linhas(qual).TrimStart().
+                                StartsWith(MarcaDasFontes, StringComparison.Ordinal) Then
+                Return bruto.Trim()
+            End If
 
             Dim daLinha = linhas(qual).Trim().Substring(MarcaDasFontes.Length)
             linhas.RemoveAt(qual)
@@ -225,7 +271,18 @@ Namespace Global.Iris.Integration
 
             For Each palavra In Palavras(pergunta)
                 For Each a In _busca.Procurar(palavra).Achados
-                    Dim chave As New ItemKey(a.Item.ProviderEntryId, Loja(a.FolderKey))
+                    ' CHAVE PELA METADE NAO SAI DAQUI.
+                    '
+                    ' ItemKey.IsEmpty olha so o EntryId, e a Loja devolve vazio quando
+                    ' a pasta sumiu do retrato entre a busca e agora. Uma chave sem
+                    ' loja e exatamente a que faz a borda pedir o corpo da mensagem
+                    ' errada -- duas caixas podem repetir o EntryID. O comentario da
+                    ' Loja ja dizia isso e o codigo deixava passar. Achado por revisao
+                    ' externa em 31/08/2026.
+                    Dim daLoja = Loja(a.FolderKey)
+                    If daLoja.Length = 0 Then Continue For
+
+                    Dim chave As New ItemKey(a.Item.ProviderEntryId, daLoja)
                     If chave.IsEmpty Then Continue For
 
                     If quantasVezes.ContainsKey(chave) Then
@@ -253,14 +310,22 @@ Namespace Global.Iris.Integration
         ''' português seria mais precisa e teria de ser mantida, e errar por
         ''' procurar demais custa uma vaga — errar por procurar de menos custa a
         ''' resposta.
+        '''
+        ''' <b>Normalizadas como a busca as normaliza</b>, e não com
+        ''' <c>OrdinalIgnoreCase</c>. A busca é insensível a acento; o comparador
+        ''' era só a maiúsculas, então <i>"João joao contrato"</i> virava três
+        ''' palavras e a mesma mensagem contava dois pontos pela mesma palavra. A
+        ''' ordem das fontes saía errada por uma diferença que a busca nem enxerga.
+        ''' Achado por revisão externa em 31/08/2026.
         ''' </summary>
         Private Shared Function Palavras(pergunta As String) As IReadOnlyList(Of String)
             Return pergunta.
                    Split({" "c, ","c, ";"c, ":"c, "?"c, "!"c, "."c,
                           vbCr(0), vbLf(0), vbTab(0)},
                          StringSplitOptions.RemoveEmptyEntries).
+                   Select(AddressOf TermoDeBusca.Normalizar).
                    Where(Function(p) p.Length >= 3).
-                   Distinct(StringComparer.OrdinalIgnoreCase).
+                   Distinct(StringComparer.Ordinal).
                    ToList()
         End Function
 
@@ -295,13 +360,21 @@ Namespace Global.Iris.Integration
             If todas = 0 Then
                 Return "Nenhuma pasta no acervo ainda. Varra alguma antes de perguntar."
             End If
+            ' "SEM GERACAO PUBLICADA" NAO E "NUNCA VARRIDA".
+            '
+            ' Pode ser varredura cancelada, falhada ou recusada -- o proprio
+            ' cabecalho da BuscaNoAcervo diz isso. Escrever "nunca foi varrida"
+            ' afirmava mais do que o estado permite, numa frase cujo trabalho e
+            ' justamente nao afirmar demais. Achado por revisao externa em
+            ' 31/08/2026.
             If varridas = 0 Then
-                Return $"Nenhuma das {todas} pasta(s) conhecidas foi varrida: " &
-                       "não há acervo sobre o que responder."
+                Return $"Nenhuma das {todas} pasta(s) conhecidas tem varredura " &
+                       "publicada: não há acervo sobre o que responder."
             End If
             If varridas < todas Then
-                Return $"Procurei em {varridas} de {todas} pasta(s). As outras nunca " &
-                       "foram varridas, e o que estiver nelas não entrou nesta resposta."
+                Return $"Procurei em {varridas} de {todas} pasta(s). As outras não " &
+                       "têm varredura publicada, e o que estiver nelas não entrou " &
+                       "nesta resposta."
             End If
             Return $"Procurei nas {todas} pasta(s) varridas."
         End Function

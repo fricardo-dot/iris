@@ -106,11 +106,16 @@ Public Class PerguntarAoAcervoTests
     End Sub
 
     ''' <summary>
-    ''' Pasta conhecida e nunca varrida não é pasta vazia. "Não achei nada" e
-    ''' "ninguém olhou" não podem chegar ao dono com a mesma cara.
+    ''' Pasta conhecida e sem varredura publicada não é pasta vazia. "Não achei
+    ''' nada" e "ninguém olhou" não podem chegar ao dono com a mesma cara.
+    '''
+    ''' <b>E a frase não diz "nunca foi varrida"</b>: pode ser varredura
+    ''' cancelada, falhada ou recusada — o cabeçalho da <c>BuscaNoAcervo</c> diz
+    ''' isso, e afirmar mais do que o estado permite é o defeito exato que esta
+    ''' frase existe para não cometer.
     ''' </summary>
     <TestMethod>
-    Public Sub Pasta_nunca_varrida_aparece_na_cobertura()
+    Public Sub Pasta_sem_varredura_publicada_aparece_na_cobertura()
         Comigo(Sub(db)
                    ' Duas pastas conhecidas; so uma varrida.
                    Varrer(db, "f-1", {"contrato do joao"})
@@ -122,7 +127,10 @@ Public Class PerguntarAoAcervoTests
                        "contrato", Function(pergunta, fontes) "respondi")
 
                    StringAssert.Contains(r.Cobertura, "1 de 2")
-                   StringAssert.Contains(r.Cobertura, "nunca")
+                   StringAssert.Contains(r.Cobertura, "não têm varredura publicada")
+                   Assert.IsFalse(r.Cobertura.Contains("nunca"),
+                       "a frase afirma que ninguém varreu, e o acervo só sabe que " &
+                       "não há geração publicada")
                End Sub)
     End Sub
 
@@ -377,6 +385,97 @@ Public Class PerguntarAoAcervoTests
                        End Function)
 
                    Assert.AreEqual("contrato assinado joao", primeira)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' A cobertura vem <b>sempre</b>, inclusive nas recusas de entrada. O
+    ''' contrato dizia isso e o código tinha duas exceções escondidas — e um
+    ''' contrato com exceção escondida é o mesmo que não ter contrato.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ate_a_recusa_de_entrada_traz_a_cobertura()
+        Comigo(Sub(db)
+                   Varrer(db, "f-1", {"contrato do joao"})
+
+                   Dim vazia = Perguntador(db).Responder("  ", Function(p, f) "x")
+                   Dim semBorda = Perguntador(db).Responder("contrato", Nothing)
+
+                   Assert.IsTrue(vazia.Cobertura.Length > 0)
+                   Assert.IsTrue(semBorda.Cobertura.Length > 0)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Só a linha das fontes não é resposta.</b> A conferência de vazio
+    ''' ficava antes de tirar a linha, então uma resposta inteirinha feita de
+    ''' "FONTES: ..." virava sucesso com texto vazio — e a tela mostraria um
+    ''' retângulo em branco como se fosse a resposta.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Resposta_feita_SO_da_linha_de_fontes_nao_e_resposta()
+        Comigo(Sub(db)
+                   Varrer(db, "f-1", {"contrato do joao"})
+
+                   Dim r = Perguntador(db).Responder(
+                       "contrato",
+                       Function(pergunta, fontes)
+                           Return PerguntarAoAcervo.MarcaDasFontes & " " &
+                                  fontes.Single().Ficha
+                       End Function)
+
+                   Assert.AreEqual(MotivoDaResposta.SemResposta, r.Motivo)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A marca no meio do texto é texto.</b> Com a busca pela última
+    ''' ocorrência em qualquer posição, uma resposta que dissesse "FONTES:
+    ''' principais riscos do contrato" perdia essa linha — o programa apagando
+    ''' um pedaço da resposta que o dono pediu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_marca_no_MEIO_do_texto_nao_e_a_linha_das_fontes()
+        Comigo(Sub(db)
+                   Varrer(db, "f-1", {"contrato do joao"})
+
+                   Dim r = Perguntador(db).Responder(
+                       "contrato",
+                       Function(pergunta, fontes)
+                           Return "FONTES: principais riscos do contrato" &
+                                  Environment.NewLine & "ele assina na terça."
+                       End Function)
+
+                   StringAssert.Contains(r.Texto, "principais riscos")
+                   StringAssert.Contains(r.Texto, "assina na terça")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>"João" e "joao" são a mesma palavra para a busca</b>, e passaram a ser
+    ''' a mesma aqui. O comparador era só a maiúsculas, e a mesma mensagem
+    ''' contava dois pontos pela mesma palavra — a ordem das fontes saía errada
+    ''' por uma diferença que a busca nem enxerga.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Acento_e_caixa_nao_fazem_a_mesma_palavra_contar_duas_vezes()
+        Comigo(Sub(db)
+                   Varrer(db, "f-1", {"joao sozinho", "contrato assinado"})
+                   Dim primeira = ""
+
+                   ' "João" e "joao" sao a MESMA palavra para a busca, que ignora
+                   ' acento. Contadas como duas, a
+                   ' mensagem de "joao" empata em 2 com a do contrato -- que casa
+                   ' DUAS palavras de verdade -- e ganha por chegar antes.
+                   Perguntador(db).Responder(
+                       "João joao contrato assinado",
+                       Function(pergunta, fontes)
+                           primeira = fontes.First().Chave.EntryId
+                           Return "respondi"
+                       End Function)
+
+                   Assert.AreEqual("contrato assinado", primeira,
+                       "a mesma palavra contou duas vezes e desempatou errado")
                End Sub)
     End Sub
 
