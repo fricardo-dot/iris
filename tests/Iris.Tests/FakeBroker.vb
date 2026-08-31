@@ -510,6 +510,15 @@ Friend NotInheritable Class FakeBroker
     ''' Sem store configurado continua "fora da alcada", para nao mudar o
     ''' comportamento dos testes que nunca pediram arvore nenhuma.
     ''' </summary>
+    ''' <summary>As identidades que este duplo devolve. Vazio por padrao.</summary>
+    Friend ReadOnly Identidades As New List(Of String)()
+
+    Public Function GetIdentidadesAsync(cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of String))) Implements IOutlookBroker.GetIdentidadesAsync
+        Return Task.FromResult(
+            OperationResult(Of IReadOnlyList(Of String)).Ok(Identidades))
+    End Function
+
     Public Async Function GetStoresAsync(cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of StoreInfo))) Implements IOutlookBroker.GetStoresAsync
         Chamadas.Add("GetStores")

@@ -633,6 +633,11 @@ Namespace Global.Iris.App.ViewModels
                 ' de epoca vencida apontaria para stores que ja nao existem --
                 ' e a medicao do ambiente sairia de um deles.
                 Connection.Observe(RecarregarStoresAsync(), "stores.reload")
+
+                ' E AS IDENTIDADES DO DONO. Elas dependem da sessao -- contas e
+                ' usuario da sessao vem do Outlook -- e so sao SEMEADAS, nunca
+                ' reescritas: o arquivo e do dono, e ele corrige o que faltar.
+                Connection.Observe(SemearIdentidadesAsync(), "identidades.semear")
             Else
                 Folders.Clear()
                 Messages.Clear()
@@ -648,6 +653,48 @@ Namespace Global.Iris.App.ViewModels
                 Connection.Observe(_watcher.UnwatchAsync(), "watcher.unwatch")
             End If
         End Sub
+
+        ''' <summary>
+        ''' <b>Semeia as identidades do dono — uma vez, e só se der.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE ISTO NÃO PODE VIRAR "GRAVOU, ACABOU"</b>
+        '''
+        ''' Um primeiro arranque com o Outlook meio acordado devolve lista
+        ''' vazia ou incompleta. Gravar mesmo assim congelaria uma semente ruim
+        ''' <b>para sempre</b>, porque a semeadura só acontece quando o arquivo
+        ''' não existe — e o sintoma seria a fila cinza, sem nada na tela
+        ''' explicando por quê.
+        '''
+        ''' Por isso: lista vazia <b>não escreve</b>, e a tentativa se repete na
+        ''' próxima conexão. É a mesma regra do <c>Semear</c> lá embaixo, e
+        ''' morar nos dois lugares é de propósito — quem chama não deve
+        ''' depender de quem é chamado para não estragar o arquivo do dono.
+        '''
+        ''' Falha do Outlook aqui não vira aviso na tela: identidade nenhuma faz
+        ''' a fila responder "não sei", que é um estado declarado e legível, e
+        ''' não um erro que o usuário não pediu para ver na abertura.
+        ''' </summary>
+        Private Async Function SemearIdentidadesAsync() As Task
+            Dim arquivo As New IdentidadesEmArquivo()
+            If arquivo.Existe Then
+                Identidades = arquivo.Ler()
+                Return
+            End If
+
+            Dim r = Await _broker.GetIdentidadesAsync(Threading.CancellationToken.None)
+            If Not r.Succeeded OrElse r.Value Is Nothing OrElse r.Value.Count = 0 Then Return
+
+            arquivo.Semear(r.Value)
+            Identidades = arquivo.Ler()
+        End Function
+
+        ''' <summary>
+        ''' <b>Quem é "eu" numa mensagem.</b> Vazio até a semeadura acontecer, e
+        ''' vazio responde <c>Desconhecida</c> para tudo — que é o certo: sem
+        ''' saber quem é o dono, nenhuma direção pode ser afirmada.
+        ''' </summary>
+        Public Property Identidades As MinhasIdentidades = New MinhasIdentidades({})
 
         ''' <summary>
         ''' Selecionar uma pasta é o que dispara a lista. A pasta manda; a

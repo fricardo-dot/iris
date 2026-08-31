@@ -575,6 +575,20 @@ Namespace Global.Iris.Outlook
         ' Leitura
         ' ===================================================================
 
+        ''' <summary>
+        ''' Leitura pura: só consulta contas e usuário da sessão, e por isso vai
+        ''' por <c>ReadAsync</c>, com retry, como manda o contrato.
+        ''' </summary>
+        Public Async Function GetIdentidadesAsync(cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of String))) Implements IOutlookBroker.GetIdentidadesAsync
+
+            Return Await ReadAsync(Of IReadOnlyList(Of String))(
+                "outlook.getIdentidades",
+                Function(app, ns) OperationResult(Of IReadOnlyList(Of String)).Ok(
+                                      IdentidadesDoDono.Ler(ns)),
+                cancel)
+        End Function
+
         Public Async Function GetStoresAsync(cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of StoreInfo))) Implements IOutlookBroker.GetStoresAsync
 

@@ -228,6 +228,25 @@ Namespace Global.Iris.Core
 
         ' ---- Leitura ----------------------------------------------------
 
+        ''' <summary>
+        ''' <b>Os endereços pelos quais o dono desta caixa envia.</b>
+        '''
+        ''' Serve para uma pergunta só: <i>quem escreveu a última mensagem
+        ''' desta conversa?</i> — que é o que separa "estou esperando alguém" de
+        ''' "alguém está me esperando".
+        '''
+        ''' Vem em <b>mais de uma forma</b>, e de propósito: numa organização
+        ''' Exchange o remetente de uma mensagem interna é um endereço X.500, e
+        ''' as internas são justamente as que enchem a fila. Só o SMTP faria as
+        ''' mensagens do próprio dono aparecerem como sendo de terceiros.
+        '''
+        ''' <b>Não sabe alias, caixa compartilhada nem delegação.</b> O que sai
+        ''' daqui é um começo para o dono corrigir, e não a verdade — e é por
+        ''' isso que o destino é um arquivo editável, e não uma decisão.
+        ''' </summary>
+        Function GetIdentidadesAsync(cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of String)))
+
         Function GetStoresAsync(cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of StoreInfo)))
 

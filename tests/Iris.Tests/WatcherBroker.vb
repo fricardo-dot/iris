@@ -116,6 +116,11 @@ Friend NotInheritable Class WatcherBroker
         Throw New NotSupportedException("O watcher não deveria chamar isto.")
     End Function
 
+    Public Function GetIdentidadesAsync(cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of String))) Implements IOutlookBroker.GetIdentidadesAsync
+        Return Fora(Of OperationResult(Of IReadOnlyList(Of String)))()
+    End Function
+
     Public Function GetStoresAsync(cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of StoreInfo))) Implements IOutlookBroker.GetStoresAsync
         Return Fora(Of OperationResult(Of IReadOnlyList(Of StoreInfo)))()
