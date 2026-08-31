@@ -35,6 +35,7 @@
     </WindowChrome.WindowChrome>
 
     <Window.Resources>
+        <app:CorDaEspera x:Key="CorDaEspera" />
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
         <app:InverseBoolToVisibility x:Key="NotBoolToVis" />
         <app:NullToVisibility x:Key="NullToVis" />
@@ -169,6 +170,69 @@
                            ToolTip="{Binding Subject}" />
             </Grid>
         </DataTemplate>
+        <!-- UMA LINHA DA FILA DE RESPOSTAS.
+
+             OS DIAS APARECEM POR EXTENSO, ao lado da cor. A faixa e um corte
+             sobre um numero, e quem discorda do corte precisa conseguir
+             conferir o numero — senao a cor vira a unica coisa dita, e ela
+             nao explica de onde veio.
+
+             As tres acoes ficam na linha, e nao num menu: "nao exige
+             resposta" e o que limpa a fila, e acao escondida nao limpa nada.
+
+             O ESTADO E TEXTO, e diz "Possivel resposta" e nao "Precisa de
+             voce": o Iris sabe quem falou por ultimo, e nao se aquilo pede
+             resposta. -->
+        <DataTemplate x:Key="Fila.Linha">
+            <Border BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                    BorderThickness="0,0,0,1" Padding="0,8">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0" Text="{Binding Espera}"
+                               MinWidth="90" VerticalAlignment="Center"
+                               FontFamily="Consolas"
+                               Foreground="{Binding Faixa, Converter={StaticResource CorDaEspera}}"
+                               AutomationProperties.Name="Tempo de espera" />
+
+                    <StackPanel Grid.Column="1" Margin="8,0,8,0">
+                        <TextBlock Text="{Binding Quem}"
+                                   Style="{DynamicResource Text.Body}"
+                                   FontWeight="SemiBold"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Assunto}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   TextTrimming="CharacterEllipsis" />
+                        <TextBlock Text="{Binding Estado}"
+                                   Style="{DynamicResource Text.Muted}" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="2" Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <Button Content="Abrir"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding ResponderCommand}"
+                                AutomationProperties.Name="Abrir a mensagem" />
+                        <Button Content="Não exige resposta"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding DispensarCommand}"
+                                Margin="6,0,0,0"
+                                AutomationProperties.Name="Dispensar esta conversa" />
+                        <Button Content="Ignorar remetente"
+                                Style="{DynamicResource Toolbar.Button}"
+                                Command="{Binding IgnorarRemetenteCommand}"
+                                Margin="6,0,0,0"
+                                ToolTip="Conversas encerradas por este remetente deixam de aparecer"
+                                AutomationProperties.Name="Ignorar este remetente" />
+                    </StackPanel>
+                </Grid>
+            </Border>
+        </DataTemplate>
+
     </Window.Resources>
 
     <Border x:Name="RootBorder">
@@ -276,6 +340,13 @@
                              os simbolos do proprio Windows, e nao desenho meu:
                              icone que o usuario ja viu em outro lugar nao
                              precisa ser aprendido. -->
+                        <!-- A FILA DE RESPOSTAS. E8BD e o relogio: a pergunta
+                             desta tela e "ha quanto tempo", e nao "o que". -->
+                        <Button Style="{StaticResource CaptionButton}"
+                                Content="&#xE823;"
+                                Command="{Binding AlternarFilaCommand}"
+                                ToolTip="Quem está esperando resposta"
+                                AutomationProperties.Name="Abrir ou fechar a fila de respostas" />
                         <Button Style="{StaticResource CaptionButton}"
                                 Content="&#xE8FD;"
                                 Command="{Binding AlternarTarefasCommand}"
@@ -780,6 +851,85 @@
                 aberto. Prender o usuario dentro do compositor seria trocar
                 um problema de foco por um de saida.
             -->
+            <!-- A FILA DE RESPOSTAS PENDENTES.
+
+                 Mesmo padrao das outras tres: botao na barra, painel por cima,
+                 clique fora fecha. Painel e nao faixa, mesmo sendo a tela que
+                 se abre de manha: faixa fixa cobrando pendencia o dia inteiro
+                 vira paisagem, e paisagem nao se le.
+
+                 A FRASE VEM ANTES DAS LISTAS, e nao depois. Ela e a parte que
+                 mais importa: lista vazia sem frase deixa o dono concluir "nao
+                 tenho nada", e esse e o unico desfecho que esta tela nao pode
+                 produzir por engano. As listas so aparecem quando a fila
+                 conseguiu responder — zero linhas ao lado de "nao sei" seria
+                 a contradicao na tela. -->
+            <Grid Grid.Row="1" Panel.ZIndex="11"
+                  Visibility="{Binding FilaAberta, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}">
+
+                <Rectangle Fill="#99000000">
+                    <Rectangle.InputBindings>
+                        <MouseBinding MouseAction="LeftClick"
+                                      Command="{Binding FecharFilaCommand}" />
+                    </Rectangle.InputBindings>
+                </Rectangle>
+
+                <Border Background="{DynamicResource Brush.Surface.1}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Card}"
+                        MaxWidth="900" Margin="28"
+                        VerticalAlignment="Top"
+                        Padding="20,16,20,18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="QUEM ESTÁ ESPERANDO"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <Button Content="Atualizar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Fila.AtualizarCommand}"
+                                    Margin="16,0,0,0"
+                                    AutomationProperties.Name="Reler a fila" />
+                            <Button Content="Fechar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding FecharFilaCommand}"
+                                    Margin="6,0,0,0"
+                                    AutomationProperties.Name="Fechar a fila" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding Fila.Frase}"
+                                   Style="{DynamicResource Text.Body}"
+                                   TextWrapping="Wrap"
+                                   AutomationProperties.Name="Situacao da fila" />
+
+                        <TextBlock Text="{Binding Fila.Ressalva}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   TextWrapping="Wrap" Margin="0,6,0,0"
+                                   Visibility="{Binding Fila.TemRessalva,
+                                                        Converter={StaticResource BoolToVis},
+                                                        FallbackValue=Collapsed}"
+                                   AutomationProperties.Name="O que ficou fora da fila" />
+
+                        <StackPanel Visibility="{Binding Fila.Respondeu,
+                                                         Converter={StaticResource BoolToVis},
+                                                         FallbackValue=Collapsed}">
+
+                            <TextBlock Text="PODE SER A SUA VEZ" Margin="0,14,0,4"
+                                       Style="{DynamicResource Text.Muted}" />
+                            <ItemsControl ItemsSource="{Binding Fila.Minhas}"
+                                          ItemTemplate="{StaticResource Fila.Linha}" />
+
+                            <TextBlock Text="VOCÊ ESTÁ ESPERANDO" Margin="0,14,0,4"
+                                       Style="{DynamicResource Text.Muted}" />
+                            <ItemsControl ItemsSource="{Binding Fila.Deles}"
+                                          ItemTemplate="{StaticResource Fila.Linha}" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
             <!-- ============ TAREFAS (painel) ============
 
                  Era uma faixa fixa no rodape da janela, numa linha propria

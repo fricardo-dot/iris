@@ -66,7 +66,8 @@ Namespace Global.Iris.Integration
                                agora As DateTimeOffset,
                                fuso As TimeZoneInfo,
                                pastaDosEnviados As Long?,
-                               dispensadas As IEnumerable(Of String)) As ResultadoDaFila
+                               dispensadas As IEnumerable(Of String),
+                               Optional remetentesIgnorados As MinhasIdentidades = Nothing) As ResultadoDaFila
 
             Dim mensagens As New List(Of MensagemNaFila)()
             Dim viuOsEnviados = False
@@ -98,7 +99,28 @@ Namespace Global.Iris.Integration
             Next
 
             Return FilaDeRespostas.Montar(mensagens, eu, agora, fuso,
-                                          viuOsEnviados, dispensadas)
+                                          viuOsEnviados, dispensadas,
+                                          remetentesIgnorados)
+        End Function
+
+        ''' <summary>
+        ''' <b>Qual pasta do acervo é a de itens enviados</b> — pelo nome, que é
+        ''' um palpite, e o único disponível aqui.
+        '''
+        ''' O acervo guarda nome e não papel: <c>FolderContentKind</c> distingue
+        ''' correio de agenda, e não "enviados" de "entrada". Errar aqui erra
+        ''' para o lado seguro — a fila recusa em vez de mentir —, e o dono
+        ''' varre a pasta certa e ela aparece.
+        ''' </summary>
+        Public Function AcharOsEnviados() As Long?
+            For Each pasta In _acervo.Pastas
+                For Each nome In {"Itens Enviados", "Sent Items"}
+                    If pasta.Nome.StartsWith(nome, StringComparison.OrdinalIgnoreCase) Then
+                        Return pasta.Chave
+                    End If
+                Next
+            Next
+            Return Nothing
         End Function
 
         ''' <summary>

@@ -191,6 +191,52 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property FecharTarefasCommand As IRelayCommand
 
         ''' <summary>
+        ''' <b>A fila de respostas aberta?</b> Mesmo padrão das outras três.
+        '''
+        ''' Ela é a tela que se abre de manhã, e mesmo assim é painel e não
+        ''' faixa: uma faixa fixa cobrando pendências o dia inteiro vira paisagem
+        ''' — e paisagem não se lê.
+        ''' </summary>
+        Public Property FilaAberta As Boolean
+            Get
+                Return _filaAberta
+            End Get
+            Set(value As Boolean)
+                SetProperty(_filaAberta, value)
+            End Set
+        End Property
+        Private _filaAberta As Boolean
+
+        Public ReadOnly Property AlternarFilaCommand As IRelayCommand
+        Public ReadOnly Property FecharFilaCommand As IRelayCommand
+
+        ''' <summary>A fila de respostas pendentes. <c>Nothing</c> sem cache.</summary>
+        Public Property Fila As FilaViewModel
+
+        ''' <summary>
+        ''' <b>Abrir a mensagem de uma linha da fila.</b>
+        '''
+        ''' A fila conhece a chave e não conhece a lista — ela veio do cache, e a
+        ''' lista mostra a pasta selecionada. Selecionar aqui só funciona quando a
+        ''' mensagem está na lista carregada; quando não está, a fila fecha e
+        ''' <b>diz</b> que não conseguiu, em vez de fingir que abriu.
+        ''' </summary>
+        Private Sub AbrirDaFila(chave As ItemKey)
+            If chave Is Nothing Then Return
+
+            Dim linha = Messages.Messages.FirstOrDefault(
+                Function(m) m.Key IsNot Nothing AndAlso m.Key.Equals(chave))
+
+            If linha Is Nothing Then
+                Fila.NaoDeuParaAbrir()
+                Return
+            End If
+
+            Messages.Selected = linha
+            FilaAberta = False
+        End Sub
+
+        ''' <summary>
         ''' A faixa de contatos aberta? Mesmo desenho da busca: um
         ''' botão na barra de título, e o painel por cima.
         '''
@@ -307,6 +353,20 @@ Namespace Global.Iris.App.ViewModels
                 ' mesmo que coleta esquecida.
                 Busca = New BuscaViewModel(AddressOf Acervo.Procurar,
                                            New DiarioDeBuscasEmArquivo())
+
+                ' A FILA DE RESPOSTAS. Mesma porta da busca, e pelo mesmo
+                ' motivo: quem tem o banco e o acervo.
+                '
+                ' O relogio e o fuso entram como sao: a contagem de dias e de
+                ' CALENDARIO, e calendario depende de onde a pessoa esta.
+                Fila = New FilaViewModel(
+                    Function(eu, agora, fuso, dispensadas, ignorados) _
+                        Acervo.MontarAFila(eu, agora, fuso, dispensadas, ignorados),
+                    New DispensasDaFila(),
+                    Function() Identidades,
+                    Function() DateTimeOffset.Now,
+                    TimeZoneInfo.Local,
+                    AddressOf AbrirDaFila)
             End If
 
             ' O BROKER ENTRA COMO LEITOR **E** COMO ESCRITOR.
@@ -350,6 +410,17 @@ Namespace Global.Iris.App.ViewModels
             AlternarContatosCommand = New RelayCommand(Sub() ContatosAberta = Not ContatosAberta,
                                                        Function() Contatos IsNot Nothing)
             FecharContatosCommand = New RelayCommand(Sub() ContatosAberta = False)
+
+            ' A FILA RELE AO ABRIR, e nao a cada acervo mudar. Ela e um retrato
+            ' de quando o dono perguntou: uma lista que se reordena embaixo do
+            ' cursor enquanto ele decide o dia e pior que uma desatualizada.
+            AlternarFilaCommand = New RelayCommand(
+                Sub()
+                    FilaAberta = Not FilaAberta
+                    If FilaAberta Then Fila.Atualizar()
+                End Sub,
+                Function() Fila IsNot Nothing)
+            FecharFilaCommand = New RelayCommand(Sub() FilaAberta = False)
 
             ProporContatoCommand = New RelayCommand(
                 Sub() Contatos.ProporDoRemetente(

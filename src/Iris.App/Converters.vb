@@ -1,6 +1,7 @@
 Imports System.Globalization
 Imports System.Windows
 Imports System.Windows.Data
+Imports Iris.Model
 
 Namespace Global.Iris.App
 
@@ -92,6 +93,44 @@ Namespace Global.Iris.App
             End If
 
             Return altura * fator
+        End Function
+
+        Public Function ConvertBack(value As Object, targetType As Type, parameter As Object,
+                                    culture As CultureInfo) As Object Implements IValueConverter.ConvertBack
+            Throw New NotSupportedException()
+        End Function
+    End Class
+
+    ''' <summary>
+    ''' <b>A cor da espera</b> — e ela nunca aparece sozinha.
+    '''
+    ''' A faixa é um corte sobre um número, e o número fica ao lado, por
+    ''' extenso. Cor sozinha diz "isto é grave" sem dizer de onde veio, e quem
+    ''' discorda do corte não consegue conferir.
+    '''
+    ''' Cor semântica, e não o acento da paleta: é a mesma família de
+    ''' <c>Brush.Warning</c> e <c>Brush.Error</c> que o resto da janela já usa
+    ''' para "olhe isto".
+    ''' </summary>
+    Public NotInheritable Class CorDaEspera
+        Implements IValueConverter
+
+        Public Function Convert(value As Object, targetType As Type, parameter As Object,
+                                culture As CultureInfo) As Object Implements IValueConverter.Convert
+            Dim chave = "Brush.Text.Muted"
+            If TypeOf value Is FaixaDeEspera Then
+                Select Case CType(value, FaixaDeEspera)
+                    Case FaixaDeEspera.Critico : chave = "Brush.Error"
+                    Case FaixaDeEspera.Atrasado : chave = "Brush.Error"
+                    Case FaixaDeEspera.Atencao : chave = "Brush.Warning"
+                End Select
+            End If
+
+            ' RECURSO AUSENTE NAO PODE LANCAR. Os testes de renderizacao
+            ' instanciam a janela sem Application, e um StaticResource que
+            ' estoura tira a tela inteira do ar por causa de uma cor.
+            Dim achado = Application.Current?.TryFindResource(chave)
+            Return If(achado, DependencyProperty.UnsetValue)
         End Function
 
         Public Function ConvertBack(value As Object, targetType As Type, parameter As Object,

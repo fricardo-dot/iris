@@ -558,6 +558,26 @@ Namespace Global.Iris.App.ViewModels
             Return New Iris.Integration.BuscaNoAcervo(_todasAsPastas, _dreno).Procurar(termo)
         End Function
 
+        ''' <summary>
+        ''' <b>A fila de respostas, pela mesma porta da busca.</b>
+        '''
+        ''' Quem tem o banco é o acervo, e é a §26.2: o <c>MainViewModel</c> não
+        ''' instancia leitor de cache. A fila é mais um leitor, e entra do mesmo
+        ''' jeito.
+        ''' </summary>
+        Public Function MontarAFila(eu As Iris.Model.MinhasIdentidades,
+                                    agora As DateTimeOffset,
+                                    fuso As TimeZoneInfo,
+                                    dispensadas As Collections.Generic.IEnumerable(Of String),
+                                    ignorados As Iris.Model.MinhasIdentidades) _
+                                    As Iris.Model.ResultadoDaFila
+            If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+
+            Dim leitor As New Iris.Integration.FilaDoAcervo(_todasAsPastas)
+            Return leitor.Montar(eu, agora, fuso, leitor.AcharOsEnviados(),
+                                 dispensadas, ignorados)
+        End Function
+
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True

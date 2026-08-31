@@ -717,7 +717,8 @@ Public Class BindingsDaJanelaTests
 
         For Each par In {("Busca", "a busca no acervo"),
                          ("Tarefas", "as tarefas"),
-                         ("Contatos", "os contatos")}
+                         ("Contatos", "os contatos"),
+                         ("Fila", "a fila de respostas")}
             StringAssert.Contains(xaml, "{Binding Alternar" & par.Item1 & "Command}",
                 "nao ha botao para abrir " & par.Item2 & ": o painel existe e " &
                 "ninguem alcanca")
@@ -740,10 +741,11 @@ Public Class BindingsDaJanelaTests
     Public Sub O_clique_fora_fecha_os_paineis()
         Dim xaml = LerXaml()
 
+        ' QUATRO DESDE 31/08: a fila de respostas entrou pelo mesmo padrao.
         Dim quantos = Regex.Matches(xaml, "<MouseBinding MouseAction=""LeftClick""").Count
-        Assert.AreEqual(3, quantos,
+        Assert.AreEqual(4, quantos,
             "achei " & quantos & " retangulo(s) que fecham por clique fora, e " &
-            "ha tres paineis. Um painel que so fecha pelo botao ensina a " &
+            "ha quatro paineis. Um painel que so fecha pelo botao ensina a " &
             "desconfiar do clique fora nos outros.")
     End Sub
 
