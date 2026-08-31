@@ -995,7 +995,7 @@ Namespace Global.Iris.Tests
                 ' um resumo, e aplicar no rascunho e ato proprio.
                 Await vm.Resumir()
                 Await vm.RedigirCommand.ExecuteAsync(Nothing)
-                vm.EnviarParaRascunho()
+                Await vm.EnviarParaRascunho()
 
                 Assert.AreEqual(Hostil, r.Texto,
                     "a redacao tem de chegar ao rascunho como texto, sem interpretacao")

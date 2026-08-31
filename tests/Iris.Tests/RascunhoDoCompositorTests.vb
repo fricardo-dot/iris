@@ -68,7 +68,7 @@ Namespace Global.Iris.Tests
         <STATestMethod>
         Public Sub Digitar_no_compositor_AVISA_o_rascunho()
             Dim c = Compositor()
-            Dim r As IRascunho = New RascunhoDoCompositor(c)
+            Dim r As IRascunho = New RascunhoDoCompositor(c, Function() Task.CompletedTask, Function() False)
 
             Dim avisos = 0
             AddHandler r.Mudou, Sub(remetente As Object, arg As EventArgs) avisos += 1
@@ -113,7 +113,7 @@ Namespace Global.Iris.Tests
         <STATestMethod>
         Public Sub Escrever_no_rascunho_chega_ao_compositor()
             Dim c = Compositor()
-            Dim r As IRascunho = New RascunhoDoCompositor(c)
+            Dim r As IRascunho = New RascunhoDoCompositor(c, Function() Task.CompletedTask, Function() False)
 
             r.Texto = "a redacao da IA"
 
@@ -129,7 +129,7 @@ Namespace Global.Iris.Tests
         <STATestMethod>
         Public Sub A_sessao_e_a_editabilidade_vem_do_compositor()
             Dim c = Compositor()
-            Dim r As IRascunho = New RascunhoDoCompositor(c)
+            Dim r As IRascunho = New RascunhoDoCompositor(c, Function() Task.CompletedTask, Function() False)
 
             Assert.IsFalse(c.IsOpen, "o compositor comeca fechado")
             Assert.IsFalse(r.PodeEditar,

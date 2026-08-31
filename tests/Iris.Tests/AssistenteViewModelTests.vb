@@ -268,6 +268,36 @@ Public Class AssistenteViewModelTests
             End Set
         End Property
 
+        ''' <summary>
+        ''' <b>Da para abrir uma resposta?</b> Verdadeiro por padrao: na
+        ''' janela ha quase sempre uma mensagem selecionada, e o caso raro
+        ''' -- pasta vazia, nada aberto -- e o que os testes ligam a mao.
+        ''' </summary>
+        Friend Property PodeAbrirResposta As Boolean = True
+
+        Friend ReadOnly Property PodeAbrir As Boolean Implements IRascunho.PodeAbrir
+            Get
+                Return Not _podeEditar AndAlso PodeAbrirResposta
+            End Get
+        End Property
+
+        ''' <summary>Quantas vezes abriram uma resposta por aqui.</summary>
+        Friend Aberturas As Integer
+
+        ''' <summary>
+        ''' Abrir FALHA quando isto e falso -- e falhar quer dizer
+        ''' <b>continuar fechado</b>, e nao lancar. E o caso do compositor
+        ''' que nao abriu: o rascunho de destino simplesmente nao existe
+        ''' quando a escrita chega.
+        ''' </summary>
+        Friend Property AbrirFunciona As Boolean = True
+
+        Friend Function AbrirAsync() As Task Implements IRascunho.AbrirAsync
+            Aberturas += 1
+            If AbrirFunciona Then PodeEditar = True
+            Return Task.CompletedTask
+        End Function
+
         ''' <summary>Fecha este rascunho e abre outro, vazio.</summary>
         Friend Sub Trocar()
             Sessao += 1
@@ -638,7 +668,7 @@ Public Class AssistenteViewModelTests
         Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing), "nada a desfazer ainda")
 
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
 
         Assert.AreEqual("resposta redigida pela IA", r.Texto)
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
@@ -744,7 +774,7 @@ Public Class AssistenteViewModelTests
         Assert.IsTrue(Esperar(Function() vm.Ocupado), "tinha de estar em voo")
         p.Trava.Set()
         Await t
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
 
         Assert.AreEqual("resposta redigida pela IA", r.Texto,
                         "sem edicao concorrente a redacao TEM de entrar")
@@ -904,7 +934,7 @@ Public Class AssistenteViewModelTests
         Dim vm = Montar(Ativacao({AssistOperation.Redigir}), p, Pronta(), Nothing, r)
 
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
 
         Assert.AreEqual(1, p.Chamadas, "o botao habilitado tem de fazer alguma coisa")
         Assert.AreEqual("resposta redigida pela IA", r.Texto)
@@ -967,7 +997,7 @@ Public Class AssistenteViewModelTests
         ' quando autorizada -- e 'autorizada' passou a incluir haver resumo.
         Await vm.Resumir()
         Await vm.Redigir()
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
 
         Assert.AreEqual(2, p.Chamadas, "resumo e redacao")
         Assert.AreEqual("resposta redigida pela IA", r.Texto)
@@ -995,7 +1025,7 @@ Public Class AssistenteViewModelTests
         Await vm.Resumir()
 
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing), "em A da para desfazer")
 
         ' Fecha A, abre B, e o usuario escreve nele.
@@ -1072,7 +1102,7 @@ Public Class AssistenteViewModelTests
         Await vm.Resumir()
 
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
         r.PodeEditar = False
 
         Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
@@ -1110,7 +1140,7 @@ Public Class AssistenteViewModelTests
         Await vm.Resumir()
 
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
 
         Dim avisos = 0
@@ -1142,7 +1172,7 @@ Public Class AssistenteViewModelTests
         Await vm.Resumir()
 
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
 
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
         vm.DesfazerCommand.Execute(Nothing)

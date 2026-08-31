@@ -1002,7 +1002,10 @@ Namespace Global.Iris.App.ViewModels
             ' que roda a suite -- e ela e disputada entre processos.
             Dim vm As New AssistenteViewModel(ui, transmissor, politica, relogio,
                                               reconciliacao, contexto,
-                                              New RascunhoDoCompositor(Composer),
+                                              New RascunhoDoCompositor(
+                                                  Composer,
+                                                  Function() ResponderAsync(replyAll:=False),
+                                                  Function() PodeResponder),
                                               AtivacaoEmPortugues(ativacao),
                                               Sub(texto As String)
                                                   System.Windows.Clipboard.SetText(texto)

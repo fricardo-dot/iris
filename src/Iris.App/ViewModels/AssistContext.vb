@@ -1,3 +1,4 @@
+Imports System.Threading.Tasks
 Imports System.Collections.Generic
 Imports Iris.Assist
 Imports Iris.Model
@@ -96,6 +97,20 @@ Namespace Global.Iris.App.ViewModels
         ReadOnly Property PodeEditar As Boolean
 
         ''' <summary>
+        ''' <b>Da para ABRIR uma resposta agora?</b>
+        '''
+        ''' Existe porque "mandar a resposta para um rascunho" com o
+        ''' compositor fechado nao e uma recusa: e um passo que o programa
+        ''' sabe dar. Exigir que o usuario abrisse a resposta antes era uma
+        ''' pre-condicao inventada pela forma do codigo -- a porta so sabia
+        ''' escrever em compositor aberto -- e nao pelo que ele pediu.
+        ''' </summary>
+        ReadOnly Property PodeAbrir As Boolean
+
+        ''' <summary>Abre uma resposta para a mensagem aberta.</summary>
+        Function AbrirAsync() As Task
+
+        ''' <summary>
         ''' <b>O rascunho mudou</b> — texto, sessão ou editabilidade.
         '''
         ''' Sem este evento, <c>PodeDesfazer</c> ficava correto e <b>invisível</b>:
@@ -119,9 +134,22 @@ Namespace Global.Iris.App.ViewModels
         Implements IRascunho
 
         Private ReadOnly _compositor As ComposerViewModel
+        Private ReadOnly _abrir As Func(Of Task)
+        Private ReadOnly _podeAbrir As Func(Of Boolean)
 
-        Friend Sub New(compositor As ComposerViewModel)
+        ''' <summary>
+        ''' <paramref name="abrir"/> e <paramref name="podeAbrir"/> sao o
+        ''' "Responder" da barra de cima, vistos por esta porta. Entram como
+        ''' funcao, e nao como referencia ao MainViewModel: o assistente nao
+        ''' precisa saber que existe uma janela, e o adaptador ja existia
+        ''' justamente para as duas classes nao se conhecerem.
+        ''' </summary>
+        Friend Sub New(compositor As ComposerViewModel,
+                       abrir As Func(Of Task),
+                       podeAbrir As Func(Of Boolean))
             _compositor = compositor
+            _abrir = abrir
+            _podeAbrir = podeAbrir
             AddHandler _compositor.PropertyChanged, AddressOf AoMudar
         End Sub
 
@@ -173,6 +201,16 @@ Namespace Global.Iris.App.ViewModels
                 Return _compositor.PodeEditar
             End Get
         End Property
+
+        Public ReadOnly Property PodeAbrir As Boolean Implements IRascunho.PodeAbrir
+            Get
+                Return Not _compositor.PodeEditar AndAlso _podeAbrir()
+            End Get
+        End Property
+
+        Public Function AbrirAsync() As Task Implements IRascunho.AbrirAsync
+            Return _abrir()
+        End Function
     End Class
 
 End Namespace

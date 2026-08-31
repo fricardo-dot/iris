@@ -155,8 +155,8 @@ Namespace Global.Iris.App.ViewModels
             CancelarCommand = New RelayCommand(AddressOf Cancelar, Function() PodeCancelar)
             DesfazerCommand = New RelayCommand(AddressOf Desfazer, Function() PodeDesfazer)
             CopiarCommand = New RelayCommand(AddressOf Copiar, Function() PodeCopiar)
-            EnviarParaRascunhoCommand = New RelayCommand(AddressOf EnviarParaRascunho,
-                                                        Function() PodeEnviarParaRascunho)
+            EnviarParaRascunhoCommand = New AsyncRelayCommand(AddressOf EnviarParaRascunho,
+                                                             Function() PodeEnviarParaRascunho)
             CopiarRespostaCommand = New RelayCommand(AddressOf CopiarResposta,
                                                     Function() TemResposta)
             ' Me. OBRIGATORIO: sem ele, 'reconciliacao' eclipsa 'Reconciliacao'
@@ -277,7 +277,7 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property CopiarCommand As RelayCommand
 
         ''' <summary>Manda a resposta redigida para o rascunho aberto.</summary>
-        Public ReadOnly Property EnviarParaRascunhoCommand As RelayCommand
+        Public ReadOnly Property EnviarParaRascunhoCommand As AsyncRelayCommand
 
         ''' <summary>
         ''' Copia a RESPOSTA. Separado do <see cref="CopiarCommand"/>, que copia
@@ -1105,8 +1105,13 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property PodeEnviarParaRascunho As Boolean
             Get
+                ' PodeAbrir entra no OU: com o compositor fechado o botao NAO
+                ' recusa -- ele abre a resposta e escreve nela. Exigir que o
+                ' usuario abrisse antes era pre-condicao da forma do codigo, e
+                ' nao do que ele pediu.
                 Return TemResposta AndAlso Not Ocupado AndAlso
-                       _rascunho IsNot Nothing AndAlso _rascunho.PodeEditar
+                       _rascunho IsNot Nothing AndAlso
+                       (_rascunho.PodeEditar OrElse _rascunho.PodeAbrir)
             End Get
         End Property
 
@@ -1120,11 +1125,12 @@ Namespace Global.Iris.App.ViewModels
                 ' entao o caso comum -- nao ha compositor nenhum -- caia na
                 ' frase que afirmava haver um, e mandava procurar defeito num
                 ' rascunho que nao existia.
-                If _rascunho Is Nothing OrElse Not _rascunho.PodeEditar Then
-                    Return "Para mandar esta resposta a um rascunho, abra uma " &
-                           "resposta: Responder ou Responder a todos, ali em cima. " &
-                           "Se já houver uma aberta e travada na confirmação de " &
-                           "envio, ela não aceita edição até você sair de lá."
+                If _rascunho Is Nothing OrElse
+                   (Not _rascunho.PodeEditar AndAlso Not _rascunho.PodeAbrir) Then
+                    Return "Não há onde escrever esta resposta: nenhuma mensagem " &
+                           "aberta para responder, ou o rascunho aberto está " &
+                           "travado na confirmação de envio e não aceita edição " &
+                           "até você sair de lá."
                 End If
                 Return ""
             End Get
@@ -1259,13 +1265,40 @@ Namespace Global.Iris.App.ViewModels
         '''
         ''' <b>Nada é enviado por e-mail</b>: a redação para no compositor.
         ''' </summary>
-        Public Sub EnviarParaRascunho()
-            If Not TemResposta Then Return
+        Public Async Function EnviarParaRascunho() As Task
+            If Not TemResposta OrElse _rascunho Is Nothing Then Return
 
-            If _rascunho Is Nothing OrElse Not _rascunho.PodeEditar Then
-                Aviso = "Não há rascunho aceitando edição. Clique em Responder " &
-                        "ou Responder a todos, ou saia da confirmação de envio."
-                Return
+            ' NAO HA RESPOSTA ABERTA? ABRE UMA.
+            '
+            ' O botao dizia "enviar para rascunho" e exigia que o usuario
+            ' abrisse o rascunho ANTES. Tres rodadas de "ainda nao funciona"
+            ' foram gastas consertando a plumbagem em volta de uma
+            ' pre-condicao que so existia porque esta porta so sabia
+            ' ESCREVER em compositor aberto. Quem pede "manda para um
+            ' rascunho" esta pedindo o rascunho tambem.
+            '
+            ' Abre RESPONDER, e nao responder a todos: acrescentar
+            ' destinatarios que ninguem pediu e do tipo de coisa que so se
+            ' descobre depois de enviada. Quem quer todos abre "Responder a
+            ' todos" antes -- compositor ja aberto e usado como esta.
+            If Not _rascunho.PodeEditar Then
+                If Not _rascunho.PodeAbrir Then
+                    Aviso = "Não há onde escrever esta resposta: nenhuma " &
+                            "mensagem aberta para responder, ou o rascunho " &
+                            "está travado na confirmação de envio."
+                    Return
+                End If
+
+                Await _rascunho.AbrirAsync()
+
+                ' E CONFERE DE NOVO. Abrir e assincrono: pode falhar, pode
+                ' demorar, e o usuario pode ter mexido no meio. Escrever
+                ' assumindo que deu certo poria a resposta em lugar nenhum --
+                ' ou, pior, no rascunho errado.
+                If Not _rascunho.PodeEditar Then
+                    Aviso = "A resposta não abriu. Tente Responder ali em cima."
+                    Return
+                End If
             End If
 
             ''' O QUE ESTAVA LA FICA GUARDADO, e o Desfazer o devolve. A
@@ -1280,7 +1313,7 @@ Namespace Global.Iris.App.ViewModels
             Aviso = ""
             OnPropertyChanged(NameOf(PodeDesfazer))
             DesfazerCommand.NotifyCanExecuteChanged()
-        End Sub
+        End Function
 
         ''' <summary>
         ''' Pede a operação. O resultado só é publicado se a geração ainda for a

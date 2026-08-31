@@ -256,7 +256,7 @@ Public Class FaixaDaIaRenderizaTests
         ' Este teste dizia 'depois da redacao' e passou a exigir o envio.
         Await vm.ResumirCommand.ExecuteAsync(Nothing)
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
-        vm.EnviarParaRascunho()
+        vm.EnviarParaRascunho().GetAwaiter().GetResult()
         faixa.UpdateLayout()
         Assert.IsTrue(desfazer.IsEnabled, "depois do envio ao rascunho o botao tem de estar de pe")
 
@@ -294,7 +294,7 @@ Public Class FaixaDaIaRenderizaTests
 
         Await vm.ResumirCommand.ExecuteAsync(Nothing)
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
-        vm.EnviarParaRascunho()
+        vm.EnviarParaRascunho().GetAwaiter().GetResult()
         faixa.UpdateLayout()
 
         Dim desfazer = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Desfazer")

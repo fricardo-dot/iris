@@ -172,7 +172,7 @@ Public Class RedigirEmDoisPassosTests
         Await vm.Redigir()
 
         Assert.IsTrue(vm.PodeEnviarParaRascunho, "não ofereceu o envio havendo rascunho")
-        vm.EnviarParaRascunho()
+        Await vm.EnviarParaRascunho()
 
         Assert.AreEqual(vm.Resposta, rascunho.Texto, "não aplicou no rascunho")
         Assert.IsTrue(vm.PodeDesfazer, "aplicou e não deixou desfazer")
@@ -183,18 +183,25 @@ Public Class RedigirEmDoisPassosTests
     End Function
 
     ''' <summary>
-    ''' <b>Sem rascunho, o envio se explica em vez de sumir.</b>
+    ''' <b>Sem lugar nenhum para escrever, o envio se explica.</b>
     '''
-    ''' A resposta continua na tela para copiar — ela já custou e já saiu da
-    ''' máquina; esconder o texto não desfaz divulgação nenhuma.
+    ''' Não é mais "sem compositor aberto": compositor fechado deixou de
+    ''' ser recusa, porque o botão abre a resposta ele mesmo. O que sobra
+    ''' aqui é o caso em que não há <b>nada</b> a responder — nenhuma
+    ''' mensagem selecionada, ou o compositor travado na confirmação de
+    ''' envio.
+    '''
+    ''' A resposta continua na tela para copiar: ela já custou e já saiu da
+    ''' máquina, e esconder o texto não desfaz divulgação nenhuma.
     ''' </summary>
     <TestMethod>
-    Public Async Function Sem_rascunho_o_envio_diz_o_que_falta() As Task
+    Public Async Function Sem_lugar_nenhum_o_envio_diz_o_que_falta() As Task
         Dim vm = AssistenteViewModelTests.Montar(
             AssistenteViewModelTests.Ativacao(),
             New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "texto da IA"},
             AssistenteViewModelTests.Pronta(),
-            rascunho:=New AssistenteViewModelTests.RascunhoFalso() With {.PodeEditar = False})
+            rascunho:=New AssistenteViewModelTests.RascunhoFalso() With {
+                .PodeEditar = False, .PodeAbrirResposta = False})
 
         Await vm.Resumir()
         Await vm.Redigir()
@@ -206,30 +213,24 @@ Public Class RedigirEmDoisPassosTests
     End Function
 
     ''' <summary>
-    ''' <b>O botão ACORDA quando a resposta é aberta.</b>
+    ''' <b>Compositor fechado NÃO é recusa: o botão abre a resposta.</b>
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>ESTE TESTE OUVE O EVENTO, E NÃO PERGUNTA A PROPRIEDADE</b>
+    ''' <b>A PRÉ-CONDIÇÃO ERA MINHA, E NÃO DO PEDIDO</b>
     '''
-    ''' <c>PodeEnviarParaRascunho</c> estava <b>certa</b> o tempo todo — ela
-    ''' lê o compositor na hora, e <c>CanExecute</c> a chama na hora
-    ''' também. Perguntar qualquer uma das duas responde <c>True</c> mesmo
-    ''' com o botão apagado na tela: <b>escrevi essa versão primeiro, e ela
-    ''' passou com o defeito no lugar.</b>
+    ''' O botão exigia que o usuário clicasse em Responder antes, e essa
+    ''' exigência não vinha do que ele pediu — vinha da forma do código: a
+    ''' porta do rascunho só sabia <i>escrever</i> em compositor aberto.
+    ''' Gastei três rodadas de "ainda não funciona" consertando a plumbagem
+    ''' em volta dela: a mensagem que mentia, e depois o botão que não era
+    ''' avisado. Os dois eram defeitos de verdade, e nenhum era <b>o</b>
+    ''' defeito.
     '''
-    ''' Quem fica desatualizado é o <b>botão</b>. O WPF guarda a última
-    ''' resposta e só reconsulta quando <c>CanExecuteChanged</c> chega — e o
-    ''' compositor é a única coisa da lista que muda por fora do
-    ''' assistente. O evento do rascunho já chegava ao <c>Avisar</c>; ele é
-    ''' que não repassava, e quem clicava em Responder via o botão continuar
-    ''' apagado e a frase embaixo continuar mandando abrir uma resposta que
-    ''' já estava aberta.
-    '''
-    ''' É a terceira vez nesta base, e o parágrafo que descreve a armadilha
-    ''' está <b>duas telas acima da linha que faltava</b>.
+    ''' Quem pede "manda esta resposta para um rascunho" está pedindo o
+    ''' rascunho também.
     ''' </summary>
     <TestMethod>
-    Public Async Function Abrir_a_resposta_ACORDA_o_botao_de_enviar() As Task
+    Public Async Function Compositor_fechado_o_envio_ABRE_a_resposta() As Task
         Dim r As New AssistenteViewModelTests.RascunhoFalso() With {.PodeEditar = False}
         Dim p As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "O RESUMO"}
         Dim vm = AssistenteViewModelTests.Montar(AssistenteViewModelTests.Ativacao(), p,
@@ -240,10 +241,84 @@ Public Class RedigirEmDoisPassosTests
         p.Texto = "A RESPOSTA"
         Await vm.Redigir()
 
-        Assert.IsFalse(vm.EnviarParaRascunhoCommand.CanExecute(Nothing),
-            "sem compositor aberto o botao tem de estar apagado")
-        StringAssert.Contains(vm.PorQueNaoEnvia, "Responder",
-            "e a frase tem de dizer o que fazer")
+        Assert.IsTrue(vm.EnviarParaRascunhoCommand.CanExecute(Nothing),
+            "com mensagem para responder, o botao tem de estar aceso mesmo " &
+            "sem compositor aberto")
+        Assert.AreEqual("", vm.PorQueNaoEnvia,
+            "e nao ha o que explicar: nao falta nada ao usuario")
+
+        Await vm.EnviarParaRascunho()
+
+        Assert.AreEqual(1, r.Aberturas, "o envio tinha de abrir a resposta")
+        Assert.AreEqual("A RESPOSTA", r.Texto, "e escrever nela")
+        Assert.IsTrue(vm.PodeDesfazer, "o desfazer vale igual pelo caminho novo")
+    End Function
+
+    ''' <summary>
+    ''' <b>Abrir falhou: não escreve, e diz.</b>
+    '''
+    ''' Abrir é assíncrono — pode falhar, pode demorar, e o usuário pode
+    ''' mexer no meio. Escrever assumindo que deu certo poria a resposta em
+    ''' lugar nenhum, ou no rascunho errado.
+    '''
+    ''' <b>É o controle negativo da abertura:</b> sem a segunda conferência,
+    ''' este é o único teste que quebra.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Se_a_resposta_NAO_abre_nada_e_escrito() As Task
+        Dim r As New AssistenteViewModelTests.RascunhoFalso() With {
+            .PodeEditar = False, .AbrirFunciona = False, .Texto = "nao me toque"}
+        Dim p As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "O RESUMO"}
+        Dim vm = AssistenteViewModelTests.Montar(AssistenteViewModelTests.Ativacao(), p,
+                                                 AssistenteViewModelTests.Pronta(),
+                                                 Nothing, r)
+
+        Await vm.Resumir()
+        p.Texto = "A RESPOSTA"
+        Await vm.Redigir()
+        Await vm.EnviarParaRascunho()
+
+        Assert.AreEqual(1, r.Aberturas, "tentou abrir")
+        Assert.AreEqual("nao me toque", r.Texto,
+            "escreveu num rascunho que nao abriu")
+        Assert.IsFalse(vm.PodeDesfazer,
+            "nada foi aplicado, entao nao pode haver desfazer armado")
+        Assert.AreNotEqual("", vm.Aviso, "falhou calado")
+    End Function
+
+    ''' <summary>
+    ''' <b>O botão é avisado quando o compositor muda.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ESTE TESTE OUVE O EVENTO, E NÃO PERGUNTA A PROPRIEDADE</b>
+    '''
+    ''' <c>PodeEnviarParaRascunho</c> lê o compositor na hora, e
+    ''' <c>CanExecute</c> a chama na hora. Perguntar qualquer uma das duas
+    ''' responde certo mesmo com o botão errado na tela: <b>escrevi essa
+    ''' versão primeiro, e ela passou com o defeito no lugar.</b>
+    '''
+    ''' Quem fica desatualizado é o <b>botão</b>. O WPF guarda a última
+    ''' resposta e só reconsulta quando <c>CanExecuteChanged</c> chega — e o
+    ''' compositor é a única coisa da lista que muda por fora do
+    ''' assistente. O evento do rascunho já chegava ao <c>Avisar</c>; ele é
+    ''' que não repassava.
+    '''
+    ''' O caso aqui é o inverso do que era: o compositor <b>trava</b> na
+    ''' confirmação de envio, e o botão tem de apagar — e a explicação
+    ''' aparecer — sem ninguém tocar no assistente.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Travar_o_compositor_APAGA_o_botao_de_enviar() As Task
+        Dim r As New AssistenteViewModelTests.RascunhoFalso()
+        Dim p As New AssistenteViewModelTests.ProvedorControlado() With {.Texto = "O RESUMO"}
+        Dim vm = AssistenteViewModelTests.Montar(AssistenteViewModelTests.Ativacao(), p,
+                                                 AssistenteViewModelTests.Pronta(),
+                                                 Nothing, r)
+
+        Await vm.Resumir()
+        p.Texto = "A RESPOSTA"
+        Await vm.Redigir()
+        Assert.IsTrue(vm.EnviarParaRascunhoCommand.CanExecute(Nothing))
 
         Dim cutucadas = 0
         AddHandler vm.EnviarParaRascunhoCommand.CanExecuteChanged,
@@ -257,19 +332,18 @@ Public Class RedigirEmDoisPassosTests
                 End If
             End Sub
 
-        ' O usuario clica em Responder: o compositor entra em edicao.
-        r.PodeEditar = True
+        ' O compositor TRAVA: confirmacao de envio, campos bloqueados.
+        r.PodeEditar = False
+        r.PodeAbrirResposta = False
 
         Assert.AreNotEqual(0, cutucadas,
             "o BOTAO nao foi avisado. Ele guarda a ultima resposta e fica " &
-            "apagado ate alguem mandar reconsultar")
+            "aceso ate alguem mandar reconsultar")
         Assert.AreNotEqual(0, frases,
-            "a frase que manda abrir uma resposta ficou na tela depois de a " &
-            "resposta ter sido aberta")
+            "a explicacao nao foi avisada: o motivo novo nao chega a tela")
 
-        Assert.AreEqual("", vm.PorQueNaoEnvia)
-        vm.EnviarParaRascunho()
-        Assert.AreEqual("A RESPOSTA", r.Texto, "e ai ele funciona")
+        Assert.IsFalse(vm.EnviarParaRascunhoCommand.CanExecute(Nothing))
+        Assert.IsTrue(vm.TemMotivoParaNaoEnviar)
     End Function
 
 End Class
