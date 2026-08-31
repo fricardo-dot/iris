@@ -345,7 +345,7 @@
                         <Button Style="{StaticResource CaptionButton}"
                                 Content="&#xE823;"
                                 Command="{Binding AlternarFilaCommand}"
-                                ToolTip="Quem está esperando resposta"
+                                ToolTip="Quem falou por último em cada conversa"
                                 AutomationProperties.Name="Abrir ou fechar a fila de respostas" />
                         <Button Style="{StaticResource CaptionButton}"
                                 Content="&#xE8FD;"
@@ -884,7 +884,7 @@
                         Padding="20,16,20,18">
                     <StackPanel>
                         <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                            <TextBlock Text="QUEM ESTÁ ESPERANDO"
+                            <TextBlock Text="A ÚLTIMA PALAVRA DE CADA CONVERSA"
                                        Style="{DynamicResource Text.Muted}"
                                        VerticalAlignment="Center" />
                             <Button Content="Atualizar"
@@ -916,12 +916,22 @@
                                                          Converter={StaticResource BoolToVis},
                                                          FallbackValue=Collapsed}">
 
-                            <TextBlock Text="PODE SER A SUA VEZ" Margin="0,14,0,4"
+                            <!-- OS DOIS TITULOS DESCREVEM O FATO, e nao a obrigacao.
+
+                                 "Quem esta esperando voce" afirma que alguem espera, e o
+                                 Iris nao sabe disso: a questao pode ter sido resolvida
+                                 por telefone, em reuniao, ou por um encaminhamento que
+                                 virou outra conversa. O que ele sabe e quem escreveu por
+                                 ultimo.
+
+                                 A linha ja dizia "Possivel resposta"; a moldura e que
+                                 afirmava mais que a linha. -->
+                            <TextBlock Text="A ÚLTIMA É DELES" Margin="0,14,0,4"
                                        Style="{DynamicResource Text.Muted}" />
                             <ItemsControl ItemsSource="{Binding Fila.Minhas}"
                                           ItemTemplate="{StaticResource Fila.Linha}" />
 
-                            <TextBlock Text="VOCÊ ESTÁ ESPERANDO" Margin="0,14,0,4"
+                            <TextBlock Text="A ÚLTIMA É SUA" Margin="0,14,0,4"
                                        Style="{DynamicResource Text.Muted}" />
                             <ItemsControl ItemsSource="{Binding Fila.Deles}"
                                           ItemTemplate="{StaticResource Fila.Linha}" />

@@ -40,9 +40,21 @@ Public Class FilaViewModelTests
     Private Shared Function Montar(mensagens As IEnumerable(Of MensagemNaFila),
                                    viuOsEnviados As Boolean,
                                    Optional eu As MinhasIdentidades = Nothing) As ResultadoDaFila
+        Dim cobertura As IReadOnlyDictionary(Of String, DateTimeOffset) =
+            If(viuOsEnviados,
+               New Dictionary(Of String, DateTimeOffset) From {{"s", Agora}},
+               New Dictionary(Of String, DateTimeOffset)())
         Return FilaDeRespostas.Montar(mensagens,
                                       If(eu, New MinhasIdentidades({"ricardo@empresa.com"})),
-                                      Agora, TimeZoneInfo.Utc, viuOsEnviados, Nothing)
+                                      Agora, TimeZoneInfo.Utc, cobertura, Nothing)
+    End Function
+
+    ''' <summary>
+    ''' Um leitor que estoura. Em VB o <c>Throw</c> não é expressão, então ele
+    ''' precisa de nome próprio — e ter nome deixa o teste dizer o que encena.
+    ''' </summary>
+    Private Shared Function Estourar() As ResultadoDaFila
+        Throw New InvalidOperationException("o cache caiu")
     End Function
 
     Private Shared Function Msg(conversa As String, deQuem As String,
@@ -189,6 +201,98 @@ Public Class FilaViewModelTests
         Assert.AreNotEqual(antes, vm.Frase, "clicou em Abrir e a tela nao mudou")
         StringAssert.Contains(vm.Frase, "pasta",
             "a frase precisa dizer o que fazer, e nao so que falhou")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Falha do leitor não derruba a janela.</b>
+    '''
+    ''' <c>Atualizar</c> roda dentro de um comando do WPF, no dispatcher: uma
+    ''' exceção do cache subiria sem ninguém para pegá-la, e o programa fecharia
+    ''' porque uma lista não carregou. A fila some e diz por quê — que é o que
+    ''' ela já faz nas outras recusas.
+    '''
+    ''' Achado por revisão externa em 31/08/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Excecao_do_leitor_NAO_derruba_a_tela()
+        Dim vm As New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados) Estourar(),
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
+
+        vm.Atualizar()
+
+        Assert.IsFalse(vm.Respondeu)
+        Assert.AreEqual(0, vm.Minhas.Count)
+        StringAssert.Contains(vm.Frase, "não vale",
+            "a tela ficou sem dizer que a fila nao vale")
+    End Sub
+
+    ''' <summary>Leitor que devolve <c>Nothing</c> também não derruba.</summary>
+    <TestMethod>
+    Public Sub Resultado_nulo_NAO_derruba_a_tela()
+        Dim vm As New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados) _
+                CType(Nothing, ResultadoDaFila),
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
+
+        vm.Atualizar()
+
+        Assert.IsFalse(vm.Respondeu)
+        Assert.AreNotEqual("", vm.Frase)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Atualizar preenche as duas coleções, e a segunda chamada substitui a
+    ''' primeira.</b> Sem isto, uma fila que só acrescentasse duplicaria as
+    ''' linhas a cada clique em Atualizar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Atualizar_SUBSTITUI_as_listas()
+        Dim vm As New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados) _
+                Montar({Msg("c1", "caroline@outra.com", 9),
+                        Msg("c2", "ricardo@empresa.com", 4)}, True),
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
+
+        vm.Atualizar()
+        vm.Atualizar()
+
+        Assert.AreEqual(1, vm.Minhas.Count, "a segunda leitura duplicou as linhas")
+        Assert.AreEqual(1, vm.Deles.Count)
+        Assert.IsTrue(vm.Respondeu)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Dispensa que não grava não tira a linha da tela.</b>
+    '''
+    ''' Sumir com a linha depois de uma gravação que falhou deixaria o dono
+    ''' achando que resolveu, e a conversa voltaria na abertura seguinte sem
+    ''' explicação. Aqui o arquivo é impossível de criar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Dispensa_que_falha_MANTEM_a_linha()
+        Dim atrapalho = IO.Path.Combine(IO.Path.GetTempPath(),
+                                        "iris-fila-vm-" & Guid.NewGuid().ToString("N"))
+        Try
+            IO.File.WriteAllText(atrapalho, "sou um arquivo, e nao uma pasta")
+
+            Dim vm As New FilaViewModel(
+                Function(eu, agora, fuso, dispensadas, ignorados) _
+                    Montar({Msg("c1", "caroline@outra.com", 9)}, True),
+                New Iris.Integration.DispensasDaFila(atrapalho),
+                Nothing, Function() Agora, TimeZoneInfo.Utc)
+
+            vm.Atualizar()
+            Assert.AreEqual(1, vm.Minhas.Count, "o preparo do teste esta errado")
+
+            vm.Minhas(0).DispensarCommand.Execute(Nothing)
+
+            Assert.AreEqual(1, vm.Minhas.Count,
+                "a linha sumiu apesar de a dispensa nao ter sido gravada")
+            StringAssert.Contains(vm.Frase, "continua na fila")
+        Finally
+            If IO.File.Exists(atrapalho) Then IO.File.Delete(atrapalho)
+        End Try
     End Sub
 
 End Class

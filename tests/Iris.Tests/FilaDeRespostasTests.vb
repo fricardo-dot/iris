@@ -63,12 +63,23 @@ Public Class FilaDeRespostasTests
                                   Agora.AddDays(-diasAtras))
     End Function
 
+    ''' <summary>
+    ''' A cobertura padrão: a caixa de teste, varrida <b>agora</b>. Assim os
+    ''' testes de regra não esbarram na cobertura, que tem os seus próprios.
+    ''' </summary>
+    Private Shared Function Coberta() As IReadOnlyDictionary(Of String, DateTimeOffset)
+        Return New Dictionary(Of String, DateTimeOffset) From {{"store-1", Agora}}
+    End Function
+
     Private Shared Function Montar(mensagens As IEnumerable(Of MensagemNaFila),
                                    Optional viuOsEnviados As Boolean = True,
                                    Optional dispensadas As String() = Nothing,
                                    Optional eu As MinhasIdentidades = Nothing) As ResultadoDaFila
+        Dim cobertura = If(viuOsEnviados, Coberta(),
+                           CType(New Dictionary(Of String, DateTimeOffset)(),
+                                 IReadOnlyDictionary(Of String, DateTimeOffset)))
         Return FilaDeRespostas.Montar(mensagens, If(eu, FilaDeRespostasTests.Eu()),
-                                      Agora, Fuso, viuOsEnviados, dispensadas)
+                                      Agora, Fuso, cobertura, dispensadas)
     End Function
 
     ' ==================================================================
@@ -260,9 +271,9 @@ Public Class FilaDeRespostasTests
         Assert.AreNotEqual(instante.Offset, oMesmo.Offset, "o preparo do teste esta errado")
 
         Dim r = Montar({
-            New MensagemNaFila(New ItemKey("E-1", "s"), "c1", "a", "eu",
+            New MensagemNaFila(New ItemKey("E-1", "store-1"), "c1", "a", "eu",
                                "ricardo@empresa.com", instante),
-            New MensagemNaFila(New ItemKey("E-2", "s"), "c1", "a", "ela",
+            New MensagemNaFila(New ItemKey("E-2", "store-1"), "c1", "a", "ela",
                                "caroline@outra.com", oMesmo)})
 
         Assert.AreEqual(0, r.Linhas.Count,
@@ -285,12 +296,12 @@ Public Class FilaDeRespostasTests
     ''' </summary>
     <TestMethod>
     Public Sub Sem_conversa_e_sem_data_ficam_de_fora_E_SAO_CONTADAS()
-        Dim semConversa = New MensagemNaFila(New ItemKey("E-1", "s"), "", "a", "x", "x@y.com",
-                                             Agora.AddDays(-2))
-        Dim soEspacos = New MensagemNaFila(New ItemKey("E-3", "s"), "   ", "a", "x", "x@y.com",
-                                           Agora.AddDays(-2))
-        Dim semData = New MensagemNaFila(New ItemKey("E-2", "s"), "c9", "a", "x", "x@y.com",
-                                         Nothing)
+        Dim semConversa = New MensagemNaFila(New ItemKey("E-1", "store-1"), "", "a", "x",
+                                             "x@y.com", Agora.AddDays(-2))
+        Dim soEspacos = New MensagemNaFila(New ItemKey("E-3", "store-1"), "   ", "a", "x",
+                                           "x@y.com", Agora.AddDays(-2))
+        Dim semData = New MensagemNaFila(New ItemKey("E-2", "store-1"), "c9", "a", "x",
+                                         "x@y.com", Nothing)
 
         Dim r = Montar({semConversa, soEspacos, semData})
 
@@ -474,12 +485,104 @@ Public Class FilaDeRespostasTests
     ''' Mensagem com data no futuro — relógio de servidor adiantado — não vira
     ''' dias negativos. Negativo ordenaria antes de tudo e diria "esperando
     ''' há -3 dias", que não quer dizer nada.
+    '''
+    ''' A cobertura aqui é esticada de propósito: uma mensagem no futuro
+    ''' <i>também</i> está além da última varredura, e sem esticar este teste
+    ''' passaria a medir a cobertura em vez do arredondamento.
     ''' </summary>
     <TestMethod>
     Public Sub Data_no_futuro_nao_vira_dia_negativo()
-        Dim r = Montar({Msg("c1", "caroline@outra.com", -3)})
+        Dim daquiAUmMes As IReadOnlyDictionary(Of String, DateTimeOffset) =
+            New Dictionary(Of String, DateTimeOffset) From {{"store-1", Agora.AddDays(30)}}
+        Dim r = FilaDeRespostas.Montar({Msg("c1", "caroline@outra.com", -3)},
+                                       Eu(), Agora, Fuso, daquiAUmMes, Nothing)
 
         Assert.AreEqual(0, r.Linhas(0).Dias)
+    End Sub
+
+    ''' <summary>
+    ''' <b>ALÉM DA COBERTURA, O IRIS NÃO AFIRMA — e este era o defeito mais
+    ''' grave da fase.</b>
+    '''
+    ''' Itens Enviados varrida no dia 1º; a pergunta chega no dia 29; o dono
+    ''' responde pelo OWA no dia 30; a Caixa de Entrada é varrida no dia 31. A
+    ''' fila via a pergunta e não via a resposta, e dizia <i>"esperando há 2
+    ''' dias"</i> sobre uma conversa já respondida — com toda a cara de dado
+    ''' fresco.
+    '''
+    ''' A regra não é um prazo de frescor inventado: é o próprio instante da
+    ''' varredura, que é medido. Achado por revisão externa em 31/08/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Conversa_mais_nova_que_a_varredura_dos_enviados_NAO_e_afirmada()
+        Dim varridaHaDezDias As IReadOnlyDictionary(Of String, DateTimeOffset) =
+            New Dictionary(Of String, DateTimeOffset) From {{"store-1", Agora.AddDays(-10)}}
+
+        Dim r = FilaDeRespostas.Montar(
+            {Msg("recente", "caroline@outra.com", 2),
+             Msg("antiga", "caroline@outra.com", 20)},
+            Eu(), Agora, Fuso, varridaHaDezDias, Nothing)
+
+        Assert.AreEqual(1, r.Linhas.Count,
+            "afirmou sobre uma conversa mais nova que a ultima varredura dos " &
+            "enviados: a resposta pode existir e nao ter sido vista")
+        Assert.AreEqual("antiga", r.Linhas(0).Conversa)
+        Assert.AreEqual(1, r.Fora.ConversasAlemDaCobertura)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Caixa sem enviados varridos não entra</b> — e não libera as outras.
+    '''
+    ''' Uma pasta de enviados varrida em <i>qualquer</i> caixa liberava a fila
+    ''' inteira, inclusive as caixas cujas respostas ninguém tinha visto: toda
+    ''' conversa já respondida nelas virava pendência.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Caixa_sem_enviados_varridos_NAO_entra_na_fila()
+        Dim soAPrimeira As IReadOnlyDictionary(Of String, DateTimeOffset) =
+            New Dictionary(Of String, DateTimeOffset) From {{"store-1", Agora}}
+
+        Dim daOutraCaixa = New MensagemNaFila(New ItemKey("E-9", "store-2"), "c9", "a",
+                                              "ela", "caroline@outra.com",
+                                              Agora.AddDays(-5))
+
+        Dim r = FilaDeRespostas.Montar({Msg("c1", "caroline@outra.com", 5), daOutraCaixa},
+                                       Eu(), Agora, Fuso, soAPrimeira, Nothing)
+
+        Assert.AreEqual(1, r.Linhas.Count)
+        Assert.AreEqual("c1", r.Linhas(0).Conversa)
+        Assert.AreEqual(1, r.Fora.MensagensSemCoberturaDaCaixa)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A mesma conversa em duas caixas são duas conversas.</b>
+    '''
+    ''' O <c>ConversationID</c> pode repetir entre caixas — cópia, importação,
+    ''' caixa compartilhada — e agrupá-las faria a mensagem mais nova de uma
+    ''' decidir de quem é a vez na outra. É erro silencioso: a linha abre uma
+    ''' mensagem válida e representa uma junção que ninguém pediu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_mesma_conversa_em_DUAS_caixas_nao_se_junta()
+        Dim duas As IReadOnlyDictionary(Of String, DateTimeOffset) =
+            New Dictionary(Of String, DateTimeOffset) From {
+                {"store-1", Agora}, {"store-2", Agora}}
+
+        ' Mesma conversa, caixas diferentes: numa a ultima e dela, na outra
+        ' e minha -- e a mais nova esta na segunda.
+        Dim naPrimeira = New MensagemNaFila(New ItemKey("E-1", "store-1"), "mesma", "a",
+                                            "ela", "caroline@outra.com", Agora.AddDays(-9))
+        Dim naSegunda = New MensagemNaFila(New ItemKey("E-2", "store-2"), "mesma", "a",
+                                           "eu", "ricardo@empresa.com", Agora.AddDays(-2))
+
+        Dim r = FilaDeRespostas.Montar({naPrimeira, naSegunda}, Eu(), Agora, Fuso,
+                                       duas, Nothing)
+
+        Assert.AreEqual(2, r.Linhas.Count,
+            "as duas caixas viraram uma conversa so, e a mais nova de uma " &
+            "decidiu de quem e a vez na outra")
+        Assert.AreEqual(1, r.Minhas().Count)
+        Assert.AreEqual(1, r.Deles().Count)
     End Sub
 
     ''' <summary>
@@ -509,7 +612,7 @@ Public Class FilaDeRespostasTests
         Dim r = FilaDeRespostas.Montar(
             {Msg("boletim", "noreply@boletim.com", 30),
              Msg("gente", "caroline@outra.com", 9)},
-            Eu(), Agora, Fuso, True, Nothing,
+            Eu(), Agora, Fuso, Coberta(), Nothing,
             New MinhasIdentidades({"noreply@boletim.com"}))
 
         Assert.AreEqual(1, r.Linhas.Count)
@@ -532,7 +635,7 @@ Public Class FilaDeRespostasTests
         Dim r = FilaDeRespostas.Montar(
             {Msg("c1", "ricardo@empresa.com", 20),
              Msg("c1", "noreply@boletim.com", 3)},
-            Eu(), Agora, Fuso, True, Nothing,
+            Eu(), Agora, Fuso, Coberta(), Nothing,
             New MinhasIdentidades({"noreply@boletim.com"}))
 
         Assert.AreEqual(0, r.Linhas.Count,

@@ -574,8 +574,7 @@ Namespace Global.Iris.App.ViewModels
             If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
 
             Dim leitor As New Iris.Integration.FilaDoAcervo(_todasAsPastas)
-            Return leitor.Montar(eu, agora, fuso, leitor.AcharOsEnviados(),
-                                 dispensadas, ignorados)
+            Return leitor.Montar(eu, agora, fuso, dispensadas, ignorados)
         End Function
 
         Public Sub Dispose() Implements IDisposable.Dispose

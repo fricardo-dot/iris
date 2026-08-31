@@ -15,9 +15,11 @@ Namespace Global.Iris.App.ViewModels
     ''' <b>ESTA TELA AFIRMA COISAS SOBRE O TRABALHO DO DONO</b>
     '''
     ''' "Fulano está esperando você há 20 dias" é uma afirmação forte, lida de
-    ''' manhã, que muda o que a pessoa faz no dia. Por isso o ViewModel não tem
-    ''' regra nenhuma: ele mostra o que <see cref="FilaDeRespostas"/> decidiu, e
-    ''' <b>traduz os três motivos em três frases diferentes</b>.
+    ''' manhã, que muda o que a pessoa faz no dia. Por isso <b>nenhuma regra de
+    ''' quem-fala-por-último mora aqui</b>: elas ficam inteiras em
+    ''' <see cref="FilaDeRespostas"/>, e o que este arquivo decide é
+    ''' apresentação — as três frases, a ressalva, e o que fazer quando uma ação
+    ''' falha.
     '''
     ''' A frase é a parte que mais importa. Uma lista vazia sem frase deixa o
     ''' dono concluir "não tenho nada", e esse é o único desfecho que a fila não
@@ -113,10 +115,38 @@ Namespace Global.Iris.App.ViewModels
             End Set
         End Property
 
-        ''' <summary>Relê o acervo e remonta as duas filas.</summary>
+        ''' <summary>
+        ''' Relê o acervo e remonta as duas filas.
+        '''
+        ''' <b>Falha do leitor não derruba a janela.</b> Isto roda dentro de um
+        ''' comando do WPF, no dispatcher: uma exceção do cache subiria sem
+        ''' ninguém para pegá-la, e o programa fecharia porque uma lista não
+        ''' carregou. A fila some e diz por quê, que é o que ela já faz nas
+        ''' outras três recusas.
+        ''' </summary>
         Public Sub Atualizar()
-            Dim r = _montar(_identidades(), _relogio(), _fuso,
+            Dim r As ResultadoDaFila
+            Try
+                r = _montar(_identidades(), _relogio(), _fuso,
                             _dispensas.Conversas(), _dispensas.Remetentes())
+            Catch ex As Exception
+                Minhas.Clear()
+                Deles.Clear()
+                Respondeu = False
+                Ressalva = ""
+                Frase = "Não consegui ler o acervo agora (" & ex.GetType().Name &
+                        "). A fila não vale enquanto isso."
+                Return
+            End Try
+
+            If r Is Nothing Then
+                Minhas.Clear()
+                Deles.Clear()
+                Respondeu = False
+                Ressalva = ""
+                Frase = "O acervo não respondeu. A fila não vale enquanto isso."
+                Return
+            End If
 
             Minhas.Clear()
             Deles.Clear()
@@ -160,8 +190,13 @@ Namespace Global.Iris.App.ViewModels
                         Return "Nada esperando. Olhei " & r.ConversasVistas &
                                " conversa(s)."
                     End If
+                    ' "COM A ULTIMA PALAVRA DO OUTRO LADO", e nao "com alguem
+                    ' esperando": o Iris sabe quem escreveu por ultimo, e nao se
+                    ' aquilo ainda espera resposta. Pode ter sido resolvido por
+                    ' telefone, em reuniao, ou num encaminhamento que virou outra
+                    ' conversa -- nada disso aparece aqui.
                     Return $"{r.Linhas.Count} de {r.ConversasVistas} conversa(s) " &
-                           "com alguém esperando."
+                           "com a última palavra dita."
             End Select
         End Function
 
@@ -181,6 +216,15 @@ Namespace Global.Iris.App.ViewModels
                     partes.Add($"{ .ConversasDispensadas} dispensada(s) por você")
                 If .ConversasDeRemetenteIgnorado > 0 Then _
                     partes.Add($"{ .ConversasDeRemetenteIgnorado} de remetente ignorado")
+                ' AS DUAS DE COBERTURA VEM COM O MOTIVO JUNTO. Elas nao sao
+                ' descarte: sao o Iris dizendo que naquele pedaco ele nao pode
+                ' afirmar, e o dono conserta varrendo.
+                If .ConversasAlemDaCobertura > 0 Then _
+                    partes.Add($"{ .ConversasAlemDaCobertura} conversa(s) mais novas que a " &
+                               "última varredura dos Itens Enviados — varra-os para saber")
+                If .MensagensSemCoberturaDaCaixa > 0 Then _
+                    partes.Add($"{ .MensagensSemCoberturaDaCaixa} mensagem(ns) de caixa cujos " &
+                               "Itens Enviados nunca foram varridos")
                 If .MensagensSemConversa > 0 Then _
                     partes.Add($"{ .MensagensSemConversa} mensagem(ns) sem conversa legível")
                 If .MensagensSemData > 0 Then _

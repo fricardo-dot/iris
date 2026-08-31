@@ -61,7 +61,7 @@ Public Class FilaDoAcervoTests
                    Dim enviados = Semear(db, "Itens Enviados", "f-enviados", {
                        ("c1", Eu, "ja respondi", 19)})
 
-                   Dim r = Montar(db, enviados)
+                   Dim r = Montar(db)
 
                    Assert.AreEqual(MotivoDaFila.Respondida, r.Motivo)
                    Assert.AreEqual(2, r.Linhas.Count)
@@ -88,7 +88,7 @@ Public Class FilaDoAcervoTests
                    Semear(db, "Caixa de Entrada", "f-entrada", {("c1", Ela, "pergunta", 20)})
                    Dim enviados = SoRegistrar(db, "Itens Enviados", "f-enviados")
 
-                   Dim r = Montar(db, enviados)
+                   Dim r = Montar(db)
 
                    Assert.AreEqual(MotivoDaFila.SemOsEnviados, r.Motivo,
                        "montou a fila sem ter varrido os enviados: a conversa " &
@@ -98,17 +98,44 @@ Public Class FilaDoAcervoTests
     End Sub
 
     ''' <summary>
-    ''' Sem saber <b>qual</b> pasta é a de enviados, a fila recusa igual. Não
-    ''' saber é o mesmo que não ter varrido — nos dois casos as respostas do dono
-    ''' estão fora do alcance.
+    ''' <b>Pasta sem nome de enviados não conta como cobertura.</b>
+    '''
+    ''' O acervo guarda nome e não papel, então a descoberta é por nome — e este
+    ''' teste é o que impede a descoberta de virar "qualquer pasta varrida
+    ''' serve". Uma caixa com só a Entrada varrida não tem cobertura de
+    ''' respostas, e a fila recusa.
     ''' </summary>
     <TestMethod>
-    Public Sub Sem_saber_qual_pasta_e_a_dos_enviados_recusa()
+    Public Sub So_a_entrada_varrida_NAO_da_cobertura()
         Comigo(Sub(db)
                    Semear(db, "Caixa de Entrada", "f-entrada", {("c1", Ela, "pergunta", 20)})
-                   Semear(db, "Itens Enviados", "f-enviados", {("c1", Eu, "resposta", 19)})
 
-                   Assert.AreEqual(MotivoDaFila.SemOsEnviados, Montar(db, Nothing).Motivo)
+                   Assert.AreEqual(MotivoDaFila.SemOsEnviados, Montar(db).Motivo)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>O defeito mais grave da fase, contra o acervo de verdade.</b>
+    '''
+    ''' Os Itens Enviados foram varridos, e a conversa é mais nova que a
+    ''' varredura. A resposta do dono pode existir e não ter sido vista — então
+    ''' o Iris não afirma de quem é a vez, e diz que não afirmou.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Conversa_mais_nova_que_a_varredura_dos_enviados_fica_de_fora()
+        Comigo(Sub(db)
+                   ' Os enviados sao varridos PRIMEIRO; a mensagem da entrada e
+                   ' datada depois disso.
+                   Semear(db, "Itens Enviados", "f-enviados", {("c9", Eu, "outra", 40)})
+                   Semear(db, "Caixa de Entrada", "f-entrada", {
+                       ("recente", Ela, "chegou depois da varredura", -1)})
+
+                   Dim r = Montar(db)
+
+                   Assert.IsFalse(r.Linhas.Any(Function(l) l.Conversa = "recente"),
+                       "afirmou sobre uma conversa mais nova que a varredura dos " &
+                       "enviados")
+                   Assert.AreEqual(1, r.Fora.ConversasAlemDaCobertura)
                End Sub)
     End Sub
 
@@ -129,7 +156,7 @@ Public Class FilaDoAcervoTests
                    ' A segunda mensagem some da pasta: varre de novo sem ela.
                    Revarrer(db, entrada, "f-entrada", {("c1", Ela, "a que ficou", 20)})
 
-                   Dim r = Montar(db, enviados)
+                   Dim r = Montar(db)
                    Dim c1 = r.Linhas.Single(Function(l) l.Conversa = "c1")
 
                    Assert.AreEqual("a que ficou", c1.Assunto,
@@ -150,7 +177,7 @@ Public Class FilaDoAcervoTests
                    Dim enviados = Semear(db, "Itens Enviados", "f-enviados", {
                        ("c9", Eu, "outra", 30)})
 
-                   Dim linha = Montar(db, enviados).Linhas.Single(Function(l) l.Conversa = "c1")
+                   Dim linha = Montar(db).Linhas.Single(Function(l) l.Conversa = "c1")
 
                    Assert.AreEqual("store-1", linha.Chave.StoreId,
                        "ItemKey sem store nao identifica mensagem fora de uma caixa so")
@@ -180,7 +207,7 @@ Public Class FilaDoAcervoTests
     ' ==================================================================
     ' O ANDAIME
 
-    Private Shared Function Montar(db As CacheDatabase, enviados As Long?) As ResultadoDaFila
+    Private Shared Function Montar(db As CacheDatabase) As ResultadoDaFila
         Dim todas As New AcervoDeTodasAsPastas(db)
         Dim dreno As New PublicationDrain(db)
 
@@ -189,7 +216,7 @@ Public Class FilaDoAcervoTests
         dreno.Drenar(todas)
         If todas.Recarregado = 0 Then todas.Recarregar()
 
-        Return New FilaDoAcervo(todas).Montar(Identidades(), Agora, Fuso, enviados, Nothing)
+        Return New FilaDoAcervo(todas).Montar(Identidades(), Agora, Fuso, Nothing)
     End Function
 
     Private Shared Function Impressao() As EnvironmentFingerprint

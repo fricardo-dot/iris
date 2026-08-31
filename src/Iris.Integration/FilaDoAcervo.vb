@@ -39,11 +39,18 @@ Namespace Global.Iris.Integration
     ''' mais precisa distinguir — é ela que faz toda conversa já respondida
     ''' parecer pendente.
     '''
-    ''' <b>Frescor fica de fora, e é decisão.</b> "Varrida há seis meses" é pior
-    ''' que "nunca varrida"? Não: é melhor, e o que falta aparece como conversa
-    ''' velha demais, que a própria fila mostra. Inventar um prazo aqui seria
-    ''' escolher um número sem medida — e o dono vê a data da última varredura no
-    ''' acervo.
+    ''' <b>E o FRESCOR entra, mas sem prazo inventado.</b>
+    '''
+    ''' Eu tinha escrito que "varrida há seis meses" era melhor que "nunca
+    ''' varrida", porque o que faltasse apareceria como conversa velha. Era
+    ''' falso, e a revisão externa mostrou o contrário: Enviados varrida em 1º,
+    ''' pergunta no dia 29, resposta pelo OWA no dia 30, Entrada varrida no dia
+    ''' 31 — e a tela dizia "esperando há 2 dias". O que faltava era a resposta;
+    ''' o que aparecia era uma pergunta <b>nova</b>, e a idade da linha não
+    ''' denunciava a assimetria.
+    '''
+    ''' A regra não é um prazo: é o próprio instante da varredura dos enviados
+    ''' daquela caixa, que é medido. Conversa mais nova que ele não é afirmada.
     ''' </summary>
     Public NotInheritable Class FilaDoAcervo
 
@@ -65,25 +72,18 @@ Namespace Global.Iris.Integration
         Public Function Montar(eu As MinhasIdentidades,
                                agora As DateTimeOffset,
                                fuso As TimeZoneInfo,
-                               pastaDosEnviados As Long?,
                                dispensadas As IEnumerable(Of String),
                                Optional remetentesIgnorados As MinhasIdentidades = Nothing) As ResultadoDaFila
 
             Dim mensagens As New List(Of MensagemNaFila)()
-            Dim viuOsEnviados = False
+            Dim cobertura = CoberturaDosEnviados()
 
             For Each pasta In _acervo.Pastas
                 Dim manifesto = pasta.Manifesto
 
-                ' PASTA SEM GERAÇÃO PUBLICADA NÃO É PASTA VAZIA. É a mesma regra
-                ' da busca no acervo, e aqui ela decide mais: uma pasta de
-                ' enviados conhecida e nunca varrida faria toda conversa já
-                ' respondida parecer pendente.
+                ' PASTA SEM GERACAO PUBLICADA NAO E PASTA VAZIA. E a mesma regra
+                ' da busca no acervo.
                 If Not manifesto.GenerationKey.HasValue Then Continue For
-
-                If pastaDosEnviados.HasValue AndAlso pasta.Chave = pastaDosEnviados.Value Then
-                    viuOsEnviados = True
-                End If
 
                 For Each item In manifesto.Items
                     If item.Presence <> PresenceState.Presente Then Continue For
@@ -94,33 +94,61 @@ Namespace Global.Iris.Integration
                         item.Subject,
                         item.SenderName,
                         item.SenderAddress,
-                        Instante(item.ReceivedAt)))
+                        Instante(item.ReceivedAt),
+                        pasta.Store))
                 Next
             Next
 
             Return FilaDeRespostas.Montar(mensagens, eu, agora, fuso,
-                                          viuOsEnviados, dispensadas,
+                                          cobertura, dispensadas,
                                           remetentesIgnorados)
         End Function
 
         ''' <summary>
-        ''' <b>Qual pasta do acervo é a de itens enviados</b> — pelo nome, que é
-        ''' um palpite, e o único disponível aqui.
+        ''' <b>Por caixa, até quando as respostas do dono são conhecidas.</b>
         '''
-        ''' O acervo guarda nome e não papel: <c>FolderContentKind</c> distingue
-        ''' correio de agenda, e não "enviados" de "entrada". Errar aqui erra
-        ''' para o lado seguro — a fila recusa em vez de mentir —, e o dono
-        ''' varre a pasta certa e ela aparece.
+        ''' É o instante em que a pasta de enviados <i>daquela caixa</i> foi
+        ''' publicada. Caixa que não aparece aqui não entra na fila, e conversa
+        ''' cuja última mensagem é posterior a este instante não é afirmada.
+        '''
+        ''' <b>Uma pasta por caixa, e não uma para todas.</b> Antes, uma pasta de
+        ''' enviados varrida em qualquer lugar liberava a fila inteira — inclusive
+        ''' as caixas cujas respostas ninguém tinha visto, onde toda conversa já
+        ''' respondida virava pendência. Achado por revisão externa em
+        ''' 31/08/2026.
         ''' </summary>
-        Public Function AcharOsEnviados() As Long?
+        Friend Function CoberturaDosEnviados() As IReadOnlyDictionary(Of String, DateTimeOffset)
+            Dim mapa As New Dictionary(Of String, DateTimeOffset)(StringComparer.Ordinal)
+
             For Each pasta In _acervo.Pastas
-                For Each nome In {"Itens Enviados", "Sent Items"}
-                    If pasta.Nome.StartsWith(nome, StringComparison.OrdinalIgnoreCase) Then
-                        Return pasta.Chave
-                    End If
-                Next
+                If Not EhDeEnviados(pasta.Nome) Then Continue For
+                If Not pasta.Manifesto.GenerationKey.HasValue Then Continue For
+
+                Dim quando = Instante(pasta.Manifesto.PublishedAt)
+                If Not quando.HasValue Then Continue For
+
+                ' A MAIS RECENTE MANDA. Uma caixa pode ter mais de uma pasta que
+                ' casa pelo nome, e a cobertura e a melhor delas.
+                Dim atual As DateTimeOffset
+                If Not mapa.TryGetValue(pasta.Store, atual) OrElse quando.Value > atual Then
+                    mapa(pasta.Store) = quando.Value
+                End If
             Next
-            Return Nothing
+
+            Return mapa
+        End Function
+
+        ''' <summary>
+        ''' O nome parece de pasta de enviados? É palpite, e o único disponível: o
+        ''' acervo guarda nome e não papel — <c>FolderContentKind</c> distingue
+        ''' correio de agenda, e não "enviados" de "entrada".
+        ''' </summary>
+        Friend Shared Function EhDeEnviados(nome As String) As Boolean
+            If String.IsNullOrEmpty(nome) Then Return False
+            For Each candidato In {"Itens Enviados", "Sent Items"}
+                If nome.StartsWith(candidato, StringComparison.OrdinalIgnoreCase) Then Return True
+            Next
+            Return False
         End Function
 
         ''' <summary>

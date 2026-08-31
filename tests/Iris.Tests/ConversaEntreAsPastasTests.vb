@@ -46,7 +46,15 @@ Public Class ConversaEntreAsPastasTests
     <TestMethod, TestCategory("Integracao")>
     Public Async Function Medir_o_encontro_das_duas_pastas() As Task
         Dim broker = Await PagingIntegrationTests.AbrirBrokerAsync()
-        If broker Is Nothing Then Return
+        If broker Is Nothing Then
+            ' NAO E "Return". O AbrirBrokerAsync ja lanca Fail ou Inconclusive
+            ' nos casos que conhece; um Nothing que escapasse faria este teste
+            ' passar SEM MEDIR NADA -- e o cabecalho dele diz que ele decide a
+            ' fase. Verde por nao ter olhado e o formato de erro que esta suite
+            ' persegue.
+            Assert.Inconclusive("nao consegui abrir o broker; nada foi medido")
+            Return
+        End If
 
         Try
             Dim enviados = Await Achar(broker, {"Itens Enviados", "Sent Items"})

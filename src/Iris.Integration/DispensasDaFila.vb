@@ -85,11 +85,13 @@ Namespace Global.Iris.Integration
         ''' vezes, e a fila não pode piorar por isso.
         ''' </summary>
         Public Function DispensarConversa(conversa As String) As Boolean
-            Return Acrescentar(_conversas, conversa, CabecalhoDasConversas())
+            Return Acrescentar(_conversas, conversa, CabecalhoDasConversas(),
+                               StringComparer.Ordinal)
         End Function
 
         Public Function IgnorarRemetente(endereco As String) As Boolean
-            Return Acrescentar(_remetentes, endereco, CabecalhoDosRemetentes())
+            Return Acrescentar(_remetentes, endereco, CabecalhoDosRemetentes(),
+                               StringComparer.OrdinalIgnoreCase)
         End Function
 
         ' ==============================================================
@@ -114,13 +116,25 @@ Namespace Global.Iris.Integration
         ''' deu para gravar — e quem chama <b>não</b> pode tratar isso como
         ''' sucesso: a linha continuaria na fila e o dono acharia que resolveu.
         ''' </summary>
+        ''' <param name="comparador">
+        ''' <b>O mesmo com que a fila vai comparar depois</b> — e são diferentes
+        ''' nos dois arquivos: conversa é <c>ConversationID</c>, comparado por
+        ''' <c>Ordinal</c>; remetente passa por
+        ''' <see cref="MinhasIdentidades"/>, que ignora caixa.
+        '''
+        ''' Com os dois lados discordando, uma dispensa com outra caixa de letras
+        ''' era tratada como "já gravada" e mesmo assim não casava com a conversa:
+        ''' o dono clicava, o programa dizia que sim, e a linha ficava. Achado por
+        ''' revisão externa em 31/08/2026.
+        ''' </param>
         Private Shared Function Acrescentar(caminho As String, valor As String,
-                                            cabecalho As IEnumerable(Of String)) As Boolean
+                                            cabecalho As IEnumerable(Of String),
+                                            comparador As StringComparer) As Boolean
             If String.IsNullOrWhiteSpace(valor) Then Return False
 
             Try
                 Dim ja = Ler(caminho)
-                If ja.Contains(valor.Trim(), StringComparer.OrdinalIgnoreCase) Then Return True
+                If ja.Contains(valor.Trim(), comparador) Then Return True
 
                 Dim novo = Not File.Exists(caminho)
                 Directory.CreateDirectory(Path.GetDirectoryName(caminho))

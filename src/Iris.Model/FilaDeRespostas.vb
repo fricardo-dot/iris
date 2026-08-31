@@ -55,10 +55,13 @@ Namespace Global.Iris.Model
         ''' <summary>
         ''' Monta as duas filas a partir das mensagens conhecidas.
         ''' </summary>
-        ''' <param name="viuOsEnviados">
-        ''' A pasta de itens enviados foi varrida, e recentemente o bastante para
-        ''' valer? <b>Falso recusa a fila inteira</b>, e não devolve uma lista
-        ''' parcial. Quem chama é que sabe responder isso — aqui é contrato.
+        ''' <param name="coberturaDosEnviados">
+        ''' <b>Por caixa, até quando as respostas do dono são conhecidas</b> — o
+        ''' instante em que a pasta de enviados daquela caixa foi publicada.
+        '''
+        ''' Vazio recusa a fila inteira. Caixa ausente do dicionário tem as
+        ''' mensagens descartadas: sem ver os enviados <i>daquela</i> caixa, toda
+        ''' conversa já respondida nela apareceria como pendente.
         ''' </param>
         ''' <param name="dispensadas">
         ''' Conversas que o dono marcou como "não exige resposta". Elas somem da
@@ -69,11 +72,14 @@ Namespace Global.Iris.Model
                                       eu As MinhasIdentidades,
                                       agora As DateTimeOffset,
                                       fuso As TimeZoneInfo,
-                                      viuOsEnviados As Boolean,
+                                      coberturaDosEnviados As IReadOnlyDictionary(Of String, DateTimeOffset),
                                       dispensadas As IEnumerable(Of String),
                                       Optional remetentesIgnorados As MinhasIdentidades = Nothing) As ResultadoDaFila
 
-            If Not viuOsEnviados Then Return ResultadoDaFila.SemOsEnviados()
+            Dim cobertura = If(coberturaDosEnviados,
+                               CType(New Dictionary(Of String, DateTimeOffset)(),
+                                     IReadOnlyDictionary(Of String, DateTimeOffset)))
+            If cobertura.Count = 0 Then Return ResultadoDaFila.SemOsEnviados()
 
             Dim oFuso = If(fuso, TimeZoneInfo.Utc)
             Dim fora As New ForaDaFila()
@@ -100,15 +106,31 @@ Namespace Global.Iris.Model
                     Continue For
                 End If
 
+                ' CAIXA SEM ENVIADOS VARRIDOS NAO ENTRA.
+                '
+                ' Uma pasta de enviados varrida em QUALQUER caixa liberava a fila
+                ' inteira, inclusive as caixas cujas respostas ninguem viu -- e
+                ' toda conversa ja respondida nelas virava pendencia. Achado por
+                ' revisao externa em 31/08/2026.
+                If Not cobertura.ContainsKey(m.Caixa) Then
+                    fora.MensagensSemCoberturaDaCaixa += 1
+                    Continue For
+                End If
+
                 If dispensa.Contains(m.Conversa) Then
                     dispensadasVistas.Add(m.Conversa)
                     Continue For
                 End If
 
+                ' A CHAVE E CAIXA + CONVERSA, e nao a conversa sozinha: o mesmo
+                ' ConversationID pode aparecer em duas caixas, e junta-las faria a
+                ' mensagem mais nova de uma decidir de quem e a vez na outra.
+                Dim chave = m.Caixa & ControlChars.NullChar & m.Conversa
+
                 Dim lista As List(Of MensagemNaFila) = Nothing
-                If Not porConversa.TryGetValue(m.Conversa, lista) Then
+                If Not porConversa.TryGetValue(chave, lista) Then
                     lista = New List(Of MensagemNaFila)()
-                    porConversa(m.Conversa) = lista
+                    porConversa(chave) = lista
                 End If
                 lista.Add(m)
             Next
@@ -126,7 +148,25 @@ Namespace Global.Iris.Model
 
             Dim linhas As New List(Of LinhaDaFila)()
             For Each par In porConversa
-                Dim linha = Decidir(par.Key, par.Value, eu, agora, oFuso)
+                Dim doGrupo = par.Value(0)
+                Dim linha = Decidir(doGrupo.Conversa, par.Value, eu, agora, oFuso)
+
+                ' ALEM DA COBERTURA, O IRIS NAO SABE DE QUEM E A VEZ.
+                '
+                ' Se a ultima mensagem da conversa e POSTERIOR a varredura dos
+                ' enviados desta caixa, uma resposta pode existir e nao ter sido
+                ' vista. Era o defeito mais grave da fase: Enviados varrida em 1o,
+                ' pergunta no dia 29, resposta pelo OWA no dia 30, Entrada varrida
+                ' no dia 31 -- e a tela dizia "esperando ha 2 dias" sobre uma
+                ' conversa ja respondida, com toda a cara de dado fresco.
+                '
+                ' Nao ha prazo de frescor inventado aqui: a regra e o proprio
+                ' instante da varredura, que e medido.
+                If linha IsNot Nothing AndAlso linha.Quando > cobertura(doGrupo.Caixa) Then
+                    fora.ConversasAlemDaCobertura += 1
+                    Continue For
+                End If
+
                 If linha Is Nothing Then
                     fora.ConversasSemDirecao += 1
                 ElseIf ignorados.DirecaoDe(linha.RemetenteDaUltima) = Direcao.Minha Then
@@ -236,15 +276,25 @@ Namespace Global.Iris.Model
         Public ReadOnly Property Remetente As String
         Public ReadOnly Property Quando As DateTimeOffset?
 
+        ''' <summary>
+        ''' A caixa de onde ela veio. <b>Faz parte da identidade da conversa</b>:
+        ''' o mesmo <c>ConversationID</c> pode aparecer em duas caixas — cópia,
+        ''' importação, caixa compartilhada — e juntá-las deixaria a mensagem
+        ''' mais nova de uma decidir de quem é a vez na outra.
+        ''' </summary>
+        Public ReadOnly Property Caixa As String
+
         Public Sub New(chave As ItemKey, conversa As String, assunto As String,
                        quemEscreveu As String, remetente As String,
-                       quando As DateTimeOffset?)
+                       quando As DateTimeOffset?,
+                       Optional caixa As String = Nothing)
             Me.Chave = If(chave, New ItemKey("", ""))
             Me.Conversa = If(conversa, "")
             Me.Assunto = If(assunto, "")
             Me.QuemEscreveu = If(quemEscreveu, "")
             Me.Remetente = If(remetente, "")
             Me.Quando = quando
+            Me.Caixa = If(caixa, If(Me.Chave.StoreId, ""))
         End Sub
 
     End Class
@@ -349,8 +399,8 @@ Namespace Global.Iris.Model
     ''' <summary>
     ''' <b>O que não coube na fila, e por quê.</b>
     '''
-    ''' Cada contador diz a <b>unidade</b> no nome, e não há total somando as
-    ''' quatro: somar mensagens com conversas produzia um número sem unidade —
+    ''' Cada contador diz a <b>unidade</b> no nome, e não há total somando-os:
+    ''' somar mensagens com conversas produzia um número sem unidade —
     ''' cem mensagens dispensadas de uma conversa só valiam cem, e cem mensagens
     ''' sem direção da mesma conversa valiam uma. Achado por revisão externa.
     ''' </summary>
@@ -368,6 +418,18 @@ Namespace Global.Iris.Model
         ''' ignorar.
         ''' </summary>
         Public Property ConversasDeRemetenteIgnorado As Integer
+
+        ''' <summary>
+        ''' Mensagens de uma caixa cujos enviados nunca foram varridos. Sem ver
+        ''' as respostas <b>daquela</b> caixa, nada nela pode ser afirmado.
+        ''' </summary>
+        Public Property MensagensSemCoberturaDaCaixa As Integer
+
+        ''' <summary>
+        ''' Conversas cuja última mensagem é <b>mais nova</b> que a varredura dos
+        ''' enviados: uma resposta pode existir e não ter sido vista.
+        ''' </summary>
+        Public Property ConversasAlemDaCobertura As Integer
     End Class
 
     ''' <summary>As duas filas, e a ressalva.</summary>
