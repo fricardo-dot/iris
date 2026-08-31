@@ -419,6 +419,62 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' <b>A primeira linha do resumo, sozinha.</b>
+        '''
+        ''' A instrução pede uma frase, linha em branco, e o resto. Aqui a
+        ''' frase é recortada para a tela poder mostrá-la em destaque sem
+        ''' pedir <b>outro</b> resumo ao modelo — seria a mesma leitura
+        ''' cobrada duas vezes.
+        '''
+        ''' <b>Recorte, e não promessa.</b> Se o modelo ignorar o formato e
+        ''' devolver um parágrafo, isto devolve a primeira linha dele, que é
+        ''' o começo do parágrafo. Fica pior que o pedido e melhor que vazio,
+        ''' e nunca inventa uma frase que o modelo não escreveu.
+        ''' </summary>
+        Public ReadOnly Property ResumoDeUmaLinha As String
+            Get
+                Return PrimeiraLinha(_resultado)
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>O corte, num lugar só.</b>
+        '''
+        ''' Compartilhado porque o duplo dos testes de renderização também
+        ''' precisa dele: um duplo que cortasse por conta própria poderia
+        ''' cortar <i>diferente</i>, e aí a tela estaria certa no teste e
+        ''' errada na janela — que é o defeito que duplo nenhum deve poder
+        ''' esconder.
+        ''' </summary>
+        Friend Shared Function PrimeiraLinha(texto As String) As String
+            If String.IsNullOrEmpty(texto) Then Return ""
+            Dim quebra = texto.IndexOf(vbLf, StringComparison.Ordinal)
+            If quebra < 0 Then Return texto.Trim()
+            Return texto.Substring(0, quebra).Trim()
+        End Function
+
+        ''' <summary>O que vem depois da primeira linha.</summary>
+        Friend Shared Function DepoisDaPrimeiraLinha(texto As String) As String
+            If String.IsNullOrEmpty(texto) Then Return ""
+            Dim quebra = texto.IndexOf(vbLf, StringComparison.Ordinal)
+            If quebra < 0 Then Return ""
+            Return texto.Substring(quebra + 1).Trim()
+        End Function
+
+        ''' <summary>O que vem depois da primeira linha. Vazio se não vier nada.</summary>
+        Public ReadOnly Property ResumoDetalhado As String
+            Get
+                Return DepoisDaPrimeiraLinha(_resultado)
+            End Get
+        End Property
+
+        Public ReadOnly Property TemResumoDetalhado As Boolean
+            Get
+                Return ResumoDetalhado.Length > 0
+            End Get
+        End Property
+
         Public Property Resultado As String
             Get
                 Return _resultado
@@ -426,6 +482,9 @@ Namespace Global.Iris.App.ViewModels
             Private Set(value As String)
                 SetProperty(_resultado, value)
                 OnPropertyChanged(NameOf(TemResultado))
+                OnPropertyChanged(NameOf(ResumoDeUmaLinha))
+                OnPropertyChanged(NameOf(ResumoDetalhado))
+                OnPropertyChanged(NameOf(TemResumoDetalhado))
                 ' O Copiar depende DISTO, e so disto. Sem avisar aqui, o botao
                 ' so acordaria quando outra coisa qualquer chamasse Avisar().
                 Avisar()
@@ -836,7 +895,112 @@ Namespace Global.Iris.App.ViewModels
             ' botao continuaria habilitado — ou desabilitado — pelo motivo
             ' errado.
             Avaliar()
+
+            ' E, se o interruptor estiver ligado, resume sozinho. Sem Await:
+            ' a troca de mensagem nao pode esperar por rede. Quem precisa
+            ' esperar e o teste, por EsperarOResumoAutomatico.
+            _resumoAutomatico = ResumirSozinho(_geracao)
         End Sub
+
+        ''' <summary>
+        ''' <b>Resumir ao abrir</b> — e ele nasce DESLIGADO.
+        '''
+        ''' Ligado, abrir uma mensagem passa a mandar conteúdo para fora sem
+        ''' clique nenhum. Isso é uma mudança de categoria, e não de conforto:
+        ''' por isso é decisão gravada em disco, e por isso
+        ''' <b>falha ao conferir vale como desligado</b> — não conseguir ler o
+        ''' consentimento nunca é autorização.
+        '''
+        ''' O marcador é o mesmo desenho do diário de buscas, com o sinal
+        ''' trocado: lá a ausência liga, aqui a presença. O padrão de cada um
+        ''' é o lado seguro do seu caso.
+        ''' </summary>
+        Public Property ResumirAoAbrir As Boolean
+            Get
+                Try
+                    Return IO.File.Exists(CaminhoDoResumoAutomatico())
+                Catch
+                    Return False
+                End Try
+            End Get
+            Set(value As Boolean)
+                Try
+                    Dim caminho = CaminhoDoResumoAutomatico()
+                    If value Then
+                        IO.Directory.CreateDirectory(IO.Path.GetDirectoryName(caminho))
+                        IO.File.WriteAllText(caminho,
+                            "Enquanto este arquivo existir, o Iris resume ao abrir a mensagem." &
+                            Environment.NewLine &
+                            "Apague-o, ou use o botao na tela, para voltar a resumir so a pedido." &
+                            Environment.NewLine, Text.Encoding.UTF8)
+                    ElseIf IO.File.Exists(caminho) Then
+                        IO.File.Delete(caminho)
+                    End If
+                Catch
+                    ' Nao deu para gravar: o estado continua sendo o do disco, e
+                    ' o disco nao mudou. A tela relê e mostra a verdade.
+                End Try
+                OnPropertyChanged(NameOf(ResumirAoAbrir))
+            End Set
+        End Property
+
+        Friend Shared Function CaminhoDoResumoAutomatico() As String
+            Return IO.Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                "Iris", "resumir-ao-abrir.txt")
+        End Function
+
+        ''' <summary>
+        ''' <b>A espera antes de resumir sozinho.</b>
+        '''
+        ''' Descer a lista com a seta dispararia um pedido por mensagem
+        ''' atravessada. Cancelar não desfaz requisição que já saiu — o duplo
+        ''' do provedor desta base existe justamente para lembrar disso — então
+        ''' a defesa é <b>não sair</b>: a troca seguinte cancela a espera antes
+        ''' de haver pedido.
+        '''
+        ''' Ajustável porque o teste não pode esperar de verdade.
+        ''' </summary>
+        Friend Property EsperaAntesDeResumir As TimeSpan = TimeSpan.FromMilliseconds(800)
+
+        Private _resumoAutomatico As Task = Task.CompletedTask
+
+        ''' <summary>
+        ''' O resumo automático da última troca. Existe para o teste poder
+        ''' esperá-lo: na janela ninguém espera, e é isso que se quer.
+        ''' </summary>
+        Friend Function EsperarOResumoAutomatico() As Task
+            Return _resumoAutomatico
+        End Function
+
+        ''' <summary>
+        ''' <b>Quatro perguntas antes de gastar uma chamada</b>, e a primeira
+        ''' é a memória: mensagem já resumida não se resume de novo, senão
+        ''' ir e voltar na lista cobra duas vezes pelo mesmo texto.
+        ''' </summary>
+        Private Async Function ResumirSozinho(minha As Integer) As Task
+            If Not ResumirAoAbrir Then Return
+            If _chaveAtual Is Nothing Then Return
+            If TemResultado Then Return
+            If Not PodePedir Then Return
+
+            Try
+                If EsperaAntesDeResumir > TimeSpan.Zero Then
+                    Await Task.Delay(EsperaAntesDeResumir, _cancelamento.Token)
+                End If
+            Catch ex As OperationCanceledException
+                Return
+            End Try
+
+            ' A GERACAO DE NOVO, depois da espera. Trocar de mensagem durante
+            ' os 800 ms cancela o Delay, mas cancelamento e corrida: sem esta
+            ' conferencia, uma troca que chegasse entre o fim da espera e a
+            ' chamada poria o resumo desta mensagem embaixo da proxima.
+            If minha <> _geracao Then Return
+            If TemResultado OrElse Not PodePedir Then Return
+
+            Await Resumir()
+        End Function
 
         ''' <summary>
         ''' <b>A sessão é outra: a memória não vale mais.</b>
@@ -975,6 +1139,9 @@ Namespace Global.Iris.App.ViewModels
         ''' "o que mudou" é a única pergunta que importa.
         ''' </summary>
         Friend Const InstrucaoDeResumo As String =
+            "Comece por UMA LINHA que resuma tudo -- uma frase, sem rótulo, " &
+            "sem 'Resumo:' na frente -- e depois deixe uma linha em branco " &
+            "antes do resto. " &
             "Resuma estas mensagens. O corpo pode trazer a conversa anterior " &
             "citada abaixo da mensagem mais recente: percorra a conversa INTEIRA, " &
             "de baixo para cima, e diga primeiro o que há de NOVO, depois o " &

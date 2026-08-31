@@ -280,8 +280,11 @@ Public Class BindingsDaJanelaTests
             "o motivo de a IA nao estar habilitada tem de aparecer")
         StringAssert.Contains(xaml, "{Binding Reconciliacao.Aviso}",
             "envios sem desfecho conhecido nao podem viver so no banco")
-        StringAssert.Contains(xaml, "{Binding Resultado}",
+        StringAssert.Contains(xaml, "{Binding ResumoDeUmaLinha}",
             "e a resposta do modelo tem de ter onde aparecer")
+        StringAssert.Contains(xaml, "{Binding ResumoDetalhado}",
+            "o resto do resumo tambem: mostrar so a primeira linha " &
+            "esconderia o que o usuario pagou para ler")
     End Sub
 
     ''' <summary>
@@ -310,9 +313,19 @@ Public Class BindingsDaJanelaTests
     ''' </summary>
     <TestMethod>
     Public Sub A_resposta_do_modelo_aparece_em_TEXTBLOCK()
+        ' AS DUAS PARTES, e nao mais uma. Desde 31/08 o resumo chega em
+        ' duas: a frase de abertura em destaque e o resto embaixo. A
+        ' barreira vale para as duas -- a metade que escapasse para um
+        ' controle que interpreta seria a metade que importa.
+        For Each caminho In {"{Binding ResumoDeUmaLinha}", "{Binding ResumoDetalhado}"}
+            ConferirQueEhTextBlock(caminho)
+        Next
+    End Sub
+
+    Private Shared Sub ConferirQueEhTextBlock(caminho As String)
         Dim xaml = LerFaixa()
-        Dim i = xaml.IndexOf("{Binding Resultado}", StringComparison.Ordinal)
-        Assert.IsTrue(i > 0, "o binding tem de existir")
+        Dim i = xaml.IndexOf(caminho, StringComparison.Ordinal)
+        Assert.IsTrue(i > 0, caminho & ": o binding tem de existir")
 
         Dim antes = xaml.Substring(0, i)
         Dim elemento = antes.Substring(antes.LastIndexOf("<"c))

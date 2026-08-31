@@ -3,6 +3,7 @@ Imports System.Linq
 Imports System.Windows
 Imports System.Windows.Controls
 Imports System.Windows.Media
+Imports Iris.App.ViewModels
 Imports Microsoft.VisualStudio.TestTools.UnitTesting
 
 ''' <summary>
@@ -103,6 +104,38 @@ Public Class FaixaDaIaRenderizaTests
     ''' <c>BindingsDaJanelaTests</c>. Três testes, três perguntas.
     ''' </summary>
     Private NotInheritable Class FaixaFalsa
+
+        ''' <summary>
+        ''' As duas partes do resumo saem do <b>mesmo corte</b> que o
+        ''' ViewModel usa. Cortar aqui por conta própria deixaria este duplo
+        ''' capaz de esconder um defeito de corte: a tela passaria no teste
+        ''' e mostraria outra coisa na janela.
+        ''' </summary>
+        Public ReadOnly Property ResumoDeUmaLinha As String
+            Get
+                Return AssistenteViewModel.PrimeiraLinha(Resultado)
+            End Get
+        End Property
+
+        Public ReadOnly Property ResumoDetalhado As String
+            Get
+                Return AssistenteViewModel.DepoisDaPrimeiraLinha(Resultado)
+            End Get
+        End Property
+
+        Public ReadOnly Property TemResumoDetalhado As Boolean
+            Get
+                Return ResumoDetalhado.Length > 0
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' O interruptor do resumo automático. Falso no duplo: a tela é
+        ''' testada aqui, e a persistência em
+        ''' <c>ResumirAoAbrirTests</c>.
+        ''' </summary>
+        Public Property ResumirAoAbrir As Boolean
+
         Public ReadOnly Property Aviso As String
         Public ReadOnly Property TemAlgoADizer As Boolean
         ''' <summary>

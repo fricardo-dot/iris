@@ -86,6 +86,23 @@
                         <Border Width="1" Margin="8,6" VerticalAlignment="Stretch"
                                 Background="{DynamicResource Brush.Border.Subtle}" />
 
+                        <!-- RESUMIR AO ABRIR: caixa de marcar, e nao botao.
+
+                             Botao faz uma coisa agora; isto muda o que o programa fara
+                             DEPOIS, sem voce estar olhando. Estado permanente precisa
+                             parecer estado.
+
+                             Nasce desmarcada, e marca-la manda conteudo para fora a cada
+                             mensagem aberta — por isso a dica diz isso com todas as
+                             letras, em vez de "resumo automatico". -->
+                        <CheckBox Content="Resumir ao abrir"
+                                  IsChecked="{Binding ResumirAoAbrir, Mode=TwoWay}"
+                                  VerticalAlignment="Center"
+                                  Margin="0,0,14,0"
+                                  Foreground="{DynamicResource Brush.Text.Secondary}"
+                                  ToolTip="Marcado, abrir uma mensagem manda o conteudo dela para a IA sem voce clicar."
+                                  AutomationProperties.Name="Resumir ao abrir a mensagem" />
+
                         <!-- Copiar exige so TER o que copiar. O texto ja esta na
                              tela e ja foi pago; amarrar a copia a autorizacao
                              faria a IA vencer entre o resumo aparecer e o
@@ -274,10 +291,29 @@
                                                ToolTip="{Binding Ficha}"
                                                AutomationProperties.Name="Agente, modelo, custo e tempo" />
                                 </Grid>
-                                <TextBlock Text="{Binding Resultado}"
+                                <!-- A PRIMEIRA LINHA EM DESTAQUE, e o resto embaixo.
+
+                                     Nao sao dois pedidos: a instrucao manda o modelo comecar
+                                     por uma frase, linha em branco, e o resto. Pedir "resumo
+                                     curto" e depois "resumo longo" seria a mesma leitura
+                                     cobrada duas vezes.
+
+                                     Se o modelo ignorar o formato, ResumoDeUmaLinha devolve a
+                                     primeira linha do que veio e TemResumoDetalhado fica falso
+                                     — some a segunda caixa, e nada e inventado. -->
+                                <TextBlock Text="{Binding ResumoDeUmaLinha}"
                                            Style="{DynamicResource Text.Body}"
+                                           FontWeight="SemiBold"
                                            TextWrapping="Wrap"
-                                           AutomationProperties.Name="Resposta da IA" />
+                                           AutomationProperties.Name="Resumo em uma linha" />
+
+                                <TextBlock Text="{Binding ResumoDetalhado}"
+                                           Style="{DynamicResource Text.Body}"
+                                           TextWrapping="Wrap" Margin="0,8,0,0"
+                                           Visibility="{Binding TemResumoDetalhado,
+                                                                Converter={StaticResource BoolToVis},
+                                                                FallbackValue=Collapsed}"
+                                           AutomationProperties.Name="Resumo detalhado" />
 
                                 <!-- O QUE NAO FOI LIDO PARA PRODUZIR ISTO.
 
