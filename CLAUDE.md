@@ -53,6 +53,18 @@ Foram renomeados para `Incomplete` e `Restricted`. Colchetes (`[Protected]`)
 resolvem o compilador e não resolvem a leitura — quem lê depois tropeça no
 mesmo lugar.
 
+### Comentário dentro de inicializador com chaves
+
+Em VB, a vírgula no fim da linha continua a expressão implicitamente — e uma
+linha de **comentário** no meio quebra essa continuação. Dentro de
+`{ Col("a"), Col("b") }` ou de um `Dictionary ... From { ... }`, um comentário
+entre os itens produz `')' expected` e `Syntax error` **nas linhas seguintes**,
+longe do comentário.
+
+Aconteceu três vezes numa tarde só, nos três arquivos onde o esquema do cache
+é declarado. O conserto é sempre o mesmo: o comentário vai para **antes** do
+inicializador, não para dentro dele.
+
 ### PowerShell tem a mesma doença
 
 O `tools/` é PowerShell, e lá também: `$pid` é somente-leitura (é o PID do
