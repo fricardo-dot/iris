@@ -14,6 +14,20 @@ Namespace Global.Iris.Assist
         Nenhuma = 0
         Resumir
         Redigir
+
+        ''' <summary>
+        ''' <b>Classificar</b> — pôr um rótulo em cada mensagem de um lote.
+        '''
+        ''' É uma terceira coisa, e tem de ser assinada como tal. Sem ela no
+        ''' vocabulário, a autorização que o dono deu para <b>resumir uma
+        ''' mensagem</b> passaria a valer para uma <b>varredura inteira</b> — que
+        ''' não é o que ele leu quando assinou.
+        '''
+        ''' A diferença não é de volume: resumir é um pedido por vez, com o
+        ''' resultado na tela; classificar manda a pasta em lotes e grava o
+        ''' resultado no cache, onde ele sobrevive à sessão.
+        ''' </summary>
+        Classificar
     End Enum
 
     ''' <summary>

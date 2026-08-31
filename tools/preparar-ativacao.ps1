@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Monta o texto da cerimonia de ativacao da IA, com os identificadores da
     pasta ja preenchidos. So grava com -Salvar.
@@ -54,6 +54,17 @@ param(
     # escreveu o roteiro, e nao por quem assina a autorizacao.
     [Parameter(Mandatory = $true)]
     [string[]] $Provedores,
+
+    # QUAIS OPERACOES a autorizacao cobre.
+    #
+    # Eram duas, fixas no corpo do roteiro: Resumir e Redigir. Classificar
+    # entrou em 31/08/2026 e NAO foi para o padrao, de proposito -- ela e a
+    # unica que manda a pasta em LOTES e grava o resultado no cache, onde ele
+    # sobrevive a sessao. Quem quiser assina de novo, com ela na lista.
+    #
+    # SEM [ValidateSet], pelo mesmo motivo de -Leituras: o ValidateSet roda no
+    # binding, antes de a divisao por virgula acontecer.
+    [string[]] $Operacoes = @("Resumir", "Redigir"),
 
     # O Iris recusa prazo acima de 90 dias.
     [ValidateRange(1, 90)]
@@ -154,7 +165,24 @@ $Leituras = @($Leituras |
     ForEach-Object { $_.Trim() } |
     Where-Object { $_ })
 
+$Operacoes = @($Operacoes |
+    ForEach-Object { $_ -split ',' } |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { $_ })
+
 # A conferencia que o ValidateSet faria, aqui -- DEPOIS da divisao.
+$operacoesValidas = @("Resumir", "Redigir", "Classificar")
+$forasDeOperacao = @($Operacoes | Where-Object { $operacoesValidas -notcontains $_ })
+if ($Operacoes.Count -eq 0 -or $forasDeOperacao.Count -gt 0) {
+    Write-Host ("Operacao(oes) que nao existem: {0}" -f ($forasDeOperacao -join ", ")) -ForegroundColor Red
+    Write-Host ("Validas: {0}" -f ($operacoesValidas -join ", ")) -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Nenhuma operacao autorizada e uma ativacao que nao serve para nada," -ForegroundColor Yellow
+    Write-Host "e operacao inventada nao vira erro no Iris: vira portao fechado" -ForegroundColor Yellow
+    Write-Host "sem ninguem entender por que." -ForegroundColor Yellow
+    exit 1
+}
+
 $leiturasValidas = @("Absent", "Blank", "Present", "HistoricalOnly")
 $forasDeSet = @($Leituras | Where-Object { $leiturasValidas -notcontains $_ })
 if ($forasDeSet.Count -gt 0) {
@@ -330,7 +358,7 @@ $json = [ordered]@{
     retencaoAceita                = "retencao zero exigida no proprio pedido"
     exigirRetencaoZero            = $true
     provedoresPermitidos          = $Provedores
-    operacoes                     = @("Resumir", "Redigir")
+    operacoes                     = @($Operacoes)
     pastas                        = @($alvos | ForEach-Object { @{ storeId = $_.StoreId; entryId = $_.EntryId } })
     rotulos                       = @()
     leituras                      = $Leituras
@@ -415,7 +443,12 @@ if ($Salvar) {
 }
 Write-Host ""
 Write-Host "Antes de salvar, leia:" -ForegroundColor Yellow
-Write-Host "  * 'operacoes' autoriza resumir E redigir. Tire um se quiser menos."
+Write-Host "  * 'operacoes' autoriza: $($Operacoes -join ', ')."
+if ($Operacoes -contains "Classificar") {
+    Write-Host "  * CLASSIFICAR manda a pasta em LOTES e grava o rotulo no cache." -ForegroundColor Yellow
+    Write-Host "    E diferente de resumir, que e um pedido por vez com o resultado" -ForegroundColor Yellow
+    Write-Host "    na tela e nada gravado." -ForegroundColor Yellow
+}
 Write-Host "  * 'leituras' aceita: $($Leituras -join ', ')."
 Write-Host "  * a autorizacao vence em $($ate.ToLocalTime().ToString('dd/MM/yyyy')) e"
 Write-Host "    depois disso a IA volta a ficar desligada, de proposito."

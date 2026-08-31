@@ -61,6 +61,27 @@ Public Class AssistenteViewModelTests
     End Function
 
     ''' <summary>Uma ativação que autoriza só as operações pedidas.</summary>
+    ''' <summary>
+    ''' A mesma fixture, aberta para quem prende o portão por operação — o
+    ''' <c>ClassificacaoEmLoteTests</c> precisa montar uma ativação SEM
+    ''' <c>Classificar</c> para provar que ela não vem de brinde.
+    ''' </summary>
+    Friend Shared Function AtivacaoPara(operacoes As AssistOperation()) As ActivationRecord
+        Return Ativacao(operacoes)
+    End Function
+
+    ''' <summary>Um pedido de uma operação qualquer, na pasta autorizada.</summary>
+    Friend Shared Function PedidoDe(operacao As AssistOperation) As PreflightRequest
+        Return New PreflightRequest(operacao, Pasta, Destino())
+    End Function
+
+    ''' <summary>O relógio da fixture, para quem chama o portão direto.</summary>
+    Friend Shared ReadOnly Property Quando As DateTimeOffset
+        Get
+            Return Agora
+        End Get
+    End Property
+
     Private Shared Function Ativacao(operacoes As AssistOperation()) As ActivationRecord
         Return New ActivationRecord("ativacao-1", 1, "teste", Agora.AddDays(-1),
                                     "provedor-de-teste", Endereco, "modelo-de-teste",
