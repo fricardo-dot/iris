@@ -173,7 +173,18 @@ $Operacoes = @($Operacoes |
 # A conferencia que o ValidateSet faria, aqui -- DEPOIS da divisao.
 $operacoesValidas = @("Resumir", "Redigir", "Classificar")
 $forasDeOperacao = @($Operacoes | Where-Object { $operacoesValidas -notcontains $_ })
-if ($Operacoes.Count -eq 0 -or $forasDeOperacao.Count -gt 0) {
+# DOIS ERROS DIFERENTES, DUAS MENSAGENS. Juntos, a lista vazia imprimia
+# "Operacao(oes) que nao existem:" sem nada depois dos dois pontos -- um
+# diagnostico que manda procurar o valor errado onde nao ha valor nenhum.
+if ($Operacoes.Count -eq 0) {
+    Write-Host "Nenhuma operacao autorizada." -ForegroundColor Red
+    Write-Host ("Escolha entre: {0}" -f ($operacoesValidas -join ", ")) -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Uma ativacao sem operacao nenhuma nao serve para nada: o portao" -ForegroundColor Yellow
+    Write-Host "recusa tudo e a tela nao explica por que." -ForegroundColor Yellow
+    exit 1
+}
+if ($forasDeOperacao.Count -gt 0) {
     Write-Host ("Operacao(oes) que nao existem: {0}" -f ($forasDeOperacao -join ", ")) -ForegroundColor Red
     Write-Host ("Validas: {0}" -f ($operacoesValidas -join ", ")) -ForegroundColor Red
     Write-Host ""

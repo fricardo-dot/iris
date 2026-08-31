@@ -25,6 +25,8 @@ Casos reais desta base, todos custando tempo de depuração:
 | `destino` | função `Destino()` | "tipo não pode ser inferido" |
 | `Contatos` | módulo `Contatos` do modelo | "ForaDoAlcance não é membro de ObservableCollection" |
 | `anexado` | função `Anexado()` | "tipo não pode ser inferido" |
+| `lote` | função `Lote()` do teste | "tipo não pode ser inferido a partir de expressão contendo `lote`" |
+| `chave` | função `Chave()` do teste | "argumento não especificado para o parâmetro `id`" |
 
 O `reconciliacao` é o pior da lista e merece nome: num construtor,
 `Reconciliacao = reconciliacao` atribui o **parâmetro a ele mesmo**, a
