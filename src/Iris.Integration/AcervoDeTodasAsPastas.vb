@@ -142,7 +142,7 @@ Namespace Global.Iris.Integration
             Dim novo As New List(Of PastaNoAcervo)()
 
             For Each p In PastasBrutas()
-                novo.Add(New PastaNoAcervo(p.Chave, p.Nome, leitor.Ler(p.Chave)))
+                novo.Add(New PastaNoAcervo(p.Chave, p.Nome, leitor.Ler(p.Chave), p.Store))
             Next
 
             SyncLock _trava
@@ -154,17 +154,25 @@ Namespace Global.Iris.Integration
         Private Structure Bruta
             Public Chave As Long
             Public Nome As String
+            Public Store As String
         End Structure
 
         Private Function PastasBrutas() As List(Of Bruta)
             Dim r As New List(Of Bruta)()
             Using cmd = _conn.CreateCommand()
-                cmd.CommandText = "SELECT folder_key, name FROM folder ORDER BY name"
+                ' O STORE VEM JUNTO. Sem ele, quem monta um ItemKey a partir do
+                ' acervo tem o EntryID e nao tem onde abri-lo -- e ItemKey sem
+                ' store nao identifica mensagem nenhuma fora de uma caixa so.
+                cmd.CommandText =
+                    "SELECT f.folder_key, f.name, s.provider_store_id " &
+                    "FROM folder f JOIN store s ON s.store_key = f.store_key " &
+                    "ORDER BY f.name"
                 Using rd = cmd.ExecuteReader()
                     While rd.Read()
                         r.Add(New Bruta With {
                             .Chave = rd.GetInt64(0),
-                            .Nome = If(rd.IsDBNull(1), "", rd.GetString(1))})
+                            .Nome = If(rd.IsDBNull(1), "", rd.GetString(1)),
+                            .Store = If(rd.IsDBNull(2), "", rd.GetString(2))})
                     End While
                 End Using
             End Using
@@ -179,10 +187,19 @@ Namespace Global.Iris.Integration
         Public ReadOnly Property Nome As String
         Public ReadOnly Property Manifesto As FolderManifest
 
-        Friend Sub New(chave As Long, nome As String, manifesto As FolderManifest)
+        ''' <summary>
+        ''' O <c>StoreID</c> do provedor. Existe porque <see cref="ItemKey"/>
+        ''' precisa dele: EntryID sozinho não identifica mensagem fora de uma
+        ''' caixa só, e a tela abre pela chave inteira.
+        ''' </summary>
+        Public ReadOnly Property Store As String
+
+        Friend Sub New(chave As Long, nome As String, manifesto As FolderManifest,
+                       Optional store As String = Nothing)
             Me.Chave = chave
             Me.Nome = If(nome, "")
             Me.Manifesto = manifesto
+            Me.Store = If(store, "")
         End Sub
     End Class
 

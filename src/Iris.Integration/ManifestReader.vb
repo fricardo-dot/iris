@@ -15,12 +15,29 @@ Namespace Global.Iris.Integration
         Public ReadOnly Property IsUnread As Boolean?
         Public ReadOnly Property Presence As PresenceState
 
+        ''' <summary>
+        ''' A conversa a que a mensagem pertence. Vazio é <b>não deu para
+        ''' ler</b> — inclusive em item varrido antes de a coluna existir.
+        ''' </summary>
+        Public ReadOnly Property ConversationId As String
+
+        ''' <summary>
+        ''' O <b>endereço</b> do remetente, que é o que decide a direção.
+        ''' <see cref="SenderName"/> não serve: nome de exibição repete, muda,
+        ''' e não identifica ninguém.
+        ''' </summary>
+        Public ReadOnly Property SenderAddress As String
+
         Friend Sub New(id As String, subject As String, sender As String, received As String,
-                       unread As Boolean?, presence As PresenceState)
+                       unread As Boolean?, presence As PresenceState,
+                       Optional conversationId As String = Nothing,
+                       Optional senderAddress As String = Nothing)
             ProviderEntryId = id
             Me.Subject = subject
             SenderName = sender
             ReceivedAt = received
+            Me.ConversationId = If(conversationId, "")
+            Me.SenderAddress = If(senderAddress, "")
             IsUnread = unread
             Me.Presence = presence
         End Sub
@@ -248,7 +265,7 @@ Namespace Global.Iris.Integration
                 ' ate a publicacao, entao nao entram aqui.
                 cmd.CommandText =
                     "SELECT i.provider_entry_id, m.subject, m.sender_name, m.received_at, " &
-                    "       m.is_unread, a.presence " &
+                    "       m.is_unread, a.presence, m.conversation_id, m.sender_address " &
                     "FROM association a " &
                     "JOIN incarnation i ON i.item_key = a.item_key AND i.folder_key = a.folder_key " &
                     "LEFT JOIN metadata_observation m ON m.incarnation_key = i.incarnation_key " &
@@ -263,7 +280,9 @@ Namespace Global.Iris.Integration
                             If(rd.IsDBNull(2), Nothing, rd.GetString(2)),
                             If(rd.IsDBNull(3), Nothing, rd.GetString(3)),
                             If(rd.IsDBNull(4), CType(Nothing, Boolean?), rd.GetInt32(4) = 1),
-                            DaPresenca(If(rd.IsDBNull(5), Nothing, rd.GetString(5)))))
+                            DaPresenca(If(rd.IsDBNull(5), Nothing, rd.GetString(5))),
+                            If(rd.IsDBNull(6), Nothing, rd.GetString(6)),
+                            If(rd.IsDBNull(7), Nothing, rd.GetString(7))))
                     End While
                 End Using
             End Using
