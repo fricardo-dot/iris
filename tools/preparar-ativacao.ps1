@@ -59,6 +59,31 @@ param(
     [ValidateRange(1, 90)]
     [int] $Dias = 30,
 
+    # Quais RESULTADOS de leitura de rotulo a ativacao aceita.
+    #
+    # ERA FIXO EM "Absent", e isso custou uma investigacao inteira. Medido em
+    # 30/08/2026 numa caixa real: as 13 mensagens de uma pasta devolviam
+    # MSIP_Labels como STRING VAZIA, que o Iris classifica como "Blank" --
+    # propriedade existe, valor vazio. "Absent" e outra coisa: a propriedade
+    # nao foi encontrada.
+    #
+    # Sao os dois jeitos de "esta mensagem nao tem rotulo", e a ativacao
+    # autorizava um so. O portao entao recusava tudo, e a tela dizia "nao foi
+    # possivel classificar" -- que era falso: classificou muito bem.
+    #
+    # O padrao inclui os dois. Present, HistoricalOnly e o resto continuam de
+    # fora: autorizar mensagem CLASSIFICADA e outra decisao, e ela e sua.
+    # SEM [ValidateSet], e a razao e do PowerShell: ValidateSet roda no
+    # BINDING do parametro, antes de o corpo do roteiro rodar -- entao a
+    # divisao por virgula (necessaria com `-File`, ver acima) nunca chega a
+    # acontecer, e "Absent,Blank" e rejeitado como se fosse um valor unico
+    # invalido.
+    #
+    # Terceira variacao da mesma armadilha neste arquivo, e a unica em que o
+    # remedio das outras duas nao serve. A conferencia foi para o corpo, logo
+    # depois da divisao.
+    [string[]] $Leituras = @("Absent", "Blank"),
+
     # Voce verificou a politica corporativa aplicavel? O padrao e a resposta
     # honesta para quem nao verificou.
     [switch] $PoliticaVerificada,
@@ -123,6 +148,24 @@ $Pasta = @($Pasta |
     ForEach-Object { $_ -split ',' } |
     ForEach-Object { $_.Trim() } |
     Where-Object { $_ })
+
+$Leituras = @($Leituras |
+    ForEach-Object { $_ -split ',' } |
+    ForEach-Object { $_.Trim() } |
+    Where-Object { $_ })
+
+# A conferencia que o ValidateSet faria, aqui -- DEPOIS da divisao.
+$leiturasValidas = @("Absent", "Blank", "Present", "HistoricalOnly")
+$forasDeSet = @($Leituras | Where-Object { $leiturasValidas -notcontains $_ })
+if ($forasDeSet.Count -gt 0) {
+    Write-Host ("Leitura(s) que nao existem: {0}" -f ($forasDeSet -join ", ")) -ForegroundColor Red
+    Write-Host ("Validas: {0}" -f ($leiturasValidas -join ", ")) -ForegroundColor Red
+    Write-Host ""
+    Write-Host "Absent e Blank sao os dois jeitos de 'sem rotulo': a propriedade" -ForegroundColor Yellow
+    Write-Host "nao existir, e ela existir vazia. Present e mensagem CLASSIFICADA," -ForegroundColor Yellow
+    Write-Host "e autoriza-la a sair e outra decisao." -ForegroundColor Yellow
+    exit 1
+}
 
 if (-not $Provedores) {
     Write-Host "Nenhum provedor informado." -ForegroundColor Red
@@ -290,7 +333,7 @@ $json = [ordered]@{
     operacoes                     = @("Resumir", "Redigir")
     pastas                        = @($alvos | ForEach-Object { @{ storeId = $_.StoreId; entryId = $_.EntryId } })
     rotulos                       = @()
-    leituras                      = @("Absent")
+    leituras                      = $Leituras
     contentBits                   = @(0)
 } | ConvertTo-Json -Depth 5
 
@@ -373,7 +416,7 @@ if ($Salvar) {
 Write-Host ""
 Write-Host "Antes de salvar, leia:" -ForegroundColor Yellow
 Write-Host "  * 'operacoes' autoriza resumir E redigir. Tire um se quiser menos."
-Write-Host "  * 'leituras' aceita SO mensagem sem rotulo de sensibilidade."
+Write-Host "  * 'leituras' aceita: $($Leituras -join ', ')."
 Write-Host "  * a autorizacao vence em $($ate.ToLocalTime().ToString('dd/MM/yyyy')) e"
 Write-Host "    depois disso a IA volta a ficar desligada, de proposito."
 if (-not $PoliticaVerificada) {

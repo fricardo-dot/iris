@@ -52,7 +52,7 @@ Public Class AssistenteViewModelTests
         Return New AssistDestination("provedor-de-teste", Endereco, "modelo-de-teste")
     End Function
 
-    Private Shared Function Voo() As PreflightRequest
+    Friend Shared Function Voo() As PreflightRequest
         Return New PreflightRequest(AssistOperation.Resumir, Pasta, Destino())
     End Function
 
@@ -70,13 +70,13 @@ Public Class AssistenteViewModelTests
                                     {LabelReadingKind.Absent}, {0}, ate:=Agora.AddDays(30), provedoresPermitidos:={"provedor-subjacente"})
     End Function
 
-    Private Shared Function Classificada(n As Integer) As MessageClassification
+    Friend Shared Function Classificada(n As Integer) As MessageClassification
         Dim l As New LabelReading(Chave(n), LabelReadingKind.Absent, LabelReadStage.Parse,
                                   version:=New LabelVersionEvidence($"E-{n}", Agora, $"CK-{n}"))
         Return New MessageClassification(Chave(n), Pasta, l, temAnexo:=False)
     End Function
 
-    Private Shared Function Preparada(n As Integer) As MessagePart
+    Friend Shared Function Preparada(n As Integer) As MessagePart
         Return ContentPipeline.Preparar(
             New MessageSnapshot(Chave(n), $"CK-{n}", $"assunto {n}", "de@x.invalido",
                                 {"para@x.invalido"}, "olá", False, True, temAnexo:=False)).Parte
@@ -631,9 +631,14 @@ Public Class AssistenteViewModelTests
         Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
         Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
+        ' Resumir antes e enviar depois: desde 31/08 redigir MOSTRA, e
+        ' aplicar no rascunho e ato proprio. Ver RedigirEmDoisPassosTests.
+        Await vm.Resumir()
+
         Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing), "nada a desfazer ainda")
 
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.EnviarParaRascunho()
 
         Assert.AreEqual("resposta redigida pela IA", r.Texto)
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
@@ -663,34 +668,44 @@ Public Class AssistenteViewModelTests
     End Function
 
     ''' <summary>
-    ''' <b>Editar o rascunho durante a redação impede a escrita por cima.</b>
+    ''' <b>A CORRIDA QUE ESTES TESTES PROTEGIAM DEIXOU DE EXISTIR.</b>
     '''
-    ''' A corrida que o §29 chama de "digitar durante a espera": o usuário pede
-    ''' a redação, continua escrevendo enquanto a IA pensa, e a resposta volta.
-    ''' Escrever por cima apagaria o que ele acabou de digitar — e o
-    ''' <c>Desfazer</c> devolveria o texto de <b>antes do pedido</b>, e não a
-    ''' edição dele, de modo que o que ele escreveu se perderia por duas vias.
+    ''' Eram três, e todos sobre a mesma coisa: a resposta da IA chegando
+    ''' <i>depois</i> de o usuário mexer no rascunho, ou de trocar de
+    ''' rascunho, e sendo escrita por cima. Havia guarda para isso no fim da
+    ''' redação, e ela era necessária.
     '''
-    ''' O que o teste exige nas três frentes:
-    ''' <list type="bullet">
-    ''' <item>o rascunho continua com o que o usuário digitou;</item>
-    ''' <item>não há nada a desfazer — porque nada foi sobrescrito;</item>
-    ''' <item>a resposta continua na tela, e a faixa diz que ela não foi
-    ''' aplicada. Descartá-la seria perder trabalho já feito: o conteúdo já foi
-    ''' ao provedor, e apagar o texto aqui não desfaz divulgação nenhuma.</item>
-    ''' </list>
+    ''' Em 31/08 a redação <b>deixou de escrever no rascunho</b>: ela mostra a
+    ''' resposta num quadro, e aplicar virou o <c>EnviarParaRascunho</c>, que é
+    ''' um clique — <b>síncrono</b>, sem espera no meio, e portanto sem corrida
+    ''' possível.
+    '''
+    ''' <b>Apagar os três seria perder a cobertura;</b> mantê-los seria cobrar
+    ''' um comportamento que não existe. Este teste é o substituto, e prende a
+    ''' propriedade que passou a valer: <b>por mais que o rascunho mude
+    ''' durante a redação, a redação não o toca.</b>
+    '''
+    ''' O que sobrou de guarda mora no desfazer, e continua testado:
+    ''' <see cref="Desfazer_NAO_atravessa_para_outro_rascunho"/>.
     ''' </summary>
     <TestMethod>
-    Public Async Function Editar_o_rascunho_durante_a_redacao_NAO_e_sobrescrito() As Task
+    Public Async Function Mexer_no_rascunho_durante_a_redacao_e_INOFENSIVO() As Task
         Dim r As New RascunhoFalso() With {.Texto = "o que eu ja tinha escrito"}
         Dim p As New ProvedorControlado() With {
             .Trava = New ManualResetEventSlim(False), .Texto = "resposta redigida pela IA"}
         Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
+        Await vm.Resumir()
+
         Dim t = vm.RedigirCommand.ExecuteAsync(Nothing)
         Try
             Assert.IsTrue(Esperar(Function() vm.Ocupado), "tinha de estar em voo")
-            ' O usuario continua digitando enquanto a IA pensa.
+            ' O usuario digita enquanto a IA pensa.
+            '
+            ' NAO ha Trocar() aqui: o Trocar zera o texto do duplo, e a
+            ' assercao passaria a nao distinguir 'a redacao nao escreveu' de
+            ' 'o duplo apagou tudo'. A troca de rascunho e coberta pelo
+            ' Desfazer_NAO_atravessa_para_outro_rascunho.
             r.Texto = "o que eu ja tinha escrito, e mais um paragrafo"
         Finally
             p.Trava.Set()
@@ -698,14 +713,12 @@ Public Class AssistenteViewModelTests
         Await t
 
         Assert.AreEqual("o que eu ja tinha escrito, e mais um paragrafo", r.Texto,
-                        "a IA escreveu por cima do que o usuario digitou na espera")
+            "a redacao tocou no rascunho. Ela nao escreve mais: mostra, e " &
+            "aplicar e outro ato.")
         Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing),
-                       "nada foi sobrescrito, entao nao ha o que desfazer — e um " &
-                       "Desfazer habilitado aqui devolveria o texto de ANTES do pedido")
-        Assert.AreEqual("resposta redigida pela IA", vm.Resultado,
-                        "a resposta ja foi paga: ela fica na tela para o usuario copiar")
-        StringAssert.Contains(vm.Aviso, "não foi aplicada",
-                              "silencio faria a redacao parecer que simplesmente falhou")
+            "nada foi aplicado, entao nao ha o que desfazer")
+        Assert.IsTrue(vm.TemResposta, "a resposta tem de estar no quadro dela")
+        Assert.IsTrue(vm.TemResultado, "e o resumo continua no quadro dele")
     End Function
 
     ''' <summary>
@@ -723,10 +736,15 @@ Public Class AssistenteViewModelTests
             .Trava = New ManualResetEventSlim(False), .Texto = "resposta redigida pela IA"}
         Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
+        ' Resumir antes e enviar depois: desde 31/08 redigir MOSTRA, e
+        ' aplicar no rascunho e ato proprio. Ver RedigirEmDoisPassosTests.
+        Await vm.Resumir()
+
         Dim t = vm.RedigirCommand.ExecuteAsync(Nothing)
         Assert.IsTrue(Esperar(Function() vm.Ocupado), "tinha de estar em voo")
         p.Trava.Set()
         Await t
+        vm.EnviarParaRascunho()
 
         Assert.AreEqual("resposta redigida pela IA", r.Texto,
                         "sem edicao concorrente a redacao TEM de entrar")
@@ -846,33 +864,7 @@ Public Class AssistenteViewModelTests
     ' ==================================================================
     ' O rascunho tem identidade
 
-    ''' <summary>
-    ''' <b>Rascunho trocado durante a redação não recebe a resposta.</b>
-    '''
-    ''' A guarda comparava só o <b>texto</b>. Fechar o compositor e abrir outro
-    ''' durante a espera dá um rascunho diferente que pode ter o mesmo texto — e
-    ''' o caso comum é o pior: os dois vazios. A redação de uma mensagem entraria
-    ''' na outra, e o <c>Desfazer</c> apagaria o que houvesse lá.
-    ''' </summary>
-    <TestMethod>
-    Public Async Function Rascunho_TROCADO_durante_a_redacao_nao_recebe_a_resposta() As Task
-        Dim r As New RascunhoFalso()
-        Dim p As New ProvedorControlado() With {
-            .Trava = New ManualResetEventSlim(False), .Texto = "resposta redigida pela IA"}
-        Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
-        Dim t = vm.RedigirCommand.ExecuteAsync(Nothing)
-        Assert.IsTrue(Esperar(Function() vm.Ocupado))
-        ' Fecha este rascunho e abre outro — vazio, como o anterior.
-        r.Trocar()
-        p.Trava.Set()
-        Await t
-
-        Assert.AreEqual("", r.Texto,
-            "a redacao de um rascunho entrou em outro so porque os dois estavam vazios")
-        Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
-        StringAssert.Contains(vm.Aviso, "não está mais aberto")
-    End Function
 
     ''' <summary>
     ''' <b>Compositor que não aceita edição desabilita a redação.</b>
@@ -912,6 +904,7 @@ Public Class AssistenteViewModelTests
         Dim vm = Montar(Ativacao({AssistOperation.Redigir}), p, Pronta(), Nothing, r)
 
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.EnviarParaRascunho()
 
         Assert.AreEqual(1, p.Chamadas, "o botao habilitado tem de fazer alguma coisa")
         Assert.AreEqual("resposta redigida pela IA", r.Texto)
@@ -968,9 +961,15 @@ Public Class AssistenteViewModelTests
         Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
         Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
+        ' RESUMIR ANTES, porque a recusa mora na EXECUCAO e nao so no botao:
+        ' PodeExecutar(Redigir) consulta PodeRedigir, que desde 31/08 exige o
+        ' resumo. O teste continua sendo sobre a chamada direta transmitir
+        ' quando autorizada -- e 'autorizada' passou a incluir haver resumo.
+        Await vm.Resumir()
         Await vm.Redigir()
+        vm.EnviarParaRascunho()
 
-        Assert.AreEqual(1, p.Chamadas)
+        Assert.AreEqual(2, p.Chamadas, "resumo e redacao")
         Assert.AreEqual("resposta redigida pela IA", r.Texto)
     End Function
 
@@ -991,7 +990,12 @@ Public Class AssistenteViewModelTests
         Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
         Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
+        ' Resumir antes e enviar depois: desde 31/08 redigir MOSTRA, e
+        ' aplicar no rascunho e ato proprio. Ver RedigirEmDoisPassosTests.
+        Await vm.Resumir()
+
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.EnviarParaRascunho()
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing), "em A da para desfazer")
 
         ' Fecha A, abre B, e o usuario escreve nele.
@@ -1063,7 +1067,12 @@ Public Class AssistenteViewModelTests
         Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
         Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
+        ' Resumir antes e enviar depois: desde 31/08 redigir MOSTRA, e
+        ' aplicar no rascunho e ato proprio. Ver RedigirEmDoisPassosTests.
+        Await vm.Resumir()
+
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.EnviarParaRascunho()
         r.PodeEditar = False
 
         Assert.IsFalse(vm.DesfazerCommand.CanExecute(Nothing))
@@ -1096,7 +1105,12 @@ Public Class AssistenteViewModelTests
         Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
         Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
+        ' Resumir antes e enviar depois: desde 31/08 redigir MOSTRA, e
+        ' aplicar no rascunho e ato proprio. Ver RedigirEmDoisPassosTests.
+        Await vm.Resumir()
+
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.EnviarParaRascunho()
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
 
         Dim avisos = 0
@@ -1123,7 +1137,12 @@ Public Class AssistenteViewModelTests
         Dim p As New ProvedorControlado() With {.Texto = "resposta redigida pela IA"}
         Dim vm = Montar(Ativacao(), p, Pronta(), Nothing, r)
 
+        ' Resumir antes e enviar depois: desde 31/08 redigir MOSTRA, e
+        ' aplicar no rascunho e ato proprio. Ver RedigirEmDoisPassosTests.
+        Await vm.Resumir()
+
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.EnviarParaRascunho()
 
         Assert.IsTrue(vm.DesfazerCommand.CanExecute(Nothing))
         vm.DesfazerCommand.Execute(Nothing)

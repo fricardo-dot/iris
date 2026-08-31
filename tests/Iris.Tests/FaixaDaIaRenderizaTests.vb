@@ -249,9 +249,16 @@ Public Class FaixaDaIaRenderizaTests
         Dim desfazer = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Desfazer")
         Assert.IsFalse(desfazer.IsEnabled, "antes da redacao nao ha o que desfazer")
 
+        ' RESUMIR, REDIGIR, ENVIAR -- tres passos desde 31/08.
+        '
+        ' Antes, redigir tambem aplicava no rascunho, e o desfazer nascia
+        ' junto. Agora aplicar e ato proprio, e e ele que da o que desfazer.
+        ' Este teste dizia 'depois da redacao' e passou a exigir o envio.
+        Await vm.ResumirCommand.ExecuteAsync(Nothing)
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.EnviarParaRascunho()
         faixa.UpdateLayout()
-        Assert.IsTrue(desfazer.IsEnabled, "depois da redacao o botao tem de estar de pe")
+        Assert.IsTrue(desfazer.IsEnabled, "depois do envio ao rascunho o botao tem de estar de pe")
 
         ' O usuário digita por cima da redação.
         rascunho.Texto = "resposta redigida pela IA, com o meu final"
@@ -285,7 +292,9 @@ Public Class FaixaDaIaRenderizaTests
             faixa.UpdateLayout()
         Next
 
+        Await vm.ResumirCommand.ExecuteAsync(Nothing)
         Await vm.RedigirCommand.ExecuteAsync(Nothing)
+        vm.EnviarParaRascunho()
         faixa.UpdateLayout()
 
         Dim desfazer = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Desfazer")
@@ -642,7 +651,7 @@ Public Class FaixaDaIaRenderizaTests
 
         Dim faixa = Vestida(vm)
 
-        Dim copiar = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Copiar")
+        Dim copiar = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Copiar resumo")
         Assert.IsFalse(copiar.IsEnabled, "sem resposta nao ha o que copiar")
 
         Await vm.ResumirCommand.ExecuteAsync(Nothing)
@@ -671,7 +680,7 @@ Public Class FaixaDaIaRenderizaTests
         Dim faixa = Vestida(vm)
         Await vm.ResumirCommand.ExecuteAsync(Nothing)
         faixa.UpdateLayout()
-        Dim copiar = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Copiar")
+        Dim copiar = Botoes(faixa).Single(Function(b) CStr(b.Content) = "Copiar resumo")
         Assert.IsTrue(copiar.IsEnabled, "controle: estava de pe")
 
         vm.Trocou()

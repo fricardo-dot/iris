@@ -68,9 +68,18 @@
                                 Style="{DynamicResource Toolbar.Button}"
                                 Command="{Binding ResumirCommand}"
                                 AutomationProperties.Name="Resumir com IA" />
+                        <!-- O TOOLTIP DIZ POR QUE ELE ESTA APAGADO.
+
+                             Botao cinza sem explicacao e pior que botao
+                             ausente: promete e nao diz o que falta. O motivo
+                             mais comum aqui e o mais facil de resolver, e o
+                             usuario nao tem como adivinhar: "Redigir" escreve
+                             DENTRO de um rascunho, entao precisa de um aberto. -->
                         <Button Content="Redigir resposta"
                                 Style="{DynamicResource Toolbar.Button}"
                                 Command="{Binding RedigirCommand}"
+                                ToolTip="{Binding PorQueNaoRedige}"
+                                ToolTipService.ShowOnDisabled="True"
                                 AutomationProperties.Name="Redigir resposta com IA" />
 
                         <Border Width="1" Margin="8,6" VerticalAlignment="Stretch"
@@ -80,7 +89,7 @@
                              tela e ja foi pago; amarrar a copia a autorizacao
                              faria a IA vencer entre o resumo aparecer e o
                              usuario conseguir leva-lo embora. -->
-                        <Button Content="Copiar"
+                        <Button Content="Copiar resumo"
                                 Style="{DynamicResource Toolbar.Button}"
                                 Command="{Binding CopiarCommand}"
                                 ToolTip="Copiar a resposta da IA"
@@ -214,7 +223,7 @@
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="RESPOSTA DA IA"
+                            <TextBlock Grid.Column="0" Text="RESUMO DA IA"
                                        Style="{DynamicResource Text.Muted}" />
                             <!-- A FICHA: quem atendeu, quanto custou, quanto
                                  demorou. Agente e modelo vem da ATIVACAO, e nao
@@ -247,13 +256,86 @@
                              Uma linha, um numero, sem adjetivo: numa caixa
                              corporativa ela aparece quase sempre, e ressalva
                              longa que aparece sempre vira ruido. -->
-                        <TextBlock Text="{Binding RessalvaDoConteudo}"
+                        <!-- E VISIVEL, para quem nao passa o mouse no botao. -->
+                    <TextBlock Text="{Binding PorQueNaoRedige}"
+                               Style="{DynamicResource Text.Muted}"
+                               TextWrapping="Wrap" Margin="0,4,0,0"
+                               Visibility="{Binding TemMotivoParaNaoRedigir,
+                                                    Converter={StaticResource BoolToVis},
+                                                    FallbackValue=Collapsed}"
+                               AutomationProperties.Name="Por que nao da para redigir" />
+
+                    <TextBlock Text="{Binding RessalvaDoConteudo}"
                                    Style="{DynamicResource Text.Muted}"
                                    TextWrapping="Wrap" Margin="0,6,0,0"
                                    Visibility="{Binding TemRessalvaDoConteudo,
                                                         Converter={StaticResource BoolToVis},
                                                         FallbackValue=Collapsed}"
                                    AutomationProperties.Name="O que nao foi lido para este resultado" />
+
+                        <!-- ============ A RESPOSTA REDIGIDA ============
+
+                             Quadro PROPRIO, e nao o mesmo do resumo. Antes,
+                             redigir escrevia por cima do resultado: o resumo
+                             que o usuario acabou de pagar sumia da tela.
+
+                             E o botao daqui e "Enviar para rascunho", nao
+                             "Copiar". Redigir MOSTRA; aplicar e outro ato. O
+                             botao antigo dizia "redigir" e tambem aplicava, e
+                             ninguem tinha pedido a segunda coisa. 
+                               CornerRadius literal, e nao {StaticResource Radius.Card}:
+                               este UserControl nao tem o dicionario de tokens no escopo,
+                               e recurso ausente vira XamlParseException NO ARRANQUE da
+                               faixa. O quadro de cima ja usava 6 pelo mesmo motivo, e eu
+                               nao olhei. Onze testes de renderizacao pegaram. -->
+                        <Border Margin="0,10,0,0" Padding="12,10"
+                                Background="{DynamicResource Brush.Surface.2}"
+                                BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                BorderThickness="1"
+                                CornerRadius="6"
+                                Visibility="{Binding TemResposta,
+                                                     Converter={StaticResource BoolToVis},
+                                                     FallbackValue=Collapsed}">
+                            <StackPanel>
+                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                    <TextBlock Text="RESPOSTA REDIGIDA"
+                                               Style="{DynamicResource Text.Muted}"
+                                               VerticalAlignment="Center" />
+                                    <Button Content="Enviar para rascunho"
+                                            Style="{DynamicResource Toolbar.Button}"
+                                            Command="{Binding EnviarParaRascunhoCommand}"
+                                            Margin="12,0,0,0"
+                                            ToolTip="{Binding PorQueNaoEnvia}"
+                                            ToolTipService.ShowOnDisabled="True"
+                                            AutomationProperties.Name="Enviar a resposta para o rascunho" />
+                                    <Button Content="Copiar resposta"
+                                            Style="{DynamicResource Toolbar.Button}"
+                                            Command="{Binding CopiarRespostaCommand}"
+                                            Margin="6,0,0,0"
+                                            AutomationProperties.Name="Copiar a resposta redigida" />
+                                </StackPanel>
+
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              MaxHeight="240"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <TextBlock Text="{Binding Resposta}"
+                                               Style="{DynamicResource Text.Body}"
+                                               TextWrapping="Wrap"
+                                               AutomationProperties.Name="Resposta redigida pela IA" />
+                                </ScrollViewer>
+
+                                <!-- Por que o envio ao rascunho esta apagado.
+                                     Botao cinza sem explicacao promete e nao
+                                     diz o que falta. -->
+                                <TextBlock Text="{Binding PorQueNaoEnvia}"
+                                           Style="{DynamicResource Text.Muted}"
+                                           TextWrapping="Wrap" Margin="0,6,0,0"
+                                           Visibility="{Binding TemMotivoParaNaoEnviar,
+                                                                Converter={StaticResource BoolToVis},
+                                                                FallbackValue=Collapsed}"
+                                           AutomationProperties.Name="Por que nao da para enviar ao rascunho" />
+                            </StackPanel>
+                        </Border>
                     </StackPanel>
                 </Border>
             </Border>

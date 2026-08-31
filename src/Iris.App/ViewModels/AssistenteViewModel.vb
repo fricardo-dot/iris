@@ -155,6 +155,10 @@ Namespace Global.Iris.App.ViewModels
             CancelarCommand = New RelayCommand(AddressOf Cancelar, Function() PodeCancelar)
             DesfazerCommand = New RelayCommand(AddressOf Desfazer, Function() PodeDesfazer)
             CopiarCommand = New RelayCommand(AddressOf Copiar, Function() PodeCopiar)
+            EnviarParaRascunhoCommand = New RelayCommand(AddressOf EnviarParaRascunho,
+                                                        Function() PodeEnviarParaRascunho)
+            CopiarRespostaCommand = New RelayCommand(AddressOf CopiarResposta,
+                                                    Function() TemResposta)
             ' Me. OBRIGATORIO: sem ele, 'reconciliacao' eclipsa 'Reconciliacao'
             ' — VB e case-insensitive, e a atribuicao vira o parametro para ele
             ' mesmo. O compilador nao avisa; o sintoma aparece longe, como uma
@@ -272,6 +276,16 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property DesfazerCommand As RelayCommand
         Public ReadOnly Property CopiarCommand As RelayCommand
 
+        ''' <summary>Manda a resposta redigida para o rascunho aberto.</summary>
+        Public ReadOnly Property EnviarParaRascunhoCommand As RelayCommand
+
+        ''' <summary>
+        ''' Copia a RESPOSTA. Separado do <see cref="CopiarCommand"/>, que copia
+        ''' o resumo: são dois quadros, e um botão que copiasse "o que estiver
+        ''' ali" copiaria o errado metade das vezes.
+        ''' </summary>
+        Public ReadOnly Property CopiarRespostaCommand As RelayCommand
+
         Private _ocupado As Boolean
         ''' <summary>Há um pedido em andamento.</summary>
         Public Property Ocupado As Boolean
@@ -282,6 +296,8 @@ Namespace Global.Iris.App.ViewModels
                 SetProperty(_ocupado, value)
                 OnPropertyChanged(NameOf(PodePedir))
                 OnPropertyChanged(NameOf(PodeRedigir))
+                OnPropertyChanged(NameOf(PorQueNaoRedige))
+                OnPropertyChanged(NameOf(TemMotivoParaNaoRedigir))
                 OnPropertyChanged(NameOf(PodeCancelar))
                 Avisar()
             End Set
@@ -358,6 +374,50 @@ Namespace Global.Iris.App.ViewModels
                       "1 imagem embutida não foi lida.",
                       $"{total} imagens embutidas não foram lidas.")
         End Function
+
+        ''' <summary>
+        ''' <b>A resposta redigida — separada do resumo, e não no lugar dele.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE MUDOU, E POR QUÊ</b>
+        '''
+        ''' Antes, redigir <b>substituía</b> o resumo na tela e <b>escrevia
+        ''' direto no rascunho</b>. Duas coisas erradas de uma vez: o resumo que
+        ''' o usuário acabou de pagar sumia, e a aplicação no rascunho acontecia
+        ''' sem ele pedir — o botão dizia "redigir", e ele também aplicava.
+        '''
+        ''' Agora são dois quadros e dois atos. Redigir mostra; <b>Enviar para
+        ''' rascunho</b> aplica. Um botão, uma coisa.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>E A REDAÇÃO USA O RESUMO</b>
+        '''
+        ''' Por isso ela só é oferecida depois dele. O modelo recebe o e-mail
+        ''' <i>e</i> o resumo — o resumo não amplia o que sai da caixa (o e-mail
+        ''' já saiu na primeira chamada), mas dá ao segundo pedido o que o
+        ''' primeiro concluiu.
+        ''' </summary>
+        Public Property Resposta As String
+            Get
+                Return _resposta
+            End Get
+            Private Set(value As String)
+                SetProperty(_resposta, If(value, ""))
+                OnPropertyChanged(NameOf(TemResposta))
+                OnPropertyChanged(NameOf(PodeEnviarParaRascunho))
+                OnPropertyChanged(NameOf(PorQueNaoEnvia))
+                OnPropertyChanged(NameOf(TemMotivoParaNaoEnviar))
+                EnviarParaRascunhoCommand?.NotifyCanExecuteChanged()
+                CopiarRespostaCommand?.NotifyCanExecuteChanged()
+            End Set
+        End Property
+        Private _resposta As String = ""
+
+        Public ReadOnly Property TemResposta As Boolean
+            Get
+                Return _resposta.Length > 0
+            End Get
+        End Property
 
         Public Property Resultado As String
             Get
@@ -627,6 +687,16 @@ Namespace Global.Iris.App.ViewModels
         ''' Iris. Deixar a exceção subir mataria a janela por causa de um botão
         ''' de conveniência.
         ''' </summary>
+        Private Sub CopiarResposta()
+            If Not TemResposta Then Return
+            Try
+                _copiador(Resposta)
+            Catch
+                Aviso = "Não consegui usar a área de transferência. " &
+                        "O texto continua aí para copiar à mão."
+            End Try
+        End Sub
+
         Private Sub Copiar()
             If Not PodeCopiar Then Return
             Try
@@ -771,8 +841,37 @@ Namespace Global.Iris.App.ViewModels
         ''' ação. Um botão que executa e sempre recusa seria o outro extremo.
         ''' Visível e desabilitado, com o motivo ao lado, é o meio.
         ''' </summary>
+        ''' <summary>
+        ''' <b>A instrução do resumo — e o histórico que ela precisou pedir.</b>
+        '''
+        ''' Era só "Resuma estas mensagens." O corpo que o Iris manda é o
+        ''' <c>mail.Body</c> inteiro, sem truncar, e num "RE:" ele já traz a
+        ''' conversa citada embaixo — o modelo <b>recebia</b> o histórico e
+        ''' ninguém pedia que ele o usasse. O resumo saía sobre a mensagem nova
+        ''' e nada mais.
+        '''
+        ''' <b>E a instrução pede que ele SEPARE.</b> Um resumo que misture o
+        ''' que acabou de chegar com o que já estava na conversa faz o leitor
+        ''' achar que tudo é novidade — e para quem lê uma caixa de entrada,
+        ''' "o que mudou" é a única pergunta que importa.
+        ''' </summary>
+        Friend Const InstrucaoDeResumo As String =
+            "Resuma estas mensagens. O corpo pode trazer a conversa anterior " &
+            "citada abaixo da mensagem mais recente: use-a como contexto e diga " &
+            "primeiro o que há de NOVO, depois o histórico necessário para " &
+            "entender. Se a conversa citada não acrescentar nada, não a mencione."
+
+        ''' <summary>
+        ''' A instrução da resposta. Pelo mesmo motivo: responder sem olhar o
+        ''' que já foi dito produz resposta que repete ou contradiz a conversa.
+        ''' </summary>
+        Friend Const InstrucaoDeResposta As String =
+            "Redija uma resposta. Leve em conta a conversa citada no corpo, se " &
+            "houver, para não repetir o que já foi dito nem contradizer o que " &
+            "já foi combinado."
+
         Public Async Function Resumir() As Task
-            Await Executar(AssistOperation.Resumir, "Resuma estas mensagens.")
+            Await Executar(AssistOperation.Resumir, InstrucaoDeResumo)
         End Function
 
         ''' <summary>
@@ -785,7 +884,12 @@ Namespace Global.Iris.App.ViewModels
         ''' <b>Nada é enviado por e-mail</b>: a redação para no compositor.
         ''' </summary>
         Public Async Function Redigir() As Task
-            Await Executar(AssistOperation.Redigir, "Redija uma resposta.")
+            ''' O RESUMO VAI JUNTO. Ele não amplia o que sai da caixa -- o
+            ''' e-mail já saiu na primeira chamada --, mas dá ao segundo pedido
+            ''' o que o primeiro concluiu, em vez de refazer o trabalho.
+            Await Executar(AssistOperation.Redigir,
+                           InstrucaoDeResposta & Environment.NewLine &
+                           "Resumo já produzido desta conversa: " & Resultado)
         End Function
 
         ''' <summary>
@@ -840,11 +944,102 @@ Namespace Global.Iris.App.ViewModels
         ''' durante a confirmação de envio, quando os campos estão travados
         ''' justamente para que ninguém mexa no que o usuário já aprovou.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Dá para redigir?</b> — e agora o que ela exige é o <b>resumo</b>,
+        ''' não o rascunho.
+        '''
+        ''' Redigir deixou de escrever no rascunho: ele mostra a resposta num
+        ''' quadro, e aplicar é outro botão. Então a pergunta mudou de "há onde
+        ''' escrever?" para "há o que usar como contexto?".
+        '''
+        ''' <b>Exigir o resumo é decisão de produto, e não uma limitação
+        ''' técnica.</b> A redação sozinha já receberia o e-mail inteiro; o
+        ''' resumo acrescenta o que a primeira chamada concluiu. Sem ele, as
+        ''' duas operações fariam o mesmo trabalho duas vezes.
+        '''
+        ''' <b>E por isso ela cede quando resumir não é autorizado.</b> Uma
+        ''' ativação que libere só <c>Redigir</c> é legítima, e a exigência
+        ''' a tornaria inútil: pedir o resumo primeiro é impossível se
+        ''' resumir não passa pelo portão. Requisito de qualidade não pode
+        ''' virar bloqueio de configuração — foi um teste que existia antes
+        ''' desta mudança que apontou isso.
+        ''' </summary>
         Public ReadOnly Property PodeRedigir As Boolean
             Get
                 Return Reconciliacao.Terminou AndAlso _portaoRedigir AndAlso
                        Not Ocupado AndAlso
+                       (TemResultado OrElse Not _portaoResumir)
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>Dá para mandar a resposta ao rascunho?</b>
+        '''
+        ''' Aqui sim o rascunho é obrigatório — é o destino. As guardas que
+        ''' moravam no fim da redação vieram para cá inteiras: mesmo rascunho,
+        ''' aceitando escrita, e o texto dele ainda sendo o que era.
+        ''' </summary>
+        Public ReadOnly Property PodeEnviarParaRascunho As Boolean
+            Get
+                Return TemResposta AndAlso Not Ocupado AndAlso
                        _rascunho IsNot Nothing AndAlso _rascunho.PodeEditar
+            End Get
+        End Property
+
+        ''' <summary>Por que o "Enviar para rascunho" está apagado.</summary>
+        Public ReadOnly Property PorQueNaoEnvia As String
+            Get
+                If PodeEnviarParaRascunho OrElse Not TemResposta Then Return ""
+                If _rascunho Is Nothing Then
+                    Return "Para mandar esta resposta a um rascunho, abra uma: " &
+                           "Responder ou Responder a todos, ali em cima."
+                End If
+                If Not _rascunho.PodeEditar Then
+                    Return "O rascunho aberto não aceita edição agora."
+                End If
+                Return ""
+            End Get
+        End Property
+
+        Public ReadOnly Property TemMotivoParaNaoEnviar As Boolean
+            Get
+                Return PorQueNaoEnvia.Length > 0
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>POR QUE o "Redigir resposta" está apagado.</b>
+        '''
+        ''' Botão cinza sem explicação é pior que botão ausente: ele promete uma
+        ''' coisa e não diz o que falta. Esta base já corrigiu isso nas tarefas
+        ''' atribuídas, e o usuário teve que perguntar aqui — o que é a prova de
+        ''' que o botão não estava se explicando.
+        '''
+        ''' A ordem das perguntas é a ordem em que elas importam: primeiro o que
+        ''' o usuário resolve sozinho, depois o que depende de autorização, por
+        ''' último o que é só esperar.
+        ''' </summary>
+        Public ReadOnly Property PorQueNaoRedige As String
+            Get
+                If PodeRedigir Then Return ""
+                If Not TemResultado AndAlso _portaoResumir Then
+                    Return "Resuma primeiro. A redação usa o resumo como " &
+                           "contexto, além da própria mensagem."
+                End If
+                If Not _portaoRedigir Then
+                    Return "Redigir não está entre as operações autorizadas nesta ativação."
+                End If
+                If Not Reconciliacao.Terminou Then
+                    Return "O registro de envios à IA não pôde ser conferido, " &
+                           "e a IA externa fica desligada enquanto isso."
+                End If
+                Return ""   ' Ocupado: a barra de progresso ja diz.
+            End Get
+        End Property
+
+        Public ReadOnly Property TemMotivoParaNaoRedigir As Boolean
+            Get
+                Return PorQueNaoRedige.Length > 0
             End Get
         End Property
 
@@ -870,8 +1065,13 @@ Namespace Global.Iris.App.ViewModels
         End Property
 
         ''' <summary>
-        ''' O caminho comum dos dois comandos: monta o contexto, executa, e para
-        ''' a redação, escreve no rascunho guardando o que estava lá.
+        ''' O caminho comum dos dois comandos: monta o contexto, executa, e
+        ''' guarda o resultado no quadro certo -- resumo num, resposta noutro.
+        '''
+        ''' <b>A redação NÃO escreve mais no rascunho.</b> Isso virou o
+        ''' <see cref="EnviarParaRascunho"/>, que é um ato do usuário: o botão
+        ''' dizia "redigir" e também aplicava, e ninguém tinha pedido a
+        ''' segunda coisa.
         ''' </summary>
         Private Async Function Executar(operacao As AssistOperation,
                                         instrucao As String) As Task
@@ -887,6 +1087,14 @@ Namespace Global.Iris.App.ViewModels
             Dim classificadas As IReadOnlyList(Of MessageClassification) = Nothing
             RessalvaDoConteudo = ""
 
+            ''' O RESUMO NAO PODE SER APAGADO PELA REDACAO.
+            '''
+            ''' As duas operacoes publicam pelo mesmo caminho, e ele escreve em
+            ''' Resultado. Guardar e devolver aqui e feio; a alternativa era
+            ''' espalhar a nocao de operacao por dentro do Publicar, que nao a
+            ''' tem e nao deveria ter.
+            Dim resumoAntes = Resultado
+
             Await Pedir(_contexto.Pedido(operacao),
                         Function()
                             classificadas = _contexto.Classificar()
@@ -894,49 +1102,61 @@ Namespace Global.Iris.App.ViewModels
                         End Function,
                         Function() _contexto.Montar(operacao, instrucao))
 
+            If operacao = AssistOperation.Redigir Then
+                If TemResultado Then
+                    Resposta = Resultado
+                    Resultado = resumoAntes
+                Else
+                    ' A redacao falhou: o resumo continua valendo.
+                    Resultado = resumoAntes
+                End If
+                Return
+            End If
+
             If TemResultado Then RessalvaDoConteudo = DizerOQueFicouDeFora(classificadas)
+        End Function
 
-            If operacao <> AssistOperation.Redigir Then Return
-            If _rascunho Is Nothing OrElse Not TemResultado Then Return
+        ''' <summary>
+        ''' <b>Manda a resposta redigida para o rascunho.</b>
+        '''
+        ''' Isto acontecia <b>junto</b> com a redação, e era o defeito: o botão
+        ''' dizia "redigir" e também aplicava. Agora redigir mostra, e aplicar
+        ''' é este ato — um botão, uma coisa.
+        '''
+        ''' As guardas vieram inteiras, e todas perguntam a mesma coisa: <i>o
+        ''' rascunho onde eu vou escrever ainda é o que o usuário está
+        ''' olhando?</i> Escrever por cima do que ele digitou é mutação local,
+        ''' e mutação local sem volta é a que se descobre tarde.
+        '''
+        ''' <b>Nada é enviado por e-mail</b>: a redação para no compositor.
+        ''' </summary>
+        Public Sub EnviarParaRascunho()
+            If Not TemResposta Then Return
 
-            ' AINDA E O MESMO RASCUNHO, E ELE AINDA ACEITA ESCRITA?
-            '
-            ' Comparar so o texto nao bastava: fechar o compositor e abrir
-            ' outro durante a espera da IA da um rascunho DIFERENTE que pode
-            ' ter o mesmo texto — em especial o caso comum, os dois vazios — e
-            ' a redacao entraria na mensagem errada. A sessao do compositor
-            ' sobe a cada rascunho novo, e e ela que prende a resposta ao
-            ' rascunho de onde o pedido saiu.
-            If _rascunho.Sessao <> sessaoDoPedido OrElse Not _rascunho.PodeEditar Then
-                Aviso = "A resposta ficou pronta, mas o rascunho de onde ela foi " &
-                        "pedida não está mais aberto para edição. Ela não foi aplicada."
+            If _rascunho Is Nothing Then
+                Aviso = "Não há rascunho aberto. Clique em Responder ou " &
+                        "Responder a todos e tente de novo."
                 Return
             End If
 
-            ' O RASCUNHO MUDOU ENQUANTO A IA ESCREVIA?
-            '
-            ' O texto era escrito incondicionalmente, e o que o usuario digitou
-            ' durante a espera sumia. Pior: "Desfazer" devolveria o texto de
-            ' ANTES do pedido, e nao a edicao dele — ou seja, ele perderia o que
-            ' escreveu por duas vias.
-            If Not String.Equals(_rascunho.Texto, antesDoPedido, StringComparison.Ordinal) Then
-                ' O resultado FICA na tela. Descartá-lo resolveria o mesmo
-                ' problema jogando fora um trabalho que já foi feito — e que já
-                ' saiu daqui: o conteúdo já foi ao provedor, então apagar a
-                ' resposta não desfaz divulgação nenhuma, só perde o texto. Ele
-                ' continua visível para o usuário copiar o que quiser.
-                Aviso = "A resposta ficou pronta, mas você mexeu no rascunho enquanto " &
-                        "isso. Ela não foi aplicada, para não apagar o que você escreveu."
+            If Not _rascunho.PodeEditar Then
+                Aviso = "O rascunho aberto não aceita edição agora."
                 Return
             End If
 
-            _anterior = antesDoPedido
+            ''' O QUE ESTAVA LA FICA GUARDADO, e o Desfazer o devolve. A
+            ''' sessao entra junto: fechar este rascunho e abrir outro com o
+            ''' mesmo texto -- os dois vazios e o caso comum -- faria o
+            ''' desfazer escrever numa mensagem que nao e esta.
+            _anterior = _rascunho.Texto
             _sessaoDaRedacao = _rascunho.Sessao
-            _rascunho.Texto = Resultado
-            _aplicado = Resultado
+            _rascunho.Texto = Resposta
+            _aplicado = Resposta
+
+            Aviso = ""
             OnPropertyChanged(NameOf(PodeDesfazer))
             DesfazerCommand.NotifyCanExecuteChanged()
-        End Function
+        End Sub
 
         ''' <summary>
         ''' Pede a operação. O resultado só é publicado se a geração ainda for a
@@ -1122,8 +1342,20 @@ Namespace Global.Iris.App.ViewModels
                     Return "há mensagem com classificação de sensibilidade não autorizada."
                 Case DisclosureReason.ContentBitsDesconhecido, DisclosureReason.ContentBitsNaoAceito
                     Return "não dá para saber se alguma mensagem está protegida."
-                Case DisclosureReason.LeituraNaoAceita,
-                     DisclosureReason.LeituraEstruturalmenteInsegura,
+                    ' TRES MOTIVOS NUMA FRASE SO, e um deles nao era esse.
+                    '
+                    ' LeituraNaoAceita quer dizer que a classificacao FOI FEITA e
+                    ' o resultado nao esta entre os autorizados -- o oposto de
+                    ' "nao foi possivel classificar". Medido em 30/08: 13 de 13
+                    ' mensagens de uma pasta real classificavam como Blank, a
+                    ' ativacao autorizava so Absent, e a tela dizia que nao tinha
+                    ' conseguido classificar. A frase mandou procurar defeito no
+                    ' lugar errado.
+                Case DisclosureReason.LeituraNaoAceita
+                    Return "a classificação de alguma mensagem não está entre as " &
+                           "autorizadas nesta ativação. Ela foi lida; o que falta é " &
+                           "a autorização cobrir esse resultado."
+                Case DisclosureReason.LeituraEstruturalmenteInsegura,
                      DisclosureReason.ClassificacaoIncoerente
                     Return "não foi possível classificar alguma mensagem com segurança."
                 Case DisclosureReason.SemEvidenciaDeVersao, DisclosureReason.IdentidadeNaoBate

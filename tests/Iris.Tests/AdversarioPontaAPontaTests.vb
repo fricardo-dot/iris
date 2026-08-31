@@ -334,7 +334,14 @@ Namespace Global.Iris.Tests
                     ' A instrucao do usuario e a que o BOTAO manda, fixa no
                     ' codigo — nao a que o e-mail pediu.
                     Dim doUsuario = doc.RootElement.GetProperty("instrucaoDoUsuario").GetString()
-                    Assert.AreEqual("Resuma estas mensagens.", doUsuario)
+                    ' CONTRA A CONSTANTE, e nao contra um literal repetido.
+                    '
+                    ' O literal quebrou quando a instrucao mudou (ela passou a
+                    ' pedir a conversa citada), e a falha nao tinha nada a ver
+                    ' com o que este teste protege: que a instrucao seja a do
+                    ' BOTAO, e nao a que o e-mail pediu. Comparar com a fonte
+                    ' mantem o teste falando do adversario.
+                    Assert.AreEqual(AssistenteViewModel.InstrucaoDeResumo, doUsuario)
                     Assert.IsFalse(doUsuario.Contains("exfil"),
                         "o e-mail escreveu a instrucao do usuario")
                 End Using
@@ -984,7 +991,11 @@ Namespace Global.Iris.Tests
                 Dim p As New ProvedorQueRegistra() With {.Texto = Hostil}
                 Dim vm = Montar(BrokerBom(), p, db, rascunho:=r)
 
+                ' Resumir antes e enviar depois: desde 31/08 a redacao exige
+                ' um resumo, e aplicar no rascunho e ato proprio.
+                Await vm.Resumir()
                 Await vm.RedigirCommand.ExecuteAsync(Nothing)
+                vm.EnviarParaRascunho()
 
                 Assert.AreEqual(Hostil, r.Texto,
                     "a redacao tem de chegar ao rascunho como texto, sem interpretacao")
@@ -1032,13 +1043,24 @@ Namespace Global.Iris.Tests
             Using db = Abrir()
                 Dim r As New AssistenteViewModelTests.RascunhoFalso() With {
                     .Texto = "o que eu ja tinha escrito"}
-                Dim p As New ProvedorQueRegistra() With {.Texto = "   " & vbCrLf & vbTab}
+                Dim p As New ProvedorQueRegistra() With {.Texto = "um resumo qualquer"}
                 Dim vm = Montar(BrokerBom(), p, db, rascunho:=r)
 
-                Await vm.RedigirCommand.ExecuteAsync(Nothing)
+                ' DIRETO NO METODO, e nao pelo comando: desde 31/08 o
+                ' RedigirCommand exige um resumo antes, e este teste nao e
+                ' sobre isso -- ele e sobre o que a tela faz com uma resposta
+                ' que so tem espaco. Passar pelo comando faria o provedor nem
+                ' ser chamado, e a assercao 'o conteudo saiu' viraria fumaca.
+                ' O RESUMO SAI PRIMEIRO, e valido: desde 31/08 a redacao exige
+                ' um, e a recusa mora na execucao. So depois o provedor passa a
+                ' devolver espaco -- que e o que este teste e sobre.
+                Await vm.Resumir()
+                p.Texto = "   " & vbCrLf & vbTab
 
-                Assert.AreEqual(1, p.Chamadas, "o conteudo saiu")
-                Assert.IsFalse(vm.TemResultado, "espaco em branco nao e resultado")
+                Await vm.Redigir()
+
+                Assert.AreEqual(2, p.Chamadas, "o conteudo saiu")
+                Assert.IsFalse(vm.TemResposta, "espaco em branco nao e resposta")
                 StringAssert.Contains(vm.Aviso, "sem texto")
                 Assert.AreEqual("o que eu ja tinha escrito", r.Texto,
                     "o rascunho do usuario foi trocado por espacos")
