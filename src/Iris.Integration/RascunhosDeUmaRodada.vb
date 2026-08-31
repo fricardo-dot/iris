@@ -70,24 +70,44 @@ Namespace Global.Iris.Integration
                                Optional parar As CancellationToken = Nothing) _
                                As ResultadoDaRodada
 
-            If redigir Is Nothing Then Return New ResultadoDaRodada(0, 0, 0, False)
+            If redigir Is Nothing Then Return New ResultadoDaRodada(0, 0, 0, 0, False)
 
             Dim escolhidas = RascunhosAutomaticos.Escolher(
-                mensagens, rotulos, _sessao.Feitos(), _sessao.Dispensadas(), teto)
+                mensagens, rotulos, _sessao.FeitosOuEmVoo(), _sessao.Dispensadas(), teto)
 
+            Dim tentadas = 0
             Dim escritos = 0
             Dim falharam = 0
 
             For Each m In escolhidas
                 If parar.IsCancellationRequested Then
-                    Return New ResultadoDaRodada(escolhidas.Count, escritos, falharam, True)
+                    Return New ResultadoDaRodada(escolhidas.Count, tentadas,
+                                                 escritos, falharam, True)
                 End If
 
-                Dim feita As RedacaoFeita
+                ' RESERVA ANTES DE PEDIR. Entre pedir e guardar passam segundos, e
+                ' neles o dono pode dispensar a mensagem ou fechar o painel -- a
+                ' reserva carrega a geracao da sessao, e o Guardar recusa se ela
+                ' mudou. Tambem e o que impede duas rodadas simultaneas de pedirem
+                ' a mesma redacao. Achado por revisao externa em 31/08/2026.
+                Dim reserva = _sessao.Reservar(m.Chave)
+                If Not reserva.HasValue Then Continue For
+
+                tentadas += 1
+                Dim feita As RedacaoFeita = Nothing
                 Try
                     feita = redigir(m)
-                Catch ex As OperationCanceledException
-                    Return New ResultadoDaRodada(escolhidas.Count, escritos, falharam, True)
+                Catch ex As OperationCanceledException When parar.IsCancellationRequested
+                    ' SO E INTERRUPCAO SE FOR A DESTA RODADA.
+                    '
+                    ' Antes, qualquer OperationCanceledException virava "o dono
+                    ' interrompeu" -- inclusive o timeout interno do provedor, e
+                    ' inclusive uma que a mensagem hostil conseguisse provocar. Ai
+                    ' uma mensagem so derrubava a rodada inteira, que e exatamente
+                    ' o que o Catch de baixo existe para impedir.
+                    _sessao.Soltar(m.Chave)
+                    Return New ResultadoDaRodada(escolhidas.Count, tentadas,
+                                                 escritos, falharam, True)
                 Catch
                     ' A MENSAGEM QUE FALHA PODE SER A HOSTIL. Deixa-la parar a
                     ' rodada daria a ela o poder de impedir os rascunhos de todas
@@ -96,15 +116,23 @@ Namespace Global.Iris.Integration
                 End Try
 
                 If feita Is Nothing OrElse String.IsNullOrWhiteSpace(feita.Texto) Then
+                    _sessao.Soltar(m.Chave)
                     falharam += 1
                     Continue For
                 End If
 
-                _sessao.Guardar(m.Chave, feita.Versao, feita.Texto)
-                escritos += 1
+                ' O GUARDAR PODE RECUSAR, e a recusa e falha: a redacao aconteceu,
+                ' custou, e nao virou rascunho. Contar como escrita faria a tela
+                ' dizer que ha um rascunho que ninguem vai achar.
+                If _sessao.Guardar(m.Chave, feita.Versao, feita.Texto, reserva) Then
+                    escritos += 1
+                Else
+                    falharam += 1
+                End If
             Next
 
-            Return New ResultadoDaRodada(escolhidas.Count, escritos, falharam, False)
+            Return New ResultadoDaRodada(escolhidas.Count, tentadas,
+                                         escritos, falharam, False)
         End Function
 
     End Class
@@ -130,19 +158,35 @@ Namespace Global.Iris.Integration
     ''' <see cref="Falharam"/> aparece separado de propósito: uma rodada que
     ''' escolheu dez e escreveu zero é um problema, e somá-los num "escreveu 0 de
     ''' 10" não diria se ninguém merecia ou se tudo deu errado.
+    '''
+    ''' <b><see cref="Escolhidas"/> e <see cref="Tentadas"/> são coisas
+    ''' diferentes</b>, e havia só a primeira. Numa rodada interrompida ela dizia
+    ''' "dez" tendo tocado numa — e <c>Escritos + Falharam</c> não fechava com
+    ''' nada, sem ninguém conseguir dizer se as outras nove tinham dado errado ou
+    ''' simplesmente não tinham sido tentadas. Achado por revisão externa em
+    ''' 31/08/2026.
     ''' </summary>
     Public NotInheritable Class ResultadoDaRodada
+        ''' <summary>Quantas mereciam e cabiam no teto.</summary>
         Public ReadOnly Property Escolhidas As Integer
+        ''' <summary>
+        ''' Quantas foram efetivamente pedidas. Sempre igual a
+        ''' <c>Escritos + Falharam</c>.
+        ''' </summary>
+        Public ReadOnly Property Tentadas As Integer
         Public ReadOnly Property Escritos As Integer
         Public ReadOnly Property Falharam As Integer
         ''' <summary>
-        ''' O dono interrompeu. O que já foi escrito <b>fica</b>: foi pago.
+        ''' O dono interrompeu — e só ele: um cancelamento vindo de dentro do
+        ''' provedor conta como falha daquela mensagem. O que já foi escrito
+        ''' <b>fica</b>: foi pago.
         ''' </summary>
         Public ReadOnly Property Interrompida As Boolean
 
-        Friend Sub New(escolhidas As Integer, escritos As Integer,
+        Friend Sub New(escolhidas As Integer, tentadas As Integer, escritos As Integer,
                        falharam As Integer, interrompida As Boolean)
             Me.Escolhidas = escolhidas
+            Me.Tentadas = tentadas
             Me.Escritos = escritos
             Me.Falharam = falharam
             Me.Interrompida = interrompida

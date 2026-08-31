@@ -230,9 +230,27 @@ Public Class RascunhosAutomaticosTests
     <TestMethod>
     Public Sub Texto_em_branco_nao_vira_rascunho()
         Dim sessao As New RascunhosDaSessao()
-        sessao.Guardar(Chave("a"), "CK-1", "   ")
 
+        Assert.IsFalse(sessao.Guardar(Chave("a"), "CK-1", "   "))
         Assert.IsFalse(sessao.Tem(Chave("a")))
+    End Sub
+
+    ''' <summary>
+    ''' <b>Sem versão não se guarda.</b>
+    '''
+    ''' Duas ausências passavam por igualdade: guardado sem <c>PR_CHANGE_KEY</c>
+    ''' e pedido sem <c>PR_CHANGE_KEY</c>, o rascunho voltava — e continuaria
+    ''' voltando depois de a mensagem mudar, porque ninguém tinha como comparar
+    ''' nada. Ausência não prova que nada mudou; prova que ninguém sabe. Achado
+    ''' por revisão externa em 31/08/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Rascunho_SEM_versao_nao_e_guardado()
+        Dim sessao As New RascunhosDaSessao()
+
+        Assert.IsFalse(sessao.Guardar(Chave("a"), Nothing, "um texto"))
+        Assert.IsFalse(sessao.Tem(Chave("a")))
+        Assert.IsNull(sessao.Pegar(Chave("a"), Nothing))
     End Sub
 
 
@@ -352,6 +370,146 @@ Public Class RascunhosAutomaticosTests
         Dim outra = rodada.Passar({Mensagem("a")}, Rotulos("a", "precisa_de_mim"),
                                   Function(m) New RedacaoFeita("agora foi", "CK-1"))
         Assert.AreEqual(1, outra.Escritos)
+    End Sub
+
+
+    ' ==================================================================
+    ' AS CORRIDAS
+
+    ''' <summary>
+    ''' <b>Dispensar durante a redação vence a redação.</b>
+    '''
+    ''' Entre pedir e guardar passam segundos, e neles o dono pode dispensar. A
+    ''' versão anterior guardava assim mesmo — a trava protegia os dicionários e
+    ''' não a decisão —, e o texto que ele mandou tirar voltava. O trabalho pago
+    ''' se perde, e é o lado certo de perder.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Dispensar_DURANTE_a_redacao_vence_a_redacao()
+        Dim sessao As New RascunhosDaSessao()
+
+        Dim r = New RascunhosDeUmaRodada(sessao).Passar(
+            {Mensagem("a")}, Rotulos("a", "precisa_de_mim"),
+            Function(m)
+                ' Enquanto a redacao esta em voo, o dono dispensa.
+                sessao.Dispensar(m.Chave)
+                Return New RedacaoFeita("um texto que ele nao quer", "CK-1")
+            End Function)
+
+        Assert.IsFalse(sessao.Tem(Chave("a")),
+            "o rascunho voltou depois de ele mandar tirar")
+        Assert.AreEqual(1, r.Falharam)
+        Assert.AreEqual(0, r.Escritos)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Esquecer durante a redação não deixa o texto ressuscitar</b> numa
+    ''' sessão que já foi descartada. É a geração da reserva que o impede.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Esquecer_DURANTE_a_redacao_nao_deixa_ressuscitar()
+        Dim sessao As New RascunhosDaSessao()
+
+        Dim r = New RascunhosDeUmaRodada(sessao).Passar(
+            {Mensagem("a")}, Rotulos("a", "precisa_de_mim"),
+            Function(m)
+                sessao.Esquecer()
+                Return New RedacaoFeita("um texto de outra sessão", "CK-1")
+            End Function)
+
+        Assert.IsFalse(sessao.Tem(Chave("a")))
+        Assert.AreEqual(1, r.Falharam)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A mesma mensagem duas vezes na entrada gasta um pedido só.</b> A lista
+    ''' vem do acervo e não promete unicidade; sem isto, a duplicata gastava dois
+    ''' pedidos para produzir o mesmo texto, e o segundo sobrescrevia o primeiro.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Mensagem_repetida_na_entrada_gasta_um_pedido_so()
+        Dim sessao As New RascunhosDaSessao()
+        Dim pedidos = 0
+
+        Dim r = New RascunhosDeUmaRodada(sessao).Passar(
+            {Mensagem("a"), Mensagem("a")}, Rotulos("a", "precisa_de_mim"),
+            Function(m)
+                pedidos += 1
+                Return New RedacaoFeita("resposta", "CK-1")
+            End Function)
+
+        Assert.AreEqual(1, pedidos)
+        Assert.AreEqual(1, r.Escritos)
+    End Sub
+
+    ''' <summary>
+    ''' Chave vazia não é mensagem: um <c>ItemKey</c> sem <c>EntryId</c> não
+    ''' identifica nada, e duas dessas colidem entre si — a rodada gastaria uma
+    ''' redação e a guardaria por cima da anterior.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Chave_VAZIA_nao_ganha_rascunho()
+        Dim vazia As New MensagemNaFila(New ItemKey("", ""), "c", "assunto",
+                                        "quem", "quem@exemplo.com", Nothing)
+        Dim rotulos As New Dictionary(Of ItemKey, String) From {
+            {New ItemKey("", ""), "precisa_de_mim"}}
+
+        Assert.AreEqual(0, RascunhosAutomaticos.Escolher(
+            {vazia}, rotulos, Array.Empty(Of ItemKey)(),
+            Array.Empty(Of ItemKey)()).Count)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Cancelamento de dentro do provedor é falha daquela mensagem</b>, e não
+    ''' interrupção do dono.
+    '''
+    ''' Antes, qualquer <c>OperationCanceledException</c> parava a rodada — e uma
+    ''' mensagem hostil capaz de provocá-la derrubava os rascunhos de todas as
+    ''' outras, que é exatamente o que o resto deste arquivo existe para impedir.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cancelamento_de_DENTRO_do_provedor_nao_para_a_rodada()
+        Dim sessao As New RascunhosDaSessao()
+
+        Dim r = New RascunhosDeUmaRodada(sessao).Passar(
+            {Mensagem("a", dia:=1), Mensagem("b", dia:=2)},
+            Rotulos("a", "precisa_de_mim", "b", "precisa_de_mim"),
+            Function(m)
+                If m.Chave.EntryId = "a" Then
+                    Throw New OperationCanceledException("timeout do provedor")
+                End If
+                Return New RedacaoFeita("resposta", "CK-1")
+            End Function)
+
+        Assert.IsFalse(r.Interrompida, "o timeout do provedor virou interrupção do dono")
+        Assert.AreEqual(1, r.Escritos)
+        Assert.AreEqual(1, r.Falharam)
+    End Sub
+
+    ''' <summary>
+    ''' As contas fecham: <c>Tentadas = Escritos + Falharam</c>, e
+    ''' <c>Escolhidas</c> conta as que <i>mereciam</i>. Numa rodada interrompida
+    ''' as duas divergem, e é essa divergência que diz quantas não foram
+    ''' tocadas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Escolhidas_e_Tentadas_sao_coisas_diferentes()
+        Dim sessao As New RascunhosDaSessao()
+        Dim parada As New Threading.CancellationTokenSource()
+
+        Dim r = New RascunhosDeUmaRodada(sessao).Passar(
+            {Mensagem("a", dia:=1), Mensagem("b", dia:=2), Mensagem("c", dia:=3)},
+            Rotulos("a", "precisa_de_mim", "b", "precisa_de_mim",
+                    "c", "precisa_de_mim"),
+            Function(m)
+                parada.Cancel()
+                Return New RedacaoFeita("resposta", "CK-1")
+            End Function,
+            parar:=parada.Token)
+
+        Assert.AreEqual(3, r.Escolhidas)
+        Assert.AreEqual(1, r.Tentadas)
+        Assert.AreEqual(r.Escritos + r.Falharam, r.Tentadas)
     End Sub
 
 End Class

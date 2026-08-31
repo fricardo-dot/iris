@@ -91,11 +91,23 @@ Namespace Global.Iris.Model
             '
             ' (Comentario AQUI, e nao no meio da cadeia de metodos: em VB a
             ' continuacao implicita nao aceita uma linha so de comentario.)
+            ' CHAVE VAZIA NAO E MENSAGEM. Um ItemKey sem EntryId nao identifica
+            ' nada, e duas dessas colidem entre si: a rodada gastaria uma redacao
+            ' e a guardaria por cima da anterior.
+            '
+            ' E A MESMA CHAVE DUAS VEZES SO CONTA UMA. A lista vem do acervo e
+            ' nao promete unicidade; sem isto, uma duplicata gastava dois pedidos
+            ' para produzir o mesmo texto -- e o segundo sobrescrevia o primeiro.
+            ' Achado por revisao externa em 31/08/2026.
             Return mensagens.
-                   Where(Function(m) m IsNot Nothing AndAlso m.Chave IsNot Nothing).
+                   Where(Function(m) m IsNot Nothing AndAlso
+                                     m.Chave IsNot Nothing AndAlso
+                                     Not m.Chave.IsEmpty).
                    Where(Function(m) Merece(m, rotulos)).
                    Where(Function(m) Not feitas.Contains(m.Chave)).
                    Where(Function(m) Not recusadas.Contains(m.Chave)).
+                   GroupBy(Function(m) m.Chave).
+                   Select(Function(g) g.First()).
                    OrderBy(Function(m) m.Quando.GetValueOrDefault(DateTimeOffset.MaxValue)).
                    ThenBy(Function(m) m.Assunto, StringComparer.Ordinal).
                    Take(quantos).
@@ -127,23 +139,83 @@ Namespace Global.Iris.Model
     ''' o que não corresponde. Não apaga: só não entrega. Apagar esconderia que
     ''' houve um rascunho, e o dono que se lembra de tê-lo visto merece a frase
     ''' "aquele rascunho era de uma versão anterior" em vez do silêncio.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>REDIGIR DEMORA, E O DONO NÃO ESPERA</b>
+    '''
+    ''' Entre pedir a redação e guardá-la passam segundos, e nesses segundos ele
+    ''' pode dispensar aquela mensagem ou fechar o painel. A versão anterior
+    ''' guardava assim mesmo: o <c>SyncLock</c> protegia os dicionários e não
+    ''' protegia a <i>decisão</i>, então a dispensa entrava, a redação terminava,
+    ''' e o texto que ele mandou tirar voltava. Achado por revisão externa em
+    ''' 31/08/2026.
+    '''
+    ''' Agora quem vai redigir <see cref="Reservar"/> antes. A reserva carrega a
+    ''' <b>geração</b> da sessão, e <see cref="Guardar"/> recusa se a geração
+    ''' mudou (houve <see cref="Esquecer"/>) ou se a chave foi dispensada no
+    ''' meio. O trabalho pago se perde, e é o lado certo de perder: o outro lado
+    ''' é o programa desfazendo o que o dono acabou de mandar fazer.
     ''' </summary>
     Public NotInheritable Class RascunhosDaSessao
 
         Private ReadOnly _porChave As New Dictionary(Of ItemKey, RascunhoPronto)()
         Private ReadOnly _dispensadas As New HashSet(Of ItemKey)()
+        Private ReadOnly _emVoo As New HashSet(Of ItemKey)()
         Private ReadOnly _trava As New Object()
+        Private _geracao As Long = 1
 
         ''' <summary>
-        ''' Guarda. <paramref name="versao"/> é a <c>PR_CHANGE_KEY</c> da leitura
-        ''' que produziu este texto.
+        ''' <b>Reserva a mensagem antes de mandar redigir.</b>
+        '''
+        ''' Devolve a geração a apresentar depois, ou <c>Nothing</c> quando esta
+        ''' mensagem não deve ser redigida agora — já tem rascunho, já foi
+        ''' dispensada, ou já há uma redação dela em voo.
+        '''
+        ''' A parte do "em voo" é o que impede duas rodadas simultâneas de pedirem
+        ''' a mesma redação duas vezes e uma sobrescrever a outra.
         ''' </summary>
-        Public Sub Guardar(chave As ItemKey, versao As String, texto As String)
-            If chave Is Nothing OrElse String.IsNullOrWhiteSpace(texto) Then Return
+        Public Function Reservar(chave As ItemKey) As Long?
+            If chave Is Nothing OrElse chave.IsEmpty Then Return Nothing
             SyncLock _trava
-                _porChave(chave) = New RascunhoPronto(If(versao, ""), texto)
+                If _porChave.ContainsKey(chave) Then Return Nothing
+                If _dispensadas.Contains(chave) Then Return Nothing
+                If Not _emVoo.Add(chave) Then Return Nothing
+                Return _geracao
+            End SyncLock
+        End Function
+
+        ''' <summary>A redação não deu. Solta a reserva para ela poder voltar.</summary>
+        Public Sub Soltar(chave As ItemKey)
+            If chave Is Nothing Then Return
+            SyncLock _trava
+                _emVoo.Remove(chave)
             End SyncLock
         End Sub
+
+        ''' <summary>
+        ''' Guarda, se ainda for para guardar. Devolve <c>False</c> quando o
+        ''' trabalho perdeu a validade no meio do caminho.
+        '''
+        ''' <paramref name="versao"/> é a <c>PR_CHANGE_KEY</c> da leitura que
+        ''' produziu este texto, e <b>vazia não serve</b>: sem ela, duas ausências
+        ''' passariam por igualdade de versão, e o rascunho continuaria sendo
+        ''' entregue depois de a mensagem mudar. Ausência não prova que nada
+        ''' mudou; ela prova que ninguém sabe.
+        ''' </summary>
+        Public Function Guardar(chave As ItemKey, versao As String, texto As String,
+                                Optional reserva As Long? = Nothing) As Boolean
+            If chave Is Nothing OrElse chave.IsEmpty Then Return False
+            If String.IsNullOrWhiteSpace(texto) Then Return False
+            If String.IsNullOrWhiteSpace(versao) Then Return False
+
+            SyncLock _trava
+                _emVoo.Remove(chave)
+                If reserva.HasValue AndAlso reserva.Value <> _geracao Then Return False
+                If _dispensadas.Contains(chave) Then Return False
+                _porChave(chave) = New RascunhoPronto(versao, texto)
+                Return True
+            End SyncLock
+        End Function
 
         ''' <summary>
         ''' O rascunho desta mensagem <b>nesta versão</b>, ou <c>Nothing</c>.
@@ -191,6 +263,9 @@ Namespace Global.Iris.Model
             SyncLock _trava
                 _dispensadas.Add(chave)
                 _porChave.Remove(chave)
+                ' A reserva NAO e solta: se ela fosse, a redacao em voo poderia
+                ' voltar e guardar. O Guardar confere a dispensa de novo, sob a
+                ' mesma trava, e e ele quem recusa.
             End SyncLock
         End Sub
 
@@ -203,13 +278,29 @@ Namespace Global.Iris.Model
         ''' <summary>
         ''' Esquece tudo. Chamado quando a sessão de IA é descartada — o mesmo
         ''' momento em que o resto da memória do assistente é jogado fora.
+        '''
+        ''' <b>E vira a geração</b>, para uma redação que já estava em voo não
+        ''' ressuscitar dentro de uma sessão que foi descartada.
         ''' </summary>
         Public Sub Esquecer()
             SyncLock _trava
                 _porChave.Clear()
                 _dispensadas.Clear()
+                _emVoo.Clear()
+                _geracao += 1
             End SyncLock
         End Sub
+
+        ''' <summary>
+        ''' As que já têm rascunho <b>ou estão sendo redigidas agora</b>. É o que a
+        ''' escolha da rodada precisa: pedir de novo o que está em voo gastaria dois
+        ''' pedidos pelo mesmo texto.
+        ''' </summary>
+        Public Function FeitosOuEmVoo() As IReadOnlyCollection(Of ItemKey)
+            SyncLock _trava
+                Return _porChave.Keys.Concat(_emVoo).Distinct().ToList()
+            End SyncLock
+        End Function
 
     End Class
 
