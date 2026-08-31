@@ -27,7 +27,11 @@ Namespace Global.Iris.Cache
         '    falou por ultimo nesta conversa', e ate aqui o cache nao sabia
         '    responder nem o que e uma conversa nem quem e um remetente.
         ' 5: label_observation -- o rotulo da IA, por encarnacao e geracao.
-        Public Const SchemaVersion As Integer = 5
+        ' 6: label_observation ganhou matched_rules -- as regras que o dono
+        '    escreveu em portugues e que aquela mensagem satisfez, pelo texto
+        '    delas. Nulo quer dizer 'nao havia regras naquela varredura', que
+        '    e diferente de vetor vazio ('havia, e nenhuma casou').
+        Public Const SchemaVersion As Integer = 6
 
         ''' <summary>
         ''' <b>Os passos de migração conhecidos, e só eles.</b>
@@ -132,6 +136,9 @@ Namespace Global.Iris.Cache
                         "  observed_at TEXT NOT NULL)",
                         "CREATE UNIQUE INDEX ux_label_observation_1 ON label_observation " &
                         "  (incarnation_key, generation_key)"
+                    })},
+                    {5, Array.AsReadOnly(New String() {
+                        "ALTER TABLE label_observation ADD COLUMN matched_rules TEXT"
                     })},
                     {3, Array.AsReadOnly(New String() {
                         "ALTER TABLE metadata_observation ADD COLUMN conversation_id TEXT",

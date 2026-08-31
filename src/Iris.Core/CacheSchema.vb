@@ -215,6 +215,20 @@ Namespace Global.Iris.Core
             ' invalida a anterior de graca, que e o comportamento que o resto
             ' do acervo ja tem.
             '
+            ' AS REGRAS CASADAS SAO GUARDADAS PELO TEXTO, e nao por um id que
+            ' aponte para o arquivo do dono. O arquivo muda, e o rotulo gravado
+            ' e uma OBSERVACAO: ele registra o que foi perguntado naquela
+            ' varredura. Um id apontaria para a regra de hoje e faria a
+            ' observacao de ontem mentir sobre si mesma.
+            '
+            ' E o texto e DO DONO -- nao e corpo de e-mail, entao a D1 nao e
+            ' tocada aqui. O que a D1 proibe e o conteudo alheio; o que o dono
+            ' escreveu no proprio computador ele ja tem.
+            '
+            ' NULO E "nao havia regras", e vetor vazio e "havia e nenhuma
+            ' casou". Sao coisas diferentes: a segunda diz que a pergunta foi
+            ' feita.
+            '
             ' CONFIANCA E ANULAVEL, e isso e o contrario de economia. "O modelo
             ' disse zero" e "o modelo nao disse" sao coisas diferentes, e
             ' colapsa-las num zero faria a leitura tratar ausencia como certeza
@@ -243,7 +257,8 @@ Namespace Global.Iris.Core
                 Col("confidence", "REAL",
                     check:="confidence IS NULL OR (confidence >= 0 AND confidence <= 1)"),
                 Col("activation_id", "TEXT", obrigatoria:=True),
-                Col("observed_at", "TEXT", obrigatoria:=True)
+                Col("observed_at", "TEXT", obrigatoria:=True),
+                Col("matched_rules", "TEXT")
             }, {Indice("incarnation_key", "generation_key")}))
 
             ' Idempotência: o localizador é único DENTRO da pasta.

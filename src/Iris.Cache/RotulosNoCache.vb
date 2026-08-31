@@ -1,5 +1,6 @@
 Imports System.Collections.Generic
 Imports System.Globalization
+Imports System.Text.Json
 Imports System.Linq
 Imports Microsoft.Data.Sqlite
 
@@ -72,7 +73,9 @@ Namespace Global.Iris.Cache
                                ativacao As String,
                                quando As DateTimeOffset,
                                rotulos As IReadOnlyDictionary(Of String, String),
-                               confiancas As IReadOnlyDictionary(Of String, Double?)) As ResultadoDaGravacao
+                               confiancas As IReadOnlyDictionary(Of String, Double?),
+                               Optional regras As IReadOnlyDictionary(Of String, IReadOnlyList(Of String)) = Nothing) _
+                               As ResultadoDaGravacao
 
             If rotulos Is Nothing OrElse rotulos.Count = 0 Then Return ResultadoDaGravacao.Nada()
 
@@ -109,28 +112,58 @@ Namespace Global.Iris.Cache
                     If confiancas IsNot Nothing AndAlso
                        confiancas.TryGetValue(par.Key, lida) Then confianca = lida
 
+                    ' NULO E "nao havia regras nesta varredura". Vetor vazio e
+                    ' "havia, e esta mensagem nao casou com nenhuma" -- que e uma
+                    ' informacao, e nao a ausencia dela.
+                    Dim casadas As String = Nothing
+                    If regras IsNot Nothing Then
+                        Dim minhas As IReadOnlyList(Of String) = Nothing
+                        If Not regras.TryGetValue(par.Key, minhas) Then
+                            minhas = Array.Empty(Of String)()
+                        End If
+                        casadas = JsonSerializer.Serialize(minhas)
+                    End If
+
                     ' SUBSTITUI, e nao acrescenta: o indice e unico por
                     ' (encarnacao, geracao), e reclassificar a mesma geracao e
                     ' uma correcao, nao um segundo fato.
                     Executar(tx,
                         "INSERT INTO label_observation (incarnation_key, generation_key, " &
-                        "  label, confidence, activation_id, observed_at) " &
-                        "VALUES ($i,$g,$l,$c,$a,$q) " &
+                        "  label, confidence, activation_id, observed_at, matched_rules) " &
+                        "VALUES ($i,$g,$l,$c,$a,$q,$r) " &
                         "ON CONFLICT (incarnation_key, generation_key) DO UPDATE SET " &
                         "  label = excluded.label, confidence = excluded.confidence, " &
                         "  activation_id = excluded.activation_id, " &
-                        "  observed_at = excluded.observed_at",
+                        "  observed_at = excluded.observed_at, " &
+                        "  matched_rules = excluded.matched_rules",
                         ("$i", CObj(incarnation.Value)), ("$g", CObj(geracao)),
                         ("$l", CObj(par.Value)),
                         ("$c", If(confianca.HasValue, CObj(confianca.Value), Nothing)),
                         ("$a", CObj(ativacao)),
-                        ("$q", CObj(quando.ToString("o", CultureInfo.InvariantCulture))))
+                        ("$q", CObj(quando.ToString("o", CultureInfo.InvariantCulture))),
+                        ("$r", If(casadas Is Nothing, Nothing, CObj(casadas))))
                     gravados += 1
                 Next
                 tx.Commit()
             End Using
 
             Return ResultadoDaGravacao.Feita(gravados, foraDaPasta)
+        End Function
+
+        ''' <summary>
+        ''' As regras casadas de volta. <b>Texto ilegível vale como vetor vazio</b>,
+        ''' e não como nulo: o que está gravado ali é a prova de que a pergunta foi
+        ''' feita naquela varredura, e essa parte continua verdadeira mesmo quando
+        ''' o resto não puder ser lido. Nulo diria que ninguém perguntou nada.
+        ''' </summary>
+        Private Shared Function Desserializar(bruto As String) As IReadOnlyList(Of String)
+            Try
+                Dim lidas = JsonSerializer.Deserialize(Of List(Of String))(bruto)
+                If lidas Is Nothing Then Return Array.Empty(Of String)()
+                Return lidas.Where(Function(r) Not String.IsNullOrEmpty(r)).ToList()
+            Catch ex As JsonException
+                Return Array.Empty(Of String)()
+            End Try
         End Function
 
         ''' <summary>Esta geração é a publicada <b>desta</b> pasta?</summary>
@@ -171,7 +204,7 @@ Namespace Global.Iris.Cache
             Using cmd = _conn.CreateCommand()
                 cmd.CommandText =
                     "SELECT i.provider_entry_id, l.label, l.confidence, " &
-                    "       l.activation_id, l.observed_at " &
+                    "       l.activation_id, l.observed_at, l.matched_rules " &
                     "FROM folder f " &
                     "JOIN incarnation i ON i.folder_key = f.folder_key " &
                     "JOIN association a ON a.item_key = i.item_key " &
@@ -188,7 +221,8 @@ Namespace Global.Iris.Cache
                             rd.GetString(1),
                             If(rd.IsDBNull(2), CType(Nothing, Double?), rd.GetDouble(2)),
                             rd.GetString(3),
-                            rd.GetString(4))
+                            rd.GetString(4),
+                            If(rd.IsDBNull(5), Nothing, Desserializar(rd.GetString(5))))
                     End While
                 End Using
             End Using
@@ -244,12 +278,24 @@ Namespace Global.Iris.Cache
         ''' <summary>Quando, em ISO 8601. Texto, como o resto do cache guarda.</summary>
         Public ReadOnly Property Quando As String
 
+        ''' <summary>
+        ''' As regras do dono que esta mensagem satisfez, pelo texto delas.
+        '''
+        ''' <b><c>Nothing</c> quer dizer "não havia regras naquela varredura"</b>, e
+        ''' vetor vazio quer dizer "havia, e esta não casou com nenhuma". A tela
+        ''' precisa da diferença: a segunda é uma resposta, a primeira é a ausência
+        ''' da pergunta.
+        ''' </summary>
+        Public ReadOnly Property RegrasCasadas As IReadOnlyList(Of String)
+
         Friend Sub New(rotulo As String, confianca As Double?,
-                       ativacao As String, quando As String)
+                       ativacao As String, quando As String,
+                       regrasCasadas As IReadOnlyList(Of String))
             Me.Rotulo = If(rotulo, "")
             Me.Confianca = confianca
             Me.Ativacao = If(ativacao, "")
             Me.Quando = If(quando, "")
+            Me.RegrasCasadas = regrasCasadas
         End Sub
     End Class
 

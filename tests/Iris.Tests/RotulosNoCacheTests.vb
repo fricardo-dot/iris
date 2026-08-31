@@ -200,6 +200,13 @@ Public Class RotulosNoCacheTests
     '''
     ''' A distinção importa: o comentário anterior afirmava a prova, e a prova
     ''' não existe.
+    '''
+    ''' <b><c>matched_rules</c> entrou na Fase 6</b>, e é o texto das regras que
+    ''' <b>o dono</b> escreveu — não corpo de e-mail, então a D1 não é tocada.
+    ''' Guarda-se o texto, e não um id que aponte para o arquivo dele: o arquivo
+    ''' muda, e o rótulo gravado é uma <i>observação</i> do que foi perguntado
+    ''' naquela varredura. Um id apontaria para a regra de hoje e faria a
+    ''' observação de ontem mentir sobre si mesma.
     ''' </summary>
     <TestMethod>
     Public Sub A_forma_da_tabela_dos_rotulos_e_ESTA()
@@ -216,7 +223,7 @@ Public Class RotulosNoCacheTests
 
                    CollectionAssert.AreEquivalent(
                        {"label_key", "incarnation_key", "generation_key", "label",
-                        "confidence", "activation_id", "observed_at"},
+                        "confidence", "activation_id", "observed_at", "matched_rules"},
                        colunas.ToArray(),
                        "a forma da tabela mudou. Se foi de proposito, diga aqui por " &
                        "que -- e lembre que o D1 nao deixa o corpo entrar")
@@ -387,6 +394,131 @@ Public Class RotulosNoCacheTests
                 If File.Exists(caminho & sufixo) Then File.Delete(caminho & sufixo)
             Next
         End Try
+    End Sub
+
+
+    ' ==================================================================
+    ' AS REGRAS DO DONO QUE CADA MENSAGEM SATISFEZ (Fase 6)
+
+    <TestMethod>
+    Public Sub As_regras_casadas_voltam_pelo_texto_do_dono()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a", "b"}, rodada:=1)
+                   Dim geracao = GeracaoPublicada(db, pasta)
+
+                   ' NEW ... .Metodo() NAO E STATEMENT em VB -- a linha vira erro de
+                   ' sintaxe apontando para a seguinte. E a armadilha do CLAUDE.md.
+                   Dim cache = New RotulosNoCache(db)
+                   cache.Gravar(
+                       pasta, geracao, "ativacao-1", Quando,
+                       New Dictionary(Of String, String) From {
+                           {"f-1-a", "precisa_de_mim"}, {"f-1-b", "fyi"}},
+                       New Dictionary(Of String, Double?)(),
+                       New Dictionary(Of String, IReadOnlyList(Of String)) From {
+                           {"f-1-a", {"clientes reclamando de atraso"}}})
+
+                   Dim lidos = New RotulosNoCache(db).Publicados(pasta)
+
+                   Assert.AreEqual("clientes reclamando de atraso",
+                                   lidos("f-1-a").RegrasCasadas.Single())
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Nulo e vazio são coisas diferentes, e a tela precisa da diferença.</b>
+    '''
+    ''' Vetor vazio diz "havia regras, e esta mensagem não casou com nenhuma" —
+    ''' é uma resposta. Nulo diz "não havia regras naquela varredura" — é a
+    ''' ausência da pergunta. Colapsar as duas faria a fila mostrar que a regra
+    ''' do dono não pegou nada, quando na verdade ela nem foi feita.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Sem_regras_e_NULO_e_com_regras_sem_casar_e_VAZIO()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a", "b"}, rodada:=1)
+                   Dim geracao = GeracaoPublicada(db, pasta)
+
+                   ' "a" foi classificada num lote SEM regras; "b", num lote COM
+                   ' regras que ela nao satisfez.
+                   Dim cache = New RotulosNoCache(db)
+                   cache.Gravar(pasta, geracao, "ativacao-1", Quando,
+                                New Dictionary(Of String, String) From {{"f-1-a", "fyi"}},
+                                New Dictionary(Of String, Double?)())
+                   cache.Gravar(pasta, geracao, "ativacao-2", Quando,
+                                New Dictionary(Of String, String) From {{"f-1-b", "fyi"}},
+                                New Dictionary(Of String, Double?)(),
+                                New Dictionary(Of String, IReadOnlyList(Of String))())
+
+                   Dim lidos = New RotulosNoCache(db).Publicados(pasta)
+
+                   Assert.IsNull(lidos("f-1-a").RegrasCasadas,
+                                 "lote sem regras nao pode parecer lote que nao casou")
+                   Assert.IsNotNull(lidos("f-1-b").RegrasCasadas)
+                   Assert.AreEqual(0, lidos("f-1-b").RegrasCasadas.Count)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' Texto ilegível na coluna vale como vetor <b>vazio</b>, e não como nulo: o
+    ''' que está gravado ali é a prova de que a pergunta foi feita naquela
+    ''' varredura, e essa parte continua verdadeira mesmo quando o resto não
+    ''' puder ser lido.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Regra_gravada_ilegivel_nao_derruba_a_leitura()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a"}, rodada:=1)
+                   Dim geracao = GeracaoPublicada(db, pasta)
+
+                   ' NEW ... .Metodo() NAO E STATEMENT em VB -- a linha vira erro de
+                   ' sintaxe apontando para a seguinte. E a armadilha do CLAUDE.md.
+                   Dim cache = New RotulosNoCache(db)
+                   cache.Gravar(
+                       pasta, geracao, "ativacao-1", Quando,
+                       New Dictionary(Of String, String) From {{"f-1-a", "fyi"}},
+                       New Dictionary(Of String, Double?)(),
+                       New Dictionary(Of String, IReadOnlyList(Of String)) From {
+                           {"f-1-a", {"uma regra"}}})
+
+                   Using cmd = db.Connection.CreateCommand()
+                       cmd.CommandText = "UPDATE label_observation SET matched_rules = 'nao e json'"
+                       cmd.ExecuteNonQuery()
+                   End Using
+
+                   Dim lidos = New RotulosNoCache(db).Publicados(pasta)
+
+                   Assert.IsNotNull(lidos("f-1-a").RegrasCasadas)
+                   Assert.AreEqual(0, lidos("f-1-a").RegrasCasadas.Count)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' Reclassificar a mesma mensagem <b>substitui</b> as regras casadas. Sem
+    ''' isto, uma regra que o dono apagou do arquivo continuaria pendurada na
+    ''' mensagem para sempre, e ele não teria como tirá-la de lá.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Reclassificar_TROCA_as_regras_casadas()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a"}, rodada:=1)
+                   Dim geracao = GeracaoPublicada(db, pasta)
+                   Dim cache = New RotulosNoCache(db)
+
+                   cache.Gravar(pasta, geracao, "ativacao-1", Quando,
+                                New Dictionary(Of String, String) From {{"f-1-a", "fyi"}},
+                                New Dictionary(Of String, Double?)(),
+                                New Dictionary(Of String, IReadOnlyList(Of String)) From {
+                                    {"f-1-a", {"a regra velha"}}})
+                   cache.Gravar(pasta, geracao, "ativacao-2", Quando,
+                                New Dictionary(Of String, String) From {{"f-1-a", "fyi"}},
+                                New Dictionary(Of String, Double?)(),
+                                New Dictionary(Of String, IReadOnlyList(Of String)) From {
+                                    {"f-1-a", {"a regra nova"}}})
+
+                   Dim lidos = New RotulosNoCache(db).Publicados(pasta)
+
+                   Assert.AreEqual("a regra nova", lidos("f-1-a").RegrasCasadas.Single())
+               End Sub)
     End Sub
 
 End Class
