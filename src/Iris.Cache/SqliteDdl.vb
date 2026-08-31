@@ -127,7 +127,7 @@ Namespace Global.Iris.Cache
                         "  incarnation_key INTEGER NOT NULL REFERENCES incarnation(incarnation_key) ON DELETE CASCADE, " &
                         "  generation_key INTEGER NOT NULL REFERENCES generation(generation_key), " &
                         "  label TEXT NOT NULL CHECK (label IN ('precisa_de_mim','aguardando','fyi','notificacao','promocao','newsletter')), " &
-                        "  confidence REAL NOT NULL CHECK (confidence >= 0 AND confidence <= 1), " &
+                        "  confidence REAL CHECK (confidence IS NULL OR (confidence >= 0 AND confidence <= 1)), " &
                         "  activation_id TEXT NOT NULL, " &
                         "  observed_at TEXT NOT NULL)",
                         "CREATE UNIQUE INDEX ux_label_observation_1 ON label_observation " &

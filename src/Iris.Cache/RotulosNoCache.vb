@@ -26,11 +26,25 @@ Namespace Global.Iris.Cache
     ''' teria como saber sob que regra a classificação dele foi feita.
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>GRAVAR É POR LOTE, E O LOTE É ATÔMICO</b>
+    ''' <b>GRAVAR É POR LOTE, E O LOTE É ATÔMICO — COM UMA RESSALVA NOMEADA</b>
     '''
-    ''' Ou entram todos os rótulos daquele lote, ou nenhum. Meia gravação
-    ''' deixaria a pasta com uma parte classificada e outra não, sem nada dizendo
-    ''' qual é qual — e a varredura seguinte acharia que aquilo já foi feito.
+    ''' Os rótulos cujas mensagens <b>ainda estão na pasta</b> entram todos ou
+    ''' nenhum. Meia gravação deixaria a pasta com uma parte classificada e
+    ''' outra não, sem nada dizendo qual é qual.
+    '''
+    ''' Os que <b>não estão</b> saem do lote <i>antes</i> da gravação, e a conta
+    ''' deles volta. O texto anterior dizia "todos ou nenhum" e o código
+    ''' descartava os desconhecidos em silêncio: duas coisas diferentes com o
+    ''' mesmo nome. Achado por revisão externa em 31/08/2026.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>UMA CHAMADA POR VEZ</b>
+    '''
+    ''' A conexão é a do <c>CacheDatabase</c>, e <c>SqliteConnection</c> não
+    ''' tem contrato de uso simultâneo — o mesmo que o acervo já declara. Quem
+    ''' chama serializa; nada aqui protege contra duas gravações ao mesmo
+    ''' tempo, e o WAL não resolve isso (ele coordena conexões diferentes, não
+    ''' torna uma conexão reentrante).
     ''' </summary>
     Public NotInheritable Class RotulosNoCache
 
@@ -50,24 +64,50 @@ Namespace Global.Iris.Cache
         ''' classificação e a gravação, e insistir criaria encarnação para uma
         ''' mensagem que não está mais lá.
         ''' </summary>
-        ''' <returns>Quantos rótulos entraram.</returns>
+        ''' <returns>
+        ''' Quantos entraram e quantos ficaram de fora por já não estarem na
+        ''' pasta. <c>Gravou = False</c> quando a geração não é a publicada.
+        ''' </returns>
         Public Function Gravar(folderKey As Long, geracao As Long,
                                ativacao As String,
                                quando As DateTimeOffset,
                                rotulos As IReadOnlyDictionary(Of String, String),
-                               confiancas As IReadOnlyDictionary(Of String, Double)) As Integer
+                               confiancas As IReadOnlyDictionary(Of String, Double?)) As ResultadoDaGravacao
 
-            If rotulos Is Nothing OrElse rotulos.Count = 0 Then Return 0
+            If rotulos Is Nothing OrElse rotulos.Count = 0 Then Return ResultadoDaGravacao.Nada()
+
+            ' SO NA GERACAO PUBLICADA DESTA PASTA.
+            '
+            ' As duas chaves estrangeiras eram conferidas em separado, e nada
+            ' ligava uma a outra: dava para gravar a encarnacao da pasta A na
+            ' geracao da pasta B, e o registro ficava estruturalmente valido e
+            ' invisivel. Dava tambem para classificar uma geracao que deixou de
+            ' ser publicada enquanto o lote estava em voo -- e ai o trabalho
+            ' inteiro sumia sem ninguem saber.
+            '
+            ' Achado por revisao externa em 31/08/2026.
+            If Not EhAPublicada(folderKey, geracao) Then
+                Return ResultadoDaGravacao.GeracaoErrada()
+            End If
 
             Dim gravados = 0
+            Dim foraDaPasta = 0
             Using tx = _conn.BeginTransaction()
                 For Each par In rotulos
                     Dim incarnation = IncarnationDe(tx, folderKey, par.Key)
-                    If Not incarnation.HasValue Then Continue For
+                    If Not incarnation.HasValue Then
+                        foraDaPasta += 1
+                        Continue For
+                    End If
 
-                    Dim confianca As Double
-                    If confiancas Is Nothing OrElse
-                       Not confiancas.TryGetValue(par.Key, confianca) Then confianca = 0
+                    ' CONFIANCA AUSENTE VAI NULA, e nao zero: "o modelo disse zero"
+                    ' e "o modelo nao disse" sao coisas diferentes, e um zero no
+                    ' lugar da ausencia faria a leitura tratar silencio como
+                    ' certeza minima.
+                    Dim confianca As Double? = Nothing
+                    Dim lida As Double?
+                    If confiancas IsNot Nothing AndAlso
+                       confiancas.TryGetValue(par.Key, lida) Then confianca = lida
 
                     ' SUBSTITUI, e nao acrescenta: o indice e unico por
                     ' (encarnacao, geracao), e reclassificar a mesma geracao e
@@ -81,7 +121,8 @@ Namespace Global.Iris.Cache
                         "  activation_id = excluded.activation_id, " &
                         "  observed_at = excluded.observed_at",
                         ("$i", CObj(incarnation.Value)), ("$g", CObj(geracao)),
-                        ("$l", CObj(par.Value)), ("$c", CObj(confianca)),
+                        ("$l", CObj(par.Value)),
+                        ("$c", If(confianca.HasValue, CObj(confianca.Value), Nothing)),
                         ("$a", CObj(ativacao)),
                         ("$q", CObj(quando.ToString("o", CultureInfo.InvariantCulture))))
                     gravados += 1
@@ -89,7 +130,19 @@ Namespace Global.Iris.Cache
                 tx.Commit()
             End Using
 
-            Return gravados
+            Return ResultadoDaGravacao.Feita(gravados, foraDaPasta)
+        End Function
+
+        ''' <summary>Esta geração é a publicada <b>desta</b> pasta?</summary>
+        Private Function EhAPublicada(folderKey As Long, geracao As Long) As Boolean
+            Using cmd = _conn.CreateCommand()
+                cmd.CommandText =
+                    "SELECT 1 FROM folder " &
+                    "WHERE folder_key = $f AND published_generation_key = $g"
+                cmd.Parameters.AddWithValue("$f", folderKey)
+                cmd.Parameters.AddWithValue("$g", geracao)
+                Return cmd.ExecuteScalar() IsNot Nothing
+            End Using
         End Function
 
         ''' <summary>
@@ -97,28 +150,45 @@ Namespace Global.Iris.Cache
         ''' <c>provider_entry_id</c>.
         '''
         ''' Pasta sem geração publicada devolve vazio — e vazio aqui quer dizer
-        ''' "não há rótulo publicado", que é diferente de "não há rótulo". A
-        ''' distinção é a mesma do resto do acervo, e quem mostra a fila precisa
-        ''' dela.
+        ''' "não há rótulo publicado", que é diferente de "não há rótulo".
+        '''
+        ''' <b>Só o que está PRESENTE na pasta.</b> A encarnação continua no banco
+        ''' depois de a mensagem sair, e sem esta condição o rótulo dela voltava —
+        ''' uma linha de fila sobre uma mensagem que não está mais lá. É a mesma
+        ''' regra que o leitor da fila já aplica ao metadado, e faltava aqui.
+        ''' Achado por revisão externa em 31/08/2026.
+        '''
+        ''' <b>E vem inteiro</b>: rótulo, confiança, ativação e quando. A versão
+        ''' anterior devolvia só o rótulo, e então a ativação ficava gravada sem
+        ''' ninguém conseguir lê-la — guardar um dado que nenhum consumidor
+        ''' alcança é o mesmo que não guardar.
         ''' </summary>
         Public Function Publicados(folderKey As Long) _
-                        As IReadOnlyDictionary(Of String, String)
+                        As IReadOnlyDictionary(Of String, RotuloObservado)
 
-            Dim achados As New Dictionary(Of String, String)(StringComparer.Ordinal)
+            Dim achados As New Dictionary(Of String, RotuloObservado)(StringComparer.Ordinal)
 
             Using cmd = _conn.CreateCommand()
                 cmd.CommandText =
-                    "SELECT i.provider_entry_id, l.label " &
+                    "SELECT i.provider_entry_id, l.label, l.confidence, " &
+                    "       l.activation_id, l.observed_at " &
                     "FROM folder f " &
                     "JOIN incarnation i ON i.folder_key = f.folder_key " &
+                    "JOIN association a ON a.item_key = i.item_key " &
+                    "  AND a.folder_key = f.folder_key " &
                     "JOIN label_observation l ON l.incarnation_key = i.incarnation_key " &
                     "  AND l.generation_key = f.published_generation_key " &
-                    "WHERE f.folder_key = $f AND f.published_generation_key IS NOT NULL"
+                    "WHERE f.folder_key = $f AND f.published_generation_key IS NOT NULL " &
+                    "  AND a.presence = 'presente'"
                 cmd.Parameters.AddWithValue("$f", folderKey)
 
                 Using rd = cmd.ExecuteReader()
                     While rd.Read()
-                        achados(rd.GetString(0)) = rd.GetString(1)
+                        achados(rd.GetString(0)) = New RotuloObservado(
+                            rd.GetString(1),
+                            If(rd.IsDBNull(2), CType(Nothing, Double?), rd.GetDouble(2)),
+                            rd.GetString(3),
+                            rd.GetString(4))
                     End While
                 End Using
             End Using
@@ -156,6 +226,68 @@ Namespace Global.Iris.Cache
             End Using
         End Sub
 
+    End Class
+
+    ''' <summary>
+    ''' Um rótulo como ele foi observado: <b>com a idade e a autorização
+    ''' junto</b>.
+    '''
+    ''' <see cref="Confianca"/> é anulável de propósito. "O modelo disse zero" e
+    ''' "o modelo não disse" são coisas diferentes, e colapsá-las faria a tela
+    ''' tratar silêncio como certeza mínima — que é uma afirmação.
+    ''' </summary>
+    Public NotInheritable Class RotuloObservado
+        Public ReadOnly Property Rotulo As String
+        Public ReadOnly Property Confianca As Double?
+        ''' <summary>Sob que autorização esta classificação foi feita.</summary>
+        Public ReadOnly Property Ativacao As String
+        ''' <summary>Quando, em ISO 8601. Texto, como o resto do cache guarda.</summary>
+        Public ReadOnly Property Quando As String
+
+        Friend Sub New(rotulo As String, confianca As Double?,
+                       ativacao As String, quando As String)
+            Me.Rotulo = If(rotulo, "")
+            Me.Confianca = confianca
+            Me.Ativacao = If(ativacao, "")
+            Me.Quando = If(quando, "")
+        End Sub
+    End Class
+
+    ''' <summary>
+    ''' O que aconteceu numa gravação de lote.
+    '''
+    ''' <see cref="ForaDaPasta"/> não é erro: é mensagem que saiu entre a
+    ''' classificação e a gravação. Mas é <b>contado</b>, porque um lote de
+    ''' cinquenta que grava dois precisa dizer isso a quem chamou — senão a
+    ''' varredura seguinte acha que aquela pasta já foi classificada.
+    ''' </summary>
+    Public NotInheritable Class ResultadoDaGravacao
+        ''' <summary>
+        ''' Falso quando a geração pedida não é a publicada da pasta — e aí
+        ''' <b>nada</b> foi gravado.
+        ''' </summary>
+        Public ReadOnly Property Gravou As Boolean
+        Public ReadOnly Property Entraram As Integer
+        Public ReadOnly Property ForaDaPasta As Integer
+
+        Private Sub New(gravou As Boolean, entraram As Integer, foraDaPasta As Integer)
+            Me.Gravou = gravou
+            Me.Entraram = entraram
+            Me.ForaDaPasta = foraDaPasta
+        End Sub
+
+        Friend Shared Function Nada() As ResultadoDaGravacao
+            Return New ResultadoDaGravacao(True, 0, 0)
+        End Function
+
+        Friend Shared Function GeracaoErrada() As ResultadoDaGravacao
+            Return New ResultadoDaGravacao(False, 0, 0)
+        End Function
+
+        Friend Shared Function Feita(entraram As Integer,
+                                     foraDaPasta As Integer) As ResultadoDaGravacao
+            Return New ResultadoDaGravacao(True, entraram, foraDaPasta)
+        End Function
     End Class
 
 End Namespace

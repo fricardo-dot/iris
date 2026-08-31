@@ -45,13 +45,22 @@ Public Class RotulosNoCacheTests
                        pasta, geracao, "ativacao-1", Quando,
                        New Dictionary(Of String, String) From {
                            {"f-1-a", "fyi"}, {"f-1-b", "precisa_de_mim"}},
-                       New Dictionary(Of String, Double) From {{"f-1-a", 0.8}})
+                       New Dictionary(Of String, Double?) From {{"f-1-a", 0.8}})
 
-                   Assert.AreEqual(2, quantos)
+                   Assert.IsTrue(quantos.Gravou)
+                   Assert.AreEqual(2, quantos.Entraram)
+                   Assert.AreEqual(0, quantos.ForaDaPasta)
 
                    Dim lidos = New RotulosNoCache(db).Publicados(pasta)
-                   Assert.AreEqual("fyi", lidos("f-1-a"))
-                   Assert.AreEqual("precisa_de_mim", lidos("f-1-b"))
+                   Assert.AreEqual("fyi", lidos("f-1-a").Rotulo)
+                   Assert.AreEqual("precisa_de_mim", lidos("f-1-b").Rotulo)
+
+                   ' E A PROJECAO VEM INTEIRA. A ativacao ficava gravada e nenhum
+                   ' consumidor a alcancava -- guardar um dado que ninguem le e o
+                   ' mesmo que nao guardar.
+                   Assert.AreEqual("ativacao-1", lidos("f-1-a").Ativacao)
+                   Assert.AreEqual(0.8, lidos("f-1-a").Confianca.Value, 0.0001)
+                   Assert.IsTrue(lidos("f-1-a").Quando.Length > 0)
                End Sub)
     End Sub
 
@@ -104,7 +113,7 @@ Public Class RotulosNoCacheTests
 
                    Dim lidos = rotulos.Publicados(pasta)
                    Assert.AreEqual(1, lidos.Count, "acrescentou em vez de substituir")
-                   Assert.AreEqual("promocao", lidos("f-1-a"))
+                   Assert.AreEqual("promocao", lidos("f-1-a").Rotulo)
                End Sub)
     End Sub
 
@@ -124,18 +133,25 @@ Public Class RotulosNoCacheTests
                        New Dictionary(Of String, String) From {
                            {"f-1-a", "fyi"}, {"f-1-SUMIU", "promocao"}}, Nothing)
 
-                   Assert.AreEqual(1, quantos)
+                   Assert.AreEqual(1, quantos.Entraram)
+                   Assert.AreEqual(1, quantos.ForaDaPasta,
+                       "o descarte foi silencioso: um lote de cinquenta que grava " &
+                       "dois precisa dizer isso a quem chamou")
                    Assert.AreEqual(1, New RotulosNoCache(db).Publicados(pasta).Count)
                End Sub)
     End Sub
 
     ''' <summary>
-    ''' Confiança que não veio vira zero — e zero é gravável, ao contrário de
-    ''' nulo. "Não sei o quanto" e "tenho certeza" não podem ser o mesmo valor,
-    ''' e o zero é o lado que não afirma.
+    ''' <b>Confiança que não veio fica NULA, e não zero.</b>
+    '''
+    ''' "O modelo disse zero" e "o modelo não disse" são coisas diferentes, e
+    ''' colapsá-las faria a tela tratar silêncio como certeza mínima — que é
+    ''' uma afirmação. A primeira versão gravava zero, e o comentário dizia que
+    ''' os dois casos eram distintos: contradição entre o texto e o código.
+    ''' Achado por revisão externa.
     ''' </summary>
     <TestMethod>
-    Public Sub Confianca_ausente_e_gravada_como_ZERO()
+    Public Sub Confianca_ausente_fica_NULA()
         Comigo(Sub(db)
                    Dim pasta = Varrer(db, "f-1", {"a"}, rodada:=1)
 
@@ -144,10 +160,9 @@ Public Class RotulosNoCacheTests
                        pasta, GeracaoPublicada(db, pasta), "ativacao-1", Quando,
                        New Dictionary(Of String, String) From {{"f-1-a", "fyi"}}, Nothing)
 
-                   Using cmd = db.Connection.CreateCommand()
-                       cmd.CommandText = "SELECT confidence FROM label_observation"
-                       Assert.AreEqual(0.0, Convert.ToDouble(cmd.ExecuteScalar()), 0.0001)
-                   End Using
+                   Assert.IsFalse(New RotulosNoCache(db).Publicados(pasta)("f-1-a").
+                                  Confianca.HasValue,
+                       "silencio do modelo virou certeza minima")
                End Sub)
     End Sub
 
@@ -174,12 +189,20 @@ Public Class RotulosNoCacheTests
     End Sub
 
     ''' <summary>
-    ''' <b>O cache não guarda justificativa.</b> "Por que este rótulo" cita o
-    ''' corpo, e o D1 diz que o cache guarda metadado. Este teste olha a forma da
-    ''' tabela: nenhuma coluna de texto livre onde uma frase caiba.
+    ''' <b>A forma da tabela é esta, e mudá-la é decisão.</b>
+    '''
+    ''' O cache guarda metadado (D1), e "por que este rótulo" cita o corpo. Este
+    ''' teste <b>não prova</b> que um corpo não cabe — <c>activation_id</c> é
+    ''' TEXT e o SQLite não impõe tamanho, então tecnicamente cabe em qualquer
+    ''' uma. Ele é um <b>alarme de forma</b>: uma coluna nova aqui — a tentação
+    ''' aparece como "só um campinho de nota" — faz este teste falhar e obriga
+    ''' quem a acrescentou a dizer por quê.
+    '''
+    ''' A distinção importa: o comentário anterior afirmava a prova, e a prova
+    ''' não existe.
     ''' </summary>
     <TestMethod>
-    Public Sub A_tabela_dos_rotulos_NAO_tem_onde_guardar_corpo()
+    Public Sub A_forma_da_tabela_dos_rotulos_e_ESTA()
         Comigo(Sub(db)
                    Dim colunas As New List(Of String)()
                    Using cmd = db.Connection.CreateCommand()
@@ -195,8 +218,8 @@ Public Class RotulosNoCacheTests
                        {"label_key", "incarnation_key", "generation_key", "label",
                         "confidence", "activation_id", "observed_at"},
                        colunas.ToArray(),
-                       "a tabela ganhou uma coluna: se ela guarda texto livre, o " &
-                       "corpo da mensagem cabe nela")
+                       "a forma da tabela mudou. Se foi de proposito, diga aqui por " &
+                       "que -- e lembre que o D1 nao deixa o corpo entrar")
                End Sub)
     End Sub
 
@@ -209,6 +232,102 @@ Public Class RotulosNoCacheTests
         Comigo(Sub(db)
                    Dim pasta = New ResolvedorDoAcervo(db).Pasta("store-1", "f-9", "Nunca varrida")
                    Assert.AreEqual(0, New RotulosNoCache(db).Publicados(pasta).Count)
+               End Sub)
+    End Sub
+
+
+    ''' <summary>
+    ''' <b>Rótulo de mensagem que saiu da pasta não volta na leitura.</b>
+    '''
+    ''' A encarnação continua no banco depois de a mensagem sair, e sem a
+    ''' condição de presença o rótulo dela voltava — uma linha de fila sobre uma
+    ''' mensagem que não está mais lá, que manda o dono abrir o que não existe.
+    '''
+    ''' É diferente de <see cref="Item_que_nao_esta_na_pasta_e_ignorado"/>: lá a
+    ''' encarnação nunca existiu; aqui ela existiu e deixou de estar presente.
+    ''' Achado por revisão externa em 31/08/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Rotulo_de_item_que_SAIU_da_pasta_nao_volta()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a", "b"}, rodada:=1)
+
+                   Dim oCache As New RotulosNoCache(db)
+                   oCache.Gravar(pasta, GeracaoPublicada(db, pasta), "ativacao-1", Quando,
+                       New Dictionary(Of String, String) From {
+                           {"f-1-a", "fyi"}, {"f-1-b", "promocao"}}, Nothing)
+                   Assert.AreEqual(2, New RotulosNoCache(db).Publicados(pasta).Count,
+                       "o preparo do teste esta errado")
+
+                   ' A segunda mensagem sai da pasta, e a pasta e republicada.
+                   Varrer(db, "f-1", {"a"}, rodada:=2, existente:=pasta)
+                   Dim depois = GeracaoPublicada(db, pasta)
+                   oCache.Gravar(pasta, depois, "ativacao-1", Quando,
+                       New Dictionary(Of String, String) From {{"f-1-a", "fyi"}}, Nothing)
+
+                   Dim lidos = New RotulosNoCache(db).Publicados(pasta)
+                   Assert.IsFalse(lidos.ContainsKey("f-1-b"),
+                       "o rotulo de uma mensagem que saiu da pasta voltou na leitura")
+                   Assert.IsTrue(lidos.ContainsKey("f-1-a"))
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Só se grava na geração publicada da própria pasta.</b>
+    '''
+    ''' As duas chaves estrangeiras eram conferidas em separado, e nada ligava
+    ''' uma à outra: dava para gravar a encarnação de uma pasta na geração de
+    ''' outra, e o registro ficava estruturalmente válido e invisível. Dava
+    ''' também para gravar numa geração que deixou de ser publicada enquanto o
+    ''' lote estava em voo — e aí o trabalho inteiro sumia sem ninguém saber.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Geracao_que_nao_e_a_publicada_NAO_grava()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a"}, rodada:=1)
+                   Dim velha = GeracaoPublicada(db, pasta)
+
+                   ' A pasta e republicada: a geracao de antes deixa de valer.
+                   Varrer(db, "f-1", {"a"}, rodada:=2, existente:=pasta)
+
+                   Dim r = New RotulosNoCache(db).Gravar(
+                       pasta, velha, "ativacao-1", Quando,
+                       New Dictionary(Of String, String) From {{"f-1-a", "fyi"}}, Nothing)
+
+                   Assert.IsFalse(r.Gravou,
+                       "gravou numa geracao que nao e a publicada, e o trabalho " &
+                       "sumiria sem ninguem saber")
+                   Assert.AreEqual(0, r.Entraram)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Falha no meio do lote não deixa metade gravada.</b>
+    '''
+    ''' A transação estava lá e ninguém a exercitava: o teste que existia
+    ''' congelava o descarte de item desconhecido, que é outra coisa. Aqui o
+    ''' segundo rótulo é inválido para o <c>CHECK</c> da tabela, o INSERT
+    ''' estoura, e o primeiro tem de desaparecer junto.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Falha_no_MEIO_do_lote_desfaz_o_que_ja_entrou()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a", "b"}, rodada:=1)
+                   Dim geracao = GeracaoPublicada(db, pasta)
+
+                   Try
+                       Dim oCache As New RotulosNoCache(db)
+                       oCache.Gravar(pasta, geracao, "ativacao-1", Quando,
+                           New Dictionary(Of String, String) From {
+                               {"f-1-a", "fyi"},
+                               {"f-1-b", "rotulo_que_o_CHECK_recusa"}}, Nothing)
+                       Assert.Fail("o CHECK da tabela devia ter recusado o segundo")
+                   Catch ex As Microsoft.Data.Sqlite.SqliteException
+                   End Try
+
+                   Assert.AreEqual(0, New RotulosNoCache(db).Publicados(pasta).Count,
+                       "meio lote ficou gravado: a pasta tem uma parte classificada " &
+                       "e outra nao, sem nada dizendo qual e qual")
                End Sub)
     End Sub
 

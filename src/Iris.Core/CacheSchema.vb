@@ -215,6 +215,11 @@ Namespace Global.Iris.Core
             ' invalida a anterior de graca, que e o comportamento que o resto
             ' do acervo ja tem.
             '
+            ' CONFIANCA E ANULAVEL, e isso e o contrario de economia. "O modelo
+            ' disse zero" e "o modelo nao disse" sao coisas diferentes, e
+            ' colapsa-las num zero faria a leitura tratar ausencia como certeza
+            ' minima -- que e uma afirmacao. Nulo e a ausencia.
+            '
             ' SEM JUSTIFICATIVA, E NAO POR ECONOMIA. "Por que este rotulo" cita
             ' o corpo, e o D1 diz que o cache guarda metadado. Rotulo e
             ' confianca sao metadado; a frase que os explica nao e.
@@ -235,8 +240,8 @@ Namespace Global.Iris.Core
                 Col("generation_key", "INTEGER", obrigatoria:=True, refs:="generation"),
                 Col("label", "TEXT", obrigatoria:=True,
                     check:="label IN ('precisa_de_mim','aguardando','fyi','notificacao','promocao','newsletter')"),
-                Col("confidence", "REAL", obrigatoria:=True,
-                    check:="confidence >= 0 AND confidence <= 1"),
+                Col("confidence", "REAL",
+                    check:="confidence IS NULL OR (confidence >= 0 AND confidence <= 1)"),
                 Col("activation_id", "TEXT", obrigatoria:=True),
                 Col("observed_at", "TEXT", obrigatoria:=True)
             }, {Indice("incarnation_key", "generation_key")}))
