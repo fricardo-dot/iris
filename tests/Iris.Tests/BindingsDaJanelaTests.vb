@@ -233,8 +233,10 @@ Public Class BindingsDaJanelaTests
     <TestMethod>
     Public Sub Todo_binding_da_faixa_resolve_no_AssistenteViewModel()
         Dim quebrados As New List(Of String)()
+        Dim conferidos = 0
 
         For Each caminho In CaminhosDeBinding(LerFaixa())
+            conferidos += 1
             Dim partes = caminho.Split("."c)
             Dim alvo As Type = GetType(AssistenteViewModel)
 
@@ -252,6 +254,12 @@ Public Class BindingsDaJanelaTests
         Assert.AreEqual(0, quebrados.Count,
             "caminho que nao resolve fica vazio em silencio: " &
             String.Join(", ", quebrados))
+
+        ' O PISO. CaminhosDeBinding descarta o que aponta para fora do
+        ' DataContext, e um descarte largo demais deixaria este teste passar
+        ' sem conferir nada -- verde por nao ter olhado.
+        Assert.IsTrue(conferidos >= 20,
+            $"so {conferidos} caminhos conferidos: o filtro comeu o teste")
     End Sub
 
     ''' <summary>
@@ -334,11 +342,52 @@ Public Class BindingsDaJanelaTests
 
     ' ==================================================================
 
+    ''' <summary>
+    ''' Os caminhos que <b>o DataContext tem de resolver</b>.
+    '''
+    ''' <c>RelativeSource</c>, <c>ElementName</c> e <c>Source</c> ficam de
+    ''' fora, e nao por conveniencia: eles dizem, no proprio binding, que a
+    ''' fonte <b>nao e o DataContext</b>. O teto da faixa e
+    ''' <c>{Binding ActualHeight, RelativeSource=...Window}</c> — cobrar
+    ''' <c>ActualHeight</c> do <c>AssistenteViewModel</c> seria cobrar a
+    ''' propriedade errada do objeto errado.
+    '''
+    ''' A exclusao e MEDIDA: o teste que consome isto exige um piso de
+    ''' caminhos conferidos, para que alarga-la um dia nao esvazie o teste
+    ''' em silencio.
+    ''' </summary>
     Private Shared Iterator Function CaminhosDeBinding(xaml As String) As IEnumerable(Of String)
         ' {Binding Caminho} e {Binding Path=Caminho} e {Binding Caminho, ...}
         For Each m As Match In Regex.Matches(xaml, "\{Binding\s+(?:Path=)?([A-Za-z_][\w.]*)")
+            If OutraFonte(xaml, m.Index) Then Continue For
             Yield m.Groups(1).Value
         Next
+    End Function
+
+    ''' <summary>
+    ''' O binding que comeca em <paramref name="inicio"/> aponta para fora
+    ''' do <c>DataContext</c>?
+    '''
+    ''' Varre ate a chave que fecha ESTE binding, contando profundidade —
+    ''' um <c>{Binding X, Converter={StaticResource Y}}</c> tem chaves
+    ''' aninhadas, e parar na primeira <c>}</c> leria metade da expressao.
+    ''' </summary>
+    Private Shared Function OutraFonte(xaml As String, inicio As Integer) As Boolean
+        Dim profundidade = 0
+        For i = inicio To xaml.Length - 1
+            If xaml(i) = "{"c Then
+                profundidade += 1
+            ElseIf xaml(i) = "}"c Then
+                profundidade -= 1
+                If profundidade = 0 Then
+                    Dim corpo = xaml.Substring(inicio, i - inicio + 1)
+                    Return corpo.Contains("RelativeSource=") OrElse
+                           corpo.Contains("ElementName=") OrElse
+                           corpo.Contains("Source=")
+                End If
+            End If
+        Next
+        Return False
     End Function
 
     Private Shared _xaml As String

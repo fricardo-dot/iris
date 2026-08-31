@@ -527,7 +527,12 @@ Namespace Global.Iris.App.ViewModels
             ' A IA perde o contexto: sessão nova é outra ligação com o Outlook,
             ' e um resumo pedido na anterior descreve mensagens que talvez nem
             ' sejam mais as mesmas.
-            Assistente?.Trocou()
+            '
+            ' ESQUECER, e nao Trocou: a memoria por mensagem e indexada por
+            ' EntryID, que e identidade DESTA ligacao. Guardar de uma sessao
+            ' para a outra seria apostar que a mesma cadeia ainda aponta para
+            ' a mesma mensagem.
+            Assistente?.EsquecerASessao()
 
             _watcher.OnSessionReplaced()
 
@@ -808,7 +813,12 @@ Namespace Global.Iris.App.ViewModels
             '
             ' A protecao existia no ViewModel e nao estava LIGADA a nada: os
             ' testes chamavam Trocou() direto, e na aplicacao ninguem chamava.
-            Assistente?.Trocou()
+            '
+            ' E A CHAVE VAI JUNTO. Com ela, voltar para uma mensagem ja
+            ' resumida traz o resumo de volta em vez de cobrar outro; sem ela
+            ' -- Nothing -- nada e restaurado, que e o certo quando nao se
+            ' sabe de que mensagem se esta falando.
+            Assistente?.Trocou(Messages.Selected?.Key)
             AtualizarComandosDeComposicao()
         End Sub
 

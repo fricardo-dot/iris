@@ -784,15 +784,118 @@ Namespace Global.Iris.App.ViewModels
         ''' anterior apareceria embaixo da nova.
         ''' </summary>
         Public Sub Trocou()
+            Trocou(Nothing)
+        End Sub
+
+        ''' <summary>
+        ''' <b>Troca de contexto, guardando o que já foi pago.</b>
+        '''
+        ''' Resumo e resposta custam dinheiro e tempo. Clicar noutra
+        ''' mensagem e voltar apagava os dois, e o usuário pagava de novo
+        ''' pela mesma pergunta — ou, pior, não voltava a perguntar.
+        '''
+        ''' <b>A memória é por <c>ItemKey</c>, e essa é a regra inteira.</b>
+        ''' O perigo aqui nunca foi perder o resumo: é mostrar o resumo de
+        ''' uma mensagem embaixo de outra, que é pior que resumo nenhum
+        ''' porque ninguém desconfia. Chave ausente ou vazia — troca de
+        ''' pasta, desmarcação — <b>não restaura nada</b>, e é por isso que
+        ''' a sobrecarga sem argumento continua existindo: quem não sabe
+        ''' de que mensagem está falando não tem o que restaurar.
+        '''
+        ''' Ela mora na memória do processo e não em disco: é conteúdo de
+        ''' mensagem, e o cache em disco guarda metadado (D1).
+        ''' <see cref="EsquecerASessao"/> a apaga quando a sessão do Outlook
+        ''' é outra e as identidades deixam de valer.
+        ''' </summary>
+        Public Sub Trocou(chave As ItemKey)
             _geracao += 1
-            Resultado = ""
             Cancelar()
+
+            Guardar()
+            _chaveAtual = If(chave IsNot Nothing AndAlso Not chave.IsEmpty, chave, Nothing)
+            Restaurar()
 
             ' E REAVALIA. Invalidar sem reavaliar deixava os comandos refletindo
             ' o contexto anterior: pasta nova pode ter outra autorizacao, e o
             ' botao continuaria habilitado — ou desabilitado — pelo motivo
             ' errado.
             Avaliar()
+        End Sub
+
+        ''' <summary>
+        ''' <b>A sessão é outra: a memória não vale mais.</b>
+        '''
+        ''' <c>EntryID</c> é identidade de uma ligação com o Outlook. Numa
+        ''' sessão nova a mesma cadeia pode apontar para outra coisa, ou
+        ''' para nada — guardar seria apostar que aponta para a mesma.
+        ''' <b>Não se chama <c>Esquecer</c></b> porque esse nome já é do
+        ''' desfazer, três telas abaixo, e falam de coisas diferentes.
+        ''' </summary>
+        Public Sub EsquecerASessao()
+            _memoria.Clear()
+            _ordem.Clear()
+            _chaveAtual = Nothing
+            Resultado = ""
+            Resposta = ""
+            Ficha = ""
+            RessalvaDoConteudo = ""
+        End Sub
+
+        Private NotInheritable Class TrabalhoDaIa
+            Public Property Resumo As String = ""
+            Public Property Redacao As String = ""
+            Public Property Ficha As String = ""
+            Public Property Ressalva As String = ""
+        End Class
+
+        ' TETO DE VINTE, e descarte pela ORDEM DE CHEGADA.
+        '
+        ' Sem teto, uma varredura de pasta grande acumularia o corpo de
+        ' resumo de cada mensagem visitada pelo tempo que o programa ficasse
+        ' aberto. Vinte cobre o vaivem de quem le uma conversa e volta; alem
+        ' disso e memoria por acaso, e nao por decisao.
+        Private Const TetoDaMemoria As Integer = 20
+        Private ReadOnly _memoria As New Dictionary(Of ItemKey, TrabalhoDaIa)()
+        Private ReadOnly _ordem As New List(Of ItemKey)()
+        Private _chaveAtual As ItemKey
+
+        ''' <summary>O que está na tela vai para a chave que o pôs lá.</summary>
+        Private Sub Guardar()
+            If _chaveAtual Is Nothing Then Return
+
+            ' Nada na tela apaga o que havia: e a diferenca entre 'ainda nao
+            ' pedi' e 'pedi e nao deu'. Guardar vazio por cima de um resumo
+            ' bom seria a memoria trabalhando contra si mesma.
+            If Not TemResultado AndAlso Not TemResposta Then
+                If _memoria.Remove(_chaveAtual) Then _ordem.Remove(_chaveAtual)
+                Return
+            End If
+
+            If Not _memoria.ContainsKey(_chaveAtual) Then
+                _ordem.Add(_chaveAtual)
+                Do While _ordem.Count > TetoDaMemoria
+                    _memoria.Remove(_ordem(0))
+                    _ordem.RemoveAt(0)
+                Loop
+            End If
+
+            _memoria(_chaveAtual) = New TrabalhoDaIa() With {
+                .Resumo = Resultado, .Redacao = Resposta,
+                .Ficha = Ficha, .Ressalva = RessalvaDoConteudo}
+        End Sub
+
+        ''' <summary>
+        ''' O que a chave nova tem guardado — <b>ou o vazio</b>. Nunca o que
+        ''' estava na tela: sair sem limpar é justamente o defeito.
+        ''' </summary>
+        Private Sub Restaurar()
+            Dim guardado As TrabalhoDaIa = Nothing
+            If _chaveAtual IsNot Nothing Then _memoria.TryGetValue(_chaveAtual, guardado)
+
+            Resultado = If(guardado?.Resumo, "")
+            Resposta = If(guardado?.Redacao, "")
+            Ficha = If(guardado?.Ficha, "")
+            RessalvaDoConteudo = If(guardado?.Ressalva, "")
         End Sub
 
         Public Sub Cancelar()
@@ -857,9 +960,14 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Friend Const InstrucaoDeResumo As String =
             "Resuma estas mensagens. O corpo pode trazer a conversa anterior " &
-            "citada abaixo da mensagem mais recente: use-a como contexto e diga " &
-            "primeiro o que há de NOVO, depois o histórico necessário para " &
-            "entender. Se a conversa citada não acrescentar nada, não a mencione."
+            "citada abaixo da mensagem mais recente: percorra a conversa INTEIRA, " &
+            "de baixo para cima, e diga primeiro o que há de NOVO, depois o " &
+            "histórico necessário para entender. " &
+            "PRESERVE OS DADOS CONCRETOS: códigos, números, quantidades, datas, " &
+            "nomes de itens e valores devem aparecer como no original, e não " &
+            "resumidos em alguns códigos ou alguns itens — num e-mail de " &
+            "trabalho são eles o conteúdo. Se um item foi corrigido depois, diga " &
+            "o valor antigo e o novo."
 
         ''' <summary>
         ''' A instrução da resposta. Pelo mesmo motivo: responder sem olhar o
@@ -990,12 +1098,17 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property PorQueNaoEnvia As String
             Get
                 If PodeEnviarParaRascunho OrElse Not TemResposta Then Return ""
-                If _rascunho Is Nothing Then
-                    Return "Para mandar esta resposta a um rascunho, abra uma: " &
-                           "Responder ou Responder a todos, ali em cima."
-                End If
-                If Not _rascunho.PodeEditar Then
-                    Return "O rascunho aberto não aceita edição agora."
+                ' NAO DIZ "o rascunho aberto", porque PodeEditar responde False
+                ' para DOIS estados: compositor FECHADO e compositor travado na
+                ' confirmacao de envio. Em producao o adaptador existe sempre,
+                ' entao o caso comum -- nao ha compositor nenhum -- caia na
+                ' frase que afirmava haver um, e mandava procurar defeito num
+                ' rascunho que nao existia.
+                If _rascunho Is Nothing OrElse Not _rascunho.PodeEditar Then
+                    Return "Para mandar esta resposta a um rascunho, abra uma " &
+                           "resposta: Responder ou Responder a todos, ali em cima. " &
+                           "Se já houver uma aberta e travada na confirmação de " &
+                           "envio, ela não aceita edição até você sair de lá."
                 End If
                 Return ""
             End Get
@@ -1133,14 +1246,9 @@ Namespace Global.Iris.App.ViewModels
         Public Sub EnviarParaRascunho()
             If Not TemResposta Then Return
 
-            If _rascunho Is Nothing Then
-                Aviso = "Não há rascunho aberto. Clique em Responder ou " &
-                        "Responder a todos e tente de novo."
-                Return
-            End If
-
-            If Not _rascunho.PodeEditar Then
-                Aviso = "O rascunho aberto não aceita edição agora."
+            If _rascunho Is Nothing OrElse Not _rascunho.PodeEditar Then
+                Aviso = "Não há rascunho aceitando edição. Clique em Responder " &
+                        "ou Responder a todos, ou saia da confirmação de envio."
                 Return
             End If
 

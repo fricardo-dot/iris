@@ -454,6 +454,18 @@ Public Class FaixaDaIaRenderizaTests
     ''' retângulos aninhados — que se sobrepõem por construção, e não porque
     ''' alguma faixa cobre outra.
     ''' </summary>
+    ''' <summary>
+    ''' As faixas irmas, em coordenadas da raiz.
+    '''
+    ''' <b>A rolagem e atravessada, e nao contada.</b> Em 31/08 o aviso e o
+    ''' resultado desceram para dentro de um <c>ScrollViewer</c> — a faixa
+    ''' rola por conta propria para nao espremer a lista de e-mails. Contar
+    ''' o <c>ScrollViewer</c> como uma faixa mediria o <b>continente</b>:
+    ''' ele cobre os dois por construcao, e o teste acusaria sobreposicao
+    ''' onde nao ha. Descer ate os irmaos de verdade mantem a pergunta a
+    ''' mesma — <i>o aviso e o resultado se cobrem?</i> — depois de a
+    ''' arvore ter ganhado um nivel.
+    ''' </summary>
     Private Shared Iterator Function Visiveis(raiz As FrameworkElement) As IEnumerable(Of Rect)
         Dim grade = Descendentes(raiz).OfType(Of Grid)().FirstOrDefault()
         If grade Is Nothing Then Return
@@ -462,6 +474,27 @@ Public Class FaixaDaIaRenderizaTests
             If filho.Visibility <> Visibility.Visible Then Continue For
             Dim fe = CType(filho, FrameworkElement)
             If fe.ActualHeight <= 0 Then Continue For
+
+            Dim rolagem = TryCast(fe, ScrollViewer)
+            If rolagem IsNot Nothing Then
+                ' .Content, e NAO o primeiro Grid descendente: o TEMPLATE do
+                ' ScrollViewer tem um Grid proprio -- o que segura o
+                ' ScrollContentPresenter e as duas barras -- e ele vem antes na
+                ' arvore visual. Descer por ali media a moldura da rolagem e
+                ' devolvia UMA faixa onde ha duas.
+                Dim dentro = TryCast(rolagem.Content, Grid)
+                If dentro IsNot Nothing Then
+                    For Each neto As UIElement In dentro.Children
+                        If neto.Visibility <> Visibility.Visible Then Continue For
+                        Dim ne = CType(neto, FrameworkElement)
+                        If ne.ActualHeight <= 0 Then Continue For
+                        Yield New Rect(ne.TranslatePoint(New Point(0, 0), raiz),
+                                       New Size(ne.ActualWidth, ne.ActualHeight))
+                    Next
+                End If
+                Continue For
+            End If
+
             Dim canto = fe.TranslatePoint(New Point(0, 0), raiz)
             Yield New Rect(canto, New Size(fe.ActualWidth, fe.ActualHeight))
         Next

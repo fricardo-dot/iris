@@ -1,8 +1,10 @@
 <UserControl x:Class="Views.FaixaDaIa"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:app="clr-namespace:Iris.App">
     <UserControl.Resources>
         <BooleanToVisibilityConverter x:Key="BoolToVis" />
+        <app:FracaoDaAltura x:Key="Fracao" />
     </UserControl.Resources>
 
     <!-- TUDO AQUI E DynamicResource, E ISSO NAO E ESTILO.
@@ -39,7 +41,6 @@
             BorderThickness="0,1,0,0">
         <Grid>
             <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="Auto" />
@@ -132,213 +133,244 @@
                 </StackPanel>
             </Border>
 
-            <!-- O AVISO: o motivo de a IA estar desligada, e o que ficou sem
-                 desfecho conhecido numa execucao anterior. -->
-            <!-- TemAvisoDeOperacao, e NAO TemAlgoADizer.
+            <!-- UMA ROLAGEM SO, E ELA E DAQUI.
 
-                 TemAlgoADizer conta tambem o aviso da cerimonia, que agora tem
-                 linha propria no rodape - entao esta borda ficava VISIVEL com
-                 os dois TextBlock dela vazios, ocupando altura. O sintoma era
-                 um vao entre os botoes e a resposta que nao dava para explicar
-                 olhando o XAML: o espaco era de um elemento presente, e nao de
-                 margem.
+                 A faixa e linha Auto do MainWindow: ela cresce e a LISTA DE
+                 E-MAILS encolhe na mesma medida. Com resumo e resposta na
+                 tela ao mesmo tempo, sobrava uma tira de lista.
 
-                 E cada TextBlock some sozinho quando nao tem texto: com um so
-                 dos dois preenchido, o outro deixava uma linha em branco. -->
-            <Border Grid.Row="1"
-                    Visibility="{Binding TemAvisoDeOperacao, Converter={StaticResource BoolToVis},
-                                         FallbackValue=Collapsed}"
-                    Padding="16,0,16,8">
-                <StackPanel>
-                    <TextBlock Text="{Binding Aviso}"
-                               Style="{DynamicResource Text.Secondary}"
-                               TextWrapping="Wrap"
-                               Visibility="{Binding TemAviso, Converter={StaticResource BoolToVis},
-                                                    FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Situacao da IA" />
-                    <!-- O AVISO INTEIRO, e o botao que o encolhe.
+                 Antes cada texto tinha o seu ScrollViewer de 240. Tres
+                 rolagens aninhadas nao resolvem o problema: cada uma segura
+                 o seu texto e a SOMA continua empurrando a lista. Agora e
+                 uma so, aqui, com teto - os textos la dentro correm livres.
 
-                         Ele dizia "este aviso nao desaparece sozinho", e era
-                         verdade: nao havia como dizer que se viu. Um paragrafo
-                         permanente e um paragrafo que se aprende a nao ler.
+                 O TETO E FRACAO DA JANELA, e nao pixel fixo: 0,42 da altura
+                 aqui, mais cabecalho e rodape que ficam de fora, da perto de
+                 metade da tela. Pixel fixo estaria certo na minha janela e
+                 errado em todas as outras. FallbackValue=300 porque os testes
+                 de renderizacao instanciam a faixa SEM Window em volta, e ali
+                 o RelativeSource nao acha ninguem.
 
-                         Reconhecer NAO desfaz a ambiguidade nem a esconde: ela
-                         vira a marca curta logo abaixo. E envio ambiguo NOVO
-                         faz o paragrafo voltar inteiro, porque o que se guarda
-                         e o NUMERO reconhecido, e nao um "ja vi". -->
-                    <StackPanel Margin="0,4,0,0"
-                                Visibility="{Binding TemAvisoDaReconciliacao,
-                                                     Converter={StaticResource BoolToVis},
-                                                     FallbackValue=Collapsed}">
-                        <TextBlock Text="{Binding Reconciliacao.Aviso}"
-                                   Style="{DynamicResource Text.Secondary}"
-                                   TextWrapping="Wrap"
-                                   AutomationProperties.Name="Envios sem desfecho conhecido" />
-                        <Button Content="Eu vi este aviso"
-                                Style="{DynamicResource Toolbar.Button}"
-                                Command="{Binding ReconhecerAmbiguasCommand}"
-                                HorizontalAlignment="Left" Margin="0,4,0,0"
-                                ToolTip="Encolhe o aviso. A ambiguidade continua registrada, e um envio novo traz o texto de volta."
-                                AutomationProperties.Name="Reconhecer os envios sem desfecho" />
-                    </StackPanel>
+                 O cabecalho fica FORA dela, na linha 0: os botoes precisam
+                 estar no lugar depois de ler o resumo, e nao rolados para
+                 fora da vista. O rodape da cerimonia tambem, na linha 2,
+                 pelo motivo de sempre - ele fala do estado, nao do pedido. -->
+            <ScrollViewer Grid.Row="1"
+                          MaxHeight="{Binding ActualHeight,
+                                              RelativeSource={RelativeSource AncestorType=Window},
+                                              Converter={StaticResource Fracao},
+                                              ConverterParameter=0.42,
+                                              FallbackValue=300}"
+                          VerticalScrollBarVisibility="Auto"
+                          HorizontalScrollBarVisibility="Disabled">
+                <Grid>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
 
-                    <!-- A MARCA CURTA, depois de reconhecido. Ela nao some: a
-                         ambiguidade continua sendo verdade, e o que mudou foi
-                         so o tamanho com que ela e dita. -->
-                    <TextBlock Text="{Binding Reconciliacao.Marca}"
-                               Style="{DynamicResource Text.Muted}"
-                               TextWrapping="Wrap" Margin="0,4,0,0"
-                               Visibility="{Binding TemMarcaDaReconciliacao,
-                                                    Converter={StaticResource BoolToVis},
-                                                    FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Envios sem desfecho conhecido, ja reconhecidos" />
-                </StackPanel>
-            </Border>
+                    <!-- O AVISO: o motivo de a IA estar desligada, e o que ficou sem
+                         desfecho conhecido numa execucao anterior. -->
+                    <!-- TemAvisoDeOperacao, e NAO TemAlgoADizer.
 
-            <!-- O RESULTADO. TextBlock e nao qualquer coisa que interprete: a
-                 resposta veio de um lugar que leu o e-mail, que por sua vez veio
-                 de fora. Texto passivo e a barreira, e ela e estrutural.
+                         TemAlgoADizer conta tambem o aviso da cerimonia, que agora tem
+                         linha propria no rodape - entao esta borda ficava VISIVEL com
+                         os dois TextBlock dela vazios, ocupando altura. O sintoma era
+                         um vao entre os botoes e a resposta que nao dava para explicar
+                         olhando o XAML: o espaco era de um elemento presente, e nao de
+                         margem.
 
-                 O rotulo em cima nao e enfeite: separa o que o MODELO escreveu
-                 do que o IRIS escreve. Sem ele, resposta de modelo e frase do
-                 programa dividem a mesma tipografia no mesmo rodape, e o
-                 usuario nao tem como saber de quem e cada uma - o que e
-                 exatamente o que um e-mail mal-intencionado gostaria.
-
-                 E rola: um resumo comprido corria para fora da janela, porque
-                 a faixa e a ultima linha Auto do MainWindow e nada a segurava.
-                 O fim do texto simplesmente nao existia na tela. -->
-            <Border Grid.Row="2"
-                    Visibility="{Binding TemResultado, Converter={StaticResource BoolToVis},
-                                         FallbackValue=Collapsed}"
-                    Padding="16,0,16,10">
-                <Border Background="{DynamicResource Brush.Surface.2}"
-                        BorderBrush="{DynamicResource Brush.Border.Subtle}"
-                        BorderThickness="1"
-                        CornerRadius="6"
-                        Padding="14,10">
-                    <StackPanel>
-                        <Grid Margin="0,0,0,6">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="RESUMO DA IA"
-                                       Style="{DynamicResource Text.Muted}" />
-                            <!-- A FICHA: quem atendeu, quanto custou, quanto
-                                 demorou. Agente e modelo vem da ATIVACAO, e nao
-                                 do corpo da resposta: aquilo e texto escolhido
-                                 pelo outro lado. Da resposta entram so os
-                                 numeros. -->
-                            <TextBlock Grid.Column="1" Text="{Binding Ficha}"
-                                       Style="{DynamicResource Text.Muted}"
-                                       HorizontalAlignment="Right"
-                                       TextTrimming="CharacterEllipsis"
-                                       ToolTip="{Binding Ficha}"
-                                       AutomationProperties.Name="Agente, modelo, custo e tempo" />
-                        </Grid>
-                        <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                      MaxHeight="240" HorizontalScrollBarVisibility="Disabled">
-                            <TextBlock Text="{Binding Resultado}"
-                                       Style="{DynamicResource Text.Body}"
+                         E cada TextBlock some sozinho quando nao tem texto: com um so
+                         dos dois preenchido, o outro deixava uma linha em branco. -->
+                    <Border Grid.Row="0"
+                            Visibility="{Binding TemAvisoDeOperacao, Converter={StaticResource BoolToVis},
+                                                 FallbackValue=Collapsed}"
+                            Padding="16,0,16,8">
+                        <StackPanel>
+                            <TextBlock Text="{Binding Aviso}"
+                                       Style="{DynamicResource Text.Secondary}"
                                        TextWrapping="Wrap"
-                                       AutomationProperties.Name="Resposta da IA" />
-                        </ScrollViewer>
+                                       Visibility="{Binding TemAviso, Converter={StaticResource BoolToVis},
+                                                            FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Situacao da IA" />
+                            <!-- O AVISO INTEIRO, e o botao que o encolhe.
 
-                        <!-- O QUE NAO FOI LIDO PARA PRODUZIR ISTO.
+                                 Ele dizia "este aviso nao desaparece sozinho", e era
+                                 verdade: nao havia como dizer que se viu. Um paragrafo
+                                 permanente e um paragrafo que se aprende a nao ler.
 
-                             Imagem embutida deixou de bloquear o resumo em
-                             30/08 — ela bloqueava 13 de 13 mensagens de uma
-                             pasta real, por causa de logo de assinatura. Mas
-                             uma captura de tela colada no corpo e embutida do
-                             mesmo jeito, e pode carregar a mensagem inteira.
+                                 Reconhecer NAO desfaz a ambiguidade nem a esconde: ela
+                                 vira a marca curta logo abaixo. E envio ambiguo NOVO
+                                 faz o paragrafo voltar inteiro, porque o que se guarda
+                                 e o NUMERO reconhecido, e nao um "ja vi". -->
+                            <StackPanel Margin="0,4,0,0"
+                                        Visibility="{Binding TemAvisoDaReconciliacao,
+                                                             Converter={StaticResource BoolToVis},
+                                                             FallbackValue=Collapsed}">
+                                <TextBlock Text="{Binding Reconciliacao.Aviso}"
+                                           Style="{DynamicResource Text.Secondary}"
+                                           TextWrapping="Wrap"
+                                           AutomationProperties.Name="Envios sem desfecho conhecido" />
+                                <Button Content="Eu vi este aviso"
+                                        Style="{DynamicResource Toolbar.Button}"
+                                        Command="{Binding ReconhecerAmbiguasCommand}"
+                                        HorizontalAlignment="Left" Margin="0,4,0,0"
+                                        ToolTip="Encolhe o aviso. A ambiguidade continua registrada, e um envio novo traz o texto de volta."
+                                        AutomationProperties.Name="Reconhecer os envios sem desfecho" />
+                            </StackPanel>
 
-                             Uma linha, um numero, sem adjetivo: numa caixa
-                             corporativa ela aparece quase sempre, e ressalva
-                             longa que aparece sempre vira ruido. -->
-                        <!-- E VISIVEL, para quem nao passa o mouse no botao. -->
-                    <TextBlock Text="{Binding PorQueNaoRedige}"
-                               Style="{DynamicResource Text.Muted}"
-                               TextWrapping="Wrap" Margin="0,4,0,0"
-                               Visibility="{Binding TemMotivoParaNaoRedigir,
-                                                    Converter={StaticResource BoolToVis},
-                                                    FallbackValue=Collapsed}"
-                               AutomationProperties.Name="Por que nao da para redigir" />
+                            <!-- A MARCA CURTA, depois de reconhecido. Ela nao some: a
+                                 ambiguidade continua sendo verdade, e o que mudou foi
+                                 so o tamanho com que ela e dita. -->
+                            <TextBlock Text="{Binding Reconciliacao.Marca}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Visibility="{Binding TemMarcaDaReconciliacao,
+                                                            Converter={StaticResource BoolToVis},
+                                                            FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Envios sem desfecho conhecido, ja reconhecidos" />
+                        </StackPanel>
+                    </Border>
 
-                    <TextBlock Text="{Binding RessalvaDoConteudo}"
-                                   Style="{DynamicResource Text.Muted}"
-                                   TextWrapping="Wrap" Margin="0,6,0,0"
-                                   Visibility="{Binding TemRessalvaDoConteudo,
-                                                        Converter={StaticResource BoolToVis},
-                                                        FallbackValue=Collapsed}"
-                                   AutomationProperties.Name="O que nao foi lido para este resultado" />
+                    <!-- O RESULTADO. TextBlock e nao qualquer coisa que interprete: a
+                         resposta veio de um lugar que leu o e-mail, que por sua vez veio
+                         de fora. Texto passivo e a barreira, e ela e estrutural.
 
-                        <!-- ============ A RESPOSTA REDIGIDA ============
+                         O rotulo em cima nao e enfeite: separa o que o MODELO escreveu
+                         do que o IRIS escreve. Sem ele, resposta de modelo e frase do
+                         programa dividem a mesma tipografia no mesmo rodape, e o
+                         usuario nao tem como saber de quem e cada uma - o que e
+                         exatamente o que um e-mail mal-intencionado gostaria.
 
-                             Quadro PROPRIO, e nao o mesmo do resumo. Antes,
-                             redigir escrevia por cima do resultado: o resumo
-                             que o usuario acabou de pagar sumia da tela.
-
-                             E o botao daqui e "Enviar para rascunho", nao
-                             "Copiar". Redigir MOSTRA; aplicar e outro ato. O
-                             botao antigo dizia "redigir" e tambem aplicava, e
-                             ninguem tinha pedido a segunda coisa. 
-                               CornerRadius literal, e nao {StaticResource Radius.Card}:
-                               este UserControl nao tem o dicionario de tokens no escopo,
-                               e recurso ausente vira XamlParseException NO ARRANQUE da
-                               faixa. O quadro de cima ja usava 6 pelo mesmo motivo, e eu
-                               nao olhei. Onze testes de renderizacao pegaram. -->
-                        <Border Margin="0,10,0,0" Padding="12,10"
-                                Background="{DynamicResource Brush.Surface.2}"
+                         E rola: um resumo comprido corria para fora da janela, porque
+                         a faixa e a ultima linha Auto do MainWindow e nada a segurava.
+                         O fim do texto simplesmente nao existia na tela. -->
+                    <Border Grid.Row="1"
+                            Visibility="{Binding TemResultado, Converter={StaticResource BoolToVis},
+                                                 FallbackValue=Collapsed}"
+                            Padding="16,0,16,10">
+                        <Border Background="{DynamicResource Brush.Surface.2}"
                                 BorderBrush="{DynamicResource Brush.Border.Subtle}"
                                 BorderThickness="1"
                                 CornerRadius="6"
-                                Visibility="{Binding TemResposta,
-                                                     Converter={StaticResource BoolToVis},
-                                                     FallbackValue=Collapsed}">
+                                Padding="14,10">
                             <StackPanel>
-                                <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
-                                    <TextBlock Text="RESPOSTA REDIGIDA"
+                                <Grid Margin="0,0,0,6">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Grid.Column="0" Text="RESUMO DA IA"
+                                               Style="{DynamicResource Text.Muted}" />
+                                    <!-- A FICHA: quem atendeu, quanto custou, quanto
+                                         demorou. Agente e modelo vem da ATIVACAO, e nao
+                                         do corpo da resposta: aquilo e texto escolhido
+                                         pelo outro lado. Da resposta entram so os
+                                         numeros. -->
+                                    <TextBlock Grid.Column="1" Text="{Binding Ficha}"
                                                Style="{DynamicResource Text.Muted}"
-                                               VerticalAlignment="Center" />
-                                    <Button Content="Enviar para rascunho"
-                                            Style="{DynamicResource Toolbar.Button}"
-                                            Command="{Binding EnviarParaRascunhoCommand}"
-                                            Margin="12,0,0,0"
-                                            ToolTip="{Binding PorQueNaoEnvia}"
-                                            ToolTipService.ShowOnDisabled="True"
-                                            AutomationProperties.Name="Enviar a resposta para o rascunho" />
-                                    <Button Content="Copiar resposta"
-                                            Style="{DynamicResource Toolbar.Button}"
-                                            Command="{Binding CopiarRespostaCommand}"
-                                            Margin="6,0,0,0"
-                                            AutomationProperties.Name="Copiar a resposta redigida" />
-                                </StackPanel>
+                                               HorizontalAlignment="Right"
+                                               TextTrimming="CharacterEllipsis"
+                                               ToolTip="{Binding Ficha}"
+                                               AutomationProperties.Name="Agente, modelo, custo e tempo" />
+                                </Grid>
+                                <TextBlock Text="{Binding Resultado}"
+                                           Style="{DynamicResource Text.Body}"
+                                           TextWrapping="Wrap"
+                                           AutomationProperties.Name="Resposta da IA" />
 
-                                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                              MaxHeight="240"
-                                              HorizontalScrollBarVisibility="Disabled">
-                                    <TextBlock Text="{Binding Resposta}"
-                                               Style="{DynamicResource Text.Body}"
-                                               TextWrapping="Wrap"
-                                               AutomationProperties.Name="Resposta redigida pela IA" />
-                                </ScrollViewer>
+                                <!-- O QUE NAO FOI LIDO PARA PRODUZIR ISTO.
 
-                                <!-- Por que o envio ao rascunho esta apagado.
-                                     Botao cinza sem explicacao promete e nao
-                                     diz o que falta. -->
-                                <TextBlock Text="{Binding PorQueNaoEnvia}"
+                                     Imagem embutida deixou de bloquear o resumo em
+                                     30/08 — ela bloqueava 13 de 13 mensagens de uma
+                                     pasta real, por causa de logo de assinatura. Mas
+                                     uma captura de tela colada no corpo e embutida do
+                                     mesmo jeito, e pode carregar a mensagem inteira.
+
+                                     Uma linha, um numero, sem adjetivo: numa caixa
+                                     corporativa ela aparece quase sempre, e ressalva
+                                     longa que aparece sempre vira ruido. -->
+                                <!-- E VISIVEL, para quem nao passa o mouse no botao. -->
+                            <TextBlock Text="{Binding PorQueNaoRedige}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       TextWrapping="Wrap" Margin="0,4,0,0"
+                                       Visibility="{Binding TemMotivoParaNaoRedigir,
+                                                            Converter={StaticResource BoolToVis},
+                                                            FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Por que nao da para redigir" />
+
+                            <TextBlock Text="{Binding RessalvaDoConteudo}"
                                            Style="{DynamicResource Text.Muted}"
                                            TextWrapping="Wrap" Margin="0,6,0,0"
-                                           Visibility="{Binding TemMotivoParaNaoEnviar,
+                                           Visibility="{Binding TemRessalvaDoConteudo,
                                                                 Converter={StaticResource BoolToVis},
                                                                 FallbackValue=Collapsed}"
-                                           AutomationProperties.Name="Por que nao da para enviar ao rascunho" />
+                                           AutomationProperties.Name="O que nao foi lido para este resultado" />
+
+                                <!-- ============ A RESPOSTA REDIGIDA ============
+
+                                     Quadro PROPRIO, e nao o mesmo do resumo. Antes,
+                                     redigir escrevia por cima do resultado: o resumo
+                                     que o usuario acabou de pagar sumia da tela.
+
+                                     E o botao daqui e "Enviar para rascunho", nao
+                                     "Copiar". Redigir MOSTRA; aplicar e outro ato. O
+                                     botao antigo dizia "redigir" e tambem aplicava, e
+                                     ninguem tinha pedido a segunda coisa. 
+                                       CornerRadius literal, e nao {StaticResource Radius.Card}:
+                                       este UserControl nao tem o dicionario de tokens no escopo,
+                                       e recurso ausente vira XamlParseException NO ARRANQUE da
+                                       faixa. O quadro de cima ja usava 6 pelo mesmo motivo, e eu
+                                       nao olhei. Onze testes de renderizacao pegaram. -->
+                                <Border Margin="0,10,0,0" Padding="12,10"
+                                        Background="{DynamicResource Brush.Surface.2}"
+                                        BorderBrush="{DynamicResource Brush.Border.Subtle}"
+                                        BorderThickness="1"
+                                        CornerRadius="6"
+                                        Visibility="{Binding TemResposta,
+                                                             Converter={StaticResource BoolToVis},
+                                                             FallbackValue=Collapsed}">
+                                    <StackPanel>
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,6">
+                                            <TextBlock Text="RESPOSTA REDIGIDA"
+                                                       Style="{DynamicResource Text.Muted}"
+                                                       VerticalAlignment="Center" />
+                                            <Button Content="Enviar para rascunho"
+                                                    Style="{DynamicResource Toolbar.Button}"
+                                                    Command="{Binding EnviarParaRascunhoCommand}"
+                                                    Margin="12,0,0,0"
+                                                    ToolTip="{Binding PorQueNaoEnvia}"
+                                                    ToolTipService.ShowOnDisabled="True"
+                                                    AutomationProperties.Name="Enviar a resposta para o rascunho" />
+                                            <Button Content="Copiar resposta"
+                                                    Style="{DynamicResource Toolbar.Button}"
+                                                    Command="{Binding CopiarRespostaCommand}"
+                                                    Margin="6,0,0,0"
+                                                    AutomationProperties.Name="Copiar a resposta redigida" />
+                                        </StackPanel>
+
+                                        <TextBlock Text="{Binding Resposta}"
+                                                   Style="{DynamicResource Text.Body}"
+                                                   TextWrapping="Wrap"
+                                                   AutomationProperties.Name="Resposta redigida pela IA" />
+
+                                        <!-- Por que o envio ao rascunho esta apagado.
+                                             Botao cinza sem explicacao promete e nao
+                                             diz o que falta. -->
+                                        <TextBlock Text="{Binding PorQueNaoEnvia}"
+                                                   Style="{DynamicResource Text.Muted}"
+                                                   TextWrapping="Wrap" Margin="0,6,0,0"
+                                                   Visibility="{Binding TemMotivoParaNaoEnviar,
+                                                                        Converter={StaticResource BoolToVis},
+                                                                        FallbackValue=Collapsed}"
+                                                   AutomationProperties.Name="Por que nao da para enviar ao rascunho" />
+                                    </StackPanel>
+                                </Border>
                             </StackPanel>
                         </Border>
-                    </StackPanel>
-                </Border>
-            </Border>
+                    </Border>
+                </Grid>
+            </ScrollViewer>
 
             <!-- O RODAPE DA CERIMONIA: por ultimo, e SEMPRE visivel quando tem
                  o que dizer.
@@ -354,7 +386,7 @@
                  ligada por decisao do usuario sobre uma politica que ninguem
                  conferiu. Isso nao pode ter o mesmo peso visual de um rodape
                  qualquer. -->
-            <Border Grid.Row="3"
+            <Border Grid.Row="2"
                     Visibility="{Binding TemAvisoDaAtivacao, Converter={StaticResource BoolToVis},
                                          FallbackValue=Collapsed}"
                     Background="{DynamicResource Brush.Surface.2}"
