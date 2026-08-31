@@ -677,22 +677,50 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private Async Function SemearIdentidadesAsync() As Task
             Dim arquivo As New IdentidadesEmArquivo()
-            If arquivo.Existe Then
-                Identidades = arquivo.Ler()
+
+            ' JA HA IDENTIDADE ESCRITA? Entao o arquivo manda, e nao o Outlook.
+            ' Existir nao basta: arquivo so com o cabecalho de comentarios e o
+            ' caso que precisa ser reparado, nao preservado.
+            Dim doArquivo = arquivo.Ler()
+            If Not doArquivo.Vazio Then
+                Identidades = doArquivo
                 Return
             End If
 
+            ' A EPOCA DA SESSAO, ANTES DE PERGUNTAR.
+            '
+            ' Queda e reconexao rapida disparam duas semeaduras, e a leitura da
+            ' sessao velha pode voltar DEPOIS da nova -- gravando no perfil de
+            ' agora as identidades de uma ligacao que ja acabou. E o mesmo
+            ' cuidado que os stores logo acima ja declaram, e que aqui faltava.
+            Dim epoca = _broker.SessionEpoch
+
             Dim r = Await _broker.GetIdentidadesAsync(Threading.CancellationToken.None)
             If Not r.Succeeded OrElse r.Value Is Nothing OrElse r.Value.Count = 0 Then Return
+            If _broker.SessionEpoch <> epoca Then Return
 
-            arquivo.Semear(r.Value)
-            Identidades = arquivo.Ler()
+            ' E SE A ESCRITA FALHAR, o que foi lido vale para ESTA execucao.
+            ' Reler um arquivo que nao foi gravado devolveria vazio, e o
+            ' programa ficaria sem saber quem e o dono por causa de um disco
+            ' cheio -- com as identidades na mao.
+            If arquivo.Semear(r.Value) Then
+                Identidades = arquivo.Ler()
+            Else
+                Identidades = New MinhasIdentidades(r.Value)
+            End If
         End Function
 
         ''' <summary>
         ''' <b>Quem é "eu" numa mensagem.</b> Vazio até a semeadura acontecer, e
         ''' vazio responde <c>Desconhecida</c> para tudo — que é o certo: sem
         ''' saber quem é o dono, nenhuma direção pode ser afirmada.
+        '''
+        ''' <b>NINGUÉM LÊ ISTO AINDA.</b> A fila de respostas pendentes é quem vai
+        ''' ler, e ela é a fase seguinte; até lá esta propriedade é a ponta solta
+        ''' de um fio que já está inteiro do Outlook até aqui. Dizer que "a fila
+        ''' responde não sei" seria descrever um programa que ainda não existe —
+        ''' e o que a medição em <c>DirecaoNaCaixaRealTests</c> prova é o fio, não
+        ''' a fila.
         ''' </summary>
         Public Property Identidades As MinhasIdentidades = New MinhasIdentidades({})
 

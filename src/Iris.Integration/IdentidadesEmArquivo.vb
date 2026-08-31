@@ -19,8 +19,10 @@ Namespace Global.Iris.Integration
     ''' pendentes cobrando do dono mensagens que ele mesmo escreveu.
     '''
     ''' Então o Outlook <b>semeia</b> e o dono <b>corrige</b>. A semeadura só
-    ''' acontece quando o arquivo não existe: reescrevê-lo a cada abertura
-    ''' apagaria a correção, que é o único motivo de o arquivo existir.
+    ''' acontece enquanto não há <b>identidade nenhuma</b> escrita:
+    ''' reescrever a cada abertura apagaria a correção, que é o único motivo
+    ''' de o arquivo existir — e não reparar um arquivo sem endereço nenhum
+    ''' congelaria o conjunto vazio para sempre.
     '''
     ''' ------------------------------------------------------------------
     ''' <b>FALHA VALE COMO CONJUNTO VAZIO</b>
@@ -81,19 +83,35 @@ Namespace Global.Iris.Integration
         End Function
 
         ''' <summary>
-        ''' <b>Semeia — e só na primeira vez.</b>
+        ''' <b>Semeia — e só quando não há nada a desfazer.</b>
         '''
-        ''' Devolve <c>True</c> quando escreveu. Arquivo já existente devolve
-        ''' <c>False</c> e <b>não é tocado</b>: o dono pode ter apagado uma linha
-        ''' de propósito, e semeadura que insiste desfaz correção.
+        ''' Devolve <c>True</c> quando escreveu. Arquivo com <b>pelo menos uma</b>
+        ''' identidade devolve <c>False</c> e não é tocado: o dono pode ter
+        ''' apagado uma linha de propósito, e semeadura que insiste desfaz
+        ''' correção.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>MAS ARQUIVO SEM ENDEREÇO NENHUM É REPARADO</b>
+        '''
+        ''' A regra era <i>existe, não toca</i>, e ela congelava o pior estado
+        ''' possível: um arquivo só com o cabeçalho de comentários — meia escrita
+        ''' interrompida, disco cheio, cópia de perfil pela metade — produzia
+        ''' conjunto vazio <b>para sempre</b>, e a fila respondia "não sei" a
+        ''' toda mensagem sem nada explicando por quê. Era exatamente o defeito
+        ''' que o comentário da semeadura dizia estar evitando.
+        '''
+        ''' A troca de <c>File.Exists</c> por <i>tem identidade</i> preserva o que
+        ''' importa — nada que o dono escreveu é desfeito — e repara o único caso
+        ''' em que não há o que preservar.
+        '''
+        ''' Achado por revisão externa em 31/08/2026.
         '''
         ''' Sem nenhum endereço para semear, também não escreve: um arquivo só
-        ''' com comentários pareceria semeado e não estaria, e a semeadura de
-        ''' verdade nunca mais aconteceria.
+        ''' com comentários pareceria semeado e não estaria.
         ''' </summary>
         Public Function Semear(enderecos As IEnumerable(Of String)) As Boolean
             Try
-                If File.Exists(_caminho) Then Return False
+                If Ler().Quantas > 0 Then Return False
 
                 Dim limpos = New MinhasIdentidades(enderecos).Listar()
                 If limpos.Count = 0 Then Return False

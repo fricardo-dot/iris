@@ -293,4 +293,56 @@ Public Class MinhasIdentidadesTests
             "a anotacao guardada virou identidade ativa")
     End Sub
 
+    ''' <summary>
+    ''' <b>Arquivo só com cabeçalho é REPARADO, e não preservado.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>A REGRA "EXISTE, NÃO TOCA" CONGELAVA O PIOR ESTADO</b>
+    '''
+    ''' Um arquivo só com comentários — escrita interrompida, disco cheio,
+    ''' cópia de perfil pela metade — produzia conjunto vazio <b>para
+    ''' sempre</b>, porque semear só acontecia quando o arquivo não existia. E
+    ''' conjunto vazio responde "não sei" a toda mensagem, sem nada na tela
+    ''' explicando por quê.
+    '''
+    ''' Achado por revisão externa em 31/08/2026: era exatamente o defeito que
+    ''' o comentário da semeadura dizia estar evitando.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Arquivo_so_com_cabecalho_e_REPARADO()
+        Dim caminho = Temporario()
+        Try
+            File.WriteAllLines(caminho, {"# so o cabecalho", "#", ""})
+            Dim arquivo As New IdentidadesEmArquivo(caminho)
+            Assert.IsTrue(arquivo.Ler().Vazio, "o preparo do teste esta errado")
+
+            Assert.IsTrue(arquivo.Semear({"ricardo@empresa.com"}),
+                "arquivo sem endereco nenhum tem de ser reparado: nao ha o " &
+                "que preservar nele")
+            Assert.AreEqual(1, arquivo.Ler().Quantas)
+        Finally
+            If File.Exists(caminho) Then File.Delete(caminho)
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' <b>O controle do reparo:</b> uma identidade só já basta para o arquivo
+    ''' mandar. Sem esta metade, o reparo viraria "semeia sempre" e desfaria a
+    ''' correção do dono na abertura seguinte.
+    ''' </summary>
+    <TestMethod>
+    Public Sub UMA_identidade_ja_basta_para_o_arquivo_mandar()
+        Dim caminho = Temporario()
+        Try
+            File.WriteAllLines(caminho, {"# cabecalho", "so-esta@empresa.com"})
+            Dim arquivo As New IdentidadesEmArquivo(caminho)
+
+            Assert.IsFalse(arquivo.Semear({"outra@empresa.com", "mais@empresa.com"}),
+                "semeou por cima de um arquivo que ja tinha identidade")
+            Assert.AreEqual(1, arquivo.Ler().Quantas, "a correcao do dono foi desfeita")
+        Finally
+            If File.Exists(caminho) Then File.Delete(caminho)
+        End Try
+    End Sub
+
 End Class

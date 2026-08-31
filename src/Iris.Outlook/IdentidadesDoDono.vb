@@ -35,8 +35,9 @@ Namespace Global.Iris.Outlook
     ''' ------------------------------------------------------------------
     ''' <b>R7</b>
     '''
-    ''' <c>Accounts</c>, <c>Account</c>, <c>CurrentUser</c> e <c>AddressEntry</c>
-    ''' são objetos COM, cada um em sua variável, liberados em ordem inversa. A
+    ''' <c>Accounts</c>, <c>Account</c>, <c>CurrentUser</c>, <c>AddressEntry</c> e
+    ''' <c>ExchangeUser</c> são objetos COM, cada um em sua variável, liberados
+    ''' em ordem inversa. A
     ''' regra já foi violada quatro vezes neste projeto, sempre em código que
     ''' "só lia uma contagem".
     ''' </summary>

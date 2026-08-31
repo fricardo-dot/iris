@@ -31,7 +31,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 <TestClass>
 Public Class IdentidadesDoDonoTests
 
-    <TestMethod>
+    <TestMethod, TestCategory("Integracao")>
     Public Async Function Medir_as_identidades_na_caixa_real() As Task
         Dim broker = Await PagingIntegrationTests.AbrirBrokerAsync()
         If broker Is Nothing Then Return
@@ -77,8 +77,14 @@ Public Class IdentidadesDoDonoTests
     ''' exigência de forma antes de valerem. Uma forma que o Outlook entrega e
     ''' que o modelo rejeita seria um conjunto cheio e inútil — e o defeito
     ''' apareceria longe, como uma fila inteira dizendo "não sei".
+    '''
+    ''' <b>É reflexivo, e só isso.</b> Ele pega a lista, monta o conjunto com a
+    ''' mesma lista, e pergunta se cada item se reconhece. Detecta normalização
+    ''' destrutiva e nada mais: <b>não</b> prova que o Outlook coletou as formas
+    ''' necessárias, e passaria com a coleta do X.500 removida. Quem prende isso
+    ''' é <c>DirecaoNaCaixaRealTests</c>, contra mensagens de verdade.
     ''' </summary>
-    <TestMethod>
+    <TestMethod, TestCategory("Integracao")>
     Public Async Function O_que_o_Outlook_devolve_CASA_no_modelo() As Task
         Dim broker = Await PagingIntegrationTests.AbrirBrokerAsync()
         If broker Is Nothing Then Return

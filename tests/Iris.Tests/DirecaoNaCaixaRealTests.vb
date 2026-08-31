@@ -24,9 +24,17 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' ------------------------------------------------------------------
 ''' <b>POR QUE ITENS ENVIADOS</b>
 '''
-''' É a única pasta onde a resposta certa é conhecida de antemão: tudo ali foi
-''' escrito pelo dono. Uma mensagem de Itens Enviados classificada como
+''' É a única pasta onde a resposta certa é conhecida de antemão: tudo ali saiu
+''' desta caixa. Uma mensagem de Itens Enviados classificada como
 ''' <c>DoOutro</c> é um erro <b>demonstrável</b>, e não uma opinião.
+'''
+''' <b>Com uma ressalva que este teste não cobre:</b> numa caixa compartilhada,
+''' ou com permissão de <i>enviar como</i>, uma mensagem de Itens Enviados pode
+''' legitimamente ter sido escrita em nome de outra pessoa — e aí
+''' <c>DoOutro</c> seria a resposta certa. São exatamente os casos que
+''' <c>IdentidadesDoDono</c> declara não saber cobrir. Nesta caixa a asserção
+''' vale; noutra ela pode falhar por um motivo que não é defeito, e a mensagem
+''' de falha diz onde procurar.
 '''
 ''' A Caixa de Entrada serve de contraprova: se ela também vier toda
 ''' <c>Minha</c>, a comparação está casando com qualquer coisa.
@@ -38,7 +46,7 @@ Public Class DirecaoNaCaixaRealTests
 
     Private Const Amostra As Integer = 40
 
-    <TestMethod>
+    <TestMethod, TestCategory("Integracao")>
     Public Async Function A_direcao_acerta_nas_duas_pontas() As Task
         Dim broker = Await PagingIntegrationTests.AbrirBrokerAsync()
         If broker Is Nothing Then Return
@@ -51,7 +59,7 @@ Public Class DirecaoNaCaixaRealTests
 
             Dim enviados = Await AcharAsync(broker, {"Itens Enviados", "Sent Items"})
             If enviados Is Nothing Then
-                Assert.Inconclusive("nao achei Itens Enviados no store padrao")
+                Assert.Inconclusive("nao achei Itens Enviados em store nenhum")
                 Return
             End If
 
@@ -81,13 +89,24 @@ Public Class DirecaoNaCaixaRealTests
                 "dono. As tres pecas -- endereco lido, identidades semeadas e " &
                 "normalizacao -- nao se encontram. " & medida)
 
-            ' A CONTRAPROVA. Sem ela, uma comparacao que respondesse Minha para
-            ' tudo passaria nas duas assercoes acima.
-            If recebidas.Total > 0 Then
-                Assert.IsTrue(recebidas.DoOutro > 0,
-                    "a Caixa de Entrada tambem veio toda 'minha': a comparacao " &
-                    "esta casando com qualquer coisa. " & medida)
+            ' A CONTRAPROVA, E ELA NAO PODE SER PULADA EM SILENCIO.
+            '
+            ' Sem ela, uma comparacao que respondesse Minha para tudo passaria
+            ' nas duas assercoes acima. Ela estava condicionada a "se a Caixa
+            ' de Entrada tiver mensagens" -- e caixa vazia, ou pasta com outro
+            ' nome, desligava a contraprova sem uma linha dizendo isso. E o
+            ' bloqueio que nunca bloqueia, de novo.
+            If recebidas.Total = 0 Then
+                Assert.Inconclusive(
+                    "sem Caixa de Entrada legivel nao ha contraprova, e sem " &
+                    "contraprova este teste nao vale: uma comparacao que " &
+                    "respondesse Minha para tudo passaria. " & medida)
+                Return
             End If
+
+            Assert.IsTrue(recebidas.DoOutro > 0,
+                "a Caixa de Entrada tambem veio toda minha: a comparacao esta " &
+                "casando com qualquer coisa. " & medida)
 
             Console.WriteLine(medida)
         Finally
@@ -122,20 +141,33 @@ Public Class DirecaoNaCaixaRealTests
         Return c
     End Function
 
-    ''' <summary>A primeira pasta de correio do store padrão com um destes nomes.</summary>
+    ''' <summary>
+    ''' A primeira pasta de correio com um destes nomes, <b>em qualquer
+    ''' store</b>.
+    '''
+    ''' A versão anterior olhava só <c>stores.Value(0)</c> e chamava aquilo de
+    ''' "store padrão". Nada prova que o primeiro seja o padrão: num perfil com
+    ''' PST, arquivo morto ou caixa compartilhada a ordem é outra, e a medição
+    ''' sairia da caixa errada — ou não acharia pasta nenhuma e o teste ficaria
+    ''' inconclusivo por um motivo falso.
+    ''' </summary>
     Private Shared Async Function AcharAsync(broker As OutlookBroker,
                                              nomes As String()) As Task(Of FolderKey)
         Dim stores = Await broker.GetStoresAsync(CancellationToken.None)
         Assert.IsTrue(stores.Succeeded AndAlso stores.Value.Count > 0, "nenhum store")
 
-        Dim filhas = Await broker.GetFolderChildrenAsync(stores.Value(0).RootFolder,
-                                                         CancellationToken.None)
-        Assert.IsTrue(filhas.Succeeded, "GetFolderChildrenAsync falhou")
+        For Each store In stores.Value
+            Dim filhas = Await broker.GetFolderChildrenAsync(store.RootFolder,
+                                                             CancellationToken.None)
+            If Not filhas.Succeeded Then Continue For
 
-        For Each f In filhas.Value
-            If f.ContentKind <> FolderContentKind.Mail Then Continue For
-            For Each nome In nomes
-                If f.Name.StartsWith(nome, StringComparison.OrdinalIgnoreCase) Then Return f.Key
+            For Each f In filhas.Value
+                If f.ContentKind <> FolderContentKind.Mail Then Continue For
+                For Each nome In nomes
+                    If f.Name.StartsWith(nome, StringComparison.OrdinalIgnoreCase) Then
+                        Return f.Key
+                    End If
+                Next
             Next
         Next
         Return Nothing

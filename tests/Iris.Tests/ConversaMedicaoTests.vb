@@ -39,7 +39,7 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 <TestClass>
 Public Class ConversaMedicaoTests
 
-    <TestMethod>
+    <TestMethod, TestCategory("Integracao")>
     Public Async Function Medir_a_conversa_e_o_endereco_na_caixa_real() As Task
         Dim broker = Await PagingIntegrationTests.AbrirBrokerAsync()
         If broker Is Nothing Then Return
