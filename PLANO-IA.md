@@ -208,7 +208,18 @@ dado para calibrá-los, ele falha e obriga quem os mudou a dizer por quê.
 
 Depois de as dez etapas fecharem, cinco revisões seguidas — costura, segurança,
 concorrência, cache, testes —, cada uma recebendo os achados da anterior para não
-repetir. **Onze graves e nove médios.** As quatro que mais importam:
+repetir.
+
+**Cinquenta achados nas duas rodadas** — 27 graves e 23 médios —, e **37
+consertados**. O que não foi consertado está nomeado no fim desta página; o que
+não tem conserto (a injeção dirigida, o texto da resposta ao acervo) está
+declarado nos próprios arquivos.
+
+> O número que eu vinha repetindo era "onze graves e nove médios" por rodada, e
+> era frouxo: eu contava os achados de código e esquecia os de teste e os de
+> documentação. Contado item a item, é isto. Corrigido em 01/09/2026.
+
+Da primeira rodada, as quatro que mais importam:
 
 **A ponte entre o cache e a tela não existia.** O cache guarda rótulo por
 *(pasta, encarnação, geração)*; a caixa dividida e a fila trabalham por `ItemKey`,
