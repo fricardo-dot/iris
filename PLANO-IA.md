@@ -1,8 +1,9 @@
 # Plano da IA do Iris
 
 > Estado em 01/09/2026: os **núcleos das dez etapas** estão construídos e
-> testados, e passaram por **quinze revisões externas** — uma por etapa, e depois
-> duas rodadas de cinco sobre o conjunto. Suíte em **1423 verdes, nada pulado**.
+> testados, e passaram por **vinte e cinco revisões externas** — uma por etapa,
+> e depois quatro rodadas de cinco sobre o conjunto. Suíte em **1439 verdes,
+> nada pulado**.
 >
 > **"Executadas" seria dizer demais**, e eu disse. Ver
 > [o que está ligado e o que não está](#o-que-está-ligado-e-o-que-não-está),
@@ -284,12 +285,104 @@ escrever no arquivo.
   a estar escrito, junto com o que a citação prova: **origem, não sustentação**.
 - As contagens de `ResultadoDaClassificacao` continuam sem consumidor — quem as
   consumiria é a borda em lote.
-- **Toda republicação invalida todos os rótulos**, inclusive os de mensagens que
-  não mudaram. É decisão de desenho e é cara: uma varredura de manutenção apaga
-  a classificação inteira da pasta. Carregar os rótulos para a geração nova
-  quando a mensagem não mudou é possível e não foi feito.
-- **A fila bloqueia a interface** enquanto lê o acervo inteiro. Não é raro: é o
-  caminho normal do botão de reler.
+- ~~**Toda republicação invalida todos os rótulos**~~ — **feito em 01/09/2026.**
+  O rótulo passa para a geração nova quando a mensagem não mudou: mesma chave,
+  mesma hora de modificação e mesmo tamanho, e mais duas condições que não
+  exigem estar preenchidas, só proíbem discordar (recebimento e assunto). Sem
+  elas, um `EntryID` reaproveitado passaria o rótulo de uma mensagem para outra
+  — e rótulo errado herdado é pior que rótulo perdido, porque o perdido a
+  próxima classificação repõe.
+- ~~**A fila bloqueia a interface**~~ — **feito em 31/08/2026.** A leitura foi
+  para uma `Task`, com o relógio e as dispensas lidos na thread da tela, e um
+  pedido que chegue durante a leitura fica **anotado** em vez de descartado.
+
+## As outras dez passadas
+
+Depois das cinco do fechamento e das cinco da segunda rodada, **mais dez** — o
+código novo contra si mesmo, o núcleo antigo, a tela, os caminhos de erro, a
+concorrência, o cache, os testes e a documentação. Cada uma recebeu os achados
+das anteriores, para não repetir o que já estava dito.
+
+Elas acharam **cerca de trinta e cinco coisas**, e a maioria pequena. Quatro
+valem a página.
+
+### A confirmação de envio não estava presa ao rascunho
+
+É o defeito mais perigoso que o projeto teve, e sobreviveu vinte revisões.
+
+A tela de confirmação existe para uma coisa só: o dono ver **para quem** a
+mensagem vai antes de ela sair. Ela já se protegia de a mensagem mudar entre a
+prévia e o envio — contando as edições **do lado do Iris**.
+
+Só que o rascunho não mora no Iris. Mora no Outlook, que é multi-dono: a janela
+nativa aberta no mesmo item, um suplemento, uma regra, uma sincronização vinda
+do servidor. Nenhum deles mexe no contador. O desfecho era o único que este
+projeto não pode produzir: **conferir uma lista e enviar outra**, na única
+operação sem desfazer.
+
+Agora a prévia carimba uma versão — hora da última modificação, tamanho e
+identidade, lidas **por último**, para o carimbo ser no mínimo tão novo quanto o
+que está na tela — e o envio confere antes de qualquer coisa irreversível.
+Versão ilegível **recusa também**: *"não sei se mudou"* e *"sei que não mudou"*
+só são a mesma coisa para quem não vai ter de desfazer. A recusa é limpa —
+`Stale`, nunca `Ambiguous` — porque acontece antes do `Send` e nada saiu.
+
+### O teste que existe contra falha silenciosa falhava em silêncio
+
+`BindingsDaJanelaTests` confere os caminhos de `Binding` do XAML contra os
+ViewModels, porque binding errado no WPF não lança nada: o controle fica vazio e
+a suíte segue verde. As raízes que ele sabia resolver eram uma **lista escrita à
+mão**, e uma raiz fora dela caía num `Continue For` — sem reclamar, apenas sem
+conferir.
+
+A caixa dividida entrou na janela em 31/08 e passou dias fora do teste. Agora as
+raízes saem do próprio `MainViewModel`, e o caminho é conferido inteiro em vez
+de só o primeiro degrau.
+
+### A fila esvaziava calada quando a varredura encolhia
+
+Publicar uma geração que viu menos itens marca o que sumiu como **suspeito** —
+e isso é o modelo certo: o Iris não afirma ausência sem cobertura completa. Só
+que a fila e a caixa dividida excluem suspeito, e o Outlook em modo cache
+encolhe a janela de sincronização sozinho, sem erro.
+
+Na tela, o resultado era indistinguível de *"você respondeu tudo"* — o único
+desfecho que a fila existe para não produzir por engano. A ressalva da contração
+já existia; morava no painel do acervo, que é outra tela e, na prática, outro
+dia.
+
+### O índice que faltava, e o custo dele
+
+`association` só tinha o `UNIQUE(item_key, folder_key)`, e a pasta é a **segunda**
+coluna dele — inútil para *"todas as associações desta pasta"*, que é o que o
+manifesto pergunta uma vez por pasta a cada publicação. Com 50 pastas e 30 mil
+itens, montar um retrato de 30 mil visitava da ordem de 1,5 milhão de linhas.
+Migração 6 → 7.
+
+### O que estas dez passadas não consertaram — e por quê
+
+Cada item aqui é uma escolha, não um esquecimento.
+
+- **A lista da fila não é virtualizada e não tem teto.** Com a caixa deste dono
+  não dói; com uma caixa grande, doeria. Fica para quando houver uma medição, e
+  não um palpite — este projeto já pagou por otimizar antes de medir.
+- **A recarga do acervo é inteira, e não incremental.** O mesmo raciocínio, com
+  um agravante: recarga parcial precisa saber o que mudou, e é exatamente o que
+  a contração acabou de mostrar que o provedor não conta direito.
+- **`scan_stage` cresce sem poda.** É a encenação de cada varredura, e apagá-la
+  é fácil; decidir *quando* é que não é — ela é a única coisa que a herança de
+  rótulos tem para comparar.
+- **Os modais não têm navegação por teclado completa.** Reconhecido, e é dívida
+  de acessibilidade real, não uma ressalva de conforto.
+- **`Publicar` não confere a identidade da tentativa.** Chamar com uma tentativa
+  de outra pasta é erro de programação, não estado alcançável pela tela.
+- **O diário conta linhas cruas.** Uma linha corrompida conta como registro. O
+  diário é prova do que saiu, e inflar a contagem erra para o lado seguro.
+- **O `id` de ativação não é GUID.** É o que o dono escreveu no arquivo; exigir
+  formato seria recusar a ativação de quem digitou um nome legível.
+- **`Busy` engole `COMException` em alguns caminhos de leitura.** Ocupado é
+  estado normal do Outlook, e distingui-lo de falha exigiria classificar HRESULT
+  em lugares onde a resposta da tela seria a mesma.
 
 ---
 

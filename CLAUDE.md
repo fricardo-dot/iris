@@ -57,17 +57,25 @@ Foram renomeados para `Incomplete` e `Restricted`. Colchetes (`[Protected]`)
 resolvem o compilador e não resolvem a leitura — quem lê depois tropeça no
 mesmo lugar.
 
-### Comentário dentro de inicializador com chaves
+### Comentário no meio de uma continuação implícita
 
-Em VB, a vírgula no fim da linha continua a expressão implicitamente — e uma
-linha de **comentário** no meio quebra essa continuação. Dentro de
-`{ Col("a"), Col("b") }` ou de um `Dictionary ... From { ... }`, um comentário
-entre os itens produz `')' expected` e `Syntax error` **nas linhas seguintes**,
-longe do comentário.
+Em VB, três coisas continuam a expressão sozinhas quando estão no fim da
+linha — a **vírgula** de um inicializador, o **`&`** de uma concatenação e o
+**`.`** de uma cadeia de métodos. Uma linha de **comentário** no meio quebra
+essa continuação, e o erro sai **nas linhas seguintes**, longe da causa.
 
-Aconteceu três vezes numa tarde só, nos três arquivos onde o esquema do cache
-é declarado. O conserto é sempre o mesmo: o comentário vai para **antes** do
-inicializador, não para dentro dele.
+| Onde | O que continua | Erro que aparece |
+|---|---|---|
+| `{ Col("a"), Col("b") }` | vírgula | `')' expected`, `Syntax error` |
+| `"SELECT …" & <br> "  WHERE …"` | `&` | `Expression expected` |
+| `lista. <br> OrderBy(…). <br> ThenBy(…)` | `.` | `Identifier expected` |
+
+Sete ocorrências até 01/09/2026 — três num dia só, nos três arquivos onde o
+esquema do cache é declarado; depois no SQL da herança de rótulos e nas duas
+cadeias de ordenação. O conserto é sempre o mesmo: **o comentário vai para
+antes da instrução inteira**, nunca para dentro dela. Quando ele explica um
+trecho do meio, diga qual — *"as duas últimas condições…"* — em vez de
+colá-lo lá.
 
 ### PowerShell tem a mesma doença
 
