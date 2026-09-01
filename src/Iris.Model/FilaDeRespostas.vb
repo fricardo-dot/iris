@@ -117,15 +117,26 @@ Namespace Global.Iris.Model
                     Continue For
                 End If
 
-                If dispensa.Contains(m.Conversa) Then
-                    dispensadasVistas.Add(m.Conversa)
-                    Continue For
-                End If
-
                 ' A CHAVE E CAIXA + CONVERSA, e nao a conversa sozinha: o mesmo
                 ' ConversationID pode aparecer em duas caixas, e junta-las faria a
                 ' mensagem mais nova de uma decidir de quem e a vez na outra.
                 Dim chave = m.Caixa & ControlChars.NullChar & m.Conversa
+
+                ' A DISPENSA VALE POR CAIXA, e nao por ConversationID solto.
+                '
+                ' O agrupamento ja separava as caixas e a dispensa nao: dispensar
+                ' uma conversa na caixa compartilhada apagava tambem a conversa de
+                ' mesmo id na caixa pessoal -- e o dono nao teria como notar, porque
+                ' o que some some. Achado por revisao externa em 01/09/2026.
+                '
+                ' A LINHA ANTIGA, so com o id, continua valendo para TODAS as
+                ' caixas: e o que o dono ja escreveu no arquivo, e reinterpreta-la
+                ' como "so na caixa tal" faria conversas dispensadas voltarem sem
+                ' ninguem pedir.
+                If dispensa.Contains(chave) OrElse dispensa.Contains(m.Conversa) Then
+                    dispensadasVistas.Add(chave)
+                    Continue For
+                End If
 
                 Dim lista As List(Of MensagemNaFila) = Nothing
                 If Not porConversa.TryGetValue(chave, lista) Then

@@ -208,6 +208,92 @@ Namespace Global.Iris.Cache
             End Try
         End Function
 
+        ''' <summary>
+        ''' <b>Os rótulos que sobrevivem a uma varredura.</b>
+        '''
+        ''' Toda republicação apagava a classificação inteira da pasta — inclusive
+        ''' a de mensagens que não mudaram nada. O rótulo pende de (encarnação,
+        ''' geração), e a geração nova simplesmente não tinha rótulo nenhum: uma
+        ''' varredura de manutenção jogava fora todo o dinheiro gasto classificando.
+        ''' Achado por revisão externa em 01/09/2026.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE PROVA QUE A MENSAGEM NÃO MUDOU</b>
+        '''
+        ''' A encarnação é a mesma — ela é única por (pasta, <c>EntryID</c>) e
+        ''' atravessa gerações. Mas encarnação igual não quer dizer conteúdo igual:
+        ''' o corpo pode ter sido baixado, decifrado ou reescrito, e o rótulo veio
+        ''' do corpo.
+        '''
+        ''' O que prova é o metadado das <b>duas</b> gerações concordar em
+        ''' <c>last_modified_at</c> <i>e</i> <c>size_bytes</c>. Os dois juntos, e
+        ''' não um deles: uma edição que preserve o tamanho muda a data, e uma que
+        ''' preserve a data — relógio parado, importação — muda o tamanho.
+        '''
+        ''' <b>Nulo não herda.</b> Metadado que não sabe dizer quando a mensagem
+        ''' mudou não pode ser usado para afirmar que ela não mudou. O preço é
+        ''' reclassificar; o preço do contrário é um rótulo de um texto que não
+        ''' existe mais.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A OBSERVAÇÃO CARREGA A DATA E A ATIVAÇÃO ORIGINAIS</b>
+        '''
+        ''' <c>observed_at</c> e <c>activation_id</c> vêm da linha antiga, e não do
+        ''' momento da cópia. O rótulo <i>é</i> daquela hora e daquela autorização —
+        ''' carimbá-lo de hoje faria a tela dizer que foi classificado agora, e
+        ''' apagaria a única prova de sob que ativação o conteúdo saiu.
+        '''
+        ''' Roda <b>dentro da transação de quem publica</b>: se a publicação for
+        ''' desfeita, a herança vai junto.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>E ANTES DA MATERIALIZAÇÃO, CONTRA A ENCENAÇÃO</b>
+        '''
+        ''' A primeira versão comparava o metadado das duas gerações e não herdava
+        ''' nada — porque a materialização <b>apaga</b> o metadado da encarnação
+        ''' antes de inserir o novo. Quando a herança rodava, o lado "antes" já não
+        ''' existia.
+        '''
+        ''' Então ela roda antes, e compara o metadado publicado com o que está
+        ''' <i>encenado</i> — que é exatamente o que vai virar o metadado novo.
+        ''' </summary>
+        Friend Shared Function Herdar(conn As SqliteConnection, tx As SqliteTransaction,
+                                      folderKey As Long, attemptKey As Long,
+                                      deGeracao As Long, paraGeracao As Long) As Integer
+            If deGeracao = paraGeracao Then Return 0
+
+            Using cmd = conn.CreateCommand()
+                cmd.Transaction = tx
+                cmd.CommandText =
+                    "INSERT INTO label_observation " &
+                    "  (incarnation_key, generation_key, label, confidence, " &
+                    "   activation_id, observed_at, matched_rules) " &
+                    "SELECT l.incarnation_key, $nova, l.label, l.confidence, " &
+                    "       l.activation_id, l.observed_at, l.matched_rules " &
+                    "FROM label_observation l " &
+                    "JOIN incarnation i " &
+                    "  ON i.incarnation_key = l.incarnation_key AND i.folder_key = $f " &
+                    "JOIN metadata_observation antes " &
+                    "  ON antes.incarnation_key = l.incarnation_key " &
+                    "  AND antes.generation_key = $velha " &
+                    "JOIN scan_stage s " &
+                    "  ON s.attempt_key = $a " &
+                    "  AND s.provider_entry_id = i.provider_entry_id " &
+                    "WHERE l.generation_key = $velha " &
+                    "  AND antes.last_modified_at IS NOT NULL " &
+                    "  AND s.last_modified_at IS NOT NULL " &
+                    "  AND antes.last_modified_at = s.last_modified_at " &
+                    "  AND antes.size_bytes IS NOT NULL " &
+                    "  AND s.size_bytes IS NOT NULL " &
+                    "  AND antes.size_bytes = s.size_bytes"
+                cmd.Parameters.AddWithValue("$f", folderKey)
+                cmd.Parameters.AddWithValue("$a", attemptKey)
+                cmd.Parameters.AddWithValue("$velha", deGeracao)
+                cmd.Parameters.AddWithValue("$nova", paraGeracao)
+                Return cmd.ExecuteNonQuery()
+            End Using
+        End Function
+
         ''' <summary>Esta geração é a publicada <b>desta</b> pasta?</summary>
         Private Function EhAPublicada(tx As SqliteTransaction,
                                       folderKey As Long, geracao As Long) As Boolean

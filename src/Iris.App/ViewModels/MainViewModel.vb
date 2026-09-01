@@ -213,6 +213,28 @@ Namespace Global.Iris.App.ViewModels
         End Property
         Private _filaAberta As Boolean
 
+        ''' <summary>
+        ''' <b>A caixa dividida aberta?</b> Mesmo padrão das outras.
+        '''
+        ''' Painel, e não uma segunda lista permanente ao lado da primeira: duas
+        ''' listas com a mesma cara enganam em silêncio — a de cima lê o Outlook ao
+        ''' vivo, e esta lê o que foi varrido e classificado. A legenda dela diz
+        ''' isso, e um painel que se abre é mais fácil de ler como "outra coisa" do
+        ''' que um painel que está sempre lá.
+        ''' </summary>
+        Public Property CaixasAberta As Boolean
+            Get
+                Return _caixasAberta
+            End Get
+            Set(value As Boolean)
+                SetProperty(_caixasAberta, value)
+            End Set
+        End Property
+        Private _caixasAberta As Boolean
+
+        Public ReadOnly Property AlternarCaixasCommand As IRelayCommand
+        Public ReadOnly Property FecharCaixasCommand As IRelayCommand
+
         Public ReadOnly Property AlternarFilaCommand As IRelayCommand
         Public ReadOnly Property FecharFilaCommand As IRelayCommand
 
@@ -240,6 +262,7 @@ Namespace Global.Iris.App.ViewModels
 
             Messages.Selected = linha
             FilaAberta = False
+            CaixasAberta = False
         End Sub
 
         ''' <summary>
@@ -462,6 +485,16 @@ Namespace Global.Iris.App.ViewModels
                 End Sub,
                 Function() Fila IsNot Nothing)
             FecharFilaCommand = New RelayCommand(Sub() FilaAberta = False)
+
+            ' A CAIXA DIVIDIDA RELE AO ABRIR, pelo mesmo motivo da fila: ela e um
+            ' retrato de quando o dono perguntou.
+            AlternarCaixasCommand = New RelayCommand(
+                Sub()
+                    CaixasAberta = Not CaixasAberta
+                    If CaixasAberta Then Caixas.Atualizar()
+                End Sub,
+                Function() Caixas IsNot Nothing)
+            FecharCaixasCommand = New RelayCommand(Sub() CaixasAberta = False)
 
             ProporContatoCommand = New RelayCommand(
                 Sub() Contatos.ProporDoRemetente(

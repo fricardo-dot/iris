@@ -70,13 +70,20 @@ Public Class CosturaDosRotulosTests
     End Sub
 
     ''' <summary>
-    ''' <b>Varrer de novo apaga a classificação, e a tela diz isso.</b> É a
-    ''' herança da geração atravessando quatro camadas: o rótulo é da geração em
-    ''' que foi observado, e a caixa dividida precisa voltar a dizer "não
-    ''' classificada" — e não continuar mostrando a gaveta de antes.
+    ''' <b>Sem saber se a mensagem mudou, varrer de novo apaga a classificação —
+    ''' e a tela diz isso.</b>
+    '''
+    ''' O andaime daqui não preenche <c>last_modified_at</c> nem
+    ''' <c>size_bytes</c>, então a herança de rótulos não consegue provar que a
+    ''' mensagem continua a mesma e não herda nada. É o caso conservador, e é o
+    ''' que este teste prende: a caixa dividida volta a dizer "não classificada"
+    ''' em vez de continuar mostrando a gaveta de antes.
+    '''
+    ''' <b>Com o metadado preenchido o desfecho é outro</b>, e ele tem arquivo
+    ''' próprio: <c>HerancaDosRotulosTests</c>.
     ''' </summary>
     <TestMethod>
-    Public Sub Varredura_nova_devolve_a_mensagem_para_as_nao_classificadas()
+    Public Sub Sem_metadado_de_mudanca_a_varredura_devolve_para_as_nao_classificadas()
         Comigo(Sub(db)
                    Dim pasta = Varrer(db, "f-1", {"pedido"})
                    Classificar(db, pasta, "precisa_de_mim")

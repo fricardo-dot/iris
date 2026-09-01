@@ -377,10 +377,17 @@ Namespace Global.Iris.Assist
     ''' ------------------------------------------------------------------
     ''' <b>E O QUE A PRODUÇÃO TEM HOJE</b>
     '''
-    ''' <see cref="ActivationRecord.DaProducao"/> é <c>Nothing</c>, então em
-    ''' produção este portão nega <b>tudo</b>, sempre, com
-    ''' <see cref="DisclosureReason.SemAtivacao"/>. Isso é a §28.2, não uma
-    ''' pendência.
+    ''' <b>Depende do que houver no disco</b>: quem compõe é
+    ''' <c>MainViewModel.MontarAssistente</c>, que carrega a ativação por
+    ''' <c>ActivationLoader</c>. Sem arquivo, este portão nega <b>tudo</b>,
+    ''' sempre, com <see cref="DisclosureReason.SemAtivacao"/> — que é a §28.2
+    ''' cumprida, e não uma pendência. Com arquivo, ele avalia de verdade.
+    '''
+    ''' Este parágrafo já disse que <c>ActivationRecord.DaProducao</c> era
+    ''' <c>Nothing</c> "em produção", e isso descrevia uma composição anterior.
+    ''' Foi o quarto comentário assim, e o último a ser corrigido — os outros
+    ''' três saíram em 01/09/2026, junto com a regra do CLAUDE.md que diz para
+    ''' comentário de produção apontar para <i>quem compõe</i>.
     ''' </summary>
     Public NotInheritable Class DisclosurePolicy
 

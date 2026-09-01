@@ -187,13 +187,13 @@ Public Class FilaViewModelTests
     ''' <b>diz</b> — em vez de fingir que abriu.
     ''' </summary>
     <TestMethod>
-    Public Sub Quando_nao_da_para_abrir_a_tela_DIZ()
+    Public Async Function Quando_nao_da_para_abrir_a_tela_DIZ() As Task
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) _
                 Montar(Array.Empty(Of MensagemNaFila)(), True),
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
 
-        vm.Atualizar()
+        Await vm.Atualizar()
         Dim antes = vm.Frase
 
         vm.NaoDeuParaAbrir()
@@ -201,7 +201,7 @@ Public Class FilaViewModelTests
         Assert.AreNotEqual(antes, vm.Frase, "clicou em Abrir e a tela nao mudou")
         StringAssert.Contains(vm.Frase, "pasta",
             "a frase precisa dizer o que fazer, e nao so que falhou")
-    End Sub
+    End Function
 
     ''' <summary>
     ''' <b>Falha do leitor não derruba a janela.</b>
@@ -214,32 +214,32 @@ Public Class FilaViewModelTests
     ''' Achado por revisão externa em 31/08/2026.
     ''' </summary>
     <TestMethod>
-    Public Sub Excecao_do_leitor_NAO_derruba_a_tela()
+    Public Async Function Excecao_do_leitor_NAO_derruba_a_tela() As Task
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) Estourar(),
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
 
-        vm.Atualizar()
+        Await vm.Atualizar()
 
         Assert.IsFalse(vm.Respondeu)
         Assert.AreEqual(0, vm.Minhas.Count)
         StringAssert.Contains(vm.Frase, "não vale",
             "a tela ficou sem dizer que a fila nao vale")
-    End Sub
+    End Function
 
     ''' <summary>Leitor que devolve <c>Nothing</c> também não derruba.</summary>
     <TestMethod>
-    Public Sub Resultado_nulo_NAO_derruba_a_tela()
+    Public Async Function Resultado_nulo_NAO_derruba_a_tela() As Task
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) _
                 CType(Nothing, ResultadoDaFila),
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
 
-        vm.Atualizar()
+        Await vm.Atualizar()
 
         Assert.IsFalse(vm.Respondeu)
         Assert.AreNotEqual("", vm.Frase)
-    End Sub
+    End Function
 
     ''' <summary>
     ''' <b>Atualizar preenche as duas coleções, e a segunda chamada substitui a
@@ -247,20 +247,20 @@ Public Class FilaViewModelTests
     ''' linhas a cada clique em Atualizar.
     ''' </summary>
     <TestMethod>
-    Public Sub Atualizar_SUBSTITUI_as_listas()
+    Public Async Function Atualizar_SUBSTITUI_as_listas() As Task
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) _
                 Montar({Msg("c1", "caroline@outra.com", 9),
                         Msg("c2", "ricardo@empresa.com", 4)}, True),
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
 
-        vm.Atualizar()
-        vm.Atualizar()
+        Await vm.Atualizar()
+        Await vm.Atualizar()
 
         Assert.AreEqual(1, vm.Minhas.Count, "a segunda leitura duplicou as linhas")
         Assert.AreEqual(1, vm.Deles.Count)
         Assert.IsTrue(vm.Respondeu)
-    End Sub
+    End Function
 
     ''' <summary>
     ''' <b>Dispensa que não grava não tira a linha da tela.</b>
@@ -270,7 +270,7 @@ Public Class FilaViewModelTests
     ''' explicação. Aqui o arquivo é impossível de criar.
     ''' </summary>
     <TestMethod>
-    Public Sub Dispensa_que_falha_MANTEM_a_linha()
+    Public Async Function Dispensa_que_falha_MANTEM_a_linha() As Task
         Dim atrapalho = IO.Path.Combine(IO.Path.GetTempPath(),
                                         "iris-fila-vm-" & Guid.NewGuid().ToString("N"))
         Try
@@ -282,7 +282,7 @@ Public Class FilaViewModelTests
                 New Iris.Integration.DispensasDaFila(atrapalho),
                 Nothing, Function() Agora, TimeZoneInfo.Utc)
 
-            vm.Atualizar()
+            Await vm.Atualizar()
             Assert.AreEqual(1, vm.Minhas.Count, "o preparo do teste esta errado")
 
             vm.Minhas(0).DispensarCommand.Execute(Nothing)
@@ -293,7 +293,7 @@ Public Class FilaViewModelTests
         Finally
             If IO.File.Exists(atrapalho) Then IO.File.Delete(atrapalho)
         End Try
-    End Sub
+    End Function
 
 
     ' ==================================================================
@@ -340,11 +340,12 @@ Public Class FilaViewModelTests
     End Function
 
     <TestMethod>
-    Public Sub Ligar_a_prioridade_NAO_esconde_nem_apaga_os_dias()
+    Public Async Function Ligar_a_prioridade_NAO_esconde_nem_apaga_os_dias() As Task
         Dim vm = ComPrioridade()
-        vm.Atualizar()
+        Await vm.Atualizar()
         Dim antes = Retrato(vm)
 
+        Await vm.Atualizar()
         vm.PorPrioridade = True
 
         Assert.IsTrue(antes.Count > 0, "controle: o cenário tinha de produzir linhas")
@@ -354,23 +355,23 @@ Public Class FilaViewModelTests
             "a ordenação escondeu, trocou ou mexeu nos dias de alguma linha")
         Assert.IsTrue(vm.Minhas.Concat(vm.Deles).All(Function(l) l.Espera.Length > 0),
                       "a coluna de espera sumiu de alguma linha")
-    End Sub
+    End Function
 
     ''' <summary>
     ''' A nota vem acompanhada da conta. Um número sozinho na tela é um palpite
     ''' com cara de conta, e o dono que discordar não terá do que discordar.
     ''' </summary>
     <TestMethod>
-    Public Sub Toda_linha_carrega_a_nota_E_a_conta()
+    Public Async Function Toda_linha_carrega_a_nota_E_a_conta() As Task
         Dim vm = ComPrioridade()
-        vm.Atualizar()
+        Await vm.Atualizar()
 
         Assert.IsTrue(vm.Minhas.Count > 0)
         For Each l In vm.Minhas
             StringAssert.Contains(l.PorQue, "esperando")
             StringAssert.Contains(l.PorQue, "total:")
         Next
-    End Sub
+    End Function
 
     ''' <summary>
     ''' <b>A explicação bate com a ordem.</b> A mesma função que ordena é a que
@@ -378,14 +379,15 @@ Public Class FilaViewModelTests
     ''' como uma tela cuja explicação não corresponde à própria ordem.
     ''' </summary>
     <TestMethod>
-    Public Sub A_ordem_segue_a_nota_que_a_tela_mostra()
+    Public Async Function A_ordem_segue_a_nota_que_a_tela_mostra() As Task
         Dim vm = ComPrioridade()
+        Await vm.Atualizar()
         vm.PorPrioridade = True
 
         Dim pontos = vm.Minhas.Select(Function(l) l.Pontos).ToList()
         CollectionAssert.AreEqual(pontos.OrderByDescending(Function(p) p).ToList(), pontos,
             "a ordem na tela não é a das notas que ela mostra")
-    End Sub
+    End Function
 
     ''' <summary>
     ''' O rótulo pesa: quem espera resposta sobe na frente de quem esperou mais
@@ -394,15 +396,16 @@ Public Class FilaViewModelTests
     ''' é maior que a diferença entre dois dias e vinte.
     ''' </summary>
     <TestMethod>
-    Public Sub Quem_espera_resposta_sobe_na_frente_da_mais_velha()
+    Public Async Function Quem_espera_resposta_sobe_na_frente_da_mais_velha() As Task
         Dim vm = ComPrioridade(
             Function(k) If(k.EntryId = "E-nova", "precisa_de_mim", "fyi"))
 
+        Await vm.Atualizar()
         vm.PorPrioridade = True
 
         Assert.AreEqual(2, vm.Minhas.First().Dias,
             "a de dois dias que espera resposta não passou na frente da de vinte")
-    End Sub
+    End Function
 
 
     ''' <summary>
@@ -417,7 +420,7 @@ Public Class FilaViewModelTests
     ''' propósito: é o que faz o defeito aparecer.
     ''' </summary>
     <TestMethod>
-    Public Sub Ligar_a_prioridade_nao_vai_buscar_o_acervo_DE_NOVO()
+    Public Async Function Ligar_a_prioridade_nao_vai_buscar_o_acervo_DE_NOVO() As Task
         Dim leituras = 0
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados)
@@ -427,14 +430,14 @@ Public Class FilaViewModelTests
             End Function,
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
 
-        vm.Atualizar()
+        Await vm.Atualizar()
         Dim antes = Retrato(vm)
 
         vm.PorPrioridade = True
 
         Assert.AreEqual(1, leituras, "o botão de ordenar foi ao acervo de novo")
         CollectionAssert.AreEqual(antes, Retrato(vm))
-    End Sub
+    End Function
 
     ''' <summary>
     ''' <b>A nota que ordena é a mesma que a tela mostra — a MESMA avaliação.</b>
@@ -448,7 +451,7 @@ Public Class FilaViewModelTests
     ''' ordenada com uma nota e mostra outra.
     ''' </summary>
     <TestMethod>
-    Public Sub A_nota_que_ORDENA_e_a_que_a_tela_MOSTRA()
+    Public Async Function A_nota_que_ORDENA_e_a_que_a_tela_MOSTRA() As Task
         ' SO A SEGUNDA CHAMADA diz "precisa_de_mim", e a escolha e do numero.
         '
         ' Alternar por paridade nao serviria: com duas avaliacoes a paridade de
@@ -464,6 +467,7 @@ Public Class FilaViewModelTests
                 Return If(chamadas = 2, "precisa_de_mim", "fyi")
             End Function)
 
+        Await vm.Atualizar()
         vm.PorPrioridade = True
         Dim linhas = vm.Minhas.Concat(vm.Deles).ToList()
 
@@ -489,7 +493,7 @@ Public Class FilaViewModelTests
         CollectionAssert.AreEqual(
             mostrados.OrderByDescending(Function(p) p).ToList(), mostrados,
             "a ordem veio de uma avaliação diferente da que a tela mostra")
-    End Sub
+    End Function
 
     ''' <summary>
     ''' <b>Empate completo não troca de lugar entre duas leituras.</b>
@@ -498,7 +502,7 @@ Public Class FilaViewModelTests
     ''' enumerou — e ela troca. O último critério é a conversa, que é única.
     ''' </summary>
     <TestMethod>
-    Public Sub Empate_COMPLETO_nao_troca_de_lugar()
+    Public Async Function Empate_COMPLETO_nao_troca_de_lugar() As Task
         Dim invertido = False
         Dim iguais = {Msg("aaa", "um@fora.com", 5), Msg("bbb", "dois@fora.com", 5)}
 
@@ -509,17 +513,18 @@ Public Class FilaViewModelTests
             End Function,
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
 
+        Await vm.Atualizar()
         vm.PorPrioridade = True
         Dim antes = vm.Minhas.Concat(vm.Deles).Select(Function(l) l.Conversa).ToList()
 
         invertido = True
-        vm.Atualizar()
+        Await vm.Atualizar()
         Dim depois = vm.Minhas.Concat(vm.Deles).Select(Function(l) l.Conversa).ToList()
 
         CollectionAssert.AreEqual(antes, depois,
             "duas linhas empatadas trocaram de lugar porque o acervo as enumerou " &
             "em outra ordem")
-    End Sub
+    End Function
 
     ''' <summary>
     ''' <b>As parcelas escritas na tela somam o total escrito na tela.</b>
@@ -530,8 +535,9 @@ Public Class FilaViewModelTests
     ''' com o primeiro peso fracionário, apareceria.
     ''' </summary>
     <TestMethod>
-    Public Sub Os_numeros_ESCRITOS_fecham_a_conta()
+    Public Async Function Os_numeros_ESCRITOS_fecham_a_conta() As Task
         Dim vm = ComPrioridade(Function(k) "precisa_de_mim")
+        Await vm.Atualizar()
         vm.PorPrioridade = True
 
         For Each l In vm.Minhas.Concat(vm.Deles)
@@ -545,6 +551,6 @@ Public Class FilaViewModelTests
             Assert.AreEqual(total, soma, 0.0001,
                 "as parcelas escritas não somam o total escrito")
         Next
-    End Sub
+    End Function
 
 End Class

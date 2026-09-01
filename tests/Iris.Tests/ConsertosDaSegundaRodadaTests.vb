@@ -172,7 +172,7 @@ Public Class ConsertosDaSegundaRodadaTests
     ''' aviso de que é de antes — e a frase passa a dizer exatamente isso.
     ''' </summary>
     <TestMethod>
-    Public Sub Falha_na_releitura_NAO_apaga_o_retrato_bom()
+    Public Async Function Falha_na_releitura_NAO_apaga_o_retrato_bom() As Task
         Dim quebrar = False
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) As ResultadoDaFila
@@ -181,16 +181,16 @@ Public Class ConsertosDaSegundaRodadaTests
             End Function,
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
 
-        vm.Atualizar()
+        Await vm.Atualizar()
         Dim antes = vm.Minhas.Count
         Assert.IsTrue(antes > 0, "controle: o cenário tinha de produzir linhas")
 
         quebrar = True
-        vm.Atualizar()
+        Await vm.Atualizar()
 
         Assert.AreEqual(antes, vm.Minhas.Count, "a falha apagou o retrato bom")
         StringAssert.Contains(vm.Frase, "leitura anterior")
-    End Sub
+    End Function
 
     ''' <summary>
     ''' E com a tela vazia a frase é a outra: não há retrato a preservar, e
@@ -198,18 +198,18 @@ Public Class ConsertosDaSegundaRodadaTests
     ''' frase sem referente.
     ''' </summary>
     <TestMethod>
-    Public Sub Falha_com_a_tela_vazia_diz_que_a_fila_nao_vale()
+    Public Async Function Falha_com_a_tela_vazia_diz_que_a_fila_nao_vale() As Task
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) As ResultadoDaFila
                 Throw New InvalidOperationException("o cache caiu")
             End Function,
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc)
 
-        vm.Atualizar()
+        Await vm.Atualizar()
 
         StringAssert.Contains(vm.Frase, "não vale")
         Assert.IsFalse(vm.Frase.Contains("leitura anterior"))
-    End Sub
+    End Function
 
     ' ==================================================================
     ' AS IDENTIDADES QUE FALTAM
@@ -226,17 +226,17 @@ Public Class ConsertosDaSegundaRodadaTests
     ''' sabe o que escrever no arquivo.
     ''' </summary>
     <TestMethod>
-    Public Sub A_ressalva_diz_QUAIS_enderecos_faltam()
+    Public Async Function A_ressalva_diz_QUAIS_enderecos_faltam() As Task
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) UmaFila(),
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc,
             quemFalta:=Function(eu) CType({"r.silva@empresa.com"}, IReadOnlyList(Of String)))
 
-        vm.Atualizar()
+        Await vm.Atualizar()
 
         StringAssert.Contains(vm.Ressalva, "r.silva@empresa.com")
         StringAssert.Contains(vm.Ressalva, "identidades.txt")
-    End Sub
+    End Function
 
     ''' <summary>
     ''' <b>O diagnóstico não pode derrubar a fila.</b> Se a leitura das
@@ -244,7 +244,7 @@ Public Class ConsertosDaSegundaRodadaTests
     ''' ressalva é o comentário.
     ''' </summary>
     <TestMethod>
-    Public Sub Diagnostico_que_estoura_nao_derruba_a_fila()
+    Public Async Function Diagnostico_que_estoura_nao_derruba_a_fila() As Task
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) UmaFila(),
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc,
@@ -252,21 +252,76 @@ Public Class ConsertosDaSegundaRodadaTests
                            Throw New InvalidOperationException("estourou")
                        End Function)
 
-        vm.Atualizar()
+        Await vm.Atualizar()
 
         Assert.IsTrue(vm.Minhas.Count > 0, "a fila sumiu por causa do diagnóstico")
-    End Sub
+    End Function
 
     <TestMethod>
-    Public Sub Sem_endereco_faltando_nao_ha_ressalva_de_identidade()
+    Public Async Function Sem_endereco_faltando_nao_ha_ressalva_de_identidade() As Task
         Dim vm As New FilaViewModel(
             Function(eu, agora, fuso, dispensadas, ignorados) UmaFila(),
             Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc,
             quemFalta:=Function(eu) CType(Array.Empty(Of String)(), IReadOnlyList(Of String)))
 
-        vm.Atualizar()
+        Await vm.Atualizar()
 
         Assert.IsFalse(vm.Ressalva.Contains("identidades.txt"))
+    End Function
+
+    ' ==================================================================
+    ' A DISPENSA VALE POR CAIXA
+
+    ''' <summary>
+    ''' <b>Dispensar numa caixa não apaga a conversa homônima da outra.</b>
+    '''
+    ''' O agrupamento já separava as caixas — o mesmo <c>ConversationID</c> pode
+    ''' existir em duas — e a dispensa não: ela era gravada só pelo id. O dono
+    ''' não teria como notar, porque o que some some.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Dispensar_numa_caixa_nao_apaga_a_da_OUTRA()
+        Dim daPessoal As New MensagemNaFila(New ItemKey("E-1", "pessoal"), "c1",
+                                            "assunto", "alguem", "alguem@fora.com",
+                                            Agora.AddDays(-5))
+        Dim daPartilhada As New MensagemNaFila(New ItemKey("E-2", "partilhada"), "c1",
+                                               "assunto", "alguem", "alguem@fora.com",
+                                               Agora.AddDays(-5))
+
+        Dim cobertura As New Dictionary(Of String, DateTimeOffset) From {
+            {"pessoal", Agora}, {"partilhada", Agora}}
+
+        ' Dispensada SO na partilhada.
+        Dim r = FilaDeRespostas.Montar(
+            {daPessoal, daPartilhada},
+            New MinhasIdentidades({"ricardo@empresa.com"}),
+            Agora, TimeZoneInfo.Utc, cobertura,
+            {"partilhada" & ControlChars.NullChar & "c1"})
+
+        Assert.AreEqual(1, r.Linhas.Count, "a dispensa de uma caixa levou a outra")
+        Assert.AreEqual("pessoal", r.Linhas.Single().Chave.StoreId)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A linha antiga continua valendo para todas as caixas.</b> É o que o
+    ''' dono já escreveu no arquivo, e reinterpretá-la como "só na caixa tal"
+    ''' faria conversas dispensadas voltarem sem ninguém pedir.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Dispensa_ANTIGA_so_com_o_id_continua_valendo_em_todas()
+        Dim daPessoal As New MensagemNaFila(New ItemKey("E-1", "pessoal"), "c1",
+                                            "assunto", "alguem", "alguem@fora.com",
+                                            Agora.AddDays(-5))
+
+        Dim r = FilaDeRespostas.Montar(
+            {daPessoal},
+            New MinhasIdentidades({"ricardo@empresa.com"}),
+            Agora, TimeZoneInfo.Utc,
+            New Dictionary(Of String, DateTimeOffset) From {{"pessoal", Agora}},
+            {"c1"})
+
+        Assert.AreEqual(0, r.Linhas.Count,
+            "uma dispensa escrita antes da mudança deixou de valer")
     End Sub
 
 End Class

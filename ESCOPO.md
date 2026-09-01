@@ -12,6 +12,17 @@ dela, com o motivo.
 Em 28/08 também entrou a **busca textual** (que este documento dizia entregue e
 não estava) e a **leitura do calendário** com a agenda na janela. Suíte em
 **860 testes**.
+
+> **Este cabeçalho é um retrato de 28/08, e não o estado de hoje.** Depois dele
+> vieram as dez etapas do plano da IA, vinte revisões externas e a suíte passou
+> de 860 para mais de 1400. O estado corrente está no [PLANO-IA](PLANO-IA.md);
+> este documento continua sendo o escopo do **produto**, e as seções abaixo
+> descrevem as fases dele.
+>
+> A confusão é real e tem nome: um leitor perguntou "o Iris classifica a caixa?"
+> e achou duas respostas — a Fase 4 aqui diz *não executada*, e o plano da IA
+> dizia *executada*. As duas falavam de coisas diferentes com o mesmo nome.
+> Corrigido nos dois em 01/09/2026.
 **Data:** 2026-08-28
 **Versão:** 7
 
@@ -456,7 +467,15 @@ mensagens que *parecem* da mesma conversa seria decidir divulgação por
 semelhança. O mecanismo aceita várias mensagens; o que não existe é quem as
 escolha.
 
-### Fase 4 — Triagem e busca semântica (Grupo B) — *NÃO EXECUTADA. A METADE MECÂNICA FOI MEDIDA E CONSERTADA; A SEMÂNTICA CONTINUA SEM MEDIÇÃO*
+### Fase 4 — Triagem e busca semântica (Grupo B) — *A BUSCA TEXTUAL ESTÁ ENTREGUE; A TRIAGEM TEM NÚCLEO CONSTRUÍDO E NENHUM CHAMADOR*
+
+> **Atualizado em 01/09/2026.** O título anterior — "NÃO EXECUTADA" — deixou de
+> descrever o estado: a busca textual está na janela desde 28/08, e a triagem
+> ganhou núcleo, testes e vinte revisões externas nas etapas 4 a 7 do
+> [PLANO-IA](PLANO-IA.md). O que ela ainda não tem é a borda em lote e um
+> comando na tela — ou seja, o dono ainda não consegue mandar classificar uma
+> pasta. "Não executada" e "construída e não ligada" são estados diferentes, e
+> um documento que os confunde faz alguém reconstruir o que já existe.
 
 > **Esta seção já teve um título mais forte, e a revisão externa derrubou.**
 >
@@ -1220,9 +1239,13 @@ Código descartável em `spike/`; o que fica são as respostas.
 
 Registrado para ninguém tratar como testado:
 
-- **Rótulos de sensibilidade do Purview** (`MSIP_Labels` via
-  `PropertyAccessor`). `MailItem.Sensitivity` é a propriedade clássica e não
-  responde por rótulos modernos. **Obrigatório antes da Fase 3.**
+- ~~**Rótulos de sensibilidade do Purview**~~ — **validado em 30/08**, e o
+  caminho está em produção (`GetSensitivityLabelsAsync`, usado pelo
+  `ContextoDoOutlook`). Ficou nesta lista depois de ter saído dela, e a lista de
+  riscos passou a dizer duas coisas sobre a mesma capacidade. O que **continua**
+  valendo é a ressalva do próprio código: `MSIP_Labels` mora no namespace de
+  cabeçalhos de internet, então lê-lo com perfeição não prova que ninguém
+  apresenta uma classificação baixa falsa — **rótulo nunca autoriza sozinho**.
 - **Movimento entre stores** — só existe um store nesta conta.
 - **Reinício do Outlook com assinatura ativa** (D7).
 - **Caminho de retry do message filter** — o Outlook nunca ficou ocupado

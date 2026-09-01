@@ -73,7 +73,7 @@ Namespace Global.Iris.App.ViewModels
             _prazo = prazo
             _quemFalta = quemFalta
 
-            AtualizarCommand = New RelayCommand(AddressOf Atualizar)
+            AtualizarCommand = New AsyncRelayCommand(AddressOf Atualizar)
         End Sub
 
         Public ReadOnly Property AtualizarCommand As IRelayCommand
@@ -170,7 +170,35 @@ Namespace Global.Iris.App.ViewModels
         ''' carregou. A fila some e diz por quê, que é o que ela já faz nas
         ''' outras três recusas.
         ''' </summary>
-        Public Sub Atualizar()
+        ''' <summary>
+        ''' <b>A leitura sai da thread da tela.</b>
+        '''
+        ''' Ela percorre o acervo inteiro — todas as pastas, todas as conversas —,
+        ''' e rodava dentro do clique. A janela parava de pintar, de rolar e de
+        ''' responder até o SQLite, o agrupamento e a montagem das linhas
+        ''' terminarem. Achado por revisão externa em 01/09/2026.
+        '''
+        ''' <b>Só a leitura.</b> O que mexe nas coleções continua depois do
+        ''' <c>Await</c>, e portanto de volta no contexto de quem chamou — que na
+        ''' janela é a thread da tela. <c>ObservableCollection</c> mexida de fora
+        ''' dela é exceção na hora do binding.
+        '''
+        ''' <b>Uma por vez.</b> Dois cliques seguidos fariam duas leituras
+        ''' concorrentes, e a segunda a terminar mandaria — que pode ser a que
+        ''' começou antes. A segunda chamada simplesmente não faz nada.
+        ''' </summary>
+        Public Async Function Atualizar() As Task
+            If _lendo Then Return
+            _lendo = True
+            Try
+                Await Ler()
+            Finally
+                _lendo = False
+            End Try
+        End Function
+        Private _lendo As Boolean
+
+        Private Async Function Ler() As Task
             ' O RETRATO BOM SO E APAGADO QUANDO HA OUTRO PARA POR NO LUGAR.
             '
             ' As tres saidas de falha limpavam as listas antes de qualquer coisa,
@@ -181,10 +209,18 @@ Namespace Global.Iris.App.ViewModels
             ' Manter o retrato velho tem um preco: ele fica na tela sem dizer que
             ' e velho. A frase passa a dizer. Achado por revisao externa em
             ' 01/09/2026.
+            Dim eu = _identidades()
+            Dim agora = _relogio()
+            Dim dispensadas = _dispensas.Conversas()
+            Dim ignorados = _dispensas.Remetentes()
+
             Dim r As ResultadoDaFila
             Try
-                r = _montar(_identidades(), _relogio(), _fuso,
-                            _dispensas.Conversas(), _dispensas.Remetentes())
+                ' AS ENTRADAS SAO LIDAS AQUI, e nao la dentro: o relogio e as
+                ' dispensas sao estado da tela, e le-los de outra thread seria
+                ' a mesma corrida que este Await existe para evitar.
+                r = Await Task.Run(Function() _montar(eu, agora, _fuso,
+                                                     dispensadas, ignorados))
             Catch ex As Exception
                 Frase = "Não consegui ler o acervo agora (" & ex.GetType().Name &
                         "). " & OQueSobrou()
@@ -207,7 +243,7 @@ Namespace Global.Iris.App.ViewModels
             If Not r.Respondeu Then Return
 
             Povoar(r)
-        End Sub
+        End Function
 
         ''' <summary>
         ''' Redesenha as duas listas a partir do retrato que já está na mão.
@@ -229,14 +265,12 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         Private Sub Repovoar()
-            ' NUNCA LIDA AINDA: aqui ler e o certo, e nao ha o que reordenar.
-            ' A promessa e "ligar a ordem nao TROCA o que esta na tela"; com a
-            ' tela vazia nao ha nada a trocar, e recusar-se a ler deixaria o
-            ' dono com uma lista vazia sem entender por que.
-            If _ultimo Is Nothing Then
-                Atualizar()
-                Return
-            End If
+            ' SEM RETRATO, NAO FAZ NADA -- e nao vai buscar um.
+            '
+            ' Ir ao acervo daqui era o que fazia o botao de ordenar reler tudo;
+            ' depois que a leitura virou assincrona, dispara-la daqui seria
+            ' dispara-la sem ninguem para esperar por ela.
+            If _ultimo Is Nothing Then Return
             If Not _ultimo.Respondeu Then Return
             Minhas.Clear()
             Deles.Clear()
@@ -447,8 +481,15 @@ Namespace Global.Iris.App.ViewModels
         ''' falhar, a linha fica — dizer que dispensou sem ter dispensado
         ''' deixaria o dono achando que resolveu.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Dispensa a conversa <i>daquela caixa</i>.</b>
+        '''
+        ''' Gravava só o <c>ConversationID</c>, e o mesmo id existe em duas caixas:
+        ''' dispensar na compartilhada apagava também a da caixa pessoal.
+        ''' </summary>
         Friend Sub Dispensar(linha As LinhaNaTela)
-            If Not _dispensas.DispensarConversa(linha.Conversa) Then
+            If Not _dispensas.DispensarConversa(
+                   linha.Caixa & ControlChars.NullChar & linha.Conversa) Then
                 Frase = "Não consegui gravar a dispensa. A conversa continua na fila."
                 Return
             End If
@@ -554,6 +595,17 @@ Namespace Global.Iris.App.ViewModels
         Friend ReadOnly Property Conversa As String
             Get
                 Return _linha.Conversa
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' A caixa desta linha. É metade da identidade da conversa — o mesmo
+        ''' <c>ConversationID</c> existe em duas caixas —, e é o que faz a
+        ''' dispensa valer só onde o dono clicou.
+        ''' </summary>
+        Friend ReadOnly Property Caixa As String
+            Get
+                Return If(_linha.Chave?.StoreId, "")
             End Get
         End Property
 

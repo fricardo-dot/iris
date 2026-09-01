@@ -347,6 +347,13 @@
                                 Command="{Binding AlternarFilaCommand}"
                                 ToolTip="Quem falou por último em cada conversa"
                                 AutomationProperties.Name="Abrir ou fechar a fila de respostas" />
+                        <!-- A CAIXA DIVIDIDA. E8FD e a lista com marcadores: a
+                             pergunta desta tela e "de que tipo", e nao "quando". -->
+                        <Button Style="{StaticResource CaptionButton}"
+                                Content="&#xE8A9;"
+                                Command="{Binding AlternarCaixasCommand}"
+                                ToolTip="A caixa dividida por rótulo"
+                                AutomationProperties.Name="Abrir ou fechar a caixa dividida" />
                         <Button Style="{StaticResource CaptionButton}"
                                 Content="&#xE8FD;"
                                 Command="{Binding AlternarTarefasCommand}"
@@ -936,6 +943,107 @@
                             <ItemsControl ItemsSource="{Binding Fila.Deles}"
                                           ItemTemplate="{StaticResource Fila.Linha}" />
                         </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
+            <!-- ============ A CAIXA DIVIDIDA (painel) ============
+
+                 A LEGENDA VEM ANTES DAS GAVETAS, e e o mesmo motivo da fila:
+                 gavetas bonitas dao a impressao de que tudo foi olhado. Se a
+                 varredura classificou quarenta de novecentas, isso e falso, e o
+                 dono so descobriria abrindo a ultima gaveta.
+
+                 As gavetas vazias aparecem por padrao. "Nenhuma mensagem espera
+                 voce" e "esta divisao nao existe" sao coisas diferentes, e uma
+                 tela que so mostra gaveta com conteudo muda de forma a cada
+                 varredura. -->
+            <Grid Grid.Row="1" Panel.ZIndex="11"
+                  Visibility="{Binding CaixasAberta, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}">
+
+                <Rectangle Fill="#99000000">
+                    <Rectangle.InputBindings>
+                        <MouseBinding MouseAction="LeftClick"
+                                      Command="{Binding FecharCaixasCommand}" />
+                    </Rectangle.InputBindings>
+                </Rectangle>
+
+                <Border Background="{DynamicResource Brush.Surface.1}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Card}"
+                        MaxWidth="900" MaxHeight="640" Margin="28"
+                        VerticalAlignment="Top"
+                        Padding="20,16,20,18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <TextBlock Text="A CAIXA DIVIDIDA"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <Button Content="Atualizar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Caixas.AtualizarCommand}"
+                                    Margin="16,0,0,0"
+                                    AutomationProperties.Name="Reler a caixa dividida" />
+                            <CheckBox Content="Mostrar gavetas vazias"
+                                      IsChecked="{Binding Caixas.MostrarVazias}"
+                                      VerticalAlignment="Center"
+                                      Margin="16,0,0,0"
+                                      Foreground="{DynamicResource Brush.Text.Muted}"
+                                      AutomationProperties.Name="Mostrar gavetas vazias" />
+                            <Button Content="Fechar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding FecharCaixasCommand}"
+                                    Margin="6,0,0,0"
+                                    AutomationProperties.Name="Fechar a caixa dividida" />
+                        </StackPanel>
+
+                        <TextBlock Text="{Binding Caixas.Cobertura}"
+                                   Style="{DynamicResource Text.Body}"
+                                   TextWrapping="Wrap"
+                                   AutomationProperties.Name="Cobertura da classificacao" />
+
+                        <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                      MaxHeight="520" Margin="0,10,0,0">
+                            <ItemsControl ItemsSource="{Binding Caixas.Gavetas}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel Margin="0,0,0,14">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Nome}"
+                                                           Style="{DynamicResource Text.Body}"
+                                                           FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding Quantas}"
+                                                           Style="{DynamicResource Text.Muted}"
+                                                           Margin="8,0,0,0" />
+                                            </StackPanel>
+
+                                            <ItemsControl ItemsSource="{Binding Mensagens}"
+                                                          Margin="10,4,0,0">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <Button Style="{DynamicResource Toolbar.Button}"
+                                                                HorizontalContentAlignment="Left"
+                                                                Command="{Binding AbrirCommand}"
+                                                                Margin="0,1,0,1">
+                                                            <StackPanel Orientation="Horizontal">
+                                                                <TextBlock Text="{Binding Quem}"
+                                                                           Style="{DynamicResource Text.Muted}"
+                                                                           MinWidth="140" />
+                                                                <TextBlock Text="{Binding Assunto}"
+                                                                           Style="{DynamicResource Text.Body}"
+                                                                           TextTrimming="CharacterEllipsis" />
+                                                            </StackPanel>
+                                                        </Button>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
                     </StackPanel>
                 </Border>
             </Grid>

@@ -283,6 +283,12 @@ Namespace Global.Iris.Cache
                     ("$q", CObj(distintas)),
                     ("$p", CObj(epocaPasta)), ("$t", CObj(Agora()))))
 
+                ' A GERACAO QUE ESTAVA PUBLICADA, antes de trocar. E dela que os
+                ' rotulos sao herdados.
+                Dim anterior = Ler(tx,
+                    "SELECT published_generation_key FROM folder WHERE folder_key = $f",
+                    ("$f", CObj(folderKey)))
+
                 Executar(tx, "UPDATE folder SET published_generation_key = $g WHERE folder_key = $f",
                     ("$g", CObj(g)), ("$f", CObj(folderKey)))
 
@@ -292,6 +298,22 @@ Namespace Global.Iris.Cache
                 ' dentro desta transacao. Enquanto a tentativa nao publica,
                 ' nada do que ela leu e visivel — e uma tentativa rejeitada nao
                 ' deixa marca nenhuma no que a UI mostra.
+                ' ===== OS ROTULOS QUE SOBREVIVEM =====
+                '
+                ' ANTES da materializacao, porque ela APAGA o metadado da encarnacao
+                ' para inserir o novo -- e a heranca precisa do lado "antes" para
+                ' comparar. Ela compara o publicado com o ENCENADO, que e o que vai
+                ' virar o metadado novo daqui a duas linhas.
+                '
+                ' Uma varredura que nao mudou nada apagava a classificacao inteira da
+                ' pasta -- todo o dinheiro gasto, jogado fora por uma varredura de
+                ' manutencao. O criterio de "nao mudou" mora no RotulosNoCache, com o
+                ' motivo. Achado por revisao externa em 01/09/2026.
+                If anterior IsNot Nothing AndAlso anterior IsNot DBNull.Value Then
+                    RotulosNoCache.Herdar(_conn, tx, folderKey, attemptKey,
+                                          Convert.ToInt64(anterior), g)
+                End If
+
                 Materializar(tx, attemptKey, folderKey, g)
 
                 ' ===== NAO VISTOS -> SUSPEITOS =====
