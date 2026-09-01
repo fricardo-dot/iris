@@ -274,6 +274,150 @@ Public Class BordaEmLoteTests
     End Sub
 
     ' ==================================================================
+    ' A PASTA — OBSERVADA, E NÃO DECLARADA
+
+    ''' <summary>
+    ''' <b>A mensagem se mudou; o corpo dela não sai sob a pasta antiga.</b>
+    '''
+    ''' A autorização é por pasta, e as chaves da classificação vêm do
+    ''' <b>cache</b> — um retrato de quando a varredura rodou. Entre a varredura e
+    ''' a classificação, a mensagem pode ter ido para uma pasta confidencial. O
+    ''' cache continua listando-a onde ela estava.
+    '''
+    ''' Antes disto, a pasta de cada mensagem vinha do mesmo chamador que dizia
+    ''' qual era a pasta do pedido: a comparação era entre duas cópias da mesma
+    ''' afirmação, e concordava sempre. Achado por revisão externa em 01/09/2026,
+    ''' e este teste é o que faltava para tê-lo pego.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Mensagem_que_MUDOU_DE_PASTA_nao_e_divulgada()
+        Comigo(Sub(db)
+                   Dim pasta = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a", "b", "c"})
+
+                   ' O Outlook diz que elas estão em OUTRO lugar.
+                   Dim outra As New FolderKey("f-confidencial", "store-1")
+                   broker.PastaDeTodos = outra
+                   broker.Instantaneos = Function(k) OperationResult(Of MessageSnapshot).
+                       Ok(New MessageSnapshot(k, "CK-" & k.EntryId, "assunto",
+                                              "de@x.invalido", {"para@x.invalido"},
+                                              "corpo de " & SufixoDe(k), False,
+                                              corpoCompleto:=True, temAnexo:=False,
+                                              pasta:=outra))
+
+                   Dim r = Classificar(db, pasta, provedor, ComAtivacao(), broker:=broker)
+
+                   Assert.AreEqual(0, provedor.Chamadas,
+                       "O CORPO SAIU SOB A AUTORIZACAO DE UMA PASTA ONDE A MENSAGEM NAO ESTA")
+                   Assert.AreEqual(0, New RotulosNoCache(db).Publicados(pasta).Count)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>"Não deu para ler a pasta" também para.</b> Não saber onde a mensagem
+    ''' está nunca vira prova de que ela está onde deveria — é a mesma regra do
+    ''' anexo que não deu para contar.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Pasta_que_nao_deu_para_ler_tambem_para()
+        Comigo(Sub(db)
+                   Dim pasta = Semear(db, {"a"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a"})
+                   broker.PastaDeTodos = New FolderKey("", "")
+
+                   Classificar(db, pasta, provedor, ComAtivacao(), broker:=broker)
+
+                   Assert.AreEqual(0, provedor.Chamadas,
+                       "pasta desconhecida virou prova de pasta certa")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Uma ativação que autoriza OUTRA pasta não autoriza esta.</b>
+    '''
+    ''' Sem este teste, uma política que conferisse operação e provedor e
+    ''' <i>ignorasse</i> a pasta passaria em toda a suíte da borda: o único par
+    ''' existente era "sem ativação" contra "ativação certa para esta pasta".
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ativacao_de_OUTRA_pasta_nao_autoriza_esta()
+        Comigo(Sub(db)
+                   Dim pasta = Semear(db, {"a", "b"})
+                   Dim provedor As New ProvedorQueClassifica()
+
+                   Dim r = Classificar(db, pasta, provedor,
+                                       ComAtivacao(New FolderKey("f-outra", "store-1")))
+
+                   Assert.AreEqual(0, provedor.Chamadas,
+                       "A ATIVACAO DE UMA PASTA VALEU PARA OUTRA")
+                   Assert.AreEqual(0, New RotulosNoCache(db).Publicados(pasta).Count)
+                   Assert.AreEqual(1, r.LotesRecusados,
+                       "a passagem tem de PERCORRER e recusar, e nao desistir antes")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A mensagem se mudou DEPOIS de o portão aprovar.</b>
+    '''
+    ''' O portão lê a pasta numa visita ao Outlook; o corpo vira bytes em outra.
+    ''' Entre as duas há uma janela, e é nela que este teste mora: a leitura das
+    ''' pastas diz a pasta autorizada, e a leitura do corpo já traz outra.
+    '''
+    ''' É por isso que a conferência acontece <b>duas vezes</b> — a segunda presa
+    ''' ao corpo que vira bytes. Conferir só no portão fecharia o caso da mensagem
+    ''' que já estava fora, e deixaria aberto o da que saiu no meio. É o mesmo
+    ''' desenho do anexo, e a mesma corrida.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Mensagem_que_muda_de_pasta_ENTRE_AS_DUAS_LEITURAS_nao_e_divulgada()
+        Comigo(Sub(db)
+                   ' "noCache", e nao "pasta": o local eclipsaria o campo Pasta --
+                   ' que e a FolderKey do portao --, e o erro sai como "Long nao
+                   ' pode ser convertido para FolderKey". Terceira vez hoje.
+                   Dim noCache = Semear(db, {"a", "b"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a", "b"})
+
+                   ' O portao pergunta e ouve a pasta CERTA...
+                   broker.PastaDeTodos = Pasta
+
+                   ' ...e quando o corpo e lido, a mensagem ja se mudou.
+                   Dim outra As New FolderKey("f-confidencial", "store-1")
+                   broker.Instantaneos = Function(k) OperationResult(Of MessageSnapshot).
+                       Ok(New MessageSnapshot(k, "CK-" & k.EntryId, "assunto",
+                                              "de@x.invalido", {"para@x.invalido"},
+                                              "corpo de " & SufixoDe(k), False,
+                                              corpoCompleto:=True, temAnexo:=False,
+                                              pasta:=outra))
+
+                   Classificar(db, noCache, provedor, ComAtivacao(), broker:=broker)
+
+                   Assert.AreEqual(0, provedor.Chamadas,
+                       "O CORPO SAIU: a mensagem se mudou entre o portao e a leitura")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' O controle negativo das duas conferências: com a mensagem parada na pasta
+    ''' certa nas duas leituras, ela <b>sai</b>. Sem ele, uma conferência que
+    ''' recusasse sempre passaria nos três testes acima.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Mensagem_PARADA_na_pasta_certa_atravessa()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a"})
+                   Dim provedor As New ProvedorQueClassifica()
+
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao())
+
+                   Assert.AreEqual(1, provedor.Chamadas)
+                   Assert.AreEqual(1, r.Classificados)
+               End Sub)
+    End Sub
+
+    ' ==================================================================
     ' O ANDAIME
 
     ''' <summary>
@@ -282,13 +426,14 @@ Public Class BordaEmLoteTests
     Private Shared Function Classificar(db As CacheDatabase, chaveDaPasta As Long,
                                         provedor As ProvedorQueClassifica,
                                         ativacao As ActivationRecord,
-                                        Optional anotar As List(Of PedidoDeParte) = Nothing) _
+                                        Optional anotar As List(Of PedidoDeParte) = Nothing,
+                                        Optional broker As FakeBroker = Nothing) _
                                         As ResultadoDaClassificacao
         ' "chaveDaPasta", e nao "pasta": o parametro eclipsaria o campo Pasta
         ' -- que e a FolderKey do portao -- e o erro sai como "Long nao pode ser
         ' convertido para FolderKey", tres linhas adiante. CLAUDE.md, secao 1.
         Dim cache = New RotulosNoCache(db)
-        Dim borda As New BordaEmLote(BrokerBom({"a", "b", "c"}),
+        Dim borda As New BordaEmLote(If(broker, BrokerBom({"a", "b", "c"})),
                                      Transmissor(provedor, ativacao),
                                      provedor.Destino, Pasta)
 
@@ -319,13 +464,14 @@ Public Class BordaEmLoteTests
     ''' ela no vocabulário, a autorização que o dono deu para resumir uma
     ''' mensagem passaria a valer para a varredura inteira.
     ''' </summary>
-    Private Shared Function ComAtivacao() As ActivationRecord
+    Private Shared Function ComAtivacao(Optional autorizada As FolderKey = Nothing) _
+                                        As ActivationRecord
         Return New ActivationRecord("ativacao-1", 2, "teste — borda em lote",
                                     Quando.AddDays(-1),
                                     "provedor-de-teste", Endereco, "modelo-de-teste",
                                     "local", "sem retenção",
                                     {AssistOperation.Classificar},
-                                    {Pasta}, Array.Empty(Of String)(),
+                                    {If(autorizada, Pasta)}, Array.Empty(Of String)(),
                                     {LabelReadingKind.Absent}, {0},
                                     ate:=Quando.AddDays(30),
                                     provedoresPermitidos:={"provedor-subjacente"})
@@ -338,7 +484,8 @@ Public Class BordaEmLoteTests
     Private Shared Function Instantaneo(k As ItemKey, corpo As String) As MessageSnapshot
         Return New MessageSnapshot(k, "CK-" & k.EntryId, "assunto", "de@x.invalido",
                                    {"para@x.invalido"}, corpo, False,
-                                   corpoCompleto:=True, temAnexo:=False)
+                                   corpoCompleto:=True, temAnexo:=False,
+                                   pasta:=Pasta)
     End Function
 
     Private Shared Function ParteQualquer() As MessagePart
@@ -352,6 +499,8 @@ Public Class BordaEmLoteTests
     ''' </summary>
     Private Shared Function BrokerBom(sufixos As String()) As FakeBroker
         Dim b As New FakeBroker()
+        ' A pasta OBSERVADA. Ver o mesmo comentario em AdversarioPontaAPonta.
+        b.PastaDeTodos = Pasta
         b.Rotulos = Function(chaves) OperationResult(Of IReadOnlyList(Of LabelReading)).
             Ok(chaves.Select(Function(k) New LabelReading(
                 k, LabelReadingKind.Absent, LabelReadStage.Parse,

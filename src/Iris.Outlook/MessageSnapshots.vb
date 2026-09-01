@@ -92,6 +92,38 @@ Namespace Global.Iris.Outlook
             Return OperationResult(Of IReadOnlyList(Of MessageSnapshot)).Ok(saida)
         End Function
 
+        ''' <summary>
+        ''' A pasta do item, adquirida na variável que o <c>Finally</c> libera.
+        ''' Falha vira <see cref="FolderKey"/> vazia, que quem confere lê como
+        ''' "não é a pasta autorizada" — o lado seguro.
+        ''' </summary>
+        ''' <summary>
+        ''' A pasta do item, e <b>a referência COM dela</b>, para quem chamou
+        ''' liberar no <c>Finally</c>.
+        '''
+        ''' Devolve as duas juntas em vez de escrever num <c>ByRef</c>: em VB um
+        ''' parâmetro <c>ByRef</c> não pode ser usado dentro de lambda, e todas as
+        ''' leituras aqui passam pelo <c>Texto(Function() …)</c> que engole falha.
+        '''
+        ''' Falha vira <see cref="FolderKey"/> vazia, que quem confere lê como
+        ''' "não é a pasta autorizada" — o lado seguro.
+        ''' </summary>
+        Private Function PastaDe(mail As OL.MailItem) _
+                         As (Pasta As FolderKey, Objeto As OL.MAPIFolder)
+            Dim vazia = New FolderKey("", "")
+            Dim pasta As OL.MAPIFolder = Nothing
+            Try
+                pasta = TryCast(mail.Parent, OL.MAPIFolder)
+            Catch
+                Return (vazia, Nothing)
+            End Try
+            If pasta Is Nothing Then Return (vazia, Nothing)
+
+            Dim entrada = Texto(Function() pasta.EntryID)
+            If entrada.Length = 0 Then Return (vazia, pasta)
+            Return (New FolderKey(entrada, Texto(Function() pasta.StoreID)), pasta)
+        End Function
+
         Public Function Read(ns As OL.NameSpace, item As ItemKey) _
                              As OperationResult(Of MessageSnapshot)
             ' R7: o objeto e adquirido em UMA variavel, e e ela que o Finally
@@ -100,6 +132,10 @@ Namespace Global.Iris.Outlook
             ' RCW ficava sem dono e ninguem o liberava.
             Dim obj As Object = Nothing
             Dim mail As OL.MailItem = Nothing
+            ' A PASTA E OUTRO OBJETO COM: variavel propria, e liberada ANTES do
+            ' item no Finally -- ordem inversa a da aquisicao. A cadeia proibida
+            ' seria mail.Parent.EntryID, que deixaria a pasta sem dono.
+            Dim pai As OL.MAPIFolder = Nothing
             Try
                 Try
                     obj = ns.GetItemFromID(item.EntryId, item.StoreId)
@@ -136,6 +172,14 @@ Namespace Global.Iris.Outlook
                 Dim corpo = Texto(Function() mail.Body)
                 Dim completo = Not String.IsNullOrEmpty(corpo)
 
+                ' A PASTA VEM PRESA A ESTE CORPO. Ler so no portao deixaria a
+                ' janela entre as duas visitas aberta: a mensagem pode se mover
+                ' depois de autorizada e antes de virar bytes. Mesmo desenho do
+                ' anexo. Achado por revisao externa em 01/09/2026.
+                Dim lida = PastaDe(mail)
+                pai = lida.Objeto
+                Dim daPasta = lida.Pasta
+
                 Return OperationResult(Of MessageSnapshot).Ok(
                     New MessageSnapshot(item, chave,
                                         Texto(Function() mail.Subject),
@@ -143,8 +187,12 @@ Namespace Global.Iris.Outlook
                                         Destinatarios(mail),
                                         corpo, ehHtml:=False, corpoCompleto:=completo,
                                         temAnexo:=osAnexos.Real,
-                                        embutidas:=osAnexos.Embutidas))
+                                        embutidas:=osAnexos.Embutidas,
+                                        pasta:=daPasta))
             Finally
+                ' Ordem inversa: a pasta saiu depois do item, entao sai primeiro.
+                ComHelpers.Release(pai)
+                pai = Nothing
                 ' `mail` e o MESMO objeto que `obj`: liberar os dois seria
                 ' liberar a mesma referencia duas vezes. So `obj` e liberado.
                 mail = Nothing

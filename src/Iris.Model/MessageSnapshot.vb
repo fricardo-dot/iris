@@ -68,11 +68,28 @@ Namespace Global.Iris.Model
         ''' </summary>
         Public ReadOnly Property Embutidas As Integer?
 
+        ''' <summary>
+        ''' <b>A pasta em que a mensagem estava</b> — lida na <b>mesma visita</b>
+        ''' que o corpo.
+        '''
+        ''' Mesmo desenho do <see cref="TemAnexo"/>, e pelo mesmo motivo: o portão
+        ''' decide numa visita e o corpo vira bytes em outra. Uma mensagem movida
+        ''' entre as duas passaria pelo portão sob a pasta antiga, e sairia com o
+        ''' conteúdo da pasta nova. Presa ao corpo, a conferência fecha a corrida em
+        ''' vez de só repeti-la.
+        '''
+        ''' <b>Vazia é "não deu para saber"</b>, e quem confere trata isso como
+        ''' "não é a pasta autorizada". Ver <see cref="PastaDoItem"/>.
+        ''' </summary>
+        Public ReadOnly Property Pasta As FolderKey
+
         Friend Sub New(item As ItemKey, changeKey As String, assunto As String,
                        remetente As String, destinatarios As IEnumerable(Of String),
                        corpo As String, ehHtml As Boolean, corpoCompleto As Boolean,
-                       temAnexo As Boolean?, Optional embutidas As Integer? = Nothing)
+                       temAnexo As Boolean?, Optional embutidas As Integer? = Nothing,
+                       Optional pasta As FolderKey = Nothing)
             Me.Item = item
+            Me.Pasta = If(pasta, New FolderKey("", ""))
             Me.ChangeKey = If(changeKey, "")
             Me.Assunto = If(assunto, "")
             Me.Remetente = If(remetente, "")

@@ -163,6 +163,13 @@ Friend NotInheritable Class WatcherBroker
         Return Fora(Of OperationResult(Of IReadOnlyList(Of MessageSnapshot)))()
     End Function
 
+    Public Function GetItemFoldersAsync(items As IReadOnlyList(Of ItemKey),
+                                        cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of Iris.Model.PastaDoItem))) _
+        Implements IOutlookBroker.GetItemFoldersAsync
+        Return Fora(Of OperationResult(Of IReadOnlyList(Of Iris.Model.PastaDoItem)))()
+    End Function
+
     Public Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
                                               cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading))) _

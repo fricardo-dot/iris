@@ -984,6 +984,18 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        Public Async Function GetItemFoldersAsync(items As IReadOnlyList(Of ItemKey),
+                                                  cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of PastaDoItem))) _
+            Implements IOutlookBroker.GetItemFoldersAsync
+
+            ' Leitura pura: ReadAsync, com retry. Nada aqui escreve.
+            Return Await ReadAsync(Of IReadOnlyList(Of PastaDoItem))(
+                "outlook.getItemFolders",
+                Function(app, ns) PastasDosItens.Ler(ns, items),
+                cancel)
+        End Function
+
         Public Async Function ProbeLabelSemanticsAsync(item As ItemKey,
                                                        cancel As CancellationToken) _
             As Task(Of OperationResult(Of NamedPropertyProbe)) _

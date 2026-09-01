@@ -709,6 +709,47 @@ Friend NotInheritable Class FakeBroker
             OperationResult(Of IReadOnlyList(Of MessageSnapshot)).Ok(saida))
     End Function
 
+    ''' <summary>
+    ''' <b>Em que pasta o Outlook diz que cada item está.</b>
+    '''
+    ''' Sem isto o portão nega tudo, e é de propósito: o fake não pode <i>supor</i>
+    ''' a pasta, porque supor é exatamente o defeito que esta leitura existe para
+    ''' consertar. Um teste que precisa do caminho feliz declara a pasta;
+    ''' um teste que quer a mensagem "em outro lugar" declara outra.
+    ''' </summary>
+    Public Property PastaDeTodos As FolderKey
+
+    ''' <summary>Por item, quando o teste precisa de pastas diferentes.</summary>
+    Public Property PastaDoItem As Func(Of ItemKey, FolderKey)
+
+    ''' <summary>
+    ''' A resposta inteira, para quem precisa responder por item que NÃO foi
+    ''' pedido — a mesma forma que <c>Anexos</c> e <c>Rotulos</c> têm, e pelo
+    ''' mesmo motivo: é assim que se finge um provedor que devolve linha a mais.
+    ''' </summary>
+    Public Property Pastas As Func(Of IReadOnlyList(Of ItemKey),
+                                   OperationResult(Of IReadOnlyList(Of Iris.Model.PastaDoItem)))
+
+    Public Function GetItemFoldersAsync(items As IReadOnlyList(Of ItemKey),
+                                        cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of Iris.Model.PastaDoItem))) _
+        Implements IOutlookBroker.GetItemFoldersAsync
+        Chamadas.Add("outlook.getItemFolders")
+        If Pastas IsNot Nothing Then Return Task.FromResult(Pastas(items))
+
+        If PastaDoItem Is Nothing AndAlso PastaDeTodos Is Nothing Then
+            Return ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of Iris.Model.PastaDoItem)))()
+        End If
+
+        Dim saida As New List(Of Iris.Model.PastaDoItem)()
+        For Each k In items
+            Dim onde = If(PastaDoItem IsNot Nothing, PastaDoItem(k), PastaDeTodos)
+            saida.Add(New Iris.Model.PastaDoItem(k, onde))
+        Next
+        Return Task.FromResult(
+            OperationResult(Of IReadOnlyList(Of Iris.Model.PastaDoItem)).Ok(saida))
+    End Function
+
     Public Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
                                               cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading))) _

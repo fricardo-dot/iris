@@ -129,7 +129,8 @@ Namespace Global.Iris.Tests
                                             Optional versao As String = Nothing) As MessageSnapshot
             Return New MessageSnapshot(Chave(n), If(versao, $"CK-{n}"), assunto, remetente,
                                        If(destinatarios, {"para@x.invalido"}),
-                                       corpo, ehHtml, corpoCompleto:=True, temAnexo:=temAnexo)
+                                       corpo, ehHtml, corpoCompleto:=True, temAnexo:=temAnexo,
+                                       pasta:=Pasta)
         End Function
 
         ''' <summary>
@@ -241,6 +242,11 @@ Namespace Global.Iris.Tests
         ''' </summary>
         Private Shared Function BrokerBom() As FakeBroker
             Dim b As New FakeBroker()
+            ' A PASTA OBSERVADA, e ela precisa ser declarada agora: o portao
+            ' passou a conferir a pasta contra o Outlook em vez de contra a
+            ' afirmacao de quem pediu. Um fake que a supusesse esconderia
+            ' exatamente o defeito que essa leitura existe para pegar.
+            b.PastaDeTodos = Pasta
             b.Rotulos = Function(chaves) OperationResult(Of IReadOnlyList(Of LabelReading)).
                 Ok(chaves.Select(Function(k) Listado(Numero(k))).ToList())
             b.Anexos = Function(chaves) OperationResult(Of IReadOnlyList(Of AttachmentPresence)).
@@ -856,6 +862,13 @@ Namespace Global.Iris.Tests
                 b.Anexos = Function(chaves) OperationResult(Of IReadOnlyList(Of AttachmentPresence)).
                     Ok({New AttachmentPresence(Chave(1), False),
                         New AttachmentPresence(Chave(2), False)})
+                ' A PASTA TAMBEM RESPONDE PELOS DOIS. Sem isto o portao nega o item
+                ' 2 por pasta desconhecida, e a recusa deixa de ser a da COBERTURA --
+                ' que e o que este teste mede. Fingir o provedor que devolve linha a
+                ' mais exige finge-lo por inteiro, em todas as leituras.
+                b.Pastas = Function(chaves) OperationResult(Of IReadOnlyList(Of Iris.Model.PastaDoItem)).
+                    Ok({New Iris.Model.PastaDoItem(Chave(1), Pasta),
+                        New Iris.Model.PastaDoItem(Chave(2), Pasta)})
                 Dim p As New ProvedorQueRegistra()
                 Dim vm = Montar(b, p, db)
 

@@ -70,7 +70,7 @@ Namespace Global.Iris.Tests
         ''' </summary>
         <TestMethod>
         Public Sub Anexo_lido_como_TEM_chega_ao_portao_como_tem()
-            Dim b As New FakeBroker()
+            Dim b As New FakeBroker() With {.PastaDeTodos = Pasta}
             b.Anexos = Function(itens) Anexo(True)
 
             Dim c = Montar(b).Classificar()
@@ -89,7 +89,7 @@ Namespace Global.Iris.Tests
         ''' </summary>
         <TestMethod>
         Public Sub Anexo_que_nao_deu_para_contar_conta_como_TEM()
-            Dim b As New FakeBroker()
+            Dim b As New FakeBroker() With {.PastaDeTodos = Pasta}
             b.Anexos = Function(itens) Anexo(Nothing)
 
             Assert.IsTrue(Montar(b).Classificar()(0).TemAnexo,
@@ -105,7 +105,7 @@ Namespace Global.Iris.Tests
         ''' </summary>
         <TestMethod>
         Public Sub Falha_na_leitura_de_anexo_conta_como_TEM()
-            Dim b As New FakeBroker()
+            Dim b As New FakeBroker() With {.PastaDeTodos = Pasta}
             b.Anexos = Function(itens) OperationResult(Of IReadOnlyList(Of AttachmentPresence)).
                                        Fail(ErrorKind.Busy, "sem resposta")
 
@@ -124,7 +124,7 @@ Namespace Global.Iris.Tests
         ''' </summary>
         <TestMethod>
         Public Sub Controle_sem_anexo_a_classificacao_diz_que_NAO_tem()
-            Dim b As New FakeBroker()
+            Dim b As New FakeBroker() With {.PastaDeTodos = Pasta}
             b.Anexos = Function(itens) Anexo(False)
 
             Assert.IsFalse(Montar(b).Classificar()(0).TemAnexo)
@@ -138,7 +138,7 @@ Namespace Global.Iris.Tests
         ''' </summary>
         <TestMethod>
         Public Sub Sem_selecao_nao_ha_ida_ao_COM()
-            Dim b As New FakeBroker()
+            Dim b As New FakeBroker() With {.PastaDeTodos = Pasta}
             Dim c As New ContextoDoOutlook(
                 b, Destino(),
                 Function() (Pasta, CType(Array.Empty(Of ItemKey)(), IReadOnlyList(Of ItemKey))))

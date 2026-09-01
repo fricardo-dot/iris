@@ -388,6 +388,22 @@ Namespace Global.Iris.Core
             As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading)))
 
         ''' <summary>
+        ''' <b>Em que pasta cada mensagem está</b> — perguntado ao Outlook, e não
+        ''' declarado por quem chama.
+        '''
+        ''' O portão autoriza por pasta, e a pasta de cada mensagem vinha do mesmo
+        ''' chamador que dizia qual pasta era o pedido: a comparação era entre duas
+        ''' cópias da mesma afirmação. Ver <see cref="PastaDoItem"/>.
+        '''
+        ''' <b>Não lê corpo</b>, de propósito: o portão decide antes de qualquer
+        ''' leitura de conteúdo, e juntar as duas seria ler o corpo para descobrir
+        ''' se podia lê-lo.
+        ''' </summary>
+        Function GetItemFoldersAsync(items As IReadOnlyList(Of ItemKey),
+                                     cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of PastaDoItem)))
+
+        ''' <summary>
         ''' O rótulo é projetável como coluna de <c>Table</c> nesta pasta?
         '''
         ''' Existe porque classificar por item custa uma ida ao COM por

@@ -100,12 +100,51 @@ Namespace Global.Iris.App.ViewModels
             If Not r.Succeeded Then Return Array.Empty(Of MessageClassification)()
 
             Dim anexo = Anexos(sel.Itens)
+            Dim onde = PastasObservadas(sel.Itens)
 
             Return r.Value.Select(
                 Function(l) New MessageClassification(
-                    l.Item, sel.Pasta, l,
+                    l.Item, PastaDe(onde, l.Item.EntryId), l,
                     temAnexo:=TemAnexo(anexo, l.Item.EntryId),
                     embutidas:=Embutidas(anexo, l.Item.EntryId))).ToList()
+        End Function
+
+        ''' <summary>
+        ''' <b>A pasta que o Outlook diz, e não a que o chamador disse.</b>
+        '''
+        ''' Esta linha era <c>sel.Pasta</c> — a mesma pasta que vai no pedido. A
+        ''' regra do portão <i>"mensagem de outra pasta nega"</i> comparava a
+        ''' afirmação do chamador com ela mesma, e sempre concordava.
+        '''
+        ''' No caminho por mensagem isso quase não doía: a seleção era a pasta
+        ''' aberta, e a lista viera dela. Na classificação em lote passou a doer,
+        ''' porque as chaves vêm do cache — um retrato de quando a varredura rodou.
+        ''' Uma mensagem movida para uma pasta confidencial depois disso sairia sob
+        ''' a autorização da pasta antiga. Achado por revisão externa em 01/09/2026.
+        '''
+        ''' <b>Falha de leitura devolve pasta vazia</b>, que nunca é igual à do
+        ''' pedido — então o portão nega, e nega dizendo por quê.
+        ''' </summary>
+        Private Function PastasObservadas(itens As IReadOnlyList(Of ItemKey)) _
+                                          As Dictionary(Of String, FolderKey)
+            Dim saida As New Dictionary(Of String, FolderKey)(StringComparer.Ordinal)
+            Dim r = _broker.GetItemFoldersAsync(itens, CancellationToken.None).
+                    GetAwaiter().GetResult()
+            If Not r.Succeeded OrElse r.Value Is Nothing Then Return saida
+            For Each p In r.Value
+                If p Is Nothing OrElse p.Item Is Nothing Then Continue For
+                saida(p.Item.EntryId) = p.Pasta
+            Next
+            Return saida
+        End Function
+
+        Private Shared Function PastaDe(mapa As Dictionary(Of String, FolderKey),
+                                        chave As String) As FolderKey
+            Dim achada As FolderKey = Nothing
+            If mapa.TryGetValue(chave, achada) AndAlso achada IsNot Nothing Then
+                Return achada
+            End If
+            Return New FolderKey("", "")
         End Function
 
         ''' <summary>
@@ -217,9 +256,24 @@ Namespace Global.Iris.App.ViewModels
                 Return saida
             End If
 
+            Dim pedida = _selecao().Pasta
+
             For i = 0 To itens.Count - 1
                 Dim retrato = lidos.Value(i)
                 If retrato Is Nothing Then Continue For
+
+                ' A PASTA E CONFERIDA DE NOVO, AQUI, presa a ESTE corpo.
+                '
+                ' O portao ja conferiu a pasta observada numa visita anterior, e
+                ' entre aquela visita e esta a mensagem pode ter se movido. Conferir
+                ' so la deixaria a janela aberta; conferir aqui a fecha, porque este
+                ' e o corpo que vira bytes. Mesmo desenho do anexo.
+                '
+                ' Pasta vazia -- "nao deu para ler" -- tambem para: nao saber onde a
+                ' mensagem esta nunca vira prova de que ela esta onde deveria.
+                If retrato.Pasta Is Nothing OrElse Not retrato.Pasta.Equals(pedida) Then
+                    Continue For
+                End If
 
                 Dim pronto = ContentPipeline.Preparar(retrato, FichaDe(itens(i)))
                 If Not pronto.Ok Then Continue For
