@@ -50,11 +50,24 @@ Namespace Global.Iris.Cache
     Public NotInheritable Class RotulosNoCache
 
         Private ReadOnly _conn As SqliteConnection
+        Private ReadOnly _db As CacheDatabase
 
         Public Sub New(db As CacheDatabase)
             If db Is Nothing Then Throw New ArgumentNullException(NameOf(db))
             _conn = db.Connection
+            _db = db
         End Sub
+
+        ''' <summary>
+        ''' O cache de onde estes rótulos vêm. Serve a quem precisa saber qual
+        ''' arquivo está sendo disputado — a porta da classificação é por cache,
+        ''' e não por processo.
+        ''' </summary>
+        Public ReadOnly Property Cache As CacheDatabase
+            Get
+                Return _db
+            End Get
+        End Property
 
         ''' <summary>
         ''' Grava os rótulos de um lote, todos ou nenhum.
@@ -79,6 +92,9 @@ Namespace Global.Iris.Cache
 
             Dim gravados = 0
             Dim foraDaPasta = 0
+
+            ' A TRAVA DA CONEXAO, antes da transacao. Ver CacheDatabase.Trava.
+            SyncLock _db.Trava
 
             ' A TRANSACAO COMECA ANTES DA CONFERENCIA, e IMEDIATA.
             '
@@ -173,6 +189,7 @@ Namespace Global.Iris.Cache
             End Using
 
             Return ResultadoDaGravacao.Feita(gravados, foraDaPasta)
+            End SyncLock
         End Function
 
         ''' <summary>
@@ -228,6 +245,7 @@ Namespace Global.Iris.Cache
 
             Dim achados As New Dictionary(Of String, RotuloObservado)(StringComparer.Ordinal)
 
+            SyncLock _db.Trava
             Using cmd = _conn.CreateCommand()
                 cmd.CommandText =
                     "SELECT i.provider_entry_id, l.label, l.confidence, " &
@@ -253,6 +271,8 @@ Namespace Global.Iris.Cache
                     End While
                 End Using
             End Using
+
+            End SyncLock
 
             Return achados
         End Function

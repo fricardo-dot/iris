@@ -384,7 +384,8 @@ Namespace Global.Iris.App.ViewModels
                     TimeZoneInfo.Local,
                     AddressOf AbrirDaFila,
                     AddressOf rotulos.Rotulo,
-                    AddressOf rotulos.QuantasRegras)
+                    AddressOf rotulos.QuantasRegras,
+                    quemFalta:=AddressOf Acervo.EnderecosSeusQueFaltam)
 
                 ' A CAIXA DIVIDIDA. Ela nao existia em producao: o ViewModel estava
                 ' construido e testado, e ninguem o montava -- entao a divisao por

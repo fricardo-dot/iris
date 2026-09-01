@@ -229,6 +229,15 @@ Namespace Global.Iris.Model
         ''' entregue depois de a mensagem mudar. Ausência não prova que nada
         ''' mudou; ela prova que ninguém sabe.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Sem reserva, não se solta reserva de ninguém.</b>
+        '''
+        ''' O ramo sem identidade chamava a soltura sem conferir, e aí uma chamada
+        ''' sem reserva usurpava a vaga de uma rodada em voo: ela gravava por cima,
+        ''' liberava a mensagem para uma terceira rodada, e quando a rodada em voo
+        ''' terminasse a reserva dela já não existia. A identidade só protegia quem
+        ''' a apresentava. Achado por revisão externa em 01/09/2026.
+        ''' </summary>
         Public Function Guardar(chave As ItemKey, versao As String, texto As String,
                                 Optional reserva As Long? = Nothing) As Boolean
             If chave Is Nothing OrElse chave.IsEmpty Then Return False
@@ -242,8 +251,11 @@ Namespace Global.Iris.Model
                 If reserva.HasValue Then
                     If Not SoltarSeForMinha(chave, reserva) Then Return False
                     If reserva.Value <> _geracao Then Return False
-                Else
-                    SoltarSeForMinha(chave, Nothing)
+                ElseIf _emVoo.ContainsKey(chave) Then
+                    ' HA UMA RODADA EM VOO E ESTA CHAMADA NAO E ELA. Gravar aqui
+                    ' seria passar na frente de um trabalho ja pago, e liberar a
+                    ' vaga dele para uma terceira rodada.
+                    Return False
                 End If
 
                 If _dispensadas.Contains(chave) Then Return False

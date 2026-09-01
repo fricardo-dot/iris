@@ -159,7 +159,8 @@ Namespace Global.Iris.Outlook
                 ' isso que o Save nao manda pedido nenhum.
                 t.Save()
 
-                Return OperationResult(Of TaskInfo).Ok(Traduzir(t))
+                ' O SAVE ACONTECEU. Ver o comentario gemeo em Concluir.
+                Return DepoisDoSave(t, "criada")
             Catch ex As COMException
                 Return OperationResult(Of TaskInfo).Fail(
                     OutlookFailurePolicy.ClassifyFailure(
@@ -190,7 +191,13 @@ Namespace Global.Iris.Outlook
 
                 t.Complete = True
                 t.Save()
-                Return OperationResult(Of TaskInfo).Ok(Traduzir(t))
+
+                ' O SAVE ACONTECEU. Se a releitura falhar daqui para a frente, a
+                ' tarefa MUDOU e a identidade nova se perdeu -- e isso e
+                ' ambiguidade, nao sucesso. Ok(Nothing) dava ao chamador um
+                ' resultado formalmente bem-sucedido sem tarefa e sem EntryID.
+                ' Achado por revisao externa em 01/09/2026.
+                Return DepoisDoSave(t, "concluida")
             Catch ex As COMException
                 Return OperationResult(Of TaskInfo).Fail(
                     OutlookFailurePolicy.ClassifyFailure(
@@ -259,6 +266,24 @@ Namespace Global.Iris.Outlook
         ''' Relê a tarefa. <b>Depois</b> do <c>Save</c>, sempre: o
         ''' <c>EntryID</c> pode ter mudado.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Depois do <c>Save</c>, releitura que falha é ambiguidade.</b>
+        '''
+        ''' A mutação aconteceu; o que se perdeu foi a identidade nova. Devolver
+        ''' sucesso com <c>Nothing</c> — ou com uma chave vazia, que <c>Traduzir</c>
+        ''' também sabe produzir — dava ao chamador um resultado formalmente bom e
+        ''' inutilizável, e sem como notar. É a regra do projeto: <i>toda operação
+        ''' que salva devolve a identidade nova</i>.
+        ''' </summary>
+        Private Function DepoisDoSave(t As OL.TaskItem, oQue As String) As OperationResult(Of TaskInfo)
+            Dim descrita = Traduzir(t)
+            If descrita Is Nothing OrElse descrita.Key Is Nothing OrElse descrita.Key.IsEmpty Then
+                Return OperationResult(Of TaskInfo).Fail(ErrorKind.Ambiguous,
+                    $"a tarefa foi {oQue} e a identidade nova nao pode ser lida")
+            End If
+            Return OperationResult(Of TaskInfo).Ok(descrita)
+        End Function
+
         Private Function Traduzir(t As OL.TaskItem) As TaskInfo
             Try
                 Return New TaskInfo With {

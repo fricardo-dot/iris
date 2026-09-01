@@ -128,6 +128,54 @@ Namespace Global.Iris.Integration
         ''' respondida virava pendência. Achado por revisão externa em
         ''' 31/08/2026.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Endereços que enviaram de dentro da SUA pasta de Enviados e que não
+        ''' estão em <c>identidades.txt</c>.</b>
+        '''
+        ''' Existe por causa de um erro que não tinha como ser notado. A direção de
+        ''' uma conversa sai do remetente contra o conjunto das suas identidades, e
+        ''' a proteção de "não sei" só funciona quando o conjunto está <i>vazio</i>.
+        ''' Com ele parcialmente preenchido — um alias faltando, um X.500 novo —,
+        ''' uma mensagem que <b>você</b> enviou é classificada como
+        ''' <c>DoOutro</c> com toda a confiança: a conversa entra na fila como
+        ''' possível resposta sua, e agora também pode disparar um rascunho
+        ''' automático para algo que você já respondeu.
+        '''
+        ''' Não dá para adivinhar qual endereço é seu. Dá para notar o sintoma:
+        ''' <b>numa pasta de enviados, quem envia é você</b>. Um endereço que
+        ''' aparece ali e não está no arquivo é, quase sempre, uma identidade sua
+        ''' que falta cadastrar.
+        '''
+        ''' <b>É indício, e não prova</b> — encaminhamento automático e caixa
+        ''' compartilhada põem endereços de terceiros ali. Por isso isto vira uma
+        ''' <i>ressalva</i> na tela, e não uma correção automática: o programa
+        ''' cadastrando identidade sozinho mudaria quem está na sua fila sem você
+        ''' saber. Achado por revisão externa em 01/09/2026.
+        ''' </summary>
+        Public Function EnderecosSeusQueFaltam(eu As MinhasIdentidades) As IReadOnlyList(Of String)
+            If eu Is Nothing Then Return Array.Empty(Of String)()
+
+            Dim achados As New List(Of String)()
+            Dim vistos As New HashSet(Of String)(StringComparer.OrdinalIgnoreCase)
+
+            For Each pasta In _acervo.Pastas
+                If Not EhDeEnviados(pasta.Nome) Then Continue For
+                If Not pasta.Manifesto.GenerationKey.HasValue Then Continue For
+
+                For Each item In pasta.Manifesto.Items
+                    If item.Presence <> PresenceState.Presente Then Continue For
+
+                    Dim de = If(item.SenderAddress, "").Trim()
+                    If de.Length = 0 Then Continue For
+                    If eu.DirecaoDe(de) <> Direcao.DoOutro Then Continue For
+
+                    If vistos.Add(de) Then achados.Add(de)
+                Next
+            Next
+
+            Return achados
+        End Function
+
         Friend Function CoberturaDosEnviados() As IReadOnlyDictionary(Of String, DateTimeOffset)
             Dim mapa As New Dictionary(Of String, DateTimeOffset)(StringComparer.Ordinal)
 

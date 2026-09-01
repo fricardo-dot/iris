@@ -1785,6 +1785,31 @@ Namespace Global.Iris.App.ViewModels
                             "conteúdo chegou ao provedor. Isso ficou registrado." &
                             If(r.CodigoHttp.HasValue,
                                $" O provedor respondeu HTTP {r.CodigoHttp.Value}.", "")
+                ' CADA DESFECHO DIZ O QUE ACONTECEU.
+                '
+                ' Os tres caiam na mesma frase, e ela nao mentia sobre o egress --
+                ' omitia a falha. O dono nao conseguia distinguir "o diario
+                ' obrigatorio falhou" de "o provedor nao esta configurado", e as
+                ' duas pedem coisas diferentes dele. Achado por revisao externa em
+                ' 01/09/2026.
+                Case AssistOutcomeKind.SemDiario
+                    Resultado = ""
+                    Aviso = "Nada saiu deste computador — e não saiu porque o " &
+                            "registro obrigatório do envio falhou. Sem registro o " &
+                            "Iris não transmite. Veja se o cache está acessível."
+
+                Case AssistOutcomeKind.Recusado
+                    Resultado = ""
+                    Aviso = "Nada saiu deste computador: a autorização não cobriu " &
+                            "este pedido. Isso é o cofre recusando o que o portão " &
+                            "tinha deixado passar, e quase sempre quer dizer que a " &
+                            "mensagem mudou entre a leitura e o envio."
+
+                Case AssistOutcomeKind.NaoComecou
+                    Resultado = ""
+                    Aviso = "Nada saiu deste computador: o provedor não está pronto. " &
+                            "Falta o endereço, a credencial, ou ele não é HTTPS."
+
                 Case Else
                     Resultado = ""
                     Aviso = "A operação não foi feita, e nada saiu deste computador."

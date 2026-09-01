@@ -39,6 +39,36 @@ Namespace Global.Iris.Cache
         Private ReadOnly _conn As SqliteConnection
         Private _disposed As Boolean
 
+        ''' <summary>
+        ''' <b>A trava desta conexão — e ela existe porque a conexão é uma só.</b>
+        '''
+        ''' <c>SqliteConnection</c> não tem contrato de uso simultâneo. O WAL
+        ''' coordena <i>conexões diferentes</i>; ele não torna uma conexão
+        ''' reentrante. Um leitor aberto enquanto outro caminho abre
+        ''' <c>BEGIN IMMEDIATE</c> é erro em tempo de execução, e o erro sai no
+        ''' caminho azarado — não no que causou.
+        '''
+        ''' O projeto vinha dizendo "quem chama serializa", e isso bastou enquanto
+        ''' só a interface lia. Deixou de bastar quando a classificação passou a
+        ''' gravar em lote a partir de outra thread, e a tela a ler rótulos por
+        ''' linha desenhada: três caminhos, três travas diferentes, nenhuma delas
+        ''' protegendo o recurso que os três disputam. Achado por revisão externa
+        ''' em 01/09/2026.
+        '''
+        ''' <b>É reentrante</b> (é um <c>Monitor</c>), então uma leitura composta —
+        ''' o leitor de rótulos chamando o do cache — não trava a si mesma.
+        '''
+        ''' <b>E ela protege a conexão, não a corretude do que se lê.</b> Duas
+        ''' consultas seguidas sob a mesma trava não formam um retrato atômico —
+        ''' para isso é preciso uma transação, e é o que a gravação de rótulos faz.
+        ''' </summary>
+        Public ReadOnly Property Trava As Object
+            Get
+                Return _trava
+            End Get
+        End Property
+        Private ReadOnly _trava As New Object()
+
         Public ReadOnly Property Connection As SqliteConnection
             Get
                 Return _conn

@@ -159,7 +159,20 @@ Namespace Global.Iris.Outlook
                 ' deste modulo, que e o unico caminho de envio deste objeto.
                 c.Save()
 
-                Return OperationResult(Of ContactInfo).Ok(Traduzir(c))
+                ' O SAVE ACONTECEU. Se a releitura falhar daqui para a frente, o
+                ' contato EXISTE e a identidade nova se perdeu -- e isso e
+                ' ambiguidade, nao sucesso. Devolver Ok(Nothing) dava ao chamador
+                ' um resultado formalmente bem-sucedido sem contato e sem EntryID,
+                ' e sem como saber que faltava alguma coisa. Achado por revisao
+                ' externa em 01/09/2026.
+                Dim descrito = Traduzir(c)
+                If descrito Is Nothing OrElse descrito.Key Is Nothing OrElse
+                   descrito.Key.IsEmpty Then
+                    Return OperationResult(Of ContactInfo).Fail(ErrorKind.Ambiguous,
+                        "o contato foi criado e a identidade nova nao pode ser lida")
+                End If
+
+                Return OperationResult(Of ContactInfo).Ok(descrito)
             Catch ex As COMException
                 Return OperationResult(Of ContactInfo).Fail(
                     OutlookFailurePolicy.ClassifyFailure(

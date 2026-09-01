@@ -65,7 +65,7 @@ Namespace Global.Iris.Outlook
                 ' digitar qualquer coisa, para sobreviver a um fechamento
                 ' acidental e ter chave estável.
                 item.Save()
-                Return OperationResult(Of DraftInfo).Ok(Descrever(item, ns))
+                Return DepoisDoSave(Descrever(item, ns))
             Finally
                 ComHelpers.Release(item)
             End Try
@@ -97,7 +97,7 @@ Namespace Global.Iris.Outlook
                     ' é citação por inteiro.
                     PlantarMarca(resposta, temCitacao:=True)
                     resposta.Save()
-                    Return OperationResult(Of DraftInfo).Ok(Descrever(resposta, ns))
+                    Return DepoisDoSave(Descrever(resposta, ns))
                 Finally
                     ComHelpers.Release(resposta)
                 End Try
@@ -130,7 +130,7 @@ Namespace Global.Iris.Outlook
 
                     PlantarMarca(encaminhada, temCitacao:=True)
                     encaminhada.Save()
-                    Return OperationResult(Of DraftInfo).Ok(Descrever(encaminhada, ns))
+                    Return DepoisDoSave(Descrever(encaminhada, ns))
                 Finally
                     ComHelpers.Release(encaminhada)
                 End Try
@@ -165,7 +165,7 @@ Namespace Global.Iris.Outlook
 
                 ' O EntryID é relido DEPOIS do Save: ele muda quando o item é
                 ' movido, e a Fase 0 mediu isso no critério D3.
-                Return OperationResult(Of DraftInfo).Ok(Descrever(item, ns))
+                Return DepoisDoSave(Descrever(item, ns))
             Finally
                 ComHelpers.Release(item)
             End Try
@@ -308,7 +308,7 @@ Namespace Global.Iris.Outlook
                 End Try
 
                 item.Save()
-                Return OperationResult(Of DraftInfo).Ok(Descrever(item, ns))
+                Return DepoisDoSave(Descrever(item, ns))
             Finally
                 ComHelpers.Release(item)
             End Try
@@ -426,7 +426,7 @@ Namespace Global.Iris.Outlook
                 End Try
 
                 item.Save()
-                Return OperationResult(Of DraftInfo).Ok(Descrever(item, ns))
+                Return DepoisDoSave(Descrever(item, ns))
             Finally
                 ComHelpers.Release(item)
             End Try
@@ -787,6 +787,29 @@ Namespace Global.Iris.Outlook
         End Function
 
         ' ===================================================================
+
+        ''' <summary>
+        ''' <b>Depois do <c>Save</c>, chave vazia é ambiguidade — não sucesso.</b>
+        '''
+        ''' <c>Descrever</c> engole falha de leitura: <c>Texto</c> devolve vazio,
+        ''' e <c>StoreIdDe</c> também tem caminhos defensivos. Então um erro COM
+        ''' transitório na releitura do <c>EntryID</c> novo produzia um rascunho
+        ''' salvo com uma chave que ninguém consegue reabrir — devolvido como
+        ''' sucesso, e sem como o classificador de mutação do broker enxergar,
+        ''' porque a exceção nunca subiu.
+        '''
+        ''' É a regra do projeto: <i>toda operação que salva devolve a identidade
+        ''' nova</i>, e o <c>EntryID</c> pode mudar num <c>Save</c>. Achado por
+        ''' revisão externa em 01/09/2026.
+        ''' </summary>
+        Private Function DepoisDoSave(info As DraftInfo) As OperationResult(Of DraftInfo)
+            If info Is Nothing OrElse info.Key Is Nothing OrElse
+               info.Key.Item Is Nothing OrElse info.Key.Item.IsEmpty Then
+                Return OperationResult(Of DraftInfo).Fail(ErrorKind.Ambiguous,
+                    "o rascunho foi salvo e a identidade nova nao pode ser lida")
+            End If
+            Return OperationResult(Of DraftInfo).Ok(info)
+        End Function
 
         Private Function Descrever(item As OL.MailItem, ns As OL.NameSpace) As DraftInfo
             Dim formato = If(Numero(Function() CInt(item.BodyFormat)) = CInt(OL.OlBodyFormat.olFormatHTML),

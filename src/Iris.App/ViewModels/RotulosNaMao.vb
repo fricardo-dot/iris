@@ -28,9 +28,29 @@ Namespace Global.Iris.App.ViewModels
     ''' <see cref="LeituraDeRotulos.PastasLidas"/>, e quem mostra a tela precisa
     ''' dela: zero pasta lida com pastas no acervo é falha, não é caixa limpa.
     '''
-    ''' <b>E ela não repete a falha a cada linha.</b> O carimbo é gravado mesmo
-    ''' quando a leitura falha; senão cada linha desenhada tentaria abrir o banco
-    ''' de novo, e uma falha barata viraria trinta.
+    ''' <b>E a falha não fica guardada.</b> Uma leitura que estoura devolve vazio
+    ''' <i>desta vez</i> e não carimba nada — a próxima tenta de novo. A versão
+    ''' anterior carimbava a falha para não repeti-la a cada linha desenhada, e o
+    ''' preço era pior do que o problema: uma falha transitória — o banco ocupado
+    ''' por um lote de classificação, por exemplo — congelava "nenhum rótulo" até
+    ''' a próxima publicação, que pode não vir nunca.
+    '''
+    ''' O custo de tentar de novo por linha é uma consulta a mais numa tela que
+    ''' já está errada; o custo de congelar é uma tela que mente até o programa
+    ''' ser reaberto. Achado por revisão externa em 01/09/2026.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O CARIMBO NÃO VÊ A CLASSIFICAÇÃO</b>
+    '''
+    ''' Ele é o contador de recargas do acervo, e gravar rótulo <b>não</b>
+    ''' republica pasta nenhuma. Uma passagem de classificação que termine com a
+    ''' tela aberta não move o carimbo, e a leitura guardada continuaria valendo
+    ''' — os rótulos novos só apareceriam numa recarga futura por outro motivo.
+    '''
+    ''' Por isso existe <see cref="Esquecer"/>, e quem grava rótulo tem de
+    ''' chamá-lo. Não é elegante depender de quem chama; a alternativa era o
+    ''' cache de rótulos saber avisar a tela, e isso é uma dependência de baixo
+    ''' para cima que este projeto não tem em lugar nenhum.
     ''' </summary>
     Friend NotInheritable Class RotulosNaMao
 
@@ -51,17 +71,33 @@ Namespace Global.Iris.App.ViewModels
                 Dim agora = If(_carimbo Is Nothing, 0, _carimbo())
                 If _lida IsNot Nothing AndAlso agora = _de Then Return _lida
 
+                Dim nova As LeituraDeRotulos = Nothing
                 Try
-                    _lida = If(_ler Is Nothing, Nothing, _ler())
+                    nova = If(_ler Is Nothing, Nothing, _ler())
                 Catch
-                    _lida = Nothing
+                    nova = Nothing
                 End Try
 
-                If _lida Is Nothing Then _lida = LeituraDeRotulos.Vazia()
+                ' FALHA NAO CARIMBA. Ver o cabecalho.
+                If nova Is Nothing Then Return LeituraDeRotulos.Vazia()
+
+                _lida = nova
                 _de = agora
                 Return _lida
             End SyncLock
         End Function
+
+        ''' <summary>
+        ''' Joga fora a leitura guardada. <b>Quem grava rótulo chama isto</b> — o
+        ''' carimbo do acervo não enxerga gravação de rótulo, porque gravar rótulo
+        ''' não republica pasta nenhuma.
+        ''' </summary>
+        Public Sub Esquecer()
+            SyncLock _trava
+                _lida = Nothing
+                _de = -1
+            End SyncLock
+        End Sub
 
         ''' <summary>O rótulo desta mensagem, ou vazio.</summary>
         Public Function Rotulo(chave As ItemKey) As String

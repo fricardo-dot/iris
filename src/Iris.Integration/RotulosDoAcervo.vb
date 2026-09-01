@@ -49,18 +49,26 @@ Namespace Global.Iris.Integration
 
         Private ReadOnly _acervo As AcervoDeTodasAsPastas
         Private ReadOnly _cache As RotulosNoCache
+        Private ReadOnly _db As CacheDatabase
 
         Public Sub New(acervo As AcervoDeTodasAsPastas, cache As RotulosNoCache)
             If acervo Is Nothing Then Throw New ArgumentNullException(NameOf(acervo))
             If cache Is Nothing Then Throw New ArgumentNullException(NameOf(cache))
             _acervo = acervo
             _cache = cache
+            _db = cache.Cache
         End Sub
 
         ''' <summary>
         ''' Lê tudo o que está publicado, em todas as pastas.
         ''' </summary>
         Public Function Ler() As LeituraDeRotulos
+            ' UMA CONSULTA POR PASTA, TODAS SOB A MESMA TRAVA.
+            '
+            ' Nao e um retrato atomico -- a trava protege a conexao, nao a
+            ' corretude do conjunto --, mas impede que uma gravacao de lote se
+            ' meta entre duas das consultas e derrube as duas.
+            SyncLock _db.Trava
             Dim vistos As New Dictionary(Of ItemKey, RotuloObservado)()
             Dim brigados As New HashSet(Of ItemKey)()
             Dim pastas = 0
@@ -106,6 +114,7 @@ Namespace Global.Iris.Integration
             Next
 
             Return New LeituraDeRotulos(rotulos, casadas, brigados.Count, pastas)
+            End SyncLock
         End Function
 
         ''' <summary>

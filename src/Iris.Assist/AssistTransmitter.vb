@@ -150,6 +150,36 @@ Namespace Global.Iris.Assist
                                  montar As Func(Of EnvelopeResult),
                                  ct As CancellationToken) As AssistOutcome
 
+            ' NENHUMA EXCECAO SAI DAQUI SEM DESFECHO.
+            '
+            ' Os passos tinham cercas individuais -- Preparar, Pronto, Enviar e o
+            ' que passa por Duravel --, e os OUTROS nao: Avaliar, montar, Emitir e
+            ' Consumir subiam a excecao. O pior caso e o Consumir: a intencao ja
+            ' esta gravada, a linha fica "Intencionada", a excecao atravessa o
+            ' Task.Run, e o ViewModel -- que so tem Finally -- limpa o Ocupado sem
+            ' publicar aviso nenhum. O botao volta ao normal e o dono le isso como
+            ' "nao aconteceu nada".
+            '
+            ' A reconciliacao conserta a linha na proxima abertura; ate la, uma
+            ' sessao inteira com a falha invisivel. Achado por revisao externa em
+            ' 01/09/2026.
+            '
+            ' A cerca de fora devolve Recusado, e nao Ambiguo: ela so alcanca os
+            ' passos ANTERIORES a rede. O que acontece depois do primeiro byte
+            ' continua tendo o tratamento conservador de sempre, la dentro.
+            Try
+                Return Voar(pedido, classificar, montar, ct)
+            Catch ex As Exception
+                Return Parar(AssistOutcomeKind.Recusado, DisclosureNote.Nenhuma,
+                             DisclosureReason.ErroAntesDaRede)
+            End Try
+        End Function
+
+        Private Function Voar(pedido As PreflightRequest,
+                              classificar As Func(Of IReadOnlyList(Of MessageClassification)),
+                              montar As Func(Of EnvelopeResult),
+                              ct As CancellationToken) As AssistOutcome
+
             ' 1. o portao. O classificador so e INVOCADO se o preflight passar
             '    — quem garante isso e o DisclosureGate, e o motivo esta la.
             Dim portao As New DisclosureGate(_politica, _relogio)

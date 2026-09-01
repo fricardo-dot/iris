@@ -104,8 +104,18 @@ Namespace Global.Iris.Integration
         ''' esconderia uma espera de minutos atrás de uma chamada que parece
         ''' síncrona.
         ''' </summary>
+        ' A PORTA E POR CACHE, e nao por processo.
+        '
+        ' Um sinalizador unico recusava trabalho legitimo: duas janelas sobre
+        ' bancos diferentes nao disputam conexao, arquivo, pasta nem mensagem, e
+        ' a segunda levava JaEstaRodando enquanto a primeira esperava minutos de
+        ' rede. O recurso disputado e o CACHE. Achado por revisao externa em
+        ' 01/09/2026.
+        '
+        ' Tabela fraca: uma passagem que morra sem soltar nao segura o cache vivo
+        ' na memoria por causa da porta.
         Private Shared ReadOnly _porta As New Object()
-        Private Shared _rodando As Boolean
+        Private Shared ReadOnly _rodandoEm As New Runtime.CompilerServices.ConditionalWeakTable(Of Object, Object)()
 
         Private ReadOnly _acervo As AcervoDeTodasAsPastas
         Private ReadOnly _cache As RotulosNoCache
@@ -141,18 +151,20 @@ Namespace Global.Iris.Integration
                 Return ResultadoDaClassificacao.Parou(MotivoDaClassificacao.SemAsBordas)
             End If
 
+            Dim dono = _cache.Cache
             SyncLock _porta
-                If _rodando Then
+                Dim ja As Object = Nothing
+                If _rodandoEm.TryGetValue(dono, ja) Then
                     Return ResultadoDaClassificacao.Parou(MotivoDaClassificacao.JaEstaRodando)
                 End If
-                _rodando = True
+                _rodandoEm.Add(dono, dono)
             End SyncLock
 
             Try
                 Return Correr(pasta, regras, ativacao, quando, conteudo, envio)
             Finally
                 SyncLock _porta
-                    _rodando = False
+                    _rodandoEm.Remove(dono)
                 End SyncLock
             End Try
         End Function

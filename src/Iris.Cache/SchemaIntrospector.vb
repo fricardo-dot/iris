@@ -210,9 +210,22 @@ Namespace Global.Iris.Cache
                 Return
             End If
 
+            ' PROCURA A CLAUSULA, e nao o texto solto.
+            '
+            ' Procurar so a expressao dentro do DDL inteiro aceitava um banco
+            ' divergente que tivesse o texto esperado em QUALQUER lugar -- dentro
+            ' de outro CHECK, dentro de uma cadeia literal, ou de uma expressao
+            ' maior que a contem. O CHECK de `label` podia estar ausente e o
+            ' introspector dizia que a forma batia. Achado por revisao externa em
+            ' 01/09/2026.
+            '
+            ' Agora procura "check (<expressao>)" com os parenteses, que e como o
+            ' gerador escreve. Continua sendo comparacao de texto -- um CHECK
+            ' equivalente escrito de outro jeito e acusado --, e continua sendo o
+            ' lado certo de errar.
             Dim normal = Normalizar(sql)
             For Each chk In esperados
-                If Not normal.Contains(Normalizar(chk)) Then
+                If Not normal.Contains("check (" & Normalizar(chk) & ")") Then
                     diffs.Add($"{t.Name}: falta o CHECK ({chk})")
                 End If
             Next

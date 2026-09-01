@@ -593,6 +593,17 @@ Namespace Global.Iris.App.ViewModels
         ''' As mensagens presentes do acervo — a mesma lista que alimenta a fila,
         ''' pela mesma porta. Ver <c>FilaDoAcervo.Mensagens</c>.
         ''' </summary>
+        ''' <summary>
+        ''' Endereços que enviaram de dentro dos seus Itens Enviados e não estão em
+        ''' <c>identidades.txt</c> — quase sempre um alias seu que falta cadastrar.
+        ''' Ver <c>FilaDoAcervo.EnderecosSeusQueFaltam</c>.
+        ''' </summary>
+        Public Function EnderecosSeusQueFaltam(eu As Iris.Model.MinhasIdentidades) _
+                        As Collections.Generic.IReadOnlyList(Of String)
+            If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+            Return New Iris.Integration.FilaDoAcervo(_todasAsPastas).EnderecosSeusQueFaltam(eu)
+        End Function
+
         Public Function MensagensDoAcervo() As Collections.Generic.IReadOnlyList(Of Iris.Model.MensagemNaFila)
             If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
             Return New Iris.Integration.FilaDoAcervo(_todasAsPastas).Mensagens()

@@ -1113,7 +1113,19 @@ Namespace Global.Iris.Outlook
         Public Async Function SubscribeFolderAsync(folder As FolderKey, cancel As CancellationToken) _
             As Task(Of OperationResult(Of SubscriptionToken)) Implements IOutlookBroker.SubscribeFolderAsync
 
-            Return Await ReadAsync(Of SubscriptionToken)(
+            ' ASSINAR NAO E LEITURA, e por isso nao pode ter retry.
+            '
+            ' Ela faz tres AddHandler COM e insere a assinatura na tabela
+            ' local: e inscricao, nao consulta idempotente. Uma chamada
+            ' recusada e repetida DEPOIS de o Outlook ter aceitado o Advise
+            ' produz inscricao duplicada, ou um sink que existe de um lado e
+            ' nao do outro -- e a limpeza parcial so conhece os handlers que
+            ' chegaram a se registrar.
+            '
+            ' Nao e mutacao de dado do usuario, entao nao vira Ambiguous; mas
+            ' repetir automaticamente viola a regra declarada do projeto.
+            ' Achado por revisao externa em 01/09/2026.
+            Return Await SemRetryAsync(Of SubscriptionToken)(
                 "outlook.subscribeFolder",
                 Function(app, ns)
                     Dim pasta As OL.MAPIFolder = Nothing

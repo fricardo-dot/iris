@@ -45,6 +45,8 @@ Namespace Global.Iris.App.ViewModels
         ' inalcancavel e o mesmo defeito de guardar um dado que ninguem le.
         Private ReadOnly _pessoaProxima As Func(Of ItemKey, Boolean)
         Private ReadOnly _prazo As Func(Of ItemKey, DateTimeOffset?)
+        ' Enderecos que enviaram dos Enviados e nao estao em identidades.txt.
+        Private ReadOnly _quemFalta As Func(Of MinhasIdentidades, IReadOnlyList(Of String))
 
         Public Sub New(montar As Func(Of MinhasIdentidades, DateTimeOffset, TimeZoneInfo,
                                        IEnumerable(Of String), MinhasIdentidades,
@@ -57,7 +59,8 @@ Namespace Global.Iris.App.ViewModels
                        Optional rotulo As Func(Of ItemKey, String) = Nothing,
                        Optional regrasCasadas As Func(Of ItemKey, Integer) = Nothing,
                        Optional pessoaProxima As Func(Of ItemKey, Boolean) = Nothing,
-                       Optional prazo As Func(Of ItemKey, DateTimeOffset?) = Nothing)
+                       Optional prazo As Func(Of ItemKey, DateTimeOffset?) = Nothing,
+                       Optional quemFalta As Func(Of MinhasIdentidades, IReadOnlyList(Of String)) = Nothing)
             _montar = montar
             _dispensas = If(dispensas, New DispensasDaFila())
             _identidades = If(identidades, Function() New MinhasIdentidades({}))
@@ -68,6 +71,7 @@ Namespace Global.Iris.App.ViewModels
             _regrasCasadas = regrasCasadas
             _pessoaProxima = pessoaProxima
             _prazo = prazo
+            _quemFalta = quemFalta
 
             AtualizarCommand = New RelayCommand(AddressOf Atualizar)
         End Sub
@@ -167,26 +171,28 @@ Namespace Global.Iris.App.ViewModels
         ''' outras três recusas.
         ''' </summary>
         Public Sub Atualizar()
+            ' O RETRATO BOM SO E APAGADO QUANDO HA OUTRO PARA POR NO LUGAR.
+            '
+            ' As tres saidas de falha limpavam as listas antes de qualquer coisa,
+            ' entao uma leitura que estourasse trocava dados validos por uma tela
+            ' vazia. A frase explicava a falha e o dono perdia a referencia que
+            ' ja tinha -- e a fila e a tela que ele abre de manha.
+            '
+            ' Manter o retrato velho tem um preco: ele fica na tela sem dizer que
+            ' e velho. A frase passa a dizer. Achado por revisao externa em
+            ' 01/09/2026.
             Dim r As ResultadoDaFila
             Try
                 r = _montar(_identidades(), _relogio(), _fuso,
                             _dispensas.Conversas(), _dispensas.Remetentes())
             Catch ex As Exception
-                Minhas.Clear()
-                Deles.Clear()
-                Respondeu = False
-                Ressalva = ""
                 Frase = "Não consegui ler o acervo agora (" & ex.GetType().Name &
-                        "). A fila não vale enquanto isso."
+                        "). " & OQueSobrou()
                 Return
             End Try
 
             If r Is Nothing Then
-                Minhas.Clear()
-                Deles.Clear()
-                Respondeu = False
-                Ressalva = ""
-                Frase = "O acervo não respondeu. A fila não vale enquanto isso."
+                Frase = "O acervo não respondeu. " & OQueSobrou()
                 Return
             End If
 
@@ -195,7 +201,7 @@ Namespace Global.Iris.App.ViewModels
 
             Respondeu = r.Respondeu
             Frase = FraseDe(r)
-            Ressalva = RessalvaDe(r)
+            Ressalva = Juntar(RessalvaDe(r), FaltamIdentidades())
 
             _ultimo = r
             If Not r.Respondeu Then Return
@@ -207,6 +213,21 @@ Namespace Global.Iris.App.ViewModels
         ''' Redesenha as duas listas a partir do retrato que já está na mão.
         ''' <b>Sem tocar no acervo</b> — ver o motivo em <see cref="PorPrioridade"/>.
         ''' </summary>
+        ''' <summary>
+        ''' A segunda metade da frase de falha: <b>o que ficou na tela</b>.
+        '''
+        ''' Com lista vazia, "a fila não vale" basta. Com linhas na tela, o dono
+        ''' precisa saber que o que ele está vendo é de antes — senão ele lê uma
+        ''' fila desatualizada como se fosse a de agora, que é pior do que não ver
+        ''' fila nenhuma.
+        ''' </summary>
+        Private Function OQueSobrou() As String
+            If Minhas.Count = 0 AndAlso Deles.Count = 0 Then
+                Return "A fila não vale enquanto isso."
+            End If
+            Return "O que está na tela é da leitura anterior."
+        End Function
+
         Private Sub Repovoar()
             ' NUNCA LIDA AINDA: aqui ler e o certo, e nao ha o que reordenar.
             ' A promessa e "ligar a ordem nao TROCA o que esta na tela"; com a
@@ -335,6 +356,45 @@ Namespace Global.Iris.App.ViewModels
         ''' são coisas diferentes, e somar as duas produziria um número sem
         ''' significado.
         ''' </summary>
+        ''' <summary>
+        ''' <b>A ressalva das identidades que faltam.</b>
+        '''
+        ''' Numa pasta de enviados, quem envia é o dono. Um endereço que aparece
+        ''' ali e não está em <c>identidades.txt</c> faz toda conversa dele entrar
+        ''' na fila como se fosse de outra pessoa — e agora também pode disparar um
+        ''' rascunho automático para algo que ele já respondeu.
+        '''
+        ''' A frase mostra <b>os endereços</b>, e não só a contagem: sem eles o dono
+        ''' não sabe o que escrever no arquivo. Três é o corte — a lista existe para
+        ''' ele reconhecer o alias, não para ser completa.
+        '''
+        ''' <b>Falha aqui não derruba a fila</b>: a ressalva é diagnóstico, e uma
+        ''' fila boa não pode sumir porque o diagnóstico estourou.
+        ''' </summary>
+        Private Function FaltamIdentidades() As String
+            If _quemFalta Is Nothing Then Return ""
+
+            Dim faltam As IReadOnlyList(Of String)
+            Try
+                faltam = _quemFalta(_identidades())
+            Catch
+                Return ""
+            End Try
+            If faltam Is Nothing OrElse faltam.Count = 0 Then Return ""
+
+            Dim alguns = String.Join(", ", faltam.Take(3))
+            Dim eOutros = If(faltam.Count > 3, $" e mais { faltam.Count - 3}", "")
+            Return $"{faltam.Count} endereço(s) enviaram dos seus Itens Enviados e não " &
+                   $"estão em identidades.txt ({alguns}{eOutros}) — enquanto faltarem, " &
+                   "as conversas deles aparecem como se fossem de outra pessoa"
+        End Function
+
+        Private Shared Function Juntar(a As String, b As String) As String
+            If a.Length = 0 Then Return b
+            If b.Length = 0 Then Return a
+            Return a & ". " & b
+        End Function
+
         Friend Shared Function RessalvaDe(r As ResultadoDaFila) As String
             If Not r.Respondeu Then Return ""
 

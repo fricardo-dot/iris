@@ -58,6 +58,15 @@ Namespace Global.Iris.Assist
         SemEvidenciaDeVersao
         ''' <summary>Anexo — fora do escopo da fase, por inteiro.</summary>
         AnexoForaDeEscopo
+        ''' <summary>
+        ''' <b>Um passo anterior à rede estourou.</b> Não é decisão do portão: é o
+        ''' transmissor recusando, em vez de deixar a exceção subir para um
+        ''' chamador que não sabe convertê-la em desfecho.
+        '''
+        ''' Entrou no <b>fim</b> do enum de propósito — o diário guarda o código, e
+        ''' inserir no meio reinterpretaria linhas já gravadas.
+        ''' </summary>
+        ErroAntesDaRede
     End Enum
 
     ''' <summary>Uma violação, presa ao item que a causou.</summary>
