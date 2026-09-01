@@ -1,8 +1,9 @@
 # Plano da IA do Iris
 
 > Estado em 31/08/2026: **as dez etapas estão executadas**, cada uma validada
-> uma vez por revisão externa. Suíte em **1407 verdes, nada pulado** — com o
-> Outlook clássico respondendo ao `GetActiveObject`.
+> uma vez por revisão externa — e depois **mais cinco revisões seguidas sobre o
+> conjunto**, que acharam onze defeitos graves e nove médios. Suíte em **1413
+> verdes, nada pulado**, com o Outlook clássico respondendo ao `GetActiveObject`.
 >
 > Este documento não existia enquanto o plano era executado: ele viveu na
 > conversa, e os commits foram o registro. Está escrito agora para o plano
@@ -161,6 +162,49 @@ dado para calibrá-los, ele falha e obriga quem os mudou a dizer por quê.
 
 ---
 
+## As cinco passadas do fechamento
+
+Depois de as dez etapas fecharem, cinco revisões seguidas — costura, segurança,
+concorrência, cache, testes —, cada uma recebendo os achados da anterior para não
+repetir. **Onze graves e nove médios.** As quatro que mais importam:
+
+**A ponte entre o cache e a tela não existia.** O cache guarda rótulo por
+*(pasta, encarnação, geração)*; a caixa dividida e a fila trabalham por `ItemKey`,
+que não carrega a pasta. Ninguém escrevia essa conversão — as dez etapas estavam
+testadas como ilhas, e o caminho entre elas era desenho, não código. E ela
+**perde informação**: a mesma mensagem em duas pastas pode ter dois rótulos, e
+escolher um seria escolher pela ordem de enumeração. Hoje discordância tira a
+mensagem do mapa e é contada.
+
+**O introspector do schema afirmava mais do que cumpria.** Não comparava `CHECK`,
+`ON DELETE` nem índice comum — então um banco em que `label` aceitasse texto
+arbitrário passava como "corresponde ao modelo". O `CHECK` é justamente a última
+linha entre um rótulo inventado e o cache.
+
+**Duas passagens de classificação simultâneas mandavam os mesmos corpos** ao
+provedor antes de qualquer disputa no SQLite. Divulgação duplicada não se desfaz
+com rollback.
+
+**Três testes mentiam, e um podia terminar sem executar asserção nenhuma:** o do
+ataque em bloco só afirmava quando o rótulo sorteado do controle não era `fyi` —
+uma vez em seis ele passava vazio, inclusive com o `Conferir` aceitando tudo.
+
+E entraram as costuras que não tinham teste: classificar de verdade, ler de
+verdade, e a mensagem aparecendo na gaveta certa.
+
+### O que as cinco passadas não consertaram
+
+- O controle do lote **não pega injeção dirigida a uma mensagem só**. Já estava
+  escrito; a revisão confirmou o alcance. Não há remédio dentro de um lote
+  compartilhado.
+- Em "perguntar ao acervo", o **texto** da resposta é prosa do modelo, e ele leu
+  conteúdo hostil. A etapa 1 garante o que *sai*; não garante o que volta. Passou
+  a estar escrito, junto com o que a citação prova: **origem, não sustentação**.
+- As contagens de `ResultadoDaClassificacao` continuam sem consumidor — quem as
+  consumiria é a borda de produção.
+
+---
+
 ## O que ficou aberto
 
 ### 1. A borda de produção não existe — e é o limite de tudo acima
@@ -180,28 +224,28 @@ Quem escrever a borda herda o resto dessas garantias. É a pendência do §28.2 
 ESCOPO, e ela continua sendo do dono: **o provedor e a credencial são escolha
 dele.**
 
-### 2. Em produção, a prioridade só conta dias — ou seja, não faz nada
+### 2. ~~A prioridade só conta dias~~ — ligada em 31/08/2026
 
-Este é mais grave do que eu tinha escrito, e só apareceu ao conferir o código de
-verdade em vez de confiar na memória.
+Estava assim, e era pior do que eu tinha escrito: o `MainViewModel` construía a
+fila **sem nenhuma das quatro fontes da nota**. Ligar "ordenar por prioridade"
+produzia exatamente a ordem por idade, que já era o padrão.
 
-`MainViewModel` constrói a `FilaViewModel` **sem nenhuma das quatro fontes da
-nota**: sem rótulo, sem regras casadas, sem pessoa próxima, sem prazo. Todas são
-`Optional` e todas ficam `Nothing`.
+A ponte `RotulosDoAcervo` → `RotulosNaMao` fechou isso: rótulo e regras casadas
+chegam à fila, lidos uma vez por retrato do acervo — e não uma consulta SQL por
+linha desenhada.
 
-O efeito: hoje, ligar "ordenar por prioridade" produz exatamente a ordem por
-idade, que já é o padrão. A parcela de espera é a única que existe, e a nota é os
-dias. **O botão não está errado; ele está desligado da própria informação.**
+**Continua faltando** ligar "pessoa próxima" aos Contatos e "prazo" às Tarefas.
+E, enquanto a borda do item 1 não existir, os rótulos são sempre vazios: as
+parcelas agora são *alcançáveis*, e ainda não têm o que contar. As duas coisas
+são diferentes, e só a segunda depende de você.
 
-E é consistente com o item 1 — os rótulos vêm da classificação, e a classificação
-não roda em produção porque a borda não existe. Ligar "pessoa próxima" aos
-Contatos e "prazo" às Tarefas é trabalho pequeno; ligar o rótulo depende da borda.
+### 3. A caixa dividida existe, e ainda não tem XAML
 
-### 3. As telas novas não estão no XAML
+Em 31/08/2026 ela passou a ser **montada** em produção — antes o
+`CaixasViewModel` estava construído, testado, e nenhuma tela o alcançava. Agora é
+uma propriedade do `MainViewModel`, alimentada pela mesma ponte da fila.
 
-`CaixasViewModel` (caixa dividida) e a ordem por prioridade da fila existem,
-estão testados, e **não têm tela**. O `FilaViewModel` já aparece; a caixa
-dividida, não.
+O que falta é o XAML. A fila já aparece na janela; a caixa dividida, não.
 
 ### 4. O push
 
