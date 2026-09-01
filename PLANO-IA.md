@@ -2,12 +2,17 @@
 
 > Estado em 01/09/2026: os **núcleos das dez etapas** estão construídos e
 > testados, e passaram por **vinte e cinco revisões externas** — uma por etapa,
-> e depois quatro rodadas de cinco sobre o conjunto. Suíte em **1439 verdes,
+> e depois quatro rodadas de cinco sobre o conjunto. Suíte em **1447 verdes,
 > nada pulado**.
+>
+> **A borda em lote existe desde 01/09/2026**, e com ela a *classificação de uma
+> pasta* deixou de ser biblioteca sem chamador: há botão na janela, ao lado do de
+> varrer. Ver [o item 1](#1-a-borda-em-lote-existe--e-o-que-ela-ainda-não-liga).
 >
 > **"Executadas" seria dizer demais**, e eu disse. Ver
 > [o que está ligado e o que não está](#o-que-está-ligado-e-o-que-não-está),
-> logo abaixo: quatro das dez não têm chamador de produção nenhum.
+> logo abaixo: sete das dez chegam ao dono, e as três que faltam estão nomeadas
+> com o motivo.
 >
 > Este documento não existia enquanto o plano era executado: ele viveu na
 > conversa, e os commits foram o registro. Está escrito agora para o plano
@@ -24,13 +29,17 @@ funcionalidade instalável.
 | 1 Resumo ao abrir | pronto | **sim** — interruptor por arquivo |
 | 2 Conversa e identidades | pronto | **sim** — alimenta a fila |
 | 3 As duas filas | pronto | **sim** — painel na janela |
-| 4 Superfície do classificador | pronto | não — sem chamador |
-| 5 Onde os rótulos moram | pronto | parcial — a leitura chega; a escrita não |
-| 6 Regras do dono | pronto | não — nada as usa ainda |
-| 7 Caixa dividida | pronto | não — montada, **sem XAML** |
-| 8 Rascunhos automáticos | pronto | não — sem chamador |
-| 9 Prioridade | pronto | **sim** — e os rótulos chegam vazios |
-| 10 Perguntar ao acervo | pronto | não — sem chamador |
+| 4 Superfície do classificador | pronto | **sim** — botão "classificar esta pasta" |
+| 5 Onde os rótulos moram | pronto | **sim** — a escrita chegou com a borda em lote |
+| 6 Regras do dono | pronto | **sim** — lidas a cada passagem, do arquivo do perfil |
+| 7 Caixa dividida | pronto | **sim** — painel e botão na janela |
+| 8 Rascunhos automáticos | pronto | não — falta o laço da rodada |
+| 9 Prioridade | pronto | **sim** — e agora com rótulos de verdade |
+| 10 Perguntar ao acervo | pronto | não — falta operação própria na ativação |
+
+> A coluna mudou em 01/09/2026 com a borda em lote. Antes dela, quatro linhas
+> diziam "sem chamador" pelo mesmo motivo único: não havia como ler o corpo de N
+> mensagens de uma vez.
 
 ### E a borda de produção existe — eu disse que não
 
@@ -41,14 +50,11 @@ Afirmei várias vezes, aqui e nos commits, que `IAssistContext` em produção er
 classifica sensibilidade e anexos, e monta o envelope. O caminho de **resumir e
 redigir** é real e roda.
 
-O que não existe é a borda **em lote**: ler o corpo de N mensagens de uma vez e
-mandar com a instrução do lote. É dela que `ClassificarUmaPasta`,
-`RascunhosDeUmaRodada` e `PerguntarAoAcervo` precisam, e é isso que os deixa sem
-chamador.
-
-A diferença importa para quem for continuar: eu estava descrevendo como "falta
-tudo" o que é, na verdade, **um adaptador a mais sobre um caminho que já
-funciona**.
+E a borda **em lote** passou a existir em 01/09/2026 — foi, como este parágrafo
+previa, **um adaptador a mais sobre um caminho que já funciona**, e não um
+segundo caminho. A classificação de pasta roda por ela; o que ainda falta está
+no [item 1](#1-a-borda-em-lote-existe--e-o-que-ela-ainda-não-liga), e não é mais
+"a borda".
 
 ---
 
@@ -95,7 +101,7 @@ e todo desenho que depende dela quebra em silêncio.
 | 7 | A caixa dividida | `2ff6d4d`, `2749321` | **O controle era teatro: ele nunca era enviado** |
 | 8 | Rascunhos automáticos | `c0ecdba`, `5ab1b1e` | Uma dispensa podia ser desfeita por uma redação em voo |
 | 9 | Prioridade ponderada | `fb83913`, `8234a9a` | O botão dizia "reordena" e trocava o conteúdo |
-| 10 | Perguntar ao acervo | `0300161`, `7ea22ed` | O limite da prova: a borda em lote não existe |
+| 10 | Perguntar ao acervo | `0300161`, `7ea22ed` | O limite da prova: a borda em lote não existia |
 
 **Dez etapas, dez revisões, dez achados.** Nenhuma passou limpa. Vale dizer isso
 com todas as letras: a suíte estava verde antes de cada revisão, e ficou verde
@@ -283,8 +289,11 @@ escrever no arquivo.
 - Em "perguntar ao acervo", o **texto** da resposta é prosa do modelo, e ele leu
   conteúdo hostil. A etapa 1 garante o que *sai*; não garante o que volta. Passou
   a estar escrito, junto com o que a citação prova: **origem, não sustentação**.
-- As contagens de `ResultadoDaClassificacao` continuam sem consumidor — quem as
-  consumiria é a borda em lote.
+- ~~As contagens de `ResultadoDaClassificacao` continuam sem consumidor~~ —
+  **feito em 01/09/2026.** Elas viraram a frase que aparece na janela depois de
+  cada passagem, e as três razões de uma mensagem não ser classificada saem
+  separadas: lote recusado, rótulo inventado e mensagem que saiu da pasta são
+  problemas diferentes, e somá-los num "faltaram 30" não seria acionável.
 - ~~**Toda republicação invalida todos os rótulos**~~ — **feito em 01/09/2026.**
   O rótulo passa para a geração nova quando a mensagem não mudou: mesma chave,
   mesma hora de modificação e mesmo tamanho, e mais duas condições que não
@@ -388,23 +397,42 @@ Cada item aqui é uma escolha, não um esquecimento.
 
 ## O que ficou aberto
 
-### 1. A borda EM LOTE não existe — e é o limite de tudo acima
+### 1. A borda EM LOTE existe — e o que ela ainda não liga
 
-Corrigido em 01/09/2026: a borda de produção **existe** para resumir e redigir a
-mensagem aberta. O que não existe é a borda em lote — ler o corpo de N mensagens
-de uma vez —, e é dela que dependem `ClassificarUmaPasta`, `RascunhosDeUmaRodada`
-e `PerguntarAoAcervo`. Nenhum dos três tem chamador fora dos testes.
+**Feita em 01/09/2026.** `BordaEmLote` implementa os dois delegates que
+`ClassificarUmaPasta` esperava, e há botão na janela ao lado do de varrer. A
+suíte tem um teste que atravessa tudo — cache semeado → passagem → borda →
+portão → cofre → provedor — e volta conferindo os rótulos gravados.
 
-Isso limita o que a suíte prova, e o limite está escrito nos arquivos:
+**Ela não é um segundo caminho de divulgação, e isso é o ponto.** A tentação
+óbvia era montar um envelope próprio; seria um segundo lugar onde o portão pode
+ser esquecido. Em vez disso é o **mesmo** `ContextoDoOutlook` do resumo por
+mensagem, o mesmo transmissor, o mesmo cofre, o mesmo diário. O que muda é a
+seleção — o lote em vez da mensagem aberta — e a existência de fichas. Toda
+garantia já testada do caminho por mensagem passou a valer aqui sem ser testada
+de novo.
 
-- A garantia *"só sai o que a etapa 1 escolheu"* vale **até a fronteira do
-  delegate**. Uma borda que enumerasse a caixa inteira passaria em todos os
-  testes.
-- O mesmo vale para *"o controle vai junto"* e *"um pedido por mensagem"*.
+`GetMessageSnapshotsAsync` lê N corpos numa visita só ao Outlook, e a saída tem
+**uma posição por item pedido**, com `Nothing` onde a leitura falhou. O
+alinhamento é contrato e não conveniência: encolher a lista faria a ficha da
+mensagem 5 viajar com o corpo da 6 — a resposta do modelo aplicada à mensagem
+errada, sem nada na tela mostrando.
 
-Quem escrever a borda herda o resto dessas garantias. É a pendência do §28.2 do
-ESCOPO, e ela continua sendo do dono: **o provedor e a credencial são escolha
-dele.**
+#### O que a borda ainda não liga, e por quê
+
+- **Perguntar ao acervo** precisa de uma decisão antes de plumbing: não há
+  `AssistOperation.Perguntar` no vocabulário da ativação. Reusar `Resumir` faria
+  a autorização que o dono deu para *resumir uma mensagem* valer para uma
+  *varredura sendo lida e sintetizada* — que não é o que ele leu quando assinou.
+  A operação é uma terceira coisa e tem de ser assinada como tal, exatamente como
+  `Classificar` foi.
+- **Os rascunhos em rodada** não precisam de borda em lote: `RascunhosAutomaticos`
+  só *escolhe* quem merece, e redigir já funciona por mensagem. O que falta é o
+  laço que percorre a escolha — e ele para no compositor, sem enviar nada.
+
+E continua valendo o §28.2 do ESCOPO: **o provedor e a credencial são escolha do
+dono.** Sem ativação assinada, a passagem roda, o portão nega cada lote e a
+frase na tela explica — nada sai da máquina, e há teste que cobra isso.
 
 ### 2. ~~A prioridade só conta dias~~ — ligada em 31/08/2026
 
@@ -421,13 +449,12 @@ E, enquanto a borda do item 1 não existir, os rótulos são sempre vazios: as
 parcelas agora são *alcançáveis*, e ainda não têm o que contar. As duas coisas
 são diferentes, e só a segunda depende de você.
 
-### 3. A caixa dividida existe, e ainda não tem XAML
+### 3. ~~A caixa dividida~~ — na tela desde 31/08/2026
 
-Em 31/08/2026 ela passou a ser **montada** em produção — antes o
-`CaixasViewModel` estava construído, testado, e nenhuma tela o alcançava. Agora é
-uma propriedade do `MainViewModel`, alimentada pela mesma ponte da fila.
-
-O que falta é o XAML. A fila já aparece na janela; a caixa dividida, não.
+Ela era `CaixasViewModel` construído, testado, e alcançado por nenhuma tela.
+Passou a ser montada, ganhou painel e botão, e — desde a borda em lote — tem
+rótulos de verdade para dividir. Até então tudo caía na gaveta *"ainda não
+classificadas"*, que existe justamente para o vazio não parecer resposta.
 
 ### 4. O push
 
@@ -444,10 +471,16 @@ disto"*.
 
 ## Se eu tivesse de escolher o próximo passo
 
-**A borda de produção**, e nada antes dela. Não porque falte funcionalidade: as
-dez etapas produzem tudo o que foi pedido. É porque hoje elas produzem tudo isso
-para um delegate que ninguém implementou — e cada garantia deste documento tem
-uma nota de rodapé dizendo "até a fronteira do delegate".
+Era **a borda em lote**, e ela foi feita em 01/09/2026. O que este parágrafo
+dizia — *"o que está construído é um desenho bem testado de uma coisa que ainda
+não acontece"* — deixou de valer para sete das dez etapas.
 
-Enquanto ela não existir, o que está construído é um desenho bem testado de uma
-coisa que ainda não acontece.
+O próximo passo agora é **rodar a classificação contra a caixa de verdade**, uma
+pasta pequena primeiro. Tudo acima foi provado contra um provedor de teste que
+responde certo; o que ainda não foi medido é um modelo real diante de um lote
+real — quantos rótulos ele inventa, quantos lotes são recusados pelo controle, e
+quanto custa. Nada disso se descobre com fake.
+
+Depois dele, na ordem: a operação `Perguntar` no vocabulário da ativação, e o
+laço da rodada de rascunhos. Os dois são pequenos; nenhum é urgente enquanto a
+medição acima não existir.

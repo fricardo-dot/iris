@@ -30,6 +30,8 @@ Casos reais desta base, todos custando tempo de depuração:
 | `lote` | função `Lote()` do teste | "tipo não pode ser inferido a partir de expressão contendo `lote`" |
 | `chave` | função `Chave()` do teste | "argumento não especificado para o parâmetro `id`" |
 | `item` | função `Item()` do fake | "argumento não especificado para o parâmetro `k`" |
+| `sufixo` (num `For Each`) | função `Sufixo()` | "argumento não especificado", **na linha do laço** |
+| `pasta` | campo `Pasta` (`FolderKey`) | "Long não pode ser convertido para FolderKey" |
 
 O `reconciliacao` é o pior da lista e merece nome: num construtor,
 `Reconciliacao = reconciliacao` atribui o **parâmetro a ele mesmo**, a
