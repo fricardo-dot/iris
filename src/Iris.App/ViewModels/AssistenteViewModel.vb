@@ -141,10 +141,19 @@ Namespace Global.Iris.App.ViewModels
             ' rascunho, e nenhum deles muda por acao do assistente. Sem escutar,
             ' o estado ficaria certo e invisivel — o RelayCommand nao se
             ' reconsulta sozinho.
+            ' O DELEGATE FICA GUARDADO, e nao e uma lambda anonima solta.
+            '
+            ' Sem guarda-lo nao ha como remove-lo, e o rascunho e uma dependencia
+            ' INJETADA: nada promete que ele morre junto com esta VM. Enquanto ele
+            ' viver, a lambda vive, e por ela vivem a VM inteira, os comandos, a
+            ' memoria por mensagem, o transmissor e o contexto -- e um evento
+            ' posterior ainda chamaria Avisar() numa VM descartada.
+            ' Achado por revisao externa em 31/08/2026.
             If _rascunho IsNot Nothing Then
-                AddHandler _rascunho.Mudou, Sub(remetente As Object, arg As EventArgs)
-                                                Avisar()
-                                            End Sub
+                _aoMudarORascunho = Sub(remetente As Object, arg As EventArgs)
+                                        Avisar()
+                                    End Sub
+                AddHandler _rascunho.Mudou, _aoMudarORascunho
             End If
 
             ' Comandos declarados a mao, e nao pelo gerador do
@@ -1149,6 +1158,8 @@ Namespace Global.Iris.App.ViewModels
         End Sub
 
         Private _descartado As Boolean
+        ' O delegate que escuta IRascunho.Mudou, guardado para poder sair.
+        Private _aoMudarORascunho As EventHandler
 
         ''' <summary>
         ''' <b>A janela fechou.</b>
@@ -1193,6 +1204,12 @@ Namespace Global.Iris.App.ViewModels
             ' Dispose -- lancar ObjectDisposedException do nada, num caminho
             ' que o usuario alcanca clicando em Cancelar depois de fechar.
             _esperaDoResumo = Nothing
+
+            ' E A ASSINATURA SAI. Ver o comentario do AddHandler.
+            If _rascunho IsNot Nothing AndAlso _aoMudarORascunho IsNot Nothing Then
+                RemoveHandler _rascunho.Mudou, _aoMudarORascunho
+                _aoMudarORascunho = Nothing
+            End If
             If _pulso IsNot Nothing Then _pulso.Stop()
         End Sub
 

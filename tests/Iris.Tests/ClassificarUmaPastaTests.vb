@@ -416,15 +416,28 @@ Public Class ClassificarUmaPastaTests
         Comigo(Sub(db)
                    Dim pasta = Varrer(db, "f-1", {"a", "b"})
                    Dim vistos As New List(Of PedidoDeParte)()
+                   Dim cache = New RotulosNoCache(db)
 
                    ' NEW ... .Metodo() NAO E STATEMENT em VB. Armadilha do CLAUDE.md.
-                   Dim passagem = New ClassificarUmaPasta(Acervo(db), New RotulosNoCache(db))
-                   passagem.Passar(pasta, Nothing, "ativacao-1", Quando,
-                                   Entrega(vistos), Responde("fyi"))
+                   Dim passagem = New ClassificarUmaPasta(Acervo(db), cache)
+                   Dim r = passagem.Passar(pasta, Nothing, "ativacao-1", Quando,
+                                           Entrega(vistos), Responde("fyi"))
 
                    Assert.AreEqual(2, vistos.Count)
-                   Assert.IsTrue(vistos.All(Function(p) p.Ficha.Length > 0))
                    Assert.AreEqual(2, vistos.Select(Function(p) p.Ficha).Distinct().Count())
+
+                   ' E ELAS SAO AS DO LOTE, e nao apenas "distintas e nao vazias".
+                   '
+                   ' A versao anterior so olhava a lista de ENTRADA da borda: se a
+                   ' borda inventasse fichas proprias, o lote seria recusado e o
+                   ' teste continuaria verde, porque o resultado da passagem era
+                   ' ignorado. E a resposta so confere se as fichas que voltam sao
+                   ' as que o lote cunhou -- entao classificar as duas prova a
+                   ' identidade ponta a ponta. Achado por revisao externa em
+                   ' 31/08/2026.
+                   Assert.AreEqual(2, r.Classificados,
+                       "as fichas que voltaram não eram as que o lote cunhou")
+                   Assert.AreEqual(2, cache.Publicados(pasta).Count)
                End Sub)
     End Sub
 

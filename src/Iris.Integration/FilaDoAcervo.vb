@@ -75,8 +75,21 @@ Namespace Global.Iris.Integration
                                dispensadas As IEnumerable(Of String),
                                Optional remetentesIgnorados As MinhasIdentidades = Nothing) As ResultadoDaFila
 
-            Dim mensagens As New List(Of MensagemNaFila)()
-            Dim cobertura = CoberturaDosEnviados()
+            Return FilaDeRespostas.Montar(Mensagens(), eu, agora, fuso,
+                                          CoberturaDosEnviados(), dispensadas,
+                                          remetentesIgnorados)
+        End Function
+
+        ''' <summary>
+        ''' <b>As mensagens presentes, de todas as pastas publicadas.</b>
+        '''
+        ''' Saiu de dentro do <see cref="Montar"/> porque a caixa dividida precisa
+        ''' exatamente disto e não precisa da fila. Duas listas montadas por dois
+        ''' laços iguais divergiriam — e a divergência apareceria como uma mensagem
+        ''' que está numa tela e não na outra, sem explicação possível.
+        ''' </summary>
+        Public Function Mensagens() As IReadOnlyList(Of MensagemNaFila)
+            Dim todas As New List(Of MensagemNaFila)()
 
             For Each pasta In _acervo.Pastas
                 Dim manifesto = pasta.Manifesto
@@ -88,7 +101,7 @@ Namespace Global.Iris.Integration
                 For Each item In manifesto.Items
                     If item.Presence <> PresenceState.Presente Then Continue For
 
-                    mensagens.Add(New MensagemNaFila(
+                    todas.Add(New MensagemNaFila(
                         New ItemKey(item.ProviderEntryId, pasta.Store),
                         item.ConversationId,
                         item.Subject,
@@ -99,9 +112,7 @@ Namespace Global.Iris.Integration
                 Next
             Next
 
-            Return FilaDeRespostas.Montar(mensagens, eu, agora, fuso,
-                                          cobertura, dispensadas,
-                                          remetentesIgnorados)
+            Return todas
         End Function
 
         ''' <summary>

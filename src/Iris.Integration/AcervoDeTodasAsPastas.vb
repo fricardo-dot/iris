@@ -82,6 +82,9 @@ Namespace Global.Iris.Integration
         Private ReadOnly _db As CacheDatabase
         Private ReadOnly _conn As SqliteConnection
         Private ReadOnly _trava As New Object()
+        ' A trava da LEITURA do banco, separada da que serve o retrato: ver
+        ' Recarregar. Segurar a mesma faria a tela esperar a varredura.
+        Private ReadOnly _travaDaLeitura As New Object()
 
         Private _pastas As IReadOnlyList(Of PastaNoAcervo) = Array.Empty(Of PastaNoAcervo)()
         Private _recarregado As Integer
@@ -138,6 +141,25 @@ Namespace Global.Iris.Integration
         ''' idempotência do <see cref="AcervoService"/>.
         ''' </summary>
         Public Sub Recarregar()
+            ' A LEITURA INTEIRA SOB TRAVA, e nao so a troca do retrato.
+            '
+            ' Duas recargas ao mesmo tempo -- o dreno entregando enquanto alguem
+            ' recarrega a mao -- liam a MESMA SqliteConnection em paralelo, que e
+            ' o que esta classe pede a quem a usa que nao faca. E, mesmo sem
+            ' estourar, a recarga velha podia terminar depois da nova e substituir
+            ' o retrato por um mais antigo -- com _recarregado subindo, o que faz
+            ' a regressao parecer progresso.
+            '
+            ' Trava separada da que serve as leituras de Pastas: manter a leitura
+            ' do banco dentro da mesma trava do getter faria a tela esperar a
+            ' varredura terminar para conseguir desenhar a lista.
+            ' Achado por revisao externa em 31/08/2026.
+            SyncLock _travaDaLeitura
+                Reler()
+            End SyncLock
+        End Sub
+
+        Private Sub Reler()
             Dim leitor As New ManifestReader(_db)
             Dim novo As New List(Of PastaNoAcervo)()
 

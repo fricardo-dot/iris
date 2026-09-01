@@ -449,25 +449,46 @@ Public Class FilaViewModelTests
     ''' </summary>
     <TestMethod>
     Public Sub A_nota_que_ORDENA_e_a_que_a_tela_MOSTRA()
-        ' SO A PRIMEIRA CHAMADA diz "precisa_de_mim". Alternar por paridade nao
-        ' serviria: com duas avaliacoes, a paridade de cada linha se repete e as
-        ' duas contas coincidem por acidente.
+        ' SO A SEGUNDA CHAMADA diz "precisa_de_mim", e a escolha e do numero.
+        '
+        ' Alternar por paridade nao serviria: com duas avaliacoes a paridade de
+        ' cada linha se repete e as contas coincidem por acidente. E a PRIMEIRA
+        ' chamada tambem nao serve: ela cai na linha mais velha, que a ordem por
+        ' idade ja poria na frente -- entao a ordem sabotada e a correta
+        ' coincidem. A segunda cai na linha mais nova, e ai as duas ordens
+        ' DIVERGEM, que e a unica situacao em que este teste tem o que provar.
         Dim chamadas = 0
         Dim vm = ComPrioridade(
             Function(k)
                 chamadas += 1
-                Return If(chamadas = 1, "precisa_de_mim", "fyi")
+                Return If(chamadas = 2, "precisa_de_mim", "fyi")
             End Function)
 
         vm.PorPrioridade = True
+        Dim linhas = vm.Minhas.Concat(vm.Deles).ToList()
 
-        ' Com uma avaliacao so, toda linha com "precisa_de_mim" mostra os 20
-        ' pontos na explicacao. Com duas, metade delas mostra a outra conta.
-        For Each l In vm.Minhas.Concat(vm.Deles)
+        ' 1. Numero e explicacao vem do mesmo objeto.
+        ' PONTOS MENOS OS DIAS, e nao os pontos: a parcela da espera sozinha
+        ' chega a 20 numa linha de 20 dias, e ai a comparacao acusaria uma linha
+        ' correta. O que se quer isolar e a parcela do rotulo.
+        For Each l In linhas
             Dim tem = l.PorQue.Contains("alguém espera uma resposta sua")
-            Assert.AreEqual(tem, l.Pontos >= PrioridadeDaFila.PorEsperarResposta,
+            Assert.AreEqual(tem, (l.Pontos - l.Dias) >= PrioridadeDaFila.PorEsperarResposta,
                 "a nota da ordem e a da explicação vieram de avaliações diferentes")
         Next
+
+        ' 2. E A ORDEM SEGUE ESSE MESMO OBJETO.
+        '
+        ' A asserção 1 sozinha nao provava nada sobre a ORDEM: Pontos e PorQue
+        ' sao dois derivados do mesmo valor, entao eles concordam mesmo que a
+        ' chave da ordenacao tenha vindo de uma terceira avaliacao. Com o
+        ' provedor mutavel, uma segunda avaliacao na chave produz uma lista que
+        ' NAO esta em ordem decrescente dos pontos mostrados. Achado por revisao
+        ' externa em 31/08/2026.
+        Dim mostrados = linhas.Select(Function(l) l.Pontos).ToList()
+        CollectionAssert.AreEqual(
+            mostrados.OrderByDescending(Function(p) p).ToList(), mostrados,
+            "a ordem veio de uma avaliação diferente da que a tela mostra")
     End Sub
 
     ''' <summary>

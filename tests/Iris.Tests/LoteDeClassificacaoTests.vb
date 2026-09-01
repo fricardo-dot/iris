@@ -762,9 +762,23 @@ Public Class LoteDeClassificacaoTests
     ''' </summary>
     <TestMethod>
     Public Sub Resposta_em_BLOCO_e_pega_pelo_controle()
+        ' O LOTE E SORTEADO ATE O CONTROLE NAO SER "fyi".
+        '
+        ' A versao anterior punha as asserções dentro de um If: uma vez a cada
+        ' seis, o rotulo sorteado do controle ERA "fyi", o teste terminava sem
+        ' afirmar nada e passava. Um teste que pode terminar vazio nao e um
+        ' controle negativo -- ele fica verde tambem quando o Conferir aceita
+        ' tudo. Achado por revisao externa em 31/08/2026.
         Dim a = Chave("a")
         Dim b = Chave("b")
-        Dim montado = Montar(a, b)
+        Dim montado As LoteDeClassificacao = Nothing
+        For tentativa = 1 To 50
+            montado = Montar(a, b)
+            If Not String.Equals(montado.RotuloDoControle, "fyi",
+                                 StringComparison.Ordinal) Then Exit For
+        Next
+        Assert.AreNotEqual("fyi", montado.RotuloDoControle,
+            "controle: 50 sorteios sem sair de fyi não é sorteio")
 
         ' O "fyi" e a obediencia; o controle vem arrastado junto.
         Dim conferido = montado.Conferir(
@@ -772,11 +786,8 @@ Public Class LoteDeClassificacaoTests
             " {""item_key"":""" & montado.FichaDe(b) & """,""label"":""fyi""}," &
             " {""item_key"":""" & montado.FichaDoControle & """,""label"":""fyi""}]")
 
-        ' Sem o controle, esta resposta passaria inteira.
-        If Not String.Equals(montado.RotuloDoControle, "fyi", StringComparison.Ordinal) Then
-            Assert.IsFalse(conferido.IdentidadesConferem)
-            Assert.AreEqual(0, conferido.Rotulos.Count)
-        End If
+        Assert.IsFalse(conferido.IdentidadesConferem)
+        Assert.AreEqual(0, conferido.Rotulos.Count)
     End Sub
 
     ''' <summary>
@@ -830,19 +841,25 @@ Public Class LoteDeClassificacaoTests
     End Sub
 
     ''' <summary>
-    ''' O rótulo do controle é sorteado a cada lote. Fixo, ele viraria mais uma
-    ''' coisa sabida de fora — e a mesma frase que enumerava fichas voltaria
-    ''' como <i>"a mensagem de controle é notificacao"</i>.
+    ''' <b>Os seis rótulos aparecem</b>, e não apenas "mais de um".
     '''
-    ''' São seis rótulos; vinte lotes dando sempre o mesmo têm chance 6⁻¹⁹.
+    ''' Fixo, o rótulo do controle viraria mais uma coisa sabida de fora — a
+    ''' mesma frase que enumerava fichas voltaria como <i>"a mensagem de
+    ''' controle é notificacao"</i>.
+    '''
+    ''' A versão anterior exigia <c>Distinct().Count > 1</c> em vinte amostras, e
+    ''' isso passava com um sorteio péssimo: alternância entre dois valores,
+    ''' viés forte, ou um ciclo que muda uma vez só. Exigir os seis em duzentas
+    ''' amostras mata esses casos, e falha por azar com chance perto de 10⁻¹⁵.
     ''' </summary>
     <TestMethod>
-    Public Sub O_rotulo_do_controle_MUDA_entre_lotes()
-        Dim vistos = Enumerable.Range(1, 20).
+    Public Sub O_rotulo_do_controle_percorre_os_SEIS()
+        Dim vistos = Enumerable.Range(1, 200).
                      Select(Function(i) Montar(Chave("a")).RotuloDoControle).
-                     Distinct().Count()
+                     Distinct().OrderBy(Function(x) x, StringComparer.Ordinal).ToList()
 
-        Assert.IsTrue(vistos > 1, "o rótulo do controle está fixo")
+        CollectionAssert.AreEqual(LoteDeClassificacao.NomesDosRotulos().ToList(), vistos,
+            "o sorteio do rótulo do controle não cobre os seis")
     End Sub
 
     ''' <summary>

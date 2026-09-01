@@ -76,6 +76,37 @@ Namespace Global.Iris.Integration
         Public Delegate Function Envio(instrucao As String,
                                        partes As IReadOnlyList(Of MessagePart)) As String
 
+        ''' <summary>
+        ''' <b>Uma passagem por vez, no programa inteiro.</b>
+        '''
+        ''' Duas passagens simultâneas sobre o mesmo cache fariam duas coisas
+        ''' ruins de uma vez. A primeira é técnica: <c>SqliteConnection</c> não tem
+        ''' contrato de uso simultâneo, e uma leitura aberta enquanto a outra abre
+        ''' <c>BEGIN IMMEDIATE</c> é erro em tempo de execução — o WAL coordena
+        ''' <i>conexões</i>, não torna uma conexão reentrante.
+        '''
+        ''' A segunda é pior e é anterior ao banco: as duas leem a mesma lista de
+        ''' pendentes e <b>mandam os mesmos corpos</b> ao provedor antes de
+        ''' qualquer disputa no SQLite. Divulgação duplicada não se desfaz com um
+        ''' rollback.
+        '''
+        ''' A porta é estática porque o recurso disputado é o arquivo, e não esta
+        ''' instância: duas <c>ClassificarUmaPasta</c> diferentes sobre o mesmo
+        ''' cache disputam do mesmo jeito. Achado por revisão externa em
+        ''' 31/08/2026.
+        '''
+        ''' <b>A porta não é segurada durante a rede</b> — ela é: a passagem
+        ''' inteira roda dentro dela, inclusive as chamadas ao provedor. É
+        ''' deliberado: o que se quer impedir é justamente a segunda passagem
+        ''' mandar os mesmos corpos, e uma porta solta durante a rede não impede
+        ''' nada disso. O preço é que a segunda chamada é <i>recusada</i>, e não
+        ''' enfileirada — recusar diz a quem chamou o que aconteceu; enfileirar
+        ''' esconderia uma espera de minutos atrás de uma chamada que parece
+        ''' síncrona.
+        ''' </summary>
+        Private Shared ReadOnly _porta As New Object()
+        Private Shared _rodando As Boolean
+
         Private ReadOnly _acervo As AcervoDeTodasAsPastas
         Private ReadOnly _cache As RotulosNoCache
 
@@ -109,6 +140,29 @@ Namespace Global.Iris.Integration
             If conteudo Is Nothing OrElse envio Is Nothing Then
                 Return ResultadoDaClassificacao.Parou(MotivoDaClassificacao.SemAsBordas)
             End If
+
+            SyncLock _porta
+                If _rodando Then
+                    Return ResultadoDaClassificacao.Parou(MotivoDaClassificacao.JaEstaRodando)
+                End If
+                _rodando = True
+            End SyncLock
+
+            Try
+                Return Correr(pasta, regras, ativacao, quando, conteudo, envio)
+            Finally
+                SyncLock _porta
+                    _rodando = False
+                End SyncLock
+            End Try
+        End Function
+
+        Private Function Correr(pasta As Long,
+                                regras As IReadOnlyList(Of String),
+                                ativacao As String,
+                                quando As DateTimeOffset,
+                                conteudo As Conteudo,
+                                envio As Envio) As ResultadoDaClassificacao
 
             Dim daPasta = _acervo.Pastas.FirstOrDefault(
                 Function(p) p.Chave = pasta)
@@ -343,6 +397,11 @@ Namespace Global.Iris.Integration
         PastaRevarrida
         ''' <summary>Faltou uma das bordas. Erro de quem montou.</summary>
         SemAsBordas
+        ''' <summary>
+        ''' Já havia uma passagem em andamento. <b>Não é erro</b>: é a recusa que
+        ''' impede duas passagens de mandarem os mesmos corpos ao provedor.
+        ''' </summary>
+        JaEstaRodando
     End Enum
 
     ''' <summary>

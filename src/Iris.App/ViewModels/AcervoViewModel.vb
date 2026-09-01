@@ -577,6 +577,46 @@ Namespace Global.Iris.App.ViewModels
             Return leitor.Montar(eu, agora, fuso, dispensadas, ignorados)
         End Function
 
+        ''' <summary>
+        ''' <b>Os rótulos publicados, de todas as pastas, por <c>ItemKey</c>.</b>
+        '''
+        ''' Mesma porta da busca e da fila, e pelo mesmo motivo (§26.2): quem tem o
+        ''' banco é o acervo. A conversão de <i>(pasta, encarnação)</i> para
+        ''' <c>ItemKey</c> perde a pasta, e a perda tem nome e conta — ver
+        ''' <see cref="Iris.Integration.RotulosDoAcervo"/>.
+        '''
+        ''' <b>Falha de leitura devolve leitura vazia</b>, e não estoura: a tela que
+        ''' consome isto é a caixa dividida, e ela já sabe dizer "nada classificado"
+        ''' com o número na frente. Uma exceção subindo daqui apagaria a fila junto.
+        ''' </summary>
+        ''' <summary>
+        ''' As mensagens presentes do acervo — a mesma lista que alimenta a fila,
+        ''' pela mesma porta. Ver <c>FilaDoAcervo.Mensagens</c>.
+        ''' </summary>
+        Public Function MensagensDoAcervo() As Collections.Generic.IReadOnlyList(Of Iris.Model.MensagemNaFila)
+            If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+            Return New Iris.Integration.FilaDoAcervo(_todasAsPastas).Mensagens()
+        End Function
+
+        ''' <summary>
+        ''' Quantas vezes o retrato foi relido. <b>Serve de carimbo</b>: quem guarda
+        ''' uma leitura derivada do acervo sabe, por este número, que ela envelheceu
+        ''' — sem ter de ir ao banco a cada linha desenhada.
+        ''' </summary>
+        Public ReadOnly Property GeracaoDoRetrato As Integer
+            Get
+                Return _todasAsPastas.Recarregado
+            End Get
+        End Property
+
+        Public Function LerOsRotulos() As Iris.Integration.LeituraDeRotulos
+            If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+
+            Dim leitor As New Iris.Integration.RotulosDoAcervo(
+                _todasAsPastas, New Iris.Cache.RotulosNoCache(_db))
+            Return leitor.Ler()
+        End Function
+
         Public Sub Dispose() Implements IDisposable.Dispose
             If _disposed Then Return
             _disposed = True

@@ -75,8 +75,45 @@ Namespace Global.Iris.Cache
                 ' schema seriam decorativas.
                 Executar(conn, "PRAGMA foreign_keys = ON")
 
+                ' 0. O ARQUIVO ESTA INTEIRO?
+                '
+                ' O cabecalho e o sqlite_schema podem estar legiveis com uma
+                ' pagina de dados corrompida no meio -- e ai a introspecao passa,
+                ' o banco abre, e a corrupcao aparece semanas depois num SELECT
+                ' qualquer, como "database disk image is malformed". Aqui mora o
+                ' diario do egress, que nao se reconstroi de lugar nenhum: e
+                ' melhor recusar cedo, com o arquivo intacto para quem for
+                ' socorrer.
+                '
+                ' quick_check e nao integrity_check: o segundo le o banco inteiro
+                ' e conferiria tambem as FKs, o que num arquivo grande custa
+                ' segundos a cada abertura. O primeiro pega corrupcao de pagina,
+                ' que e o que este passo existe para pegar.
+                ' Achado por revisao externa em 31/08/2026.
+                Dim inteiro = Integro(conn)
+                If inteiro IsNot Nothing Then
+                    falha = New OpenFailure("integridade", inteiro)
+                    conn.Dispose()
+                    Return Nothing
+                End If
+
                 Dim versao = LerVersao(conn)
                 Dim vazio = ContarTabelas(conn) = 0
+
+                ' ARQUIVO VAZIO MARCADO COM VERSAO FUTURA NAO E ARQUIVO NOVO.
+                '
+                ' O ramo do vazio vinha primeiro e chamava Criar, que grava
+                ' user_version = 6 por cima do 7 -- rebaixando em silencio a marca
+                ' deixada por uma versao do programa que sabia coisas que esta nao
+                ' sabe. Um banco recem-criado tem versao 0; qualquer outra coisa
+                ' num arquivo sem tabelas e um arquivo que alguem preparou.
+                If vazio AndAlso versao > SqliteDdl.SchemaVersion Then
+                    falha = New OpenFailure("versao",
+                        $"arquivo sem tabelas marcado como versao {versao}, mais nova " &
+                        $"que a esperada {SqliteDdl.SchemaVersion}")
+                    conn.Dispose()
+                    Return Nothing
+                End If
 
                 If vazio Then
                     Criar(conn, schema)
@@ -269,6 +306,28 @@ Namespace Global.Iris.Cache
                     "SELECT COUNT(*) FROM sqlite_schema WHERE type='table' AND name NOT LIKE 'sqlite_%'"
                 Return Convert.ToInt32(cmd.ExecuteScalar())
             End Using
+        End Function
+
+        ''' <summary>
+        ''' <c>Nothing</c> quando o arquivo está íntegro; a queixa do SQLite
+        ''' quando não está.
+        '''
+        ''' <b>Arquivo novo passa de graça</b>: <c>quick_check</c> num banco vazio
+        ''' devolve <c>ok</c> sem ler nada.
+        ''' </summary>
+        Private Shared Function Integro(conn As SqliteConnection) As String
+            Try
+                Using cmd = conn.CreateCommand()
+                    cmd.CommandText = "PRAGMA quick_check(1)"
+                    Dim v = cmd.ExecuteScalar()
+                    Dim r = If(v Is Nothing OrElse v Is DBNull.Value, "", CStr(v))
+                    If String.Equals(r, "ok", StringComparison.OrdinalIgnoreCase) Then Return Nothing
+                    Return $"quick_check: {r}"
+                End Using
+            Catch ex As Exception
+                ' O proprio quick_check estourar ja e a resposta.
+                Return $"quick_check nao completou: {ex.Message}"
+            End Try
         End Function
 
         Private Shared Function ForeignKeysLigadas(conn As SqliteConnection) As Boolean

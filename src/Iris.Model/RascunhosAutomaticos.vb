@@ -160,7 +160,18 @@ Namespace Global.Iris.Model
 
         Private ReadOnly _porChave As New Dictionary(Of ItemKey, RascunhoPronto)()
         Private ReadOnly _dispensadas As New HashSet(Of ItemKey)()
-        Private ReadOnly _emVoo As New HashSet(Of ItemKey)()
+        ' EM VOO: a chave E A GERACAO em que ela foi reservada.
+        '
+        ' Era um conjunto de chaves, e isso deixava a rodada VELHA apagar a
+        ' reserva da rodada NOVA: A reserva na geracao 0, Esquecer() limpa tudo
+        ' e vai para a 1, B reserva a mesma mensagem na 1, A termina e remove a
+        ' chave -- que agora e de B. Ai uma terceira rodada reserva de novo o que
+        ' B ainda esta redigindo, e paga duas vezes pelo mesmo texto.
+        '
+        ' A trava protegia a estrutura e nao a identidade da decisao. E a mesma
+        ' familia do defeito que a revisao da Fase 8 achou. Achado por revisao
+        ' externa em 31/08/2026.
+        Private ReadOnly _emVoo As New Dictionary(Of ItemKey, Long)()
         Private ReadOnly _trava As New Object()
         Private _geracao As Long = 1
 
@@ -179,18 +190,34 @@ Namespace Global.Iris.Model
             SyncLock _trava
                 If _porChave.ContainsKey(chave) Then Return Nothing
                 If _dispensadas.Contains(chave) Then Return Nothing
-                If Not _emVoo.Add(chave) Then Return Nothing
+                If _emVoo.ContainsKey(chave) Then Return Nothing
+                _emVoo(chave) = _geracao
                 Return _geracao
             End SyncLock
         End Function
 
-        ''' <summary>A redação não deu. Solta a reserva para ela poder voltar.</summary>
-        Public Sub Soltar(chave As ItemKey)
+        ''' <summary>
+        ''' A redação não deu. Solta a reserva para ela poder voltar — <b>se a
+        ''' reserva ainda for esta</b>.
+        '''
+        ''' Soltar sem conferir deixava uma rodada velha liberar a mensagem que
+        ''' outra, mais nova, já estava redigindo.
+        ''' </summary>
+        Public Sub Soltar(chave As ItemKey, Optional reserva As Long? = Nothing)
             If chave Is Nothing Then Return
             SyncLock _trava
-                _emVoo.Remove(chave)
+                SoltarSeForMinha(chave, reserva)
             End SyncLock
         End Sub
+
+        ''' <summary>Sob a trava do chamador. Devolve se a reserva era mesmo esta.</summary>
+        Private Function SoltarSeForMinha(chave As ItemKey, reserva As Long?) As Boolean
+            Dim daVez As Long
+            If Not _emVoo.TryGetValue(chave, daVez) Then Return False
+            If reserva.HasValue AndAlso daVez <> reserva.Value Then Return False
+            _emVoo.Remove(chave)
+            Return True
+        End Function
 
         ''' <summary>
         ''' Guarda, se ainda for para guardar. Devolve <c>False</c> quando o
@@ -209,8 +236,16 @@ Namespace Global.Iris.Model
             If String.IsNullOrWhiteSpace(versao) Then Return False
 
             SyncLock _trava
-                _emVoo.Remove(chave)
-                If reserva.HasValue AndAlso reserva.Value <> _geracao Then Return False
+                ' A RESERVA E CONFERIDA ANTES DE SER SOLTA. Se ela nao e mais
+                ' minha, quem esta em voo e outra rodada -- e nao posso nem gravar
+                ' nem liberar a vaga dela.
+                If reserva.HasValue Then
+                    If Not SoltarSeForMinha(chave, reserva) Then Return False
+                    If reserva.Value <> _geracao Then Return False
+                Else
+                    SoltarSeForMinha(chave, Nothing)
+                End If
+
                 If _dispensadas.Contains(chave) Then Return False
                 _porChave(chave) = New RascunhoPronto(versao, texto)
                 Return True
@@ -298,7 +333,7 @@ Namespace Global.Iris.Model
         ''' </summary>
         Public Function FeitosOuEmVoo() As IReadOnlyCollection(Of ItemKey)
             SyncLock _trava
-                Return _porChave.Keys.Concat(_emVoo).Distinct().ToList()
+                Return _porChave.Keys.Concat(_emVoo.Keys).Distinct().ToList()
             End SyncLock
         End Function
 

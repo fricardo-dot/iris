@@ -88,20 +88,43 @@ Public Class PerguntarAoAcervoTests
     End Sub
 
     ''' <summary>
-    ''' <b>A cobertura anda junto, inclusive quando deu certo.</b> Ela é a única
-    ''' coisa aqui que diz o que <i>não</i> foi olhado, e a resposta sem ela
-    ''' parece completa.
+    ''' <b>A cobertura anda junto em TODO desfecho</b>, e não só no que deu
+    ''' certo. Ela é a única coisa aqui que diz o que <i>não</i> foi olhado, e
+    ''' uma resposta sem ela parece completa.
+    '''
+    ''' O teste anterior exercitava um caso só — o de sucesso — com o nome
+    ''' "sempre". Tirar a cobertura das recusas o deixava verde. Agora é uma
+    ''' matriz, e ela cobre os desfechos que este caminho sabe produzir.
+    ''' Achado por revisão externa em 31/08/2026.
     ''' </summary>
     <TestMethod>
-    Public Sub A_cobertura_vem_sempre()
+    Public Sub A_cobertura_vem_sempre_em_TODO_desfecho()
         Comigo(Sub(db)
                    Varrer(db, "f-1", {"contrato do joao"})
+                   Dim quem = Perguntador(db)
 
-                   Dim r = Perguntador(db).Responder(
-                       "contrato", Function(pergunta, fontes) "respondi")
+                   Dim desfechos As New List(Of RespostaDoAcervo)() From {
+                       quem.Responder("contrato", Function(p, f) "respondi"),
+                       quem.Responder("  ", Function(p, f) "x"),
+                       quem.Responder("contrato", Nothing),
+                       quem.Responder("zzzzzz", Function(p, f) "x"),
+                       quem.Responder("contrato", Function(p, f) ""),
+                       quem.Responder("contrato",
+                           Function(p, f) New String("a"c,
+                               PerguntarAoAcervo.MaximoDaResposta + 1))}
 
-                   Assert.IsTrue(r.Cobertura.Length > 0, "resposta sem cobertura")
-                   StringAssert.Contains(r.Cobertura, "pasta")
+                   ' Os seis desfechos que este caminho sabe produzir.
+                   CollectionAssert.AreEquivalent(
+                       {MotivoDaResposta.Respondeu, MotivoDaResposta.PerguntaVazia,
+                        MotivoDaResposta.SemABorda, MotivoDaResposta.NadaNoAcervo,
+                        MotivoDaResposta.SemResposta,
+                        MotivoDaResposta.RespostaGrandeDemais},
+                       desfechos.Select(Function(r) r.Motivo).ToArray())
+
+                   For Each r In desfechos
+                       Assert.IsTrue(r.Cobertura.Length > 0,
+                           $"desfecho {r.Motivo} veio sem cobertura")
+                   Next
                End Sub)
     End Sub
 

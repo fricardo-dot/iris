@@ -65,6 +65,12 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private Const acervoSemPasta As Long = 0
 
+        ''' <summary>
+        ''' A caixa dividida por rótulo. <c>Nothing</c> quando o acervo não abriu —
+        ''' e aí <see cref="AcervoIndisponivel"/> diz por quê.
+        ''' </summary>
+        Public Property Caixas As CaixasViewModel
+
         Public ReadOnly Property Acervo As AcervoViewModel
         Public ReadOnly Property AcervoIndisponivel As String
 
@@ -359,6 +365,16 @@ Namespace Global.Iris.App.ViewModels
                 '
                 ' O relogio e o fuso entram como sao: a contagem de dias e de
                 ' CALENDARIO, e calendario depende de onde a pessoa esta.
+                ' OS ROTULOS, LIDOS UMA VEZ POR RETRATO.
+                '
+                ' A fila e a caixa dividida pedem o rotulo POR LINHA. Liga-las
+                ' direto ao banco faria uma consulta por linha desenhada, e cada
+                ' consulta le a pasta inteira. O carimbo do retrato do acervo diz
+                ' quando a leitura envelheceu -- e publicacao e exatamente o
+                ' momento em que os rotulos podem ter mudado.
+                Dim rotulos As New RotulosNaMao(AddressOf Acervo.LerOsRotulos,
+                                                Function() Acervo.GeracaoDoRetrato)
+
                 Fila = New FilaViewModel(
                     Function(eu, agora, fuso, dispensadas, ignorados) _
                         Acervo.MontarAFila(eu, agora, fuso, dispensadas, ignorados),
@@ -366,6 +382,19 @@ Namespace Global.Iris.App.ViewModels
                     Function() Identidades,
                     Function() DateTimeOffset.Now,
                     TimeZoneInfo.Local,
+                    AddressOf AbrirDaFila,
+                    AddressOf rotulos.Rotulo,
+                    AddressOf rotulos.QuantasRegras)
+
+                ' A CAIXA DIVIDIDA. Ela nao existia em producao: o ViewModel estava
+                ' construido e testado, e ninguem o montava -- entao a divisao por
+                ' rotulo era codigo que nenhuma tela alcancava. Achado por revisao
+                ' externa em 31/08/2026.
+                Caixas = New CaixasViewModel(
+                    AddressOf Acervo.MensagensDoAcervo,
+                    Function() rotulos.Atual().Rotulos,
+                    Function() rotulos.Atual().RegrasCasadas,
+                    Function() New RegrasDoDono().Ler(),
                     AddressOf AbrirDaFila)
             End If
 

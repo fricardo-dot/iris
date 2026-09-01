@@ -105,7 +105,7 @@ Namespace Global.Iris.Integration
                     ' inclusive uma que a mensagem hostil conseguisse provocar. Ai
                     ' uma mensagem so derrubava a rodada inteira, que e exatamente
                     ' o que o Catch de baixo existe para impedir.
-                    _sessao.Soltar(m.Chave)
+                    _sessao.Soltar(m.Chave, reserva)
                     Return New ResultadoDaRodada(escolhidas.Count, tentadas,
                                                  escritos, falharam, True)
                 Catch
@@ -116,7 +116,7 @@ Namespace Global.Iris.Integration
                 End Try
 
                 If feita Is Nothing OrElse String.IsNullOrWhiteSpace(feita.Texto) Then
-                    _sessao.Soltar(m.Chave)
+                    _sessao.Soltar(m.Chave, reserva)
                     falharam += 1
                     Continue For
                 End If
