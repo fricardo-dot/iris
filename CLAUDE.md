@@ -29,6 +29,7 @@ Casos reais desta base, todos custando tempo de depuração:
 | `Count` (propriedade) | extensão LINQ `Count(Of T)` | "Integer não pode ser indexado" |
 | `lote` | função `Lote()` do teste | "tipo não pode ser inferido a partir de expressão contendo `lote`" |
 | `chave` | função `Chave()` do teste | "argumento não especificado para o parâmetro `id`" |
+| `item` | função `Item()` do fake | "argumento não especificado para o parâmetro `k`" |
 
 O `reconciliacao` é o pior da lista e merece nome: num construtor,
 `Reconciliacao = reconciliacao` atribui o **parâmetro a ele mesmo**, a

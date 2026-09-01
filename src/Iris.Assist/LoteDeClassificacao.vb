@@ -184,7 +184,7 @@ Namespace Global.Iris.Assist
                 If chave Is Nothing OrElse chave.IsEmpty Then Return Nothing
                 If porChave.ContainsKey(chave) Then Return Nothing
 
-                Dim ficha = "i" & sorteadas(i)
+                Dim ficha = PrefixoDeItem & sorteadas(i)
                 porFicha(ficha) = chave
                 porChave(chave) = ficha
             Next
@@ -193,14 +193,14 @@ Namespace Global.Iris.Assist
             Dim ordem As New List(Of String)()
 
             For i = 0 To escritas.Count - 1
-                Dim ficha = "r" & sorteadas(chaves.Count + i)
+                Dim ficha = PrefixoDeRegra & sorteadas(chaves.Count + i)
                 porRegra(ficha) = escritas(i)
                 ordem.Add(ficha)
             Next
 
             Return New LoteDeClassificacao(
                 porFicha, porChave, porRegra, ordem,
-                "i" & sorteadas(sorteadas.Count - 1),
+                PrefixoDeItem & sorteadas(sorteadas.Count - 1),
                 SortearUmRotulo())
         End Function
 
@@ -232,10 +232,70 @@ Namespace Global.Iris.Assist
         ''' ao copiá-la, trocando um por outro e derrubando o lote inteiro por um
         ''' motivo que ninguém entenderia olhando o log.
         ''' </summary>
-        Private Shared Function Sortear(quantas As Integer) As List(Of String)
-            Const alfabeto As String = "23456789abcdefghjkmnpqrstuvwxyz"
-            Const tamanho As Integer = 8
+        ''' <summary>
+        ''' O alfabeto da ficha. Sem <c>0/o</c>, <c>1/l/i</c> — ver
+        ''' <see cref="Sortear"/>.
+        ''' </summary>
+        Private Const Alfabeto As String = "23456789abcdefghjkmnpqrstuvwxyz"
 
+        ''' <summary>Quantos caracteres tem uma ficha.</summary>
+        Private Const TamanhoDaFicha As Integer = 8
+
+        ''' <summary>
+        ''' O que vem antes dos oito sorteados: <c>i</c> de item, <c>r</c> de regra.
+        '''
+        ''' As duas letras <b>não estão no alfabeto</b> — <c>i</c> saiu por parecer
+        ''' com <c>1</c> e <c>l</c>; <c>r</c> nunca esteve. Então o prefixo nunca é
+        ''' confundível com o sorteio, e nenhuma ficha de item pode virar ficha de
+        ''' regra trocando um caractere.
+        ''' </summary>
+        Friend Const PrefixoDeItem As String = "i"
+
+        ''' <summary>Ver <see cref="PrefixoDeItem"/>.</summary>
+        Friend Const PrefixoDeRegra As String = "r"
+
+        ''' <summary>
+        ''' <b>Isto tem a forma de uma ficha desta casa?</b>
+        '''
+        ''' A ficha é o <b>único identificador que sai desta máquina</b>, e quem a
+        ''' põe no envelope é a borda em lote — código de aplicação, não este
+        ''' módulo. Uma borda com defeito podia carimbar ali o assunto, o
+        ''' <c>EntryID</c> ou o endereço de alguém, e o pipeline mandaria: ele
+        ''' confere corpo, assunto, remetente e destinatários, e a ficha entrava
+        ''' por fora de todos.
+        '''
+        ''' Por isso a conferência é de <b>forma</b>, e não de pertinência a um
+        ''' lote: o pipeline não conhece lote nenhum, e exigir que conhecesse
+        ''' amarraria a preparação de conteúdo à classificação. Oito caracteres de
+        ''' um alfabeto sem letra que vire outra é pouco para provar origem e
+        ''' bastante para provar que <b>não é texto do usuário</b>.
+        '''
+        ''' <b>A forma é lida das mesmas constantes que a montam</b>, e isso não é
+        ''' zelo: a primeira versão conferia oito caracteres do alfabeto e a ficha
+        ''' de verdade tem <i>nove</i> — um prefixo e oito. Ela recusava
+        ''' <b>todas</b> as fichas legítimas, e o efeito era a classificação em lote
+        ''' nunca mandar nada: o pipeline devolvia lista vazia, o lote era pulado, e
+        ''' a passagem terminava com zero rótulos sem erro nenhum. Achado pelo
+        ''' primeiro teste ponta a ponta da borda, em 01/09/2026.
+        ''' </summary>
+        Public Shared Function EhFichaValida(ficha As String) As Boolean
+            If ficha Is Nothing OrElse ficha.Length <> TamanhoDaFicha + 1 Then Return False
+
+            Dim prefixo = ficha.Substring(0, 1)
+            If prefixo <> PrefixoDeItem AndAlso prefixo <> PrefixoDeRegra Then Return False
+
+            For i = 1 To ficha.Length - 1
+                If Alfabeto.IndexOf(ficha(i)) < 0 Then Return False
+            Next
+            Return True
+        End Function
+
+        Private Shared Function Sortear(quantas As Integer) As List(Of String)
+            ' SEM COPIA LOCAL DO ALFABETO. Havia `Const alfabeto = Alfabeto`, e
+            ' em VB isso e a constante dependendo do proprio valor: o nome local
+            ' eclipsa o compartilhado, ignorando maiusculas. E a armadilha da
+            ' primeira secao do CLAUDE.md, agora com o compilador acusando no
+            ' lugar certo -- o que nem sempre acontece.
             Dim vistas As New HashSet(Of String)(StringComparer.Ordinal)
             Dim todas As New List(Of String)()
             Dim tentativas = 0
@@ -244,9 +304,9 @@ Namespace Global.Iris.Assist
                 tentativas += 1
                 If tentativas > quantas * 10 + 100 Then Return Nothing
 
-                Dim sb As New StringBuilder(tamanho)
-                For j = 1 To tamanho
-                    sb.Append(alfabeto(RandomNumberGenerator.GetInt32(alfabeto.Length)))
+                Dim sb As New StringBuilder(TamanhoDaFicha)
+                For j = 1 To TamanhoDaFicha
+                    sb.Append(Alfabeto(RandomNumberGenerator.GetInt32(Alfabeto.Length)))
                 Next
 
                 Dim ficha = sb.ToString()

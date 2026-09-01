@@ -156,6 +156,13 @@ Friend NotInheritable Class WatcherBroker
         Return Fora(Of OperationResult(Of MessageSnapshot))()
     End Function
 
+    Public Function GetMessageSnapshotsAsync(items As IReadOnlyList(Of ItemKey),
+                                             cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of MessageSnapshot))) _
+        Implements IOutlookBroker.GetMessageSnapshotsAsync
+        Return Fora(Of OperationResult(Of IReadOnlyList(Of MessageSnapshot)))()
+    End Function
+
     Public Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
                                               cancel As CancellationToken) _
         As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading))) _

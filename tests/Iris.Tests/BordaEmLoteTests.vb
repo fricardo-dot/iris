@@ -1,0 +1,566 @@
+Imports System.Collections.Generic
+Imports System.IO
+Imports System.Linq
+Imports System.Text
+Imports System.Text.Json
+Imports System.Threading
+Imports Iris.App.ViewModels
+Imports Iris.Assist
+Imports Iris.Cache
+Imports Iris.Core
+Imports Iris.Integration
+Imports Iris.Model
+Imports Iris.Sync
+Imports Microsoft.Data.Sqlite
+Imports Microsoft.VisualStudio.TestTools.UnitTesting
+
+''' <summary>
+''' <b>A borda em lote, do cache ao provedor e de volta ao cache.</b>
+'''
+''' ------------------------------------------------------------------
+''' <b>POR QUE ESTE ARQUIVO EXISTE</b>
+'''
+''' Durante dez etapas, <c>ClassificarUmaPasta</c> foi testado contra delegates
+''' de mentira: um que devolvia partes prontas e outro que devolvia JSON pronto.
+''' Isso prova o <i>miolo</i> — os lotes, o controle, a conferência — e não prova
+''' nada sobre o que estava faltando, que era justamente <b>ligar os dois fios</b>
+''' ao Outlook e ao provedor.
+'''
+''' Aqui os delegates são os de produção. O caminho é: cache semeado →
+''' <c>ClassificarUmaPasta</c> → <c>BordaEmLote</c> → <c>ContextoDoOutlook</c> →
+''' <c>DisclosurePolicy</c> → <c>CapabilityLedger</c> → <c>AssistTransmitter</c> →
+''' provedor, e a resposta volta pelo mesmo caminho até virar linha no cache.
+'''
+''' <b>O controle negativo é o teste mais importante do arquivo</b>: sem ativação
+''' assinada, o provedor não é chamado nenhuma vez. Sem ele, todo o resto aqui
+''' provaria apenas que <i>alguma coisa</i> acontece.
+''' </summary>
+' TOCA SQLITE: nao roda em paralelo com as outras. Foi assim que a falha
+' rara de 25/08/2026 apareceu, e ha um meta-teste que cobra isto -- ele
+' pegou esta classe no mesmo dia em que ela nasceu.
+<TestClass>
+<DoNotParallelize>
+Public Class BordaEmLoteTests
+
+    Private Shared ReadOnly Quando As New DateTimeOffset(2026, 9, 1, 12, 0, 0, TimeSpan.Zero)
+    Private Const Endereco As String = "https://provedor.invalido/v1"
+    Private Const EntradaDaPasta As String = "f-1"
+
+    ''' <summary>A pasta como o portão a identifica. Ver o <c>Semear</c>.</summary>
+    Private Shared ReadOnly Pasta As New FolderKey(EntradaDaPasta, "store-1")
+
+    ' ==================================================================
+    ' O CAMINHO INTEIRO
+
+    ''' <summary>
+    ''' <b>Três mensagens saem do cache, passam pelo provedor e voltam rotuladas.</b>
+    '''
+    ''' O que cada asserção cobre, e por que não bastava a anterior:
+    '''
+    ''' <list type="number">
+    ''' <item>o provedor <b>foi chamado</b> — sem isto, um caminho que recusa
+    ''' tudo em silêncio passaria;</item>
+    ''' <item>os <b>corpos</b> chegaram — sem isto, um envelope vazio passaria;</item>
+    ''' <item>os rótulos <b>estão no cache</b> — sem isto, a resposta teria sido
+    ''' recebida e jogada fora.</item>
+    ''' </list>
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_pasta_inteira_atravessa_a_borda_e_volta_rotulada()
+        Comigo(Sub(db)
+                   Dim pasta = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim r = Classificar(db, pasta, provedor, ComAtivacao())
+
+                   Assert.AreEqual(MotivoDaClassificacao.Passou, r.Motivo)
+                   Assert.AreEqual(3, r.Pedidos)
+                   Assert.AreEqual(3, r.Classificados,
+                       "a passagem inteira rodou e nenhuma mensagem foi rotulada")
+
+                   Assert.AreEqual(1, provedor.Chamadas,
+                       "três mensagens cabem num lote só")
+                   Dim corpos = provedor.Corpos()
+                   Assert.IsTrue(corpos.Any(Function(c) c.Contains("corpo de a")),
+                       "O CORPO NAO CHEGOU AO PROVEDOR")
+
+                   Dim guardados = New RotulosNoCache(db).Publicados(pasta)
+                   Assert.AreEqual(3, guardados.Count,
+                       "a resposta voltou e o cache continuou vazio")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>O controle negativo, e ele vale por todos os outros.</b>
+    '''
+    ''' Sem ativação assinada o portão nega cada lote <i>antes</i> de qualquer
+    ''' leitura de corpo. O provedor não é chamado nenhuma vez.
+    '''
+    ''' Sem este teste, uma borda que simplesmente nunca enviasse passaria em
+    ''' todos os testes de "não envia errado" — é a regra do CLAUDE.md, e este é
+    ''' o lugar dela.
+    ''' </summary>
+    <TestMethod>
+    Public Sub SEM_ativacao_o_provedor_nao_e_chamado_nenhuma_vez()
+        Comigo(Sub(db)
+                   Dim pasta = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim r = Classificar(db, pasta, provedor, ativacao:=Nothing)
+
+                   Assert.AreEqual(0, provedor.Chamadas,
+                       "CONTEUDO SAIU DA MAQUINA SEM AUTORIZACAO")
+                   Assert.AreEqual(0, r.Classificados)
+                   Assert.AreEqual(0, New RotulosNoCache(db).Publicados(pasta).Count)
+
+                   ' E a passagem PERCORREU: recusa de lote, e não desistência
+                   ' antes de começar. As duas dão zero rótulos e são estados
+                   ' diferentes -- uma diz "o portão negou", a outra diria que
+                   ' nem havia o que classificar.
+                   Assert.AreEqual(MotivoDaClassificacao.Passou, r.Motivo)
+                   Assert.AreEqual(1, r.LotesRecusados)
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A ficha de cada mensagem viaja com o corpo daquela mensagem.</b>
+    '''
+    ''' É a asserção que o alinhamento posicional da leitura em lote existe para
+    ''' garantir. Trocar duas fichas não quebra nada visível: o modelo responde,
+    ''' a conferência passa, os rótulos entram — <b>nas mensagens erradas</b>.
+    '''
+    ''' O corpo de cada mensagem carrega o próprio sufixo, então o par
+    ''' ficha↔corpo é conferível do lado de fora.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Cada_ficha_viaja_com_o_corpo_da_PROPRIA_mensagem()
+        Comigo(Sub(db)
+                   Dim pasta = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+
+                   ' A FONTE INDEPENDENTE: o mapa ficha -> chave que a
+                   ' ClassificarUmaPasta montou, capturado ANTES de a borda ler
+                   ' qualquer corpo. Sem ele, este teste comparava dois
+                   ' derivados do mesmo envelope e passava com as fichas
+                   ' invertidas -- provado invertendo-as de proposito.
+                   Dim pedidos As New List(Of PedidoDeParte)()
+                   Classificar(db, pasta, provedor, ComAtivacao(), pedidos)
+
+                   Dim vistos = provedor.PorFicha()
+                   ' Quatro partes: as três mensagens e o controle do lote, que
+                   ' não corresponde a mensagem nenhuma.
+                   Assert.AreEqual(4, vistos.Count)
+                   Assert.AreEqual(3, pedidos.Count, "controle: três pedidos")
+
+                   For Each p In pedidos
+                       Dim esperado = "corpo de " & SufixoDe(p.Chave)
+                       Dim chegou As String = Nothing
+                       Assert.IsTrue(vistos.TryGetValue(p.Ficha, chegou),
+                           $"a ficha de {p.Chave.EntryId} não chegou ao provedor")
+                       Assert.AreEqual(esperado, chegou,
+                           $"a ficha de {p.Chave.EntryId} viajou com o corpo de outra")
+                   Next
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Enviar sem ter lido recusa</b>, em vez de mandar o lote anterior.
+    '''
+    ''' A ordem — ler e depois mandar — é garantida por
+    ''' <c>ClassificarUmaPasta.Passar</c>. Depender disso em silêncio seria
+    ''' depender de alguém não mudar de ideia; mandar a instrução de um lote com
+    ''' a seleção de outro é divulgação que ninguém pediu.
+    ''' </summary>
+    ''' <summary>
+    ''' <b>A ficha que o lote sorteia atravessa o pipeline.</b>
+    '''
+    ''' Parece tautológico e não é: são dois módulos, um monta e o outro
+    ''' confere, e eles divergiram no primeiro dia. O conferidor esperava oito
+    ''' caracteres; a ficha de verdade tem nove — um prefixo e oito.
+    '''
+    ''' O efeito não era um erro: o pipeline recusava <b>todas</b> as mensagens,
+    ''' o lote saía vazio, era pulado, e a passagem terminava com zero rótulos
+    ''' <i>sem nada quebrar</i>. A classificação em lote inteira teria ficado
+    ''' inútil em silêncio.
+    '''
+    ''' As duas pontas passaram a ler as mesmas constantes, e este teste é o que
+    ''' garante que elas continuem lendo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_ficha_que_o_LOTE_sorteia_atravessa_o_PIPELINE()
+        Dim lote = LoteDeClassificacao.Preparar({Chave("a")}, Array.Empty(Of String)())
+        Assert.IsNotNull(lote, "nao montou o lote")
+        Dim f = lote.FichaDe(Chave("a"))
+        Assert.IsTrue(LoteDeClassificacao.EhFichaValida(f), $"ficha invalida: [{f}]")
+        Dim r = ContentPipeline.Preparar(Instantaneo(Chave("a"), "corpo de a"), f)
+        Assert.IsTrue(r.Ok, $"pipeline recusou: {r.Recusa}")
+    End Sub
+
+    <TestMethod>
+    Public Sub Enviar_sem_ter_lido_RECUSA()
+        Dim provedor As New ProvedorQueClassifica()
+        Dim broker = BrokerBom({"a"})
+        Dim borda As New BordaEmLote(broker, Transmissor(provedor, ComAtivacao()),
+                                     provedor.Destino, Pasta)
+
+        Dim saiu = borda.Envio("instrução", {ParteQualquer()})
+
+        Assert.IsNull(saiu, "mandou um lote que ninguem leu")
+        Assert.AreEqual(0, provedor.Chamadas)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Lista encolhida não é "ler o que deu": é não ler nada.</b>
+    '''
+    ''' A leitura em lote promete uma posição por item pedido. Uma implementação
+    ''' que devolvesse só os que deram certo faria a ficha da mensagem 5 viajar
+    ''' com o corpo da 6 — e nada na tela mostraria isso.
+    '''
+    ''' O teste finge exatamente esse defeito, que é o único jeito de saber que a
+    ''' conferência existe.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Leitura_em_lote_que_ENCOLHE_a_lista_nao_produz_parte_nenhuma()
+        Dim broker = BrokerBom({"a", "b"})
+        broker.Instantaneos = Function(k) OperationResult(Of MessageSnapshot).
+            Ok(Instantaneo(k, "corpo"))
+        ' O defeito: devolve UM para dois pedidos.
+        broker.Lote = Function(chaves) OperationResult(Of IReadOnlyList(Of MessageSnapshot)).
+            Ok(New MessageSnapshot() {Instantaneo(chaves(0), "corpo de a")})
+
+        Dim itens As IReadOnlyList(Of ItemKey) = {Chave("a"), Chave("b")}
+        Dim contexto As New ContextoDoOutlook(
+            broker, New AssistDestination("p", Endereco, "m"),
+            Function() (Pasta, itens))
+
+        Assert.AreEqual(0, contexto.Partes().Count,
+            "MONTOU PARTES A PARTIR DE UMA LISTA DESALINHADA")
+    End Sub
+
+    ''' <summary>
+    ''' O controle negativo do teste acima: com a lista <b>alinhada</b>, as duas
+    ''' partes saem. Sem ele, uma conferência que recusasse sempre passaria.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Com_a_lista_alinhada_as_partes_saem()
+        Dim broker = BrokerBom({"a", "b"})
+        Dim itens As IReadOnlyList(Of ItemKey) = {Chave("a"), Chave("b")}
+        Dim contexto As New ContextoDoOutlook(
+            broker, New AssistDestination("p", Endereco, "m"),
+            Function() (Pasta, itens))
+
+        Assert.AreEqual(2, contexto.Partes().Count)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Ficha com forma errada recusa a mensagem</b> — e não vira campo livre
+    ''' no envelope.
+    '''
+    ''' A ficha é o único identificador que sai desta máquina, e é o único campo
+    ''' que não vem do Outlook: vem de quem montou o lote. Todos os outros campos
+    ''' o pipeline confere.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Ficha_com_forma_errada_NAO_atravessa_o_pipeline()
+        Dim retrato = Instantaneo(Chave("a"), "corpo de a")
+
+        Assert.IsTrue(ContentPipeline.Preparar(retrato, "iabcdefgh").Ok,
+            "controle: uma ficha bem formada tem de passar")
+
+        Dim torta = ContentPipeline.Preparar(retrato, "ricardo@empresa.com")
+        Assert.IsFalse(torta.Ok, "UM ENDERECO PASSOU COMO FICHA")
+        Assert.AreEqual(ContentRefusal.FichaInvalida, torta.Recusa)
+
+        Assert.IsTrue(ContentPipeline.Preparar(retrato, Nothing).Ok,
+            "fora de lote não há ficha, e isso é legítimo")
+    End Sub
+
+    ' ==================================================================
+    ' O ANDAIME
+
+    ''' <summary>
+    ''' A passagem de verdade, com as duas bordas de produção.
+    ''' </summary>
+    Private Shared Function Classificar(db As CacheDatabase, chaveDaPasta As Long,
+                                        provedor As ProvedorQueClassifica,
+                                        ativacao As ActivationRecord,
+                                        Optional anotar As List(Of PedidoDeParte) = Nothing) _
+                                        As ResultadoDaClassificacao
+        ' "chaveDaPasta", e nao "pasta": o parametro eclipsaria o campo Pasta
+        ' -- que e a FolderKey do portao -- e o erro sai como "Long nao pode ser
+        ' convertido para FolderKey", tres linhas adiante. CLAUDE.md, secao 1.
+        Dim cache = New RotulosNoCache(db)
+        Dim borda As New BordaEmLote(BrokerBom({"a", "b", "c"}),
+                                     Transmissor(provedor, ativacao),
+                                     provedor.Destino, Pasta)
+
+        ' O ESPIAO ENVOLVE a borda, e nao a substitui: o que roda continua
+        ' sendo o delegate de producao.
+        Dim conteudo As ClassificarUmaPasta.Conteudo =
+            Function(pedidos)
+                If anotar IsNot Nothing Then anotar.AddRange(pedidos)
+                Return borda.Conteudo(pedidos)
+            End Function
+
+        Dim passagem As New ClassificarUmaPasta(Acervo(db), cache)
+        Return passagem.Passar(chaveDaPasta, Array.Empty(Of String)(), "ativacao-1", Quando,
+                               conteudo, AddressOf borda.Envio)
+    End Function
+
+    Private Shared Function Transmissor(provedor As ProvedorQueClassifica,
+                                        ativacao As ActivationRecord) As AssistTransmitter
+        Return New AssistTransmitter(
+            New DisclosurePolicy(ativacao), New CapabilityLedger(),
+            New DiarioDeMentira(), provedor, Function() Quando)
+    End Function
+
+    ''' <summary>
+    ''' A ativação que autoriza <b>Classificar</b> nesta pasta.
+    '''
+    ''' <c>Classificar</c> é operação própria, e não um <c>Resumir</c> maior: sem
+    ''' ela no vocabulário, a autorização que o dono deu para resumir uma
+    ''' mensagem passaria a valer para a varredura inteira.
+    ''' </summary>
+    Private Shared Function ComAtivacao() As ActivationRecord
+        Return New ActivationRecord("ativacao-1", 2, "teste — borda em lote",
+                                    Quando.AddDays(-1),
+                                    "provedor-de-teste", Endereco, "modelo-de-teste",
+                                    "local", "sem retenção",
+                                    {AssistOperation.Classificar},
+                                    {Pasta}, Array.Empty(Of String)(),
+                                    {LabelReadingKind.Absent}, {0},
+                                    ate:=Quando.AddDays(30),
+                                    provedoresPermitidos:={"provedor-subjacente"})
+    End Function
+
+    Private Shared Function Chave(sufixo As String) As ItemKey
+        Return New ItemKey($"{EntradaDaPasta}-{sufixo}", "store-1")
+    End Function
+
+    Private Shared Function Instantaneo(k As ItemKey, corpo As String) As MessageSnapshot
+        Return New MessageSnapshot(k, "CK-" & k.EntryId, "assunto", "de@x.invalido",
+                                   {"para@x.invalido"}, corpo, False,
+                                   corpoCompleto:=True, temAnexo:=False)
+    End Function
+
+    Private Shared Function ParteQualquer() As MessagePart
+        Return New MessagePart(Chave("a"), "CK", "assunto", "de", {"para"},
+                               "corpo", True, "iabcdefgh")
+    End Function
+
+    ''' <summary>
+    ''' O broker que responde bem <b>para as chaves que recebeu</b> — e cujo
+    ''' corpo carrega o sufixo, para o par ficha↔corpo ser conferível de fora.
+    ''' </summary>
+    Private Shared Function BrokerBom(sufixos As String()) As FakeBroker
+        Dim b As New FakeBroker()
+        b.Rotulos = Function(chaves) OperationResult(Of IReadOnlyList(Of LabelReading)).
+            Ok(chaves.Select(Function(k) New LabelReading(
+                k, LabelReadingKind.Absent, LabelReadStage.Parse,
+                version:=New LabelVersionEvidence(k.EntryId, Quando,
+                                                  "CK-" & k.EntryId))).ToList())
+        b.Anexos = Function(chaves) OperationResult(Of IReadOnlyList(Of AttachmentPresence)).
+            Ok(chaves.Select(Function(k) New AttachmentPresence(k, False)).ToList())
+        b.Instantaneos = Function(k) OperationResult(Of MessageSnapshot).
+            Ok(Instantaneo(k, "corpo de " & SufixoDe(k)))
+        Return b
+    End Function
+
+    ' "SufixoDe", e nao "Sufixo": ha um "For Each sufixo" no Comigo, e em VB o
+    ' local eclipsa a funcao ignorando maiusculas -- o erro sai na linha do laco,
+    ' como "argumento nao especificado para o parametro k".
+    Private Shared Function SufixoDe(k As ItemKey) As String
+        Return k.EntryId.Substring(EntradaDaPasta.Length + 1)
+    End Function
+
+    Private Shared Function Acervo(db As CacheDatabase) As AcervoDeTodasAsPastas
+        Dim todas As New AcervoDeTodasAsPastas(db)
+        Dim dreno As New PublicationDrain(db)
+        dreno.Drenar(todas)
+        If todas.Recarregado = 0 Then todas.Recarregar()
+        Return todas
+    End Function
+
+    Private Shared Function Semear(db As CacheDatabase, sufixos As String()) As Long
+        Dim resolvedor As New ResolvedorDoAcervo(db)
+        Dim chave = resolvedor.Pasta("store-1", EntradaDaPasta, "Pasta de teste")
+        Dim impressao As New EnvironmentFingerprint(ProviderKind.ExchangeCached, True, Nothing)
+        Dim amb = resolvedor.Ambiente(impressao)
+
+        Dim universo As New SweepUniverse("store-1", EntradaDaPasta, "f", Nothing, 1, "amb-1")
+        Dim fonte As New FonteDeLinhas(universo, sufixos.Select(
+            Function(s) New SourceRow With {
+                .Key = $"{EntradaDaPasta}-{s}",
+                .Subject = "assunto " & s,
+                .SenderName = "quem",
+                .ReceivedAt = Quando.ToString("o"),
+                .MessageClass = "IPM.Note"}))
+
+        Dim sink As New SqliteSweepSink(db, chave, amb.Chave)
+        Dim r = New SweepRunner(fonte, sink, 50).
+                Executar(universo, 0, 1, EnvironmentPolicy.Capacidades(impressao),
+                         CancellationToken.None)
+        Assert.IsTrue(r.Publicou, $"controle: a semeadura tinha de publicar: {r.Motivo}")
+        Return chave
+    End Function
+
+    Private Shared Sub Comigo(corpo As Action(Of CacheDatabase))
+        Dim caminho = Path.Combine(Path.GetTempPath(),
+                                   "iris-borda-" & Guid.NewGuid().ToString("N") & ".db")
+        Try
+            Dim falha As OpenFailure = Nothing
+            Using db = CacheDatabase.Open(caminho, CacheSchema.Intended(), falha)
+                Assert.IsNotNull(db, $"{falha}")
+                corpo(db)
+            End Using
+        Finally
+            SqliteConnection.ClearAllPools()
+            For Each sufixo In {"", "-wal", "-shm"}
+                If File.Exists(caminho & sufixo) Then File.Delete(caminho & sufixo)
+            Next
+        End Try
+    End Sub
+
+    ''' <summary>
+    ''' <b>Um provedor que classifica de verdade</b> — lê o envelope que chegou e
+    ''' responde sobre as fichas que estão nele.
+    '''
+    ''' Responder uma lista fixa faria os testes provarem outra coisa: a
+    ''' conferência do lote passaria por coincidência, e o par ficha↔corpo nunca
+    ''' seria exercido.
+    ''' </summary>
+    Private NotInheritable Class ProvedorQueClassifica
+        Implements IAssistantProvider
+
+        Friend ReadOnly Recebidos As New List(Of Byte())()
+
+        Public ReadOnly Property Destino As AssistDestination _
+                                 Implements IAssistantProvider.Destino
+            Get
+                Return New AssistDestination("provedor-de-teste", Endereco,
+                                             "modelo-de-teste")
+            End Get
+        End Property
+
+        Public Function Preparar(envelope As Byte()) As Byte() _
+                                 Implements IAssistantProvider.Preparar
+            Return envelope
+        End Function
+
+        Public Function Pronto() As Boolean Implements IAssistantProvider.Pronto
+            Return True
+        End Function
+
+        Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _
+                               Implements IAssistantProvider.Enviar
+            Recebidos.Add(bytes)
+
+
+            ' RESPONDE SOBRE O QUE CHEGOU, e o controle recebe o rótulo que a
+            ' instrução mandou -- que é como um modelo obediente se comporta.
+            Dim itens As New List(Of String)()
+            For Each par In PorFicha(bytes)
+                Dim rotulo = If(par.Value.StartsWith("corpo de ", StringComparison.Ordinal),
+                                "fyi", RotuloDoControle(bytes))
+                itens.Add("{""item_key"":""" & par.Key & """,""label"":""" & rotulo & """}")
+            Next
+            Return New ProviderOutcome(ProviderStatus.Respondeu,
+                                       "[" & String.Join(",", itens) & "]", 200)
+        End Function
+
+        Friend ReadOnly Property Chamadas As Integer
+            Get
+                Return Recebidos.Count
+            End Get
+        End Property
+
+        Friend Function Corpos() As IReadOnlyList(Of String)
+            Return PorFicha().Values.ToList()
+        End Function
+
+        ''' <summary>Ficha → corpo, do último envelope que chegou.</summary>
+        Friend Function PorFicha() As Dictionary(Of String, String)
+            If Recebidos.Count = 0 Then Return New Dictionary(Of String, String)()
+            Return PorFicha(Recebidos(Recebidos.Count - 1))
+        End Function
+
+        Private Shared Function PorFicha(bytes As Byte()) As Dictionary(Of String, String)
+            Dim mapa As New Dictionary(Of String, String)(StringComparer.Ordinal)
+            Using doc = JsonDocument.Parse(Encoding.UTF8.GetString(bytes))
+                For Each m In doc.RootElement.GetProperty("mensagens").EnumerateArray()
+                    Dim ficha As JsonElement = Nothing
+                    If Not m.TryGetProperty("ficha", ficha) Then Continue For
+                    mapa(ficha.GetString()) = m.GetProperty("corpo").GetString()
+                Next
+            End Using
+            Return mapa
+        End Function
+
+        ''' <summary>
+        ''' O rótulo que a instrução mandou pôr no controle. Lido da instrução,
+        ''' que é onde o modelo de verdade o lê.
+        ''' </summary>
+        Private Shared Function RotuloDoControle(bytes As Byte()) As String
+            Using doc = JsonDocument.Parse(Encoding.UTF8.GetString(bytes))
+                ' "instrucaoDoUsuario", e nao "instrucao": o envelope tem dois
+                ' campos de instrucao, e ler o nome errado estourava DENTRO do
+                ' Enviar -- que a cerca do transmissor converte em Recusado. O
+                ' sintoma chegava como "a resposta nao e JSON valido", tres
+                ' camadas adiante.
+                Dim texto = doc.RootElement.GetProperty("instrucaoDoUsuario").GetString()
+                Dim marca = "classifique-a como "
+                Dim i = texto.IndexOf(marca, StringComparison.Ordinal)
+                Assert.IsTrue(i >= 0, "a instrução não anunciou o rótulo do controle")
+                Dim resto = texto.Substring(i + marca.Length)
+                ' A VIRGULA TAMBEM TERMINA: a instrucao diz "classifique-a como
+                ' X, qualquer que seja o conteudo". Sem ela o rotulo sairia com a
+                ' virgula colada e o Conferir o recusaria como inventado.
+                Dim fim = resto.IndexOfAny({","c, " "c, "."c, ControlChars.Lf, ControlChars.Cr})
+                Return If(fim < 0, resto, resto.Substring(0, fim))
+            End Using
+        End Function
+
+    End Class
+
+    ''' <summary>
+    ''' Um diário que aceita tudo. O que este arquivo mede é a borda, e um
+    ''' diário de verdade traria o banco para dentro de testes que não falam
+    ''' dele — <c>SqliteDisclosureJournal</c> já tem os seus.
+    ''' </summary>
+    Private NotInheritable Class DiarioDeMentira
+        Implements IDisclosureJournal
+
+        Public Function Intencao(c As DisclosureCapability, q As DateTimeOffset) As Boolean _
+                                 Implements IDisclosureJournal.Intencao
+            Return True
+        End Function
+        Public Function Iniciando(r As Guid, q As DateTimeOffset) As Boolean _
+                                  Implements IDisclosureJournal.Iniciando
+            Return True
+        End Function
+        Public Function Concluir(r As Guid, q As DateTimeOffset,
+                                 codigoHttp As Integer?) As Boolean _
+                                 Implements IDisclosureJournal.Concluir
+            Return True
+        End Function
+        Public Function Falhar(r As Guid, q As DateTimeOffset, n As DisclosureNote,
+                               podeTerChegado As Boolean,
+                               codigoHttp As Integer?) As Boolean _
+                               Implements IDisclosureJournal.Falhar
+            Return True
+        End Function
+        Public Function NaoEnviou(r As Guid, q As DateTimeOffset, n As DisclosureNote,
+                                  Optional m As DisclosureReason =
+                                      DisclosureReason.NaoDecidido) As Boolean _
+                                  Implements IDisclosureJournal.NaoEnviou
+            Return True
+        End Function
+        Public Function Reconciliar(q As DateTimeOffset) As Integer _
+                                    Implements IDisclosureJournal.Reconciliar
+            Return 0
+        End Function
+        Public Function Ler(n As Integer) As IReadOnlyList(Of DisclosureEntry) _
+                            Implements IDisclosureJournal.Ler
+            Return Array.Empty(Of DisclosureEntry)()
+        End Function
+    End Class
+
+End Class

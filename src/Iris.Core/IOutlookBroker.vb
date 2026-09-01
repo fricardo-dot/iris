@@ -355,6 +355,21 @@ Namespace Global.Iris.Core
             As Task(Of OperationResult(Of MessageSnapshot))
 
         ''' <summary>
+        ''' <b>A borda em lote:</b> o corpo de N mensagens numa visita só ao
+        ''' Outlook.
+        '''
+        ''' A saída tem <b>uma posição por entrada</b>, na mesma ordem, com
+        ''' <c>Nothing</c> onde a leitura falhou. Item que falha não derruba o
+        ''' lote, e não some da lista — encolhê-la faria quem chamou casar ficha
+        ''' com mensagem pelo índice errado.
+        '''
+        ''' Leitura pura, e portanto retentável: nada aqui escreve.
+        ''' </summary>
+        Function GetMessageSnapshotsAsync(items As IReadOnlyList(Of ItemKey),
+                                          cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of MessageSnapshot)))
+
+        ''' <summary>
         ''' Cada item tem anexo? — <c>Nothing</c> por item que não deu para
         ''' contar.
         '''

@@ -27,6 +27,14 @@ Namespace Global.Iris.Assist
         ''' consegui contar" nunca vira prova de ausência.
         ''' </summary>
         Anexo
+        ''' <summary>
+        ''' A ficha do lote não tem forma de ficha. <b>Não é engano de digitação</b>
+        ''' — ninguém digita ficha: ela é sorteada. É sinal de que alguém está
+        ''' montando envelope por um caminho que não passou por
+        ''' <c>LoteDeClassificacao</c>, e a ficha é o único identificador que sai
+        ''' desta máquina.
+        ''' </summary>
+        FichaInvalida
     End Enum
 
     Public NotInheritable Class ContentResult
@@ -164,7 +172,14 @@ Namespace Global.Iris.Assist
         ''' versão) e não provava nada sobre ele: qualquer chamador passava o
         ''' item aprovado, a versão aprovada, e um corpo qualquer.
         ''' </summary>
-        Public Shared Function Preparar(m As Model.MessageSnapshot) As ContentResult
+        ''' <param name="ficha">
+        ''' O apelido sorteado desta mensagem no lote, ou <c>Nothing</c> fora de um
+        ''' lote. É o <b>único identificador que sai desta máquina</b>, e por isso
+        ''' ele é conferido aqui como qualquer outro campo — ver
+        ''' <see cref="LoteDeClassificacao.EhFichaValida"/>.
+        ''' </param>
+        Public Shared Function Preparar(m As Model.MessageSnapshot,
+                                        Optional ficha As String = Nothing) As ContentResult
             If m Is Nothing Then Return Recusar(ContentRefusal.SemTexto)
 
             ' ANEXO PARA AQUI, e antes de tudo. O portao ja nega mensagem com
@@ -189,7 +204,8 @@ Namespace Global.Iris.Assist
             ' resumo silenciosamente parcial -- exatamente a familia de defeito
             ' que esta base passou a serie inteira corrigindo.
             Dim preparado = Preparar(m.Item, m.ChangeKey, m.Assunto, m.Remetente,
-                                     m.Destinatarios, m.Corpo, m.EhHtml, m.CorpoCompleto)
+                                     m.Destinatarios, m.Corpo, m.EhHtml, m.CorpoCompleto,
+                                     ficha)
             If Not preparado.Ok Then Return preparado
             Return New ContentResult(True, ContentRefusal.Nenhuma, preparado.Parte,
                                      m.Embutidas)
@@ -204,7 +220,23 @@ Namespace Global.Iris.Assist
                                         assunto As String, remetente As String,
                                         destinatarios As IEnumerable(Of String),
                                         corpo As String, ehHtml As Boolean,
-                                        corpoCompleto As Boolean) As ContentResult
+                                        corpoCompleto As Boolean,
+                                        Optional ficha As String = Nothing) As ContentResult
+
+            ' A FICHA E CONFERIDA COMO OS OUTROS CAMPOS, e antes deles.
+            '
+            ' Ela nao vem do Outlook: vem de quem montou o lote. Um chamador com
+            ' defeito carimbaria ali o assunto, o EntryID ou o endereco de alguem,
+            ' e o resto do pipeline nao olharia -- ele confere corpo, assunto,
+            ' remetente e destinatarios, e a ficha entrava por fora de todos.
+            '
+            ' Vazia e legitima: e o caso de fora de lote, que e o caminho por
+            ' mensagem. Preenchida e torta nao e engano de digitacao -- e sinal de
+            ' que alguem esta montando envelope por um caminho que ninguem previu.
+            If Not String.IsNullOrEmpty(ficha) AndAlso
+               Not LoteDeClassificacao.EhFichaValida(ficha) Then
+                Return Recusar(ContentRefusal.FichaInvalida)
+            End If
 
             ' Corpo pela metade NAO entra. Um resumo feito sobre meio corpo e
             ' apresentado como resumo e pior que nenhum resumo, e a regra da
@@ -259,7 +291,8 @@ Namespace Global.Iris.Assist
             End If
 
             Return New ContentResult(True, ContentRefusal.Nenhuma,
-                                     New MessagePart(item, changeKey, tema, de, quem, texto, True))
+                                     New MessagePart(item, changeKey, tema, de, quem, texto,
+                                                     True, ficha))
         End Function
 
         ''' <summary>

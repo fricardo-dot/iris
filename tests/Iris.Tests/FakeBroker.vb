@@ -401,6 +401,17 @@ Friend NotInheritable Class FakeBroker
     ''' <b>entre</b> as duas chamadas para fingir o Outlook mexendo no rascunho
     ''' por fora — que é o caso que o contador de edições do compositor não vê.
     ''' </summary>
+    ''' <summary>
+    ''' <b>Estraga a leitura em lote de propósito</b> — e é o único jeito de
+    ''' testar o alinhamento posicional.
+    '''
+    ''' Sem isto, o fake sempre devolve uma posição por pedido, e a conferência
+    ''' que o <c>ContextoDoOutlook</c> faz nunca é exercida — ela passaria por
+    ''' nunca ser alcançada, que é a forma mais silenciosa de teste inútil.
+    ''' </summary>
+    Public Property Lote As Func(Of IReadOnlyList(Of ItemKey),
+                                 OperationResult(Of IReadOnlyList(Of MessageSnapshot)))
+
     Public Property VersaoDoRascunho As String = "v1"
 
     ''' <summary>A versão que o envio recebeu, para o teste conferir.</summary>
@@ -663,6 +674,39 @@ Friend NotInheritable Class FakeBroker
         Chamadas.Add("outlook.getMessageSnapshot")
         If Instantaneos IsNot Nothing Then Return Task.FromResult(Instantaneos(item))
         Return ForaDaAlcada(Of OperationResult(Of MessageSnapshot))()
+    End Function
+
+    ''' <summary>
+    ''' A borda em lote, com a MESMA fonte da borda por mensagem.
+    '''
+    ''' Um fake com duas fontes deixaria um teste montar um mundo em que a
+    ''' leitura em lote e a leitura avulsa discordam — e nenhum código de
+    ''' produção pode produzir isso.
+    '''
+    ''' O alinhamento posicional é do contrato, então falha entra como
+    ''' <c>Nothing</c> na posição, e não como item ausente.
+    ''' </summary>
+    Public Function GetMessageSnapshotsAsync(items As IReadOnlyList(Of ItemKey),
+                                             cancel As CancellationToken) _
+        As Task(Of OperationResult(Of IReadOnlyList(Of MessageSnapshot))) _
+        Implements IOutlookBroker.GetMessageSnapshotsAsync
+        Chamadas.Add("outlook.getMessageSnapshots")
+        If Lote IsNot Nothing Then Return Task.FromResult(Lote(items))
+        If Instantaneos Is Nothing Then
+            Return ForaDaAlcada(Of OperationResult(Of IReadOnlyList(Of MessageSnapshot)))()
+        End If
+
+        Dim saida As New List(Of MessageSnapshot)()
+        ' "oItem", e nao "item": ha um Item(k As ItemKey) privado nesta classe,
+        ' e em VB o local eclipsa o membro ignorando maiusculas. O erro sai como
+        ' "argumento nao especificado para o parametro k", que nao tem nada a ver
+        ' com o laco. E a primeira secao do CLAUDE.md.
+        For Each oItem In items
+            Dim r = Instantaneos(oItem)
+            saida.Add(If(r IsNot Nothing AndAlso r.Succeeded, r.Value, Nothing))
+        Next
+        Return Task.FromResult(
+            OperationResult(Of IReadOnlyList(Of MessageSnapshot)).Ok(saida))
     End Function
 
     Public Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),

@@ -602,6 +602,72 @@ Namespace Global.Iris.App.ViewModels
             Return New Iris.Integration.FilaDoAcervo(_todasAsPastas).PastasQueEncolheram()
         End Function
 
+        ''' <summary>
+        ''' <b>A pasta que a classificação em lote tem de mirar.</b>
+        '''
+        ''' Devolve as duas identidades dela, porque as duas são necessárias e são
+        ''' coisas diferentes: <c>Chave</c> é a chave interna do cache — é por ela
+        ''' que os rótulos são gravados — e <c>Pasta</c> é o par
+        ''' <c>EntryID</c>/<c>StoreID</c>, que é como o <b>portão da divulgação</b>
+        ''' identifica pasta.
+        '''
+        ''' <c>Chave = 0</c> quer dizer "não há pasta apontada, ou ela nunca foi
+        ''' varrida": não existe <c>folder_key</c> zero.
+        ''' </summary>
+        Public Function PastaParaClassificar() _
+                        As (Chave As Long, Pasta As Iris.Model.FolderKey, Nome As String)
+            If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+
+            Dim alvo = _alvoDoOutlook
+            If alvo Is Nothing OrElse String.IsNullOrWhiteSpace(alvo.EntryId) Then
+                Return (0L, alvo, _nomeDoAlvo)
+            End If
+
+            Try
+                Dim achada = New Iris.Integration.ResolvedorDoAcervo(_db).PastaExistente(
+                    alvo.StoreId, alvo.EntryId)
+                Return (If(achada, 0L), alvo, _nomeDoAlvo)
+            Catch
+                ' Banco travado, arquivo sumindo: nao da para dizer qual pasta e,
+                ' e "nao sei" aqui e zero -- que o chamador le como "nao da".
+                Return (0L, alvo, _nomeDoAlvo)
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' <b>Uma passagem de classificação sobre a pasta.</b>
+        '''
+        ''' Mora aqui pelo mesmo motivo que o diário: é aqui que o cache está
+        ''' aberto. O que ela <b>não</b> faz é escolher as bordas — quem lê o
+        ''' Outlook e quem fala com o provedor vêm de fora, e este arquivo não tem
+        ''' nada a ver com IA.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>NA CONEXÃO COMPARTILHADA, E ISSO É DELIBERADO</b>
+        '''
+        ''' A varredura abre conexão própria porque roda longe e sozinha. Esta
+        ''' <b>não pode</b>: a porta que impede duas passagens de mandarem os mesmos
+        ''' corpos ao provedor é chaveada pelo objeto <c>CacheDatabase</c>, e duas
+        ''' conexões sobre o mesmo arquivo seriam dois objetos — a porta ficaria
+        ''' aberta justamente no caso que ela existe para fechar.
+        '''
+        ''' O preço é pago pela trava do <c>CacheDatabase</c>, que as gravações de
+        ''' rótulo respeitam. As leituras da passagem não vão ao banco: saem do
+        ''' retrato já carregado.
+        ''' </summary>
+        Public Function Classificar(pasta As Long,
+                                    regras As Collections.Generic.IReadOnlyList(Of String),
+                                    ativacao As String, quando As DateTimeOffset,
+                                    conteudo As Iris.Integration.ClassificarUmaPasta.Conteudo,
+                                    envio As Iris.Integration.ClassificarUmaPasta.Envio) _
+                                    As Iris.Integration.ResultadoDaClassificacao
+            If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+
+            Dim passagem As New Iris.Integration.ClassificarUmaPasta(
+                _todasAsPastas, New Iris.Cache.RotulosNoCache(_db))
+            Return passagem.Passar(pasta, regras, ativacao, quando, conteudo, envio)
+        End Function
+
         Public Function MensagensDoAcervo() As Collections.Generic.IReadOnlyList(Of Iris.Model.MensagemNaFila)
             If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
             Return New Iris.Integration.FilaDoAcervo(_todasAsPastas).Mensagens()

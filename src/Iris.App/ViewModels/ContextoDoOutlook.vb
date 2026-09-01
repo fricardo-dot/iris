@@ -22,9 +22,11 @@ Namespace Global.Iris.App.ViewModels
     ''' comentário dizia o contrário, e nascia falso no caminho que instancia a
     ''' classe. Achado por revisão externa em 01/09/2026.
     '''
-    ''' O que continua pendente é a borda <b>em lote</b>: ler o corpo de N
-    ''' mensagens de uma vez, para a classificação, os rascunhos em rodada e a
-    ''' pergunta ao acervo. Este contexto lê uma mensagem por vez.
+    ''' <b>E a borda em lote também deixou de ser pendência</b>, em 01/09/2026:
+    ''' este contexto lê as N mensagens da seleção numa visita só ao Outlook, e
+    ''' é ele mesmo que serve a classificação de pasta. Não há um segundo
+    ''' caminho de divulgação — <b>é este</b>, com outra seleção e com fichas.
+    ''' Um segundo caminho seria um segundo lugar para o portão ser esquecido.
     '''
     ''' ------------------------------------------------------------------
     ''' <b>A ORDEM, E POR QUE ELA É SÍNCRONA AQUI</b>
@@ -54,11 +56,20 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _destino As AssistDestination
         Private ReadOnly _selecao As Func(Of (Pasta As FolderKey, Itens As IReadOnlyList(Of ItemKey)))
 
+        ''' <summary>
+        ''' <b>A ficha de cada item</b>, quando a seleção é um lote de
+        ''' classificação. <c>Nothing</c> no caminho por mensagem, que não tem lote
+        ''' nem precisa dizer <i>de quem</i> a resposta fala: ela fala da única.
+        ''' </summary>
+        Private ReadOnly _ficha As Func(Of ItemKey, String)
+
         Friend Sub New(broker As IOutlookBroker, destino As AssistDestination,
-                       selecao As Func(Of (Pasta As FolderKey, Itens As IReadOnlyList(Of ItemKey))))
+                       selecao As Func(Of (Pasta As FolderKey, Itens As IReadOnlyList(Of ItemKey))),
+                       Optional ficha As Func(Of ItemKey, String) = Nothing)
             _broker = broker
             _destino = destino
             _selecao = selecao
+            _ficha = ficha
         End Sub
 
         Public Function Pedido(operacao As AssistOperation) As PreflightRequest _
@@ -142,31 +153,96 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         ''' <summary>
-        ''' Captura cada mensagem numa leitura só, prepara pelo pipeline, e
-        ''' monta.
+        ''' Captura as mensagens da seleção numa visita só, prepara cada uma pelo
+        ''' pipeline, e monta.
         '''
         ''' Mensagem que o pipeline recusa — corpo pela metade, referência
         ''' embutida, HTML que não dá para interpretar — <b>não entra</b>. O
         ''' envelope sai com menos itens que o grant aprovou, o
         ''' <c>Cobre</c> falha, e o cofre não emite. É o desfecho certo: uma
         ''' thread com um membro faltando não é a thread.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>UMA VISITA, E O ALINHAMENTO QUE ELA EXIGE</b>
+        '''
+        ''' Era uma ida ao broker por mensagem. Para uma thread de três, tanto faz;
+        ''' para um lote de vinte, são vinte entradas na STA e vinte aquisições de
+        ''' <c>Application</c> e <c>NameSpace</c> para produzir um envelope só.
+        '''
+        ''' A leitura em lote devolve <b>uma posição por item pedido</b>, e é por
+        ''' isso que este laço anda por índice em vez de percorrer a saída: casar
+        ''' ficha com mensagem pela ordem da lista devolvida só funciona enquanto
+        ''' as duas listas tiverem o mesmo tamanho, e a graça do contrato é ele
+        ''' valer quando <i>não</i> tiverem. Ficha trocada é a resposta do modelo
+        ''' sendo aplicada à mensagem errada.
+        '''
+        ''' A conferência do tamanho é explícita e não confia no contrato: quem
+        ''' implementa a interface pode errar, e este é o ponto do programa em que
+        ''' errar significa rotular a mensagem errada.
         ''' </summary>
         Public Function Montar(operacao As AssistOperation, instrucao As String) _
                                As EnvelopeResult Implements IAssistContext.Montar
-            Dim partes As New List(Of MessagePart)()
+            Return New EnvelopeBuilder().Montar(operacao, instrucao, Partes())
+        End Function
 
-            For Each item In _selecao().Itens
-                Dim s = _broker.GetMessageSnapshotAsync(item, CancellationToken.None).
+        ''' <summary>
+        ''' <b>As partes da seleção — e é aqui que a leitura em lote acontece.</b>
+        '''
+        ''' Saiu de dentro do <see cref="Montar"/> porque a classificação de pasta
+        ''' precisa exatamente disto e <b>não</b> do envelope: ela acrescenta o
+        ''' controle do lote às partes antes de montar. Duas rotinas fazendo isto
+        ''' divergiriam, e a divergência seria uma mensagem que atravessa o
+        ''' pipeline por um caminho e é recusada pelo outro.
+        ''' </summary>
+        Friend Function Partes() As IReadOnlyList(Of MessagePart)
+            ' "saida", e nao "partes": em VB um local nao pode ter o nome da
+            ' funcao que o contem -- e este e o unico membro da familia do
+            ' eclipse que o compilador acusa no lugar certo.
+            Dim saida As New List(Of MessagePart)()
+            Dim itens = _selecao().Itens
+            If itens.Count = 0 Then
+                Return saida
+            End If
+
+            Dim lidos = _broker.GetMessageSnapshotsAsync(itens, CancellationToken.None).
                         GetAwaiter().GetResult()
-                If Not s.Succeeded Then Continue For
+            If Not lidos.Succeeded OrElse lidos.Value Is Nothing Then
+                Return saida
+            End If
 
-                Dim pronto = ContentPipeline.Preparar(s.Value)
+            ' TAMANHO DIFERENTE NAO E "LER O QUE DEU": e nao ler nada.
+            ' Sem isto, uma implementacao que encolhesse a saida faria a ficha da
+            ' mensagem 5 viajar com o corpo da mensagem 6.
+            If lidos.Value.Count <> itens.Count Then
+                Return saida
+            End If
+
+            For i = 0 To itens.Count - 1
+                Dim retrato = lidos.Value(i)
+                If retrato Is Nothing Then Continue For
+
+                Dim pronto = ContentPipeline.Preparar(retrato, FichaDe(itens(i)))
                 If Not pronto.Ok Then Continue For
 
-                partes.Add(pronto.Parte)
+                saida.Add(pronto.Parte)
             Next
 
-            Return New EnvelopeBuilder().Montar(operacao, instrucao, partes)
+            Return saida
+        End Function
+
+        ''' <summary>
+        ''' A ficha do item, ou vazio. <b>Exceção aqui vira vazio</b>, e não sobe:
+        ''' um lote sem ficha é recusado adiante pela conferência do
+        ''' <c>LoteDeClassificacao</c>, o que é bem melhor do que uma exceção
+        ''' atravessando a montagem do envelope.
+        ''' </summary>
+        Private Function FichaDe(chave As ItemKey) As String
+            If _ficha Is Nothing Then Return Nothing
+            Try
+                Return _ficha(chave)
+            Catch
+                Return Nothing
+            End Try
         End Function
 
     End Class

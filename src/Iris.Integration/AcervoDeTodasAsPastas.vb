@@ -1,6 +1,7 @@
 Imports System.Collections.Generic
 Imports System.Linq
 Imports Iris.Cache
+Imports Iris.Model
 Imports Microsoft.Data.Sqlite
 
 Namespace Global.Iris.Integration
@@ -168,7 +169,8 @@ Namespace Global.Iris.Integration
             Dim novo As New List(Of PastaNoAcervo)()
 
             For Each p In PastasBrutas()
-                novo.Add(New PastaNoAcervo(p.Chave, p.Nome, leitor.Ler(p.Chave), p.Store))
+                novo.Add(New PastaNoAcervo(p.Chave, p.Nome, leitor.Ler(p.Chave), p.Store,
+                                           p.Entrada))
             Next
 
             SyncLock _trava
@@ -181,6 +183,7 @@ Namespace Global.Iris.Integration
             Public Chave As Long
             Public Nome As String
             Public Store As String
+            Public Entrada As String
         End Structure
 
         Private Function PastasBrutas() As List(Of Bruta)
@@ -189,8 +192,14 @@ Namespace Global.Iris.Integration
                 ' O STORE VEM JUNTO. Sem ele, quem monta um ItemKey a partir do
                 ' acervo tem o EntryID e nao tem onde abri-lo -- e ItemKey sem
                 ' store nao identifica mensagem nenhuma fora de uma caixa so.
+                '
+                ' E O ENTRYID DA PASTA TAMBEM, desde 01/09/2026. A classificacao em
+                ' lote pede autorizacao ao portao POR PASTA, e o portao fala em
+                ' FolderKey -- que e EntryID mais StoreID. O acervo so sabia a chave
+                ' interna do cache, que nao identifica pasta nenhuma fora dele.
                 cmd.CommandText =
-                    "SELECT f.folder_key, f.name, s.provider_store_id " &
+                    "SELECT f.folder_key, f.name, s.provider_store_id, " &
+                    "       f.provider_entry_id " &
                     "FROM folder f JOIN store s ON s.store_key = f.store_key " &
                     "ORDER BY f.name"
                 Using rd = cmd.ExecuteReader()
@@ -198,7 +207,8 @@ Namespace Global.Iris.Integration
                         r.Add(New Bruta With {
                             .Chave = rd.GetInt64(0),
                             .Nome = If(rd.IsDBNull(1), "", rd.GetString(1)),
-                            .Store = If(rd.IsDBNull(2), "", rd.GetString(2))})
+                            .Store = If(rd.IsDBNull(2), "", rd.GetString(2)),
+                            .Entrada = If(rd.IsDBNull(3), "", rd.GetString(3))})
                     End While
                 End Using
             End Using
@@ -220,12 +230,35 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Public ReadOnly Property Store As String
 
+        ''' <summary>
+        ''' O <c>EntryID</c> <b>da pasta</b> — e não de uma mensagem dela.
+        '''
+        ''' <see cref="Chave"/> é a chave interna do cache, e ela não identifica
+        ''' pasta nenhuma fora deste arquivo. O portão da divulgação autoriza
+        ''' <b>por pasta</b> e fala em <c>FolderKey</c>, que é este par; sem ele, a
+        ''' classificação em lote teria de pedir autorização para uma pasta que não
+        ''' sabe nomear.
+        ''' </summary>
+        Public ReadOnly Property Entrada As String
+
+        ''' <summary>
+        ''' A pasta como o resto do programa a identifica. Vazia — os dois campos
+        ''' em branco — quando o acervo não soube dizer; quem pede autorização com
+        ''' ela recebe recusa, que é o desfecho certo para "não sei de que pasta
+        ''' estamos falando".
+        ''' </summary>
+        Public Function Pasta() As FolderKey
+            Return New FolderKey(Entrada, Store)
+        End Function
+
         Friend Sub New(chave As Long, nome As String, manifesto As FolderManifest,
-                       Optional store As String = Nothing)
+                       Optional store As String = Nothing,
+                       Optional entrada As String = Nothing)
             Me.Chave = chave
             Me.Nome = If(nome, "")
             Me.Manifesto = manifesto
             Me.Store = If(store, "")
+            Me.Entrada = If(entrada, "")
         End Sub
     End Class
 

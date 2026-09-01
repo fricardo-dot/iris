@@ -455,7 +455,7 @@ Namespace Global.Iris.Tests
                     Await vm.ResumirCommand.ExecuteAsync(Nothing)
 
                     Assert.AreEqual(0, p.Chamadas, $"saiu com: {este}")
-                    CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshot",
+                    CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshots",
                         "a recusa tem de ser do pipeline, e nao de uma parada anterior")
                 End Using
             Next
@@ -627,7 +627,7 @@ Namespace Global.Iris.Tests
 
                     Assert.AreEqual(0, p.Chamadas,
                         $"o anexo que apareceu depois ({este}) atravessou")
-                    CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshot",
+                    CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshots",
                         "a recusa tem de acontecer DEPOIS da leitura do corpo")
                 End Using
             Next
@@ -862,7 +862,7 @@ Namespace Global.Iris.Tests
                 Assert.IsTrue(vm.ResumirCommand.CanExecute(Nothing))
                 Await vm.ResumirCommand.ExecuteAsync(Nothing)
 
-                CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshot",
+                CollectionAssert.Contains(b.Chamadas, "outlook.getMessageSnapshots",
                     "o portao negou antes da leitura do corpo: a recusa nao e a cobertura")
                 Assert.AreEqual(0, p.Chamadas,
                     "o grant cobria dois itens e os bytes eram de um")

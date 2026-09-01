@@ -37,6 +37,61 @@ Namespace Global.Iris.Outlook
         Private Const DaslChangeKey As String =
             "http://schemas.microsoft.com/mapi/proptag/0x65E20102"
 
+        ''' <summary>
+        ''' <b>N corpos numa visita só.</b> É a borda em lote.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O QUE ELA ECONOMIZA, E O QUE NÃO MUDA</b>
+        '''
+        ''' Chamar <see cref="Read"/> vinte vezes funciona e já funcionava — cada
+        ''' chamada atravessa o despachante do broker, entra na STA, pega
+        ''' <c>Application</c> e <c>NameSpace</c>, e sai. Vinte idas para vinte
+        ''' mensagens que vão para o mesmo lote.
+        '''
+        ''' Aqui o laço mora <b>dentro</b> de uma ida só. O que <i>não</i> muda é o
+        ''' tratamento de cada item: é o mesmo <see cref="Read"/>, com o mesmo
+        ''' <c>Finally</c> e a mesma ordem de liberação. Reescrever a leitura aqui
+        ''' para "aproveitar" a visita seria duplicar a única rotina desta base que
+        ''' já custou quatro violações da R7.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>ITEM QUE FALHA NÃO DERRUBA O LOTE — E NÃO SOME</b>
+        '''
+        ''' A saída tem <b>uma posição por entrada</b>, na mesma ordem, e o item
+        ''' que não deu para ler entra como <c>Nothing</c>. As duas metades
+        ''' importam:
+        '''
+        ''' <list type="bullet">
+        ''' <item>falhar o lote inteiro por uma mensagem faria uma pasta com um
+        ''' item corrompido nunca ser classificada;</item>
+        ''' <item>encolher a lista faria o chamador casar ficha com mensagem
+        ''' <b>pelo índice errado</b> — e a ficha é justamente o que diz de quem o
+        ''' modelo está falando.</item>
+        ''' </list>
+        '''
+        ''' Por isso o alinhamento posicional é contrato, e não conveniência.
+        ''' </summary>
+        Public Function ReadMany(ns As OL.NameSpace, items As IReadOnlyList(Of ItemKey)) _
+                                 As OperationResult(Of IReadOnlyList(Of MessageSnapshot))
+            Dim saida As New List(Of MessageSnapshot)()
+            If items Is Nothing Then
+                Return OperationResult(Of IReadOnlyList(Of MessageSnapshot)).Ok(saida)
+            End If
+
+            For Each item In items
+                If item Is Nothing OrElse item.IsEmpty Then
+                    ' Posicao preservada: ver o paragrafo do alinhamento.
+                    saida.Add(Nothing)
+                    Continue For
+                End If
+
+                Dim um = Read(ns, item)
+                saida.Add(If(um.Succeeded, um.Value, Nothing))
+            Next
+
+            Return OperationResult(Of IReadOnlyList(Of MessageSnapshot)).Ok(saida)
+        End Function
+
         Public Function Read(ns As OL.NameSpace, item As ItemKey) _
                              As OperationResult(Of MessageSnapshot)
             ' R7: o objeto e adquirido em UMA variavel, e e ela que o Finally

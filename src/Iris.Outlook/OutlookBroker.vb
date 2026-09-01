@@ -957,6 +957,21 @@ Namespace Global.Iris.Outlook
                 cancel)
         End Function
 
+        Public Async Function GetMessageSnapshotsAsync(items As IReadOnlyList(Of ItemKey),
+                                                       cancel As CancellationToken) _
+            As Task(Of OperationResult(Of IReadOnlyList(Of MessageSnapshot))) _
+            Implements IOutlookBroker.GetMessageSnapshotsAsync
+
+            ' Leitura pura, e o retry vale para o LOTE INTEIRO -- que e correto
+            ' justamente porque nada aqui escreve: reler as mesmas N mensagens
+            ' devolve as mesmas N. A regra do projeto e "leitura tem retry,
+            ' mutacao nao", e esta e leitura de ponta a ponta.
+            Return Await ReadAsync(Of IReadOnlyList(Of MessageSnapshot))(
+                "outlook.getMessageSnapshots",
+                Function(app, ns) MessageSnapshots.ReadMany(ns, items),
+                cancel)
+        End Function
+
         Public Async Function GetSensitivityLabelsAsync(items As IReadOnlyList(Of ItemKey),
                                                         cancel As CancellationToken) _
             As Task(Of OperationResult(Of IReadOnlyList(Of LabelReading))) _

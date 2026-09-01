@@ -328,6 +328,12 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public ReadOnly Property Assistente As AssistenteViewModel
 
+        ' A cadeia da IA, guardada para a classificacao em lote usar A MESMA.
+        Private _transmissor As AssistTransmitter
+        Private _rotulos As RotulosNaMao
+        Private _destinoDaIa As AssistDestination
+        Private _ativacaoDaIa As String = ""
+
         ''' <summary>
         ''' O caminho do cache e OPCIONAL, e existe por um motivo especifico:
         ''' sem ele este ViewModel nao tinha como ser construido num teste.
@@ -406,8 +412,13 @@ Namespace Global.Iris.App.ViewModels
                 ' consulta le a pasta inteira. O carimbo do retrato do acervo diz
                 ' quando a leitura envelheceu -- e publicacao e exatamente o
                 ' momento em que os rotulos podem ter mudado.
+                ' GUARDADO NUM CAMPO, e nao so no local: a classificacao em lote
+                ' precisa dizer a ele que os rotulos mudaram. Sem isso, a passagem
+                ' gravava no cache e as duas telas continuavam mostrando a leitura
+                ' memorizada -- a contagem subia e a tela nao mudava.
                 Dim rotulos As New RotulosNaMao(AddressOf Acervo.LerOsRotulos,
                                                 Function() Acervo.GeracaoDoRetrato)
+                _rotulos = rotulos
 
                 Fila = New FilaViewModel(
                     Function(eu, agora, fuso, dispensadas, ignorados) _
@@ -513,6 +524,9 @@ Namespace Global.Iris.App.ViewModels
                                                     Function() PodeResponder)
             ForwardCommand = New AsyncRelayCommand(AddressOf EncaminharAsync,
                                                    Function() PodeEncaminhar)
+
+            ClassificarPastaCommand = New AsyncRelayCommand(
+                AddressOf ClassificarPastaAsync, Function() PodeClassificarPasta)
 
             AddHandler Composer.PropertyChanged, AddressOf OnComposerChanged
 
@@ -1182,6 +1196,175 @@ Namespace Global.Iris.App.ViewModels
             End Select
         End Function
 
+        ' ==============================================================
+        ' A CLASSIFICACAO DE UMA PASTA
+
+        ''' <summary>
+        ''' <b>Classifica a pasta apontada, em lotes.</b>
+        '''
+        ''' Este comando é a última peça de seis das dez etapas do plano da IA: o
+        ''' núcleo existia, era testado, e <b>nenhuma tela o alcançava</b>.
+        ''' </summary>
+        Public ReadOnly Property ClassificarPastaCommand As AsyncRelayCommand
+
+        Private _classificando As Boolean
+        ''' <summary>
+        ''' Uma passagem em curso. <b>Aparece na tela</b>: a passagem manda lotes
+        ''' pela rede e demora, e sem sinal "trabalhando" e "travou" são a mesma
+        ''' coisa para quem olha.
+        ''' </summary>
+        Public Property Classificando As Boolean
+            Get
+                Return _classificando
+            End Get
+            Private Set(valor As Boolean)
+                SetProperty(_classificando, valor)
+                OnPropertyChanged(NameOf(PodeClassificarPasta))
+                ClassificarPastaCommand.NotifyCanExecuteChanged()
+            End Set
+        End Property
+
+        Private _classificacao As String = ""
+        ''' <summary>O que a última passagem fez, em português.</summary>
+        Public Property Classificacao As String
+            Get
+                Return _classificacao
+            End Get
+            Private Set(valor As String)
+                SetProperty(_classificacao, If(valor, ""))
+                OnPropertyChanged(NameOf(TemClassificacao))
+            End Set
+        End Property
+
+        Public ReadOnly Property TemClassificacao As Boolean
+            Get
+                Return _classificacao.Length > 0
+            End Get
+        End Property
+
+        ''' <summary>
+        ''' <b>Não exige ativação</b>, e isso é de propósito.
+        '''
+        ''' Sem autorização a passagem roda, o portão nega cada lote e o desfecho
+        ''' <b>explica</b> — nada sai da máquina. Um botão apagado sem motivo é o
+        ''' defeito que a faixa da IA já teve: o dono clica, não acontece nada, e
+        ''' ele nunca descobre que falta assinar um arquivo.
+        ''' </summary>
+        Public ReadOnly Property PodeClassificarPasta As Boolean
+            Get
+                Return Acervo IsNot Nothing AndAlso _transmissor IsNot Nothing AndAlso
+                       Not Classificando
+            End Get
+        End Property
+
+        Private Async Function ClassificarPastaAsync() As Task
+            If Not PodeClassificarPasta Then Return
+
+            Dim alvo As (Chave As Long, Pasta As FolderKey, Nome As String)
+            Try
+                alvo = Acervo.PastaParaClassificar()
+            Catch ex As Exception
+                Classificacao = "Não consegui saber qual pasta classificar."
+                Return
+            End Try
+
+            If alvo.Chave = 0 Then
+                Classificacao = "Escolha uma pasta já varrida. Classificar usa o que " &
+                                "está no acervo, e uma pasta sem varredura não tem acervo."
+                Return
+            End If
+
+            ' AS REGRAS DO DONO SAO LIDAS AQUI, e nao la dentro: ler arquivo do
+            ' perfil e da camada de aplicacao, e o Iris.Integration nao tem
+            ' dependencia de plataforma.
+            Dim regras As IReadOnlyList(Of String)
+            Try
+                Dim arquivo As New RegrasDoDono()
+                arquivo.Semear()
+                regras = arquivo.Ler()
+            Catch ex As Exception
+                ' Sem regras e um estado legitimo -- e diferente de "nao consegui
+                ' ler as regras". Classificar com as regras pela metade seria pior
+                ' que nao classificar: o dono descobriria pelo resultado.
+                Classificacao = "Não consegui ler as suas regras (" &
+                                ex.GetType().Name & "). Nada foi mandado."
+                Return
+            End Try
+
+            Dim borda As New BordaEmLote(_broker, _transmissor, _destinoDaIa, alvo.Pasta)
+            Dim quando = DateTimeOffset.Now
+            Dim ativacao = _ativacaoDaIa
+            Dim chave = alvo.Chave
+
+            Classificando = True
+            Classificacao = "Classificando " & alvo.Nome & "…"
+            Try
+                Dim r = Await Task.Run(
+                    Function() Acervo.Classificar(chave, regras, ativacao, quando,
+                                                  AddressOf borda.Conteudo,
+                                                  AddressOf borda.Envio))
+                Classificacao = EmPortugues(r, alvo.Nome)
+            Catch ex As Exception
+                Classificacao = "A classificação falhou (" & ex.GetType().Name & ")."
+            Finally
+                Classificando = False
+            End Try
+
+            ' A FILA E A CAIXA RELEEM. Os rotulos que acabaram de ser gravados sao
+            ' exatamente o que as duas telas mostram, e sem isto o dono via a
+            ' contagem subir e a tela nao mudar.
+            _rotulos?.Esquecer()
+            Fila?.Atualizar()
+            Caixas?.Atualizar()
+        End Function
+
+        ''' <summary>
+        ''' <b>O desfecho, dito para quem não leu o código.</b>
+        '''
+        ''' As três razões de uma mensagem não ser classificada aparecem
+        ''' <b>separadas</b> — lote recusado, rótulo inventado e mensagem que saiu
+        ''' da pasta são problemas diferentes, e somá-los num "faltaram 30"
+        ''' esconderia qual deles está acontecendo.
+        ''' </summary>
+        Friend Shared Function EmPortugues(r As ResultadoDaClassificacao,
+                                           nome As String) As String
+            If r Is Nothing Then Return "A classificação não devolveu resultado."
+
+            Select Case r.Motivo
+                Case MotivoDaClassificacao.NadaAFazer
+                    Return "Nada a classificar em " & nome & ": tudo o que está " &
+                           "presente já tem rótulo nesta varredura."
+                Case MotivoDaClassificacao.PastaNaoVarrida
+                    Return nome & " não tem varredura publicada. Varra primeiro — " &
+                           "classificar usa o acervo, e sem varredura não há acervo."
+                Case MotivoDaClassificacao.RegrasDemais
+                    Return "Você escreveu mais regras do que cabe num lote. " &
+                           "NADA foi mandado: classificar com parte das suas regras " &
+                           "daria um resultado que você descobriria pelo uso."
+                Case MotivoDaClassificacao.PastaRevarrida
+                    Return nome & " foi varrida de novo no meio da classificação. " &
+                           "O que sobrou não vale para a varredura nova; rode outra vez."
+                Case MotivoDaClassificacao.SemAsBordas
+                    Return "A classificação não foi montada corretamente."
+                Case MotivoDaClassificacao.JaEstaRodando
+                    Return "Já há uma classificação em andamento neste acervo."
+            End Select
+
+            Dim frase = $"{r.Classificados} de {r.Pedidos} classificadas em {nome}."
+            Dim porques As New List(Of String)()
+            If r.LotesRecusados > 0 Then
+                Dim porque = If(r.PrimeiraRecusa.Length > 0,
+                                " (" & r.PrimeiraRecusa & ")", "")
+                porques.Add($"{r.LotesRecusados} lote(s) recusado(s){porque}")
+            End If
+            If r.SemRotulo > 0 Then porques.Add($"{r.SemRotulo} sem rótulo válido")
+            If r.ForaDaPasta > 0 Then porques.Add($"{r.ForaDaPasta} já não estão na pasta")
+            If r.SemRegras > 0 Then porques.Add($"{r.SemRegras} sem as regras casadas")
+
+            If porques.Count = 0 Then Return frase
+            Return frase & " " & String.Join("; ", porques) & "."
+        End Function
+
         Private Function MontarAssistente(ui As Global.System.Windows.Threading.Dispatcher) _
                                           As AssistenteViewModel
             Dim relogio As Func(Of DateTimeOffset) = Function() DateTimeOffset.Now
@@ -1217,6 +1400,16 @@ Namespace Global.Iris.App.ViewModels
                 politica, New CapabilityLedger(),
                 If(diario, CType(New DiarioAusente(), IDisclosureJournal)),
                 provedor, relogio)
+
+            ' GUARDADOS PARA A CLASSIFICACAO EM LOTE -- e sao os MESMOS.
+            '
+            ' Montar um segundo transmissor para o lote daria um segundo cofre e,
+            ' pior, um segundo lugar onde o portao pode ser esquecido. O lote
+            ' atravessa exatamente a mesma cadeia do resumo por mensagem: mesma
+            ' politica, mesmo ledger, mesmo diario, mesmo provedor.
+            _transmissor = transmissor
+            _destinoDaIa = provedor.Destino
+            _ativacaoDaIa = If(ativacao.Carregou, ativacao.Record.Id, "")
 
             ' O CONTEXTO DE VERDADE. Ler a mensagem, classificar e montar o
             ' envelope sao requisitos do Iris, e independem de qual API vai

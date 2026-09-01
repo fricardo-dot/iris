@@ -576,6 +576,46 @@
                                                                   Converter={StaticResource BoolToVis},
                                                                   FallbackValue=Collapsed}"
                                                      AutomationProperties.Name="Varrendo" />
+
+                                        <!-- CLASSIFICAR, AO LADO DE VARRER, e nao num menu.
+
+                                             As duas operam a MESMA pasta e sao a mesma
+                                             sequencia: varrer guarda o que existe, classificar
+                                             poe rotulo no que foi guardado. Separa-las de tela
+                                             faria a segunda parecer independente da primeira,
+                                             e ela nao e: sem acervo nao ha o que classificar.
+
+                                             E8FA e a etiqueta. O botao NAO some sem ativacao:
+                                             sem ela a passagem roda, o portao nega cada lote e a
+                                             frase explica. Botao apagado sem motivo foi o
+                                             defeito que a faixa da IA ja teve. -->
+                                        <Button Style="{StaticResource CaptionButton}"
+                                                Width="26" Height="22" FontSize="13"
+                                                Margin="8,0,0,0"
+                                                Content="&#xE8FA;"
+                                                Command="{Binding ClassificarPastaCommand}"
+                                                AutomationProperties.Name="Classificar esta pasta com a IA">
+                                            <Button.ToolTip>
+                                                <StackPanel MaxWidth="380">
+                                                    <TextBlock Text="Classificar esta pasta"
+                                                               FontWeight="SemiBold" />
+                                                    <TextBlock Text="Manda o corpo das mensagens ainda sem rotulo ao provedor, em lotes, e guarda o rotulo no cache."
+                                                               TextWrapping="Wrap" Margin="0,2,0,0" />
+                                                    <TextBlock Text="Nada e enviado por e-mail, e nada sai sem a autorizacao assinada."
+                                                               TextWrapping="Wrap" Margin="0,6,0,0" />
+                                                </StackPanel>
+                                            </Button.ToolTip>
+                                        </Button>
+                                        <ProgressBar IsIndeterminate="True"
+                                                     Width="60" Height="3" Margin="8,0,0,0"
+                                                     BorderThickness="0"
+                                                     Background="{DynamicResource Brush.Surface.3}"
+                                                     Foreground="{DynamicResource Brush.Accent}"
+                                                     VerticalAlignment="Center"
+                                                     Visibility="{Binding Classificando,
+                                                                  Converter={StaticResource BoolToVis},
+                                                                  FallbackValue=Collapsed}"
+                                                     AutomationProperties.Name="Classificando" />
                                     </StackPanel>
 
                                     <TextBlock Text="carregando…" Style="{StaticResource Text.Muted}"
@@ -597,6 +637,21 @@
                                  acervo tendo FALHADO, e ninguem passa o mouse num icone
                                  para descobrir que algo quebrou. Custa zero linha
                                  enquanto nada quebra. -->
+                            <!-- O DESFECHO DA CLASSIFICACAO FICA NA TELA, e nao numa dica.
+
+                                 Ele diz quantas foram classificadas e, separadamente,
+                                 quantas nao foram, e por que: lote recusado, rotulo
+                                 inventado e mensagem que saiu da pasta sao problemas
+                                 diferentes. Somados num "faltaram 30", nenhum deles seria
+                                 acionavel. -->
+                            <TextBlock Text="{Binding Classificacao}"
+                                       Style="{StaticResource Text.Muted}"
+                                       TextWrapping="Wrap" Margin="12,4,12,0"
+                                       Visibility="{Binding TemClassificacao,
+                                                            Converter={StaticResource BoolToVis},
+                                                            FallbackValue=Collapsed}"
+                                       AutomationProperties.Name="Resultado da classificacao" />
+
                             <TextBlock Text="{Binding Acervo.Travado}"
                                        TextWrapping="Wrap"
                                        FontSize="12" Margin="0,6,0,0"
