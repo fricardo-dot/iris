@@ -226,7 +226,8 @@ Friend NotInheritable Class WatcherBroker
         Return Fora(Of OperationResult(Of SendPreview))()
     End Function
 
-    Public Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
+    Public Function SendDraftAsync(draft As DraftKey, versaoEsperada As String,
+                                   cancel As CancellationToken) _
         As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.SendDraftAsync
         Return Fora(Of OperationResult(Of Boolean))()
     End Function

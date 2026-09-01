@@ -17,7 +17,21 @@ Class Application
     Private _log As ILog
 
     Private Sub Application_Startup(sender As Object, e As StartupEventArgs) Handles Me.Startup
-        _log = New FileLog(FileLog.DefaultPath())
+        ' O LOG NAO PODE SER O QUE IMPEDE O PROGRAMA DE ABRIR.
+        '
+        ' O construtor do FileLog cria a pasta, e criar pasta falha: perfil
+        ' temporario defeituoso, %LOCALAPPDATA% redirecionado e fora do ar, ACL
+        ' corporativa, disco cheio. Fora do Try, isso derrubava o processo ANTES
+        ' da janela e antes da caixa de erro -- e a caixa de erro manda consultar
+        ' um log que, nesse caminho, nem chegou a existir.
+        '
+        ' Sem log o Iris roda pior; sem abrir, nao roda. Achado por revisao
+        ' externa em 01/09/2026.
+        Try
+            _log = New FileLog(FileLog.DefaultPath())
+        Catch
+            _log = New NullLog()
+        End Try
         _log.Write(LogLevel.Info, "app.startup", "iniciando")
 
         ' Tier 0 = renderizacao por software: TUDO fica travado, e nenhuma

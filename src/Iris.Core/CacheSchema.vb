@@ -306,6 +306,24 @@ Namespace Global.Iris.Core
                 Col("sender_address", "TEXT")
             }, Nothing, {Indice("incarnation_key")}))
 
+            ' OS DOIS INDICES DE LEITURA, e o motivo e medido em ordem de
+            ' grandeza: o unico indice era UNIQUE(item_key, folder_key), e a
+            ' pasta e a SEGUNDA coluna dele -- inutil para "todas as
+            ' associacoes desta pasta", que e o que o manifesto e os rotulos
+            ' perguntam.
+            '
+            ' Sem eles, cada leitura de manifesto varre a tabela inteira. Com
+            ' 50 pastas e 30 mil itens, uma recarga do acervo -- que acontece a
+            ' cada publicacao -- visitava da ordem de 1,5 milhao de linhas para
+            ' montar um retrato de 30 mil. Achado por revisao externa em
+            ' 01/09/2026.
+            '
+            ' Dois indices, e nao um composto: o manifesto filtra por geracao
+            ' publicada e nao olha presenca; os rotulos e a marcacao de
+            ' suspeita filtram por presenca.
+            '
+            ' (Comentario AQUI, e nao dentro do inicializador: em VB ele quebra
+            ' a continuacao implicita, e o erro sai nas linhas seguintes.)
             t.Add(New SchemaTable("association", {
                 Col("association_key", "INTEGER", pk:=True, obrigatoria:=True),
                 Col("item_key", "INTEGER", obrigatoria:=True, refs:="item", aoExcluir:=DeleteAction.Restrict),
@@ -319,7 +337,9 @@ Namespace Global.Iris.Core
                 Col("generation_key", "INTEGER", refs:="generation"),
                 Col("absent_by_generation", "INTEGER", refs:="generation"),
                 Col("absent_by_coverage", "INTEGER", refs:="coverage_observation")
-            }, {Indice("item_key", "folder_key")}))
+            }, {Indice("item_key", "folder_key")},
+               {Indice("folder_key", "generation_key"),
+                Indice("folder_key", "presence")}))
 
             ' §14 I2: pende do ITEM, nunca da encarnação.
             t.Add(New SchemaTable("user_state", {

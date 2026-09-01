@@ -480,7 +480,18 @@ Namespace Global.Iris.Core
         ''' a mensagem pode ter saído, e a resposta certa é procurar, não
         ''' reenviar.
         ''' </summary>
-        Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
+        ''' <param name="versaoEsperada">
+        ''' A <c>Version</c> da <see cref="SendPreview"/> que o dono aprovou. O
+        ''' envio confere se o rascunho ainda é aquele <b>antes</b> de mandar, e
+        ''' recusa com <see cref="ErrorKind.Stale"/> se não for — recusa limpa,
+        ''' porque acontece antes do <c>Send</c> e portanto nada saiu.
+        '''
+        ''' <b>Obrigatório, e não opcional.</b> Um parâmetro com valor padrão
+        ''' deixaria a chamada desprotegida continuar compilando, que é
+        ''' exatamente o estado de onde este parâmetro veio.
+        ''' </param>
+        Function SendDraftAsync(draft As DraftKey, versaoEsperada As String,
+                                cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean))
 
         Function DeleteDraftAsync(draft As DraftKey, cancel As CancellationToken) _

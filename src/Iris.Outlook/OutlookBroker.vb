@@ -1094,12 +1094,13 @@ Namespace Global.Iris.Outlook
         ''' classificador, e Ambiguous NUNCA é retentável — reenviar no
         ''' escuro é o único erro irreversível deste projeto.
         ''' </summary>
-        Public Async Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
+        Public Async Function SendDraftAsync(draft As DraftKey, versaoEsperada As String,
+                                             cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.SendDraftAsync
 
             Return Await MutateAsync(Of Boolean)(
                 "outlook.sendDraft",
-                Function(app, ns) DraftWriting.Send(ns, draft), cancel)
+                Function(app, ns) DraftWriting.Send(ns, draft, versaoEsperada), cancel)
         End Function
 
         Public Async Function DeleteDraftAsync(draft As DraftKey, cancel As CancellationToken) _
@@ -1156,7 +1157,17 @@ Namespace Global.Iris.Outlook
         Public Async Function UnsubscribeFolderAsync(token As SubscriptionToken, cancel As CancellationToken) _
             As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.UnsubscribeFolderAsync
 
-            Return Await ReadAsync(Of Boolean)(
+            ' DESASSINAR TAMBEM NAO E LEITURA -- e o par exato do Subscribe.
+            '
+            ' Ela remove a assinatura da tabela e derruba os handlers COM. Uma
+            ' chamada recusada e repetida DEPOIS de a remocao ter comecado mexe
+            ' numa assinatura que ja saiu do dicionario -- e a segunda tentativa
+            ' nao encontra o que a primeira ja levou.
+            '
+            ' O Subscribe saiu do ReadAsync hoje de manha e este ficou. Metade de
+            ' um par corrigida e a forma mais confiavel de a outra metade nunca
+            ' ser. Achado por revisao externa em 01/09/2026.
+            Return Await SemRetryAsync(Of Boolean)(
                 "outlook.unsubscribeFolder",
                 Function(app, ns)
                     Dim assinatura As FolderSubscription = Nothing

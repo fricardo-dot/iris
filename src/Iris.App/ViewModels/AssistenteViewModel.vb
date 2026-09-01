@@ -938,11 +938,46 @@ Namespace Global.Iris.App.ViewModels
         ''' O marcador é o mesmo desenho do diário de buscas, com o sinal
         ''' trocado: lá a ausência liga, aqui a presença. O padrão de cada um
         ''' é o lado seguro do seu caso.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>EXISTIR NÃO BASTA — TEM DE SER O ARQUIVO DO IRIS</b>
+        '''
+        ''' A conferência era só <c>File.Exists</c>, e qualquer arquivo com esse
+        ''' nome ligava o envio automático: um restauro de perfil, uma versão
+        ''' anterior, um arquivo esquecido, um <c>type nul ></c> de outra
+        ''' ferramenta. Abrir uma mensagem passava a mandar o corpo dela para o
+        ''' provedor sem ninguém ter pedido. Achado por revisão externa em
+        ''' 01/09/2026.
+        '''
+        ''' Agora o conteúdo precisa trazer a <b>assinatura</b> que o próprio Iris
+        ''' escreve. E é preciso dizer o que isso <i>não</i> compra: um processo
+        ''' rodando como o dono pode escrever a assinatura tão facilmente quanto
+        ''' criava o arquivo vazio. Isso não é defesa contra código hostil local —
+        ''' contra esse, nada nesta máquina é. É defesa contra <b>acidente</b>, que
+        ''' é o que de fato acontece com arquivo em pasta de perfil.
+        '''
+        ''' A autorização continua sendo o portão: sem ativação, o marcador liga um
+        ''' resumo que é recusado antes de qualquer leitura.
         ''' </summary>
+        ''' <summary>
+        ''' A linha que o marcador precisa ter. Ver <see cref="ResumirAoAbrir"/>.
+        ''' </summary>
+        Friend Const AssinaturaDoResumoAutomatico As String =
+            "iris.resumir-ao-abrir.v1"
+
         Public Property ResumirAoAbrir As Boolean
             Get
                 Try
-                    Return IO.File.Exists(CaminhoDoResumoAutomatico())
+                    Dim caminho = CaminhoDoResumoAutomatico()
+                    If Not IO.File.Exists(caminho) Then Return False
+
+                    ' TETO DE LEITURA. Um arquivo enorme com este nome nao pode
+                    ' custar memoria: o marcador que o Iris escreve tem duas linhas.
+                    Dim tamanho = New IO.FileInfo(caminho).Length
+                    If tamanho <= 0 OrElse tamanho > 4096 Then Return False
+
+                    Return IO.File.ReadAllText(caminho, Text.Encoding.UTF8).
+                           Contains(AssinaturaDoResumoAutomatico)
                 Catch
                     Return False
                 End Try
@@ -953,10 +988,11 @@ Namespace Global.Iris.App.ViewModels
                     If value Then
                         IO.Directory.CreateDirectory(IO.Path.GetDirectoryName(caminho))
                         IO.File.WriteAllText(caminho,
-                            "Enquanto este arquivo existir, o Iris resume ao abrir a mensagem." &
-                            Environment.NewLine &
-                            "Apague-o, ou use o botao na tela, para voltar a resumir so a pedido." &
-                            Environment.NewLine, Text.Encoding.UTF8)
+                            AssinaturaDoResumoAutomatico & Environment.NewLine &
+                            "Enquanto este arquivo existir COM A LINHA ACIMA, o Iris resume " &
+                            "ao abrir a mensagem." & Environment.NewLine &
+                            "Apague-o, ou use o botao na tela, para voltar a resumir so a " &
+                            "pedido." & Environment.NewLine, Text.Encoding.UTF8)
                     ElseIf IO.File.Exists(caminho) Then
                         IO.File.Delete(caminho)
                     End If

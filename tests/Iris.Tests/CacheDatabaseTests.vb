@@ -343,6 +343,7 @@ Public Class CacheDatabaseTests
     ''' .db de verdade na versao 1, que prova mais e envelhece pior.
     ''' </summary>
     Private Shared Sub FingirVersao1(db As CacheDatabase)
+        SemOsIndicesDaSete(db)
         Executar(db, "DROP TABLE label_observation")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
@@ -364,6 +365,7 @@ Public Class CacheDatabaseTests
     ''' degrau novo é justamente o que ninguém rodou ainda.
     ''' </summary>
     Private Shared Sub FingirVersao2(db As CacheDatabase)
+        SemOsIndicesDaSete(db)
         Executar(db, "DROP TABLE label_observation")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
@@ -383,6 +385,7 @@ Public Class CacheDatabaseTests
     ''' subir a escada inteira esconde qual degrau quebrou.
     ''' </summary>
     Private Shared Sub FingirVersao3(db As CacheDatabase)
+        SemOsIndicesDaSete(db)
         Executar(db, "DROP TABLE label_observation")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_id")
         Executar(db, "ALTER TABLE metadata_observation DROP COLUMN conversation_index")
@@ -398,8 +401,25 @@ Public Class CacheDatabaseTests
     ''' rótulos sai inteira.
     ''' </summary>
     Private Shared Sub FingirVersao4(db As CacheDatabase)
+        SemOsIndicesDaSete(db)
         Executar(db, "DROP TABLE label_observation")
         Executar(db, "PRAGMA user_version = 4")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Tira os índices que a versão 7 acrescentou.</b>
+    '''
+    ''' Os fingimentos acima partem do banco de <i>hoje</i> e desfazem o que veio
+    ''' depois — é a forma mais próxima do real que dá sem guardar um arquivo
+    ''' antigo no repositório. Só que desfazer <b>coluna</b> não é a lista toda:
+    ''' a versão 7 acrescentou dois índices, e um banco de verdade parado na 6
+    ''' não os tem. Sem esta linha o fingimento nascia com eles, e a migração
+    ''' 6 → 7 morria em <c>index ix_association_1 already exists</c> — um
+    ''' vermelho que acusava o teste, não o código.
+    ''' </summary>
+    Private Shared Sub SemOsIndicesDaSete(db As CacheDatabase)
+        Executar(db, "DROP INDEX IF EXISTS ix_association_1")
+        Executar(db, "DROP INDEX IF EXISTS ix_association_2")
     End Sub
 
     Private Shared Sub Executar(db As CacheDatabase, sql As String)

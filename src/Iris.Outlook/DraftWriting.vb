@@ -597,6 +597,16 @@ Namespace Global.Iris.Outlook
                 Dim statusDosAnexos As PartStatus = Nothing
                 previa.Attachments.AddRange(LerAnexos(item, statusDosAnexos))
                 previa.AttachmentsStatus = statusDosAnexos
+
+                ' A VERSAO E LIDA POR ULTIMO, e isso importa.
+                '
+                ' Lida antes, ela carimbaria um estado anterior ao que a previa
+                ' acabou de descrever, e uma mudanca ocorrida DURANTE a leitura
+                ' passaria despercebida. Lida depois, ela e no minimo tao nova
+                ' quanto o que esta na tela: se algo mudou no meio, a versao ja e a
+                ' de depois, o envio confere e recusa. Errar para o lado de recusar
+                ' e o unico erro que esta tela pode cometer.
+                previa.Version = VersaoDo(item)
                 Return OperationResult(Of SendPreview).Ok(previa)
             Finally
                 ComHelpers.Release(item)
@@ -753,7 +763,27 @@ Namespace Global.Iris.Outlook
         ''' repetir um Send manda o e-mail duas vezes. Depois de chamado, o
         ''' item não é mais tocado.
         ''' </summary>
-        Public Function Send(ns As OL.NameSpace, chave As DraftKey) As OperationResult(Of Boolean)
+        ''' <summary>
+        ''' <b>Envia — se o rascunho ainda for o que foi aprovado.</b>
+        '''
+        ''' <paramref name="versaoEsperada"/> é a <c>SendPreview.Version</c> que o
+        ''' dono viu. A conferência acontece <b>antes</b> do <c>Send</c>, então a
+        ''' recusa é limpa: nada saiu, e o resultado é
+        ''' <see cref="ErrorKind.Stale"/> — nunca <c>Ambiguous</c>.
+        '''
+        ''' <b>Versão ilegível recusa também</b>, dos dois lados. A tentação é
+        ''' deixar passar quando não dá para comparar, e ela está exatamente ao
+        ''' contrário: "não sei se mudou" e "sei que não mudou" só são a mesma
+        ''' coisa para quem não vai ter de desfazer. Esta é a única operação do
+        ''' projeto sem desfazer.
+        '''
+        ''' A janela nativa do Outlook aberta no mesmo item, um suplemento ou uma
+        ''' sincronização vinda do servidor mudam o rascunho sem o Iris saber — o
+        ''' contador de edições da tela não os vê. Achado por revisão externa em
+        ''' 01/09/2026.
+        ''' </summary>
+        Public Function Send(ns As OL.NameSpace, chave As DraftKey,
+                             versaoEsperada As String) As OperationResult(Of Boolean)
             Dim item As OL.MailItem = Nothing
             Try
                 Try
@@ -764,6 +794,18 @@ Namespace Global.Iris.Outlook
 
                 If item Is Nothing Then
                     Return OperationResult(Of Boolean).Fail(ErrorKind.NotFound, "rascunho")
+                End If
+
+                ' ANTES DE QUALQUER COISA IRREVERSIVEL.
+                Dim agora = VersaoDo(item)
+                If versaoEsperada Is Nothing OrElse versaoEsperada.Length = 0 OrElse
+                   agora.Length = 0 Then
+                    Return OperationResult(Of Boolean).Fail(ErrorKind.Stale,
+                        "nao deu para saber que versao do rascunho seria enviada")
+                End If
+                If Not String.Equals(agora, versaoEsperada, StringComparison.Ordinal) Then
+                    Return OperationResult(Of Boolean).Fail(ErrorKind.Stale,
+                        "o rascunho mudou depois da conferencia")
                 End If
 
                 Dim recipients As OL.Recipients = Nothing
@@ -787,6 +829,46 @@ Namespace Global.Iris.Outlook
         End Function
 
         ' ===================================================================
+
+        ''' <summary>
+        ''' <b>Um carimbo do estado atual do rascunho.</b>
+        '''
+        ''' Três leituras baratas e independentes: hora da última modificação,
+        ''' tamanho e identidade. Nenhuma delas cria RCW — são escalares — e
+        ''' nenhuma delas sozinha basta:
+        '''
+        ''' <list type="bullet">
+        ''' <item>a <b>hora</b> tem resolução grosseira, e duas edições no mesmo
+        ''' segundo dariam o mesmo carimbo;</item>
+        ''' <item>o <b>tamanho</b> não muda quando se troca uma palavra por outra
+        ''' do mesmo comprimento, nem quando se troca um destinatário;</item>
+        ''' <item>a <b>identidade</b> muda num <c>Save</c> que mova o item, e é o
+        ''' que pega o caso de o rascunho ter virado outro item.</item>
+        ''' </list>
+        '''
+        ''' Isto <b>não</b> é um hash do conteúdo, e não pretende ser: não existe
+        ''' carimbo perfeito de mudança no Object Model, e ler o corpo inteiro
+        ''' duas vezes a cada envio custaria caro para fechar uma fresta que estas
+        ''' três leituras já fecham nos casos que acontecem.
+        '''
+        ''' <b>Vazio quer dizer "não deu para ler"</b> — qualquer uma das três
+        ''' falhando anula o carimbo inteiro, porque um carimbo pela metade
+        ''' compara igual quando a parte que sumiu era justamente a que mudou.
+        ''' </summary>
+        Private Function VersaoDo(item As OL.MailItem) As String
+            Try
+                Dim quando = item.LastModificationTime
+                Dim tamanho = item.Size
+                Dim id = item.EntryID
+                If String.IsNullOrEmpty(id) Then Return ""
+                Return quando.Ticks.ToString(Globalization.CultureInfo.InvariantCulture) &
+                       "/" & tamanho.ToString(Globalization.CultureInfo.InvariantCulture) &
+                       "/" & id
+            Catch
+                ' Nem COMException nem nada mais: falhou, nao ha carimbo.
+                Return ""
+            End Try
+        End Function
 
         ''' <summary>
         ''' <b>Depois do <c>Save</c>, chave vazia é ambiguidade — não sucesso.</b>

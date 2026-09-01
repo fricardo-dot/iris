@@ -553,4 +553,69 @@ Public Class FilaViewModelTests
         Next
     End Function
 
+    ' ==================================================================
+    ' A VARREDURA QUE ENCOLHEU
+
+    ''' <summary>
+    ''' <b>Fila vazia por contração não pode parecer fila vazia por mérito.</b>
+    '''
+    ''' Quando a varredura vê menos do que antes, o que sumiu vira <i>suspeito</i>
+    ''' e sai da fila. A tela ficava idêntica à do dia em que o dono respondeu
+    ''' tudo — e esse é justamente o desfecho que esta classe existe para não
+    ''' produzir por engano.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function A_pasta_que_ENCOLHEU_aparece_na_ressalva() As Task
+        Dim vm As New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados) _
+                Montar(Array.Empty(Of MensagemNaFila)(), True),
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc,
+            encolheram:=Function() New String() {"Caixa de Entrada"})
+
+        Await vm.Atualizar()
+
+        Assert.IsTrue(vm.TemRessalva, "A FILA ESVAZIOU CALADA")
+        StringAssert.Contains(vm.Ressalva, "Caixa de Entrada")
+        StringAssert.Contains(vm.Ressalva, "suspeito",
+            "a ressalva precisa dizer que sumiu, e nao que foi resolvido")
+    End Function
+
+    ''' <summary>
+    ''' <b>O controle negativo:</b> sem contração, nenhuma ressalva.
+    '''
+    ''' Sem ele, um aviso que aparecesse <i>sempre</i> passaria no teste de cima
+    ''' e ensinaria o dono a ignorá-lo — que é o mesmo que não avisar.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Sem_contracao_a_fila_nao_inventa_ressalva() As Task
+        Dim vm As New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados) _
+                Montar(Array.Empty(Of MensagemNaFila)(), True),
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc,
+            encolheram:=Function() Array.Empty(Of String)())
+
+        Await vm.Atualizar()
+
+        Assert.IsFalse(vm.TemRessalva, "ressalva que aparece sempre nao avisa nada")
+    End Function
+
+    ''' <summary>
+    ''' A ressalva que estoura <b>não</b> derruba a fila: ela é um aviso sobre a
+    ''' leitura, e não parte dela.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Contracao_que_estoura_nao_derruba_a_fila() As Task
+        Dim vm As New FilaViewModel(
+            Function(eu, agora, fuso, dispensadas, ignorados) _
+                Montar({Msg("c1", "outro@x.invalido", 3)}, True),
+            Nothing, Nothing, Function() Agora, TimeZoneInfo.Utc,
+            encolheram:=Function()
+                            Throw New InvalidOperationException("banco fechou")
+                        End Function)
+
+        Await vm.Atualizar()
+
+        Assert.IsTrue(vm.Respondeu, "A FILA MORREU POR CAUSA DE UM AVISO")
+    End Function
+
 End Class

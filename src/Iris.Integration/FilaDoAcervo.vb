@@ -116,6 +116,36 @@ Namespace Global.Iris.Integration
         End Function
 
         ''' <summary>
+        ''' <b>Pastas que encolheram na última varredura.</b>
+        '''
+        ''' Uma geração publicada marca como <i>suspeito</i> tudo que estava
+        ''' presente e não apareceu — e isso é o modelo funcionando, e não um
+        ''' defeito: geração publicada autoriza positivos e suspeitas, e é a
+        ''' verificação, não ela, que exige cobertura completa.
+        '''
+        ''' Só que <see cref="Mensagens"/> exclui suspeito, e o Outlook em modo
+        ''' cache encolhe a janela sozinho. O efeito é uma fila que esvazia sem
+        ''' nada ter sido resolvido, e o dono lendo isso como "acabou".
+        '''
+        ''' A ressalva da contração já existia — e morava no painel do acervo,
+        ''' que é outra tela e, na prática, outro dia. Ela passa a sair também
+        ''' onde o estrago aparece. Achado por revisão externa em 01/09/2026.
+        ''' </summary>
+        Public Function PastasQueEncolheram() As IReadOnlyList(Of String)
+            Dim achadas As New List(Of String)()
+
+            For Each pasta In _acervo.Pastas
+                If Not pasta.Manifesto.GenerationKey.HasValue Then Continue For
+                Dim c = pasta.Manifesto.Contracao
+                If c Is Nothing Then Continue For
+                If c.Verdict <> ContractionVerdict.Encolheu Then Continue For
+                achadas.Add(pasta.Nome)
+            Next
+
+            Return achadas
+        End Function
+
+        ''' <summary>
         ''' <b>Por caixa, até quando as respostas do dono são conhecidas.</b>
         '''
         ''' É o instante em que a pasta de enviados <i>daquela caixa</i> foi

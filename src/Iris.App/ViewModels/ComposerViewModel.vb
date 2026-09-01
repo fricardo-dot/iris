@@ -1081,7 +1081,13 @@ Namespace Global.Iris.App.ViewModels
             End If
 
             Dim marca = Interlocked.Read(_geracao)
-            Dim resultado = Await _broker.SendDraftAsync(_key, CancellationToken.None)
+            ' A VERSAO QUE ESTA NA TELA, e nao a que estiver no Outlook.
+            '
+            ' O contador de edicoes acima cobre o que o Iris fez. Isto cobre o
+            ' que o Outlook fez pelas costas dele -- janela nativa aberta no mesmo
+            ' item, suplemento, sincronizacao. Ver SendPreview.Version.
+            Dim aprovada = If(Preview?.Version, "")
+            Dim resultado = Await _broker.SendDraftAsync(_key, aprovada, CancellationToken.None)
 
             ' Defesa estrutural. Hoje fechar é recusado durante o envio, mas
             ' depender de uma invariante de outro método para não escrever
@@ -1099,6 +1105,18 @@ Namespace Global.Iris.App.ViewModels
                 Status = "O envio falhou e NÃO dá para saber se a mensagem saiu. " &
                          "Confira Itens Enviados no Outlook antes de tentar de novo. " &
                          "O Iris não vai reenviar sozinho."
+                Return
+            End If
+
+            ' O RASCUNHO MUDOU POR FORA. Nada saiu -- a recusa acontece antes
+            ' do Send --, entao a trava volta e a tela manda conferir de novo.
+            ' A frase e propria: "nao foi possivel enviar" faria o dono
+            ' procurar defeito de rede num caso que e o oposto disso.
+            If resultado.Kind = ErrorKind.Stale Then
+                Volatile.Write(_envioComecou, 0)
+                VoltarAEditar()
+                Status = "O rascunho mudou fora do Iris depois de você conferir — " &
+                         "nada foi enviado. Confira de novo antes de mandar."
                 Return
             End If
 

@@ -322,6 +322,66 @@ Public Class ComposerTests
     ''' compositor guarda o texto, mostra o aviso e NÃO oferece enviar de
     ''' novo. Repetir poderia mandar a mesma mensagem duas vezes.
     ''' </summary>
+    ' ==================================================================
+    ' O RASCUNHO MUDOU POR FORA
+
+    ''' <summary>
+    ''' <b>O Outlook mexeu no rascunho entre a conferência e o envio.</b>
+    '''
+    ''' O compositor já se defendia das edições <i>dele mesmo</i>, contando-as.
+    ''' Só que o rascunho mora no Outlook, e o Outlook é multi-dono: a janela
+    ''' nativa aberta no mesmo item, um suplemento, uma sincronização. Nenhum
+    ''' deles mexe no contador, e o dono aprovava uma lista e saía outra.
+    '''
+    ''' A recusa acontece <b>antes</b> do Send, então nada saiu — e o estado é
+    ''' Editing, não SendUnknown. Confundir os dois faria o dono ir procurar em
+    ''' Itens Enviados uma mensagem que nunca existiu.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub Rascunho_mudado_POR_FORA_nao_e_enviado()
+        Dim broker As New FakeBroker()
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        vm.UserText = "texto conferido"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+        Assert.AreEqual(ComposerState.ConfirmingSend, vm.State)
+
+        ' O Outlook mexeu. O Iris nao tem como saber -- so comparando.
+        broker.VersaoDoRascunho = "v2"
+
+        Aguardar(vm.ConfirmSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual(ComposerState.Editing, vm.State,
+            "recusa ANTES do Send nao e ambiguidade: nada saiu")
+        Assert.AreEqual("texto conferido", vm.UserText)
+        StringAssert.Contains(vm.Status, "fora do Iris")
+        Assert.IsTrue(vm.RequestSendCommand.CanExecute(Nothing),
+            "nada saiu, entao o botao volta")
+    End Sub
+
+    ''' <summary>
+    ''' <b>O controle negativo:</b> a versão que o envio recebe é a que a prévia
+    ''' mostrou — e não uma relida na hora, que compararia sempre igual.
+    '''
+    ''' Sem ele, um compositor que passasse a versão corrente em vez da aprovada
+    ''' passaria no teste de cima <i>e</i> não protegeria nada.
+    ''' </summary>
+    <STATestMethod>
+    Public Sub A_versao_enviada_e_a_que_a_TELA_mostrou()
+        Dim broker As New FakeBroker With {.VersaoDoRascunho = "carimbo-da-previa"}
+        Dim vm = Montar(broker)
+        Aguardar(vm.NewMessageAsync())
+
+        vm.ToLine = "fulano@empresa.com"
+        Aguardar(vm.RequestSendCommand.ExecuteAsync(Nothing))
+        Aguardar(vm.ConfirmSendCommand.ExecuteAsync(Nothing))
+
+        Assert.AreEqual("carimbo-da-previa", broker.VersaoRecebidaNoEnvio)
+        Assert.AreEqual(ComposerState.Closed, vm.State)
+    End Sub
+
     <STATestMethod>
     Public Sub Envio_ambiguo_nao_permite_reenviar()
         Dim broker As New FakeBroker With {.ResultadoDoEnvio = ErrorKind.Ambiguous}

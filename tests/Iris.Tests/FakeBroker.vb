@@ -392,14 +392,36 @@ Friend NotInheritable Class FakeBroker
         p.Attachments.AddRange(_anexos)
         p.RecipientsStatus = LeituraDeDestinatarios
         p.AttachmentsStatus = LeituraDeAnexos
+        p.Version = VersaoDoRascunho
         Return OperationResult(Of SendPreview).Ok(p)
     End Function
 
-    Public Async Function SendDraftAsync(draft As DraftKey, cancel As CancellationToken) _
+    ''' <summary>
+    ''' A versão que a prévia carimba, e que o envio confere. O teste a troca
+    ''' <b>entre</b> as duas chamadas para fingir o Outlook mexendo no rascunho
+    ''' por fora — que é o caso que o contador de edições do compositor não vê.
+    ''' </summary>
+    Public Property VersaoDoRascunho As String = "v1"
+
+    ''' <summary>A versão que o envio recebeu, para o teste conferir.</summary>
+    Public Property VersaoRecebidaNoEnvio As String
+
+    Public Async Function SendDraftAsync(draft As DraftKey, versaoEsperada As String,
+                                         cancel As CancellationToken) _
         As Task(Of OperationResult(Of Boolean)) Implements IOutlookBroker.SendDraftAsync
 
         Chamadas.Add("send")
         ChavesRecebidas.Add(draft)
+        VersaoRecebidaNoEnvio = versaoEsperada
+
+        ' A MESMA GUARDA DO DraftWriting.Send, e no mesmo lugar: ANTES de
+        ' qualquer efeito. Um fake que so guarda o parametro deixaria passar
+        ' uma tela que manda a versao errada -- e o teste veria verde.
+        If versaoEsperada Is Nothing OrElse versaoEsperada.Length = 0 OrElse
+           Not String.Equals(versaoEsperada, VersaoDoRascunho, StringComparison.Ordinal) Then
+            Return OperationResult(Of Boolean).Fail(ErrorKind.Stale,
+                "o rascunho mudou depois da conferencia")
+        End If
 
         ' Fotografa o que saiu ANTES de qualquer espera: é o que o teste usa
         ' para conferir se o enviado bate com o confirmado.

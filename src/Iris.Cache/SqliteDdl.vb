@@ -31,7 +31,11 @@ Namespace Global.Iris.Cache
         '    escreveu em portugues e que aquela mensagem satisfez, pelo texto
         '    delas. Nulo quer dizer 'nao havia regras naquela varredura', que
         '    e diferente de vetor vazio ('havia, e nenhuma casou').
-        Public Const SchemaVersion As Integer = 6
+        ' 7: association ganhou dois indices de leitura. O unico que existia
+        '    era o UNIQUE(item_key, folder_key), e a pasta e a SEGUNDA coluna
+        '    dele -- inutil para 'todas as associacoes desta pasta', que e o
+        '    que o manifesto pergunta 50 vezes a cada publicacao.
+        Public Const SchemaVersion As Integer = 7
 
         ''' <summary>
         ''' <b>Os passos de migração conhecidos, e só eles.</b>
@@ -139,6 +143,12 @@ Namespace Global.Iris.Cache
                     })},
                     {5, Array.AsReadOnly(New String() {
                         "ALTER TABLE label_observation ADD COLUMN matched_rules TEXT"
+                    })},
+                    {6, Array.AsReadOnly(New String() {
+                        "CREATE INDEX ix_association_1 ON association " &
+                        "  (folder_key, generation_key)",
+                        "CREATE INDEX ix_association_2 ON association " &
+                        "  (folder_key, presence)"
                     })},
                     {3, Array.AsReadOnly(New String() {
                         "ALTER TABLE metadata_observation ADD COLUMN conversation_id TEXT",

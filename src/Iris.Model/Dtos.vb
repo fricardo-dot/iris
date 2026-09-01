@@ -388,6 +388,31 @@ Namespace Global.Iris.Model
         Public Property AttachmentsStatus As PartStatus
 
         ''' <summary>
+        ''' <b>Que versão do rascunho é esta que está sendo mostrada.</b>
+        '''
+        ''' Opaca de propósito — quem a lê só tem direito a compará-la com outra.
+        ''' Hoje é hora da última modificação, tamanho e identidade; amanhã pode
+        ''' ser outra coisa, e nenhum chamador deve quebrar por isso.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>POR QUE ELA PRECISA EXISTIR</b>
+        '''
+        ''' A tela de confirmação já se protegia de a mensagem mudar entre a
+        ''' prévia e o envio — mas contando as edições <i>do lado do Iris</i>. O
+        ''' rascunho, porém, mora no Outlook, e o Outlook é multi-dono: a janela
+        ''' nativa aberta no mesmo item, um suplemento, uma regra, uma
+        ''' sincronização vinda do servidor. Nada disso mexe no contador.
+        '''
+        ''' O desfecho era o único que este projeto não pode produzir: o dono
+        ''' confere uma lista de destinatários, aprova, e sai outra. Achado por
+        ''' revisão externa em 01/09/2026.
+        '''
+        ''' <b>Vazia quer dizer "não deu para saber"</b>, e não "não mudou" — quem
+        ''' envia trata vazio como recusa. Ver <c>DraftWriting.Send</c>.
+        ''' </summary>
+        Public Property Version As String = ""
+
+        ''' <summary>
         ''' Todo destinatario tem endereco SMTP reconhecivel.
         ''' Nao basta o Outlook dizer que resolveu: resolver um nome interno
         ''' para <c>/O=...</c> continua sendo um endereco que o usuario nao

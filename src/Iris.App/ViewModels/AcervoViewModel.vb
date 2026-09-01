@@ -578,22 +578,6 @@ Namespace Global.Iris.App.ViewModels
         End Function
 
         ''' <summary>
-        ''' <b>Os rótulos publicados, de todas as pastas, por <c>ItemKey</c>.</b>
-        '''
-        ''' Mesma porta da busca e da fila, e pelo mesmo motivo (§26.2): quem tem o
-        ''' banco é o acervo. A conversão de <i>(pasta, encarnação)</i> para
-        ''' <c>ItemKey</c> perde a pasta, e a perda tem nome e conta — ver
-        ''' <see cref="Iris.Integration.RotulosDoAcervo"/>.
-        '''
-        ''' <b>Falha de leitura devolve leitura vazia</b>, e não estoura: a tela que
-        ''' consome isto é a caixa dividida, e ela já sabe dizer "nada classificado"
-        ''' com o número na frente. Uma exceção subindo daqui apagaria a fila junto.
-        ''' </summary>
-        ''' <summary>
-        ''' As mensagens presentes do acervo — a mesma lista que alimenta a fila,
-        ''' pela mesma porta. Ver <c>FilaDoAcervo.Mensagens</c>.
-        ''' </summary>
-        ''' <summary>
         ''' Endereços que enviaram de dentro dos seus Itens Enviados e não estão em
         ''' <c>identidades.txt</c> — quase sempre um alias seu que falta cadastrar.
         ''' Ver <c>FilaDoAcervo.EnderecosSeusQueFaltam</c>.
@@ -602,6 +586,20 @@ Namespace Global.Iris.App.ViewModels
                         As Collections.Generic.IReadOnlyList(Of String)
             If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
             Return New Iris.Integration.FilaDoAcervo(_todasAsPastas).EnderecosSeusQueFaltam(eu)
+        End Function
+
+        ''' <summary>
+        ''' As mensagens presentes do acervo — a mesma lista que alimenta a fila,
+        ''' pela mesma porta. Ver <c>FilaDoAcervo.Mensagens</c>.
+        ''' </summary>
+        ''' <summary>
+        ''' Pastas cuja última varredura viu menos do que a anterior. Ver
+        ''' <c>FilaDoAcervo.PastasQueEncolheram</c> — é lá que está o motivo de
+        ''' isto precisar aparecer <b>na fila</b>, e não só no painel do acervo.
+        ''' </summary>
+        Public Function PastasQueEncolheram() As Collections.Generic.IReadOnlyList(Of String)
+            If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+            Return New Iris.Integration.FilaDoAcervo(_todasAsPastas).PastasQueEncolheram()
         End Function
 
         Public Function MensagensDoAcervo() As Collections.Generic.IReadOnlyList(Of Iris.Model.MensagemNaFila)
@@ -620,6 +618,18 @@ Namespace Global.Iris.App.ViewModels
             End Get
         End Property
 
+        ''' <summary>
+        ''' <b>Os rótulos publicados, de todas as pastas, por <c>ItemKey</c>.</b>
+        '''
+        ''' Mesma porta da busca e da fila, e pelo mesmo motivo (§26.2): quem tem o
+        ''' banco é o acervo. A conversão de <i>(pasta, encarnação)</i> para
+        ''' <c>ItemKey</c> perde a pasta, e a perda tem nome e conta — ver
+        ''' <see cref="Iris.Integration.RotulosDoAcervo"/>.
+        '''
+        ''' <b>Falha de leitura devolve leitura vazia</b>, e não estoura: a tela que
+        ''' consome isto é a caixa dividida, e ela já sabe dizer "nada classificado"
+        ''' com o número na frente. Uma exceção subindo daqui apagaria a fila junto.
+        ''' </summary>
         Public Function LerOsRotulos() As Iris.Integration.LeituraDeRotulos
             If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
 

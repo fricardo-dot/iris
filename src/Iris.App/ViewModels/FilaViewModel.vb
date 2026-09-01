@@ -47,6 +47,8 @@ Namespace Global.Iris.App.ViewModels
         Private ReadOnly _prazo As Func(Of ItemKey, DateTimeOffset?)
         ' Enderecos que enviaram dos Enviados e nao estao em identidades.txt.
         Private ReadOnly _quemFalta As Func(Of MinhasIdentidades, IReadOnlyList(Of String))
+        ' Pastas cuja ultima varredura viu MENOS do que a anterior.
+        Private ReadOnly _encolheram As Func(Of IReadOnlyList(Of String))
 
         Public Sub New(montar As Func(Of MinhasIdentidades, DateTimeOffset, TimeZoneInfo,
                                        IEnumerable(Of String), MinhasIdentidades,
@@ -60,7 +62,8 @@ Namespace Global.Iris.App.ViewModels
                        Optional regrasCasadas As Func(Of ItemKey, Integer) = Nothing,
                        Optional pessoaProxima As Func(Of ItemKey, Boolean) = Nothing,
                        Optional prazo As Func(Of ItemKey, DateTimeOffset?) = Nothing,
-                       Optional quemFalta As Func(Of MinhasIdentidades, IReadOnlyList(Of String)) = Nothing)
+                       Optional quemFalta As Func(Of MinhasIdentidades, IReadOnlyList(Of String)) = Nothing,
+                       Optional encolheram As Func(Of IReadOnlyList(Of String)) = Nothing)
             _montar = montar
             _dispensas = If(dispensas, New DispensasDaFila())
             _identidades = If(identidades, Function() New MinhasIdentidades({}))
@@ -72,6 +75,7 @@ Namespace Global.Iris.App.ViewModels
             _pessoaProxima = pessoaProxima
             _prazo = prazo
             _quemFalta = quemFalta
+            _encolheram = encolheram
 
             AtualizarCommand = New AsyncRelayCommand(AddressOf Atualizar)
         End Sub
@@ -95,7 +99,18 @@ Namespace Global.Iris.App.ViewModels
                 ' entrado uma dispensa: linhas apareciam, sumiam ou mudavam de
                 ' idade. O botao dizia "reordena" e trocava o conteudo. Achado por
                 ' revisao externa em 31/08/2026.
-                If SetProperty(_porPrioridade, value) Then Repovoar()
+                '
+                ' MAS COM A TELA NUNCA CARREGADA, ler e o certo -- nao ha o que
+                ' trocar. Isso existia, sumiu quando a leitura virou assincrona, e
+                ' voltou: o dono que liga a ordem antes de abrir a fila ficava com
+                ' uma lista vazia sem entender por que. Achado por revisao externa
+                ' em 01/09/2026.
+                If Not SetProperty(_porPrioridade, value) Then Return
+                If _ultimo Is Nothing Then
+                    Atualizar()
+                Else
+                    Repovoar()
+                End If
             End Set
         End Property
         Private _porPrioridade As Boolean
@@ -188,15 +203,35 @@ Namespace Global.Iris.App.ViewModels
         ''' começou antes. A segunda chamada simplesmente não faz nada.
         ''' </summary>
         Public Async Function Atualizar() As Task
-            If _lendo Then Return
-            _lendo = True
+            ' QUEM CHEGA DURANTE UMA LEITURA NAO E DESCARTADO: e ANOTADO.
+            '
+            ' A versao anterior devolvia na hora, e isso engoliu uma garantia
+            ' antiga: dispensar uma conversa grava o arquivo e pede uma releitura
+            ' -- se ela cair enquanto outra leitura corre, a leitura que estava em
+            ' voo termina e repovoa a tela COM A LINHA DISPENSADA. O dono clica em
+            ' "nao exige resposta", o arquivo grava, e a linha continua ali.
+            ' Achado por revisao externa em 01/09/2026.
+            '
+            ' Interlocked, e nao um Boolean: o metodo e publico, e "testar e
+            ' marcar" em duas instrucoes nao e exclusao mutua.
+            If Threading.Interlocked.CompareExchange(_lendo, 1, 0) <> 0 Then
+                ' Ha leitura em curso. Deixa o pedido anotado para ela refazer.
+                Threading.Volatile.Write(_pedidoNovo, 1)
+                Return
+            End If
+
             Try
-                Await Ler()
+                Do
+                    Threading.Volatile.Write(_pedidoNovo, 0)
+                    Await Ler()
+                Loop While Threading.Volatile.Read(_pedidoNovo) <> 0
             Finally
-                _lendo = False
+                Threading.Volatile.Write(_lendo, 0)
             End Try
         End Function
-        Private _lendo As Boolean
+        Private _lendo As Integer
+        ' Alguem pediu outra leitura enquanto esta rodava.
+        Private _pedidoNovo As Integer
 
         Private Async Function Ler() As Task
             ' O RETRATO BOM SO E APAGADO QUANDO HA OUTRO PARA POR NO LUGAR.
@@ -237,7 +272,8 @@ Namespace Global.Iris.App.ViewModels
 
             Respondeu = r.Respondeu
             Frase = FraseDe(r)
-            Ressalva = Juntar(RessalvaDe(r), FaltamIdentidades())
+            Ressalva = Juntar(Juntar(RessalvaDe(r), PastasQueEncolheram()),
+                              FaltamIdentidades())
 
             _ultimo = r
             If Not r.Respondeu Then Return
@@ -245,10 +281,6 @@ Namespace Global.Iris.App.ViewModels
             Povoar(r)
         End Function
 
-        ''' <summary>
-        ''' Redesenha as duas listas a partir do retrato que já está na mão.
-        ''' <b>Sem tocar no acervo</b> — ver o motivo em <see cref="PorPrioridade"/>.
-        ''' </summary>
         ''' <summary>
         ''' A segunda metade da frase de falha: <b>o que ficou na tela</b>.
         '''
@@ -264,6 +296,10 @@ Namespace Global.Iris.App.ViewModels
             Return "O que está na tela é da leitura anterior."
         End Function
 
+        ''' <summary>
+        ''' Redesenha as duas listas a partir do retrato que já está na mão.
+        ''' <b>Sem tocar no acervo</b> — ver o motivo em <see cref="PorPrioridade"/>.
+        ''' </summary>
         Private Sub Repovoar()
             ' SEM RETRATO, NAO FAZ NADA -- e nao vai buscar um.
             '
@@ -405,6 +441,37 @@ Namespace Global.Iris.App.ViewModels
         ''' <b>Falha aqui não derruba a fila</b>: a ressalva é diagnóstico, e uma
         ''' fila boa não pode sumir porque o diagnóstico estourou.
         ''' </summary>
+        ''' <summary>
+        ''' <b>"A fila encurtou porque a varredura encurtou."</b>
+        '''
+        ''' Publicar uma geração que viu menos itens do que a anterior marca os
+        ''' que sumiram como <i>suspeitos</i>, e a fila não mostra suspeito. Isso
+        ''' é o modelo certo — o Iris não afirma ausência sem cobertura completa —,
+        ''' mas o efeito na tela é indistinguível de "você respondeu tudo".
+        '''
+        ''' É o desfecho que esta classe inteira existe para não produzir por
+        ''' engano, e ele estava chegando por um caminho que ninguém tinha olhado:
+        ''' o Outlook em modo cache encolhe a janela de sincronização sozinho, sem
+        ''' erro e sem aviso. Achado por revisão externa em 01/09/2026.
+        ''' </summary>
+        Private Function PastasQueEncolheram() As String
+            If _encolheram Is Nothing Then Return ""
+
+            Dim quais As IReadOnlyList(Of String)
+            Try
+                quais = _encolheram()
+            Catch
+                ' Ressalva que estoura nao pode derrubar a leitura da fila.
+                Return ""
+            End Try
+            If quais Is Nothing OrElse quais.Count = 0 Then Return ""
+
+            Return "A última varredura de " & String.Join(", ", quais) &
+                   " viu menos mensagens que a anterior: o que sumiu está " &
+                   "fora da fila como suspeito, e não como resolvido — varra " &
+                   "de novo para saber"
+        End Function
+
         Private Function FaltamIdentidades() As String
             If _quemFalta Is Nothing Then Return ""
 

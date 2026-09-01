@@ -419,7 +419,8 @@ Namespace Global.Iris.App.ViewModels
                     AddressOf AbrirDaFila,
                     AddressOf rotulos.Rotulo,
                     AddressOf rotulos.QuantasRegras,
-                    quemFalta:=AddressOf Acervo.EnderecosSeusQueFaltam)
+                    quemFalta:=AddressOf Acervo.EnderecosSeusQueFaltam,
+                    encolheram:=AddressOf Acervo.PastasQueEncolheram)
 
                 ' A CAIXA DIVIDIDA. Ela nao existia em producao: o ViewModel estava
                 ' construido e testado, e ninguem o montava -- entao a divisao por
@@ -1286,7 +1287,13 @@ Namespace Global.Iris.App.ViewModels
             Tarefas.Dispose()
             RemoveHandler Contatos.PropertyChanged, AddressOf OnContatosChanged
             Contatos.Dispose()
-            Busca.Dispose()
+            ' O "?" NAO E ZELO: a Busca so nasce quando o acervo abre, e fechar a
+            ' janela com o cache indisponivel estourava aqui -- interrompendo o
+            ' descarte de tudo que vem depois (watcher, compositor, detalhe,
+            ' conexao, assistente, acervo). O Application_Exit engolia a excecao, e
+            ' o resto simplesmente nao acontecia. Achado por revisao externa em
+            ' 01/09/2026.
+            Busca?.Dispose()
             _watcher.Dispose()
             Composer.Dispose()
             Detail.Dispose()
