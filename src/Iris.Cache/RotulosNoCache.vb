@@ -256,6 +256,26 @@ Namespace Global.Iris.Cache
         '''
         ''' Então ela roda antes, e compara o metadado publicado com o que está
         ''' <i>encenado</i> — que é exatamente o que vai virar o metadado novo.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O ENTRYID REAPROVEITADO</b>
+        '''
+        ''' A herança casa pelo <c>provider_entry_id</c>, e o Outlook não promete
+        ''' que um <c>EntryID</c> nunca se repita: apagar uma mensagem e receber
+        ''' outra pode, em tese, devolver a mesma chave. Nesse caso o rótulo de
+        ''' uma mensagem passaria para outra — e rótulo errado herdado é pior que
+        ''' rótulo perdido, porque o perdido a próxima classificação repõe e o
+        ''' errado ninguém revisita.
+        '''
+        ''' Hora de modificação e tamanho já tinham de bater. Agora <b>data de
+        ''' recebimento e assunto não podem discordar</b> — note a assimetria: elas
+        ''' não precisam existir, só não podem contradizer. Exigi-las preenchidas
+        ''' faria a herança falhar em toda pasta cujo provedor não as entrega, que
+        ''' é trocar um risco remoto por uma perda certa.
+        '''
+        ''' Não é prova — nada aqui é. É que duas mensagens diferentes coincidirem
+        ''' em chave, hora, tamanho, recebimento <i>e</i> assunto deixou de ser
+        ''' algo que se possa contar. Achado por revisão externa em 01/09/2026.
         ''' </summary>
         Friend Shared Function Herdar(conn As SqliteConnection, tx As SqliteTransaction,
                                       folderKey As Long, attemptKey As Long,
@@ -264,6 +284,12 @@ Namespace Global.Iris.Cache
 
             Using cmd = conn.CreateCommand()
                 cmd.Transaction = tx
+                ' AS DUAS ULTIMAS CONDICOES NAO exigem estar preenchidas: elas so
+                ' proibem DISCORDAR. Ver o paragrafo do EntryID reaproveitado.
+                '
+                ' (Comentario AQUI e nao no meio do SQL: em VB o "&" no fim da
+                ' linha continua a expressao, e um comentario quebra a
+                ' continuacao -- com o erro saindo tres linhas adiante.)
                 cmd.CommandText =
                     "INSERT INTO label_observation " &
                     "  (incarnation_key, generation_key, label, confidence, " &
@@ -285,7 +311,11 @@ Namespace Global.Iris.Cache
                     "  AND antes.last_modified_at = s.last_modified_at " &
                     "  AND antes.size_bytes IS NOT NULL " &
                     "  AND s.size_bytes IS NOT NULL " &
-                    "  AND antes.size_bytes = s.size_bytes"
+                    "  AND antes.size_bytes = s.size_bytes " &
+                    "  AND (antes.received_at IS NULL OR s.received_at IS NULL " &
+                    "       OR antes.received_at = s.received_at) " &
+                    "  AND (antes.subject IS NULL OR s.subject IS NULL " &
+                    "       OR antes.subject = s.subject)"
                 cmd.Parameters.AddWithValue("$f", folderKey)
                 cmd.Parameters.AddWithValue("$a", attemptKey)
                 cmd.Parameters.AddWithValue("$velha", deGeracao)

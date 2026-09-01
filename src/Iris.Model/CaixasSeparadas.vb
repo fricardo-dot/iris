@@ -147,6 +147,8 @@ Namespace Global.Iris.Model
             Next
 
             For Each id In idsNaOrdem
+                ' O desempate vai ate a chave -- mesmo motivo, mesma armadilha e
+                ' mesmo comentario deslocado que em RascunhosAutomaticos.
                 gavetas.Add(New Gaveta(
                     NomeDaGaveta(id, textoDoDono),
                     RotuloDaGaveta(id),
@@ -154,6 +156,7 @@ Namespace Global.Iris.Model
                     porId(id).
                         OrderByDescending(Function(m) m.Quando.GetValueOrDefault()).
                         ThenBy(Function(m) m.Assunto, StringComparer.Ordinal).
+                        ThenBy(Function(m) m.Chave.EntryId, StringComparer.Ordinal).
                         ToList()))
             Next
 

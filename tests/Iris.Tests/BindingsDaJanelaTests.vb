@@ -29,20 +29,70 @@ Public Class BindingsDaJanelaTests
     ''' <summary>
     ''' Raízes conhecidas: o prefixo do caminho e o tipo em que ele começa.
     '''
-    ''' Só as raízes que este teste sabe resolver. Um <c>Binding</c> dentro de
-    ''' <c>DataTemplate</c> tem outro DataContext e não é verificável assim —
-    ''' por isso a lista é explícita em vez de "tudo o que aparecer".
+    ''' ------------------------------------------------------------------
+    ''' <b>A LISTA ERA ESCRITA À MÃO, E ESSE ERA O BURACO</b>
+    '''
+    ''' Uma raiz fora da lista caía num <c>Continue For</c>: o teste não
+    ''' reclamava dela, apenas <b>não a conferia</b>. Cada ViewModel novo
+    ''' pendurado na janela nascia sem cobertura e ninguém era avisado — um
+    ''' teste que existe contra falha silenciosa falhando em silêncio.
+    '''
+    ''' E aconteceu: a caixa dividida (<c>Caixas.</c>) entrou na janela em
+    ''' 31/08/2026 e passou dias fora daqui. Achado por revisão externa em
+    ''' 01/09/2026.
+    '''
+    ''' Agora as raízes <b>saem do próprio <c>MainViewModel</c></b>: toda
+    ''' propriedade pública cujo tipo é um ViewModel vira raiz. Acrescentar um
+    ''' painel à janela passa a acrescentar a cobertura dele junto.
     ''' </summary>
     Private Shared Function Raizes() As Dictionary(Of String, Type)
-        Return New Dictionary(Of String, Type) From {
-            {"Acervo.", GetType(AcervoViewModel)},
-            {"Busca.", GetType(BuscaViewModel)},
-            {"Agenda.", GetType(AgendaViewModel)},
-            {"Connection.", GetType(ConnectionViewModel)},
-            {"Composer.", GetType(ComposerViewModel)},
-            {"Detail.", GetType(MessageDetailViewModel)},
-            {"Messages.", GetType(MessageListViewModel)},
-            {"Folders.", GetType(FolderTreeViewModel)}}
+        Dim mapa As New Dictionary(Of String, Type)()
+
+        For Each p In GetType(MainViewModel).GetProperties(
+                BindingFlags.Public Or BindingFlags.Instance)
+            Dim t = p.PropertyType
+            If t.Namespace <> GetType(MainViewModel).Namespace Then Continue For
+            If Not t.Name.EndsWith("ViewModel", StringComparison.Ordinal) Then Continue For
+            mapa(p.Name & ".") = t
+        Next
+
+        Assert.IsTrue(mapa.Count >= 8,
+            $"so {mapa.Count} raizes achadas -- a descoberta parou de funcionar")
+        Return mapa
+    End Function
+
+    ''' <summary>
+    ''' <b>O caminho inteiro, e não só o primeiro degrau.</b>
+    '''
+    ''' <c>Acervo.Manifesto.Ressalva</c> conferia <c>Manifesto</c> e parava — o
+    ''' resto do caminho, que é onde o refactor costuma bater, passava livre.
+    '''
+    ''' Para de descer quando o tipo do degrau deixa de ser nosso (coleção,
+    ''' <c>String</c>, <c>Object</c>): daí em diante o binding resolve por outra
+    ''' via, e cobrar seria inventar um vermelho.
+    ''' </summary>
+    Private Shared Function Resolve(tipo As Type, membro As String) As String
+        Dim atual = tipo
+        Dim andado = ""
+
+        For Each degrau In membro.Split("."c)
+            If degrau.Length = 0 Then Return ""
+            ' Indexador ou anexada: fora do alcance desta conferencia.
+            If degrau.Contains("[") OrElse degrau.Contains("(") Then Return ""
+
+            Dim achada = atual.GetProperty(degrau,
+                BindingFlags.Public Or BindingFlags.Instance)
+            If achada Is Nothing Then
+                Return $"{andado}{degrau} nao existe em {atual.Name}"
+            End If
+
+            andado &= degrau & "."
+            atual = achada.PropertyType
+            If atual.Assembly IsNot GetType(MainViewModel).Assembly AndAlso
+               atual.Assembly IsNot GetType(Iris.Model.ItemKey).Assembly Then Return ""
+        Next
+
+        Return ""
     End Function
 
     <TestMethod>
@@ -57,16 +107,8 @@ Public Class BindingsDaJanelaTests
             If raiz Is Nothing Then Continue For
 
             conferidos += 1
-            Dim membro = caminho.Substring(raiz.Length)
-            ' So o primeiro segmento: "A.B.C" resolve A, e B/C dependem do tipo
-            ' de A, que este teste nao persegue.
-            Dim primeiro = membro.Split("."c)(0)
-            If primeiro.Length = 0 Then Continue For
-
-            If conhecidas(raiz).GetProperty(primeiro,
-                    BindingFlags.Public Or BindingFlags.Instance) Is Nothing Then
-                quebrados.Add($"{caminho}  (nao existe em {conhecidas(raiz).Name})")
-            End If
+            Dim erro = Resolve(conhecidas(raiz), caminho.Substring(raiz.Length))
+            If erro.Length > 0 Then quebrados.Add($"{caminho}  ({erro})")
         Next
 
         Assert.IsTrue(conferidos > 5,

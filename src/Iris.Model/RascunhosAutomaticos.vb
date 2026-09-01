@@ -99,6 +99,16 @@ Namespace Global.Iris.Model
             ' nao promete unicidade; sem isto, uma duplicata gastava dois pedidos
             ' para produzir o mesmo texto -- e o segundo sobrescrevia o primeiro.
             ' Achado por revisao externa em 31/08/2026.
+            '
+            ' O DESEMPATE VAI ATE A CHAVE, e ela e o unico campo que garante
+            ' ordem. Data e assunto empatam com facilidade -- tres "RE: reuniao"
+            ' do mesmo minuto nao sao raros --, e o que vem do banco nao tem
+            ' ordem prometida. Sem isso, a MESMA caixa rendia um lote de
+            ' rascunhos diferente a cada abertura, e o dono via a lista mudar
+            ' sozinha. Achado por revisao externa em 01/09/2026.
+            '
+            ' (O comentario fica AQUI e nao no meio da cadeia: em VB o "." no
+            ' fim da linha continua a expressao, e um comentario a quebra.)
             Return mensagens.
                    Where(Function(m) m IsNot Nothing AndAlso
                                      m.Chave IsNot Nothing AndAlso
@@ -110,6 +120,7 @@ Namespace Global.Iris.Model
                    Select(Function(g) g.First()).
                    OrderBy(Function(m) m.Quando.GetValueOrDefault(DateTimeOffset.MaxValue)).
                    ThenBy(Function(m) m.Assunto, StringComparer.Ordinal).
+                   ThenBy(Function(m) m.Chave.EntryId, StringComparer.Ordinal).
                    Take(quantos).
                    ToList()
         End Function

@@ -367,10 +367,28 @@ Namespace Global.Iris.Cache
             End Using
         End Function
 
+        ''' <summary>
+        ''' <b>Fecha a conexão — sob a mesma trava que todo mundo usa.</b>
+        '''
+        ''' <see cref="Trava"/> existe porque uma conexão SQLite não aguenta dois
+        ''' comandos ao mesmo tempo, e quem escreve no cache a respeita. O
+        ''' <c>Dispose</c> não a respeitava: fechar a janela enquanto uma leitura
+        ''' de fundo ainda corria descartava a conexão <i>debaixo</i> dela.
+        '''
+        ''' O sintoma é o pior tipo — <c>ObjectDisposedException</c> ou
+        ''' <c>SqliteException</c> numa thread de fundo, no fechamento, onde
+        ''' ninguém está olhando e o log já pode ter ido embora. Achado por
+        ''' revisão externa em 01/09/2026.
+        '''
+        ''' Esperar aqui é o certo: a alternativa é fechar por cima de quem
+        ''' escreve, e este arquivo guarda o diário do que saiu da máquina.
+        ''' </summary>
         Public Sub Dispose() Implements IDisposable.Dispose
-            If _disposed Then Return
-            _disposed = True
-            _conn?.Dispose()
+            SyncLock _trava
+                If _disposed Then Return
+                _disposed = True
+                _conn?.Dispose()
+            End SyncLock
         End Sub
 
     End Class

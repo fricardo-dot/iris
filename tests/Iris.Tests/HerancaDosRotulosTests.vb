@@ -155,15 +155,83 @@ Public Class HerancaDosRotulosTests
     End Sub
 
     ' ==================================================================
+    ' O ENTRYID REAPROVEITADO
+
+    ''' <summary>
+    ''' <b>Mesma chave, mesmo tamanho, mesma hora — e outro assunto.</b>
+    '''
+    ''' A herança casa pelo <c>EntryID</c>, e o Outlook não promete que ele nunca
+    ''' se repita. Coincidir em tamanho <i>e</i> hora de modificação já era
+    ''' improvável; o assunto fecha. Rótulo errado herdado é pior que rótulo
+    ''' perdido — o perdido a próxima classificação repõe, o errado ninguém
+    ''' revisita.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Chave_reaproveitada_com_outro_ASSUNTO_nao_herda()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, {Linha("a", 100, "2026-08-01T10:00:00Z")})
+                   Rotular(db, pasta, "a", "fyi")
+
+                   Varrer(db, {Linha("a", 100, "2026-08-01T10:00:00Z",
+                                     titulo:="outra mensagem inteiramente")},
+                          rodada:=2, existente:=pasta)
+
+                   Assert.AreEqual(0, New RotulosNoCache(db).Publicados(pasta).Count,
+                       "O ROTULO PASSOU PARA OUTRA MENSAGEM")
+               End Sub)
+    End Sub
+
+    ''' <summary>O mesmo, pela data de recebimento.</summary>
+    <TestMethod>
+    Public Sub Chave_reaproveitada_com_outro_RECEBIMENTO_nao_herda()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, {Linha("a", 100, "2026-08-01T10:00:00Z")})
+                   Rotular(db, pasta, "a", "fyi")
+
+                   Varrer(db, {Linha("a", 100, "2026-08-01T10:00:00Z",
+                                     recebidoEm:="2020-01-01T00:00:00.0000000+00:00")},
+                          rodada:=2, existente:=pasta)
+
+                   Assert.AreEqual(0, New RotulosNoCache(db).Publicados(pasta).Count,
+                       "O ROTULO PASSOU PARA OUTRA MENSAGEM")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>O controle negativo, e ele é o ponto todo.</b>
+    '''
+    ''' As duas condições novas proíbem <i>discordar</i>; não exigem existir. Um
+    ''' provedor que não entrega assunto faria a herança falhar sempre se a regra
+    ''' fosse "tem de bater" — trocaria um risco remoto por uma perda certa, e a
+    ''' pasta inteira seria reclassificada a cada varredura.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Assunto_DESCONHECIDO_dos_dois_lados_ainda_herda()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, {Linha("a", 100, "2026-08-01T10:00:00Z",
+                                                 titulo:="")})
+                   Rotular(db, pasta, "a", "fyi")
+
+                   Varrer(db, {Linha("a", 100, "2026-08-01T10:00:00Z", titulo:="")},
+                          rodada:=2, existente:=pasta)
+
+                   Assert.AreEqual(1, New RotulosNoCache(db).Publicados(pasta).Count,
+                       "a heranca virou refem de um campo que o provedor nao entrega")
+               End Sub)
+    End Sub
+
+    ' ==================================================================
     ' O ANDAIME
 
     Private Shared Function Linha(chave As String, tamanho As Integer,
-                                  mudouEm As String) As SourceRow
+                                  mudouEm As String,
+                                  Optional titulo As String = Nothing,
+                                  Optional recebidoEm As String = Nothing) As SourceRow
         Return New SourceRow With {
             .Key = chave,
-            .Subject = "assunto " & chave,
+            .Subject = If(titulo, "assunto " & chave),
             .SenderName = "quem",
-            .ReceivedAt = Quando.ToString("o"),
+            .ReceivedAt = If(recebidoEm, Quando.ToString("o")),
             .LastModifiedAt = mudouEm,
             .SizeBytes = tamanho,
             .MessageClass = "IPM.Note"}
