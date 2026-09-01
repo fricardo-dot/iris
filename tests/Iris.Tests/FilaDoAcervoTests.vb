@@ -40,7 +40,35 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 <DoNotParallelize>
 Public Class FilaDoAcervoTests
 
-    Private Shared ReadOnly Agora As New DateTimeOffset(2026, 8, 31, 12, 0, 0, TimeSpan.Zero)
+    ''' <summary>
+    ''' <b>O agora do teste, ancorado no relógio de verdade.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ERA UMA DATA CONGELADA, E ELA VENCEU</b>
+    '''
+    ''' Era <c>2026-08-31 12:00</c>, e o teste da conversa mais nova que a
+    ''' varredura ficou vermelho sozinho na virada do dia — sem ninguém tocar em
+    ''' nada. O motivo é que este arquivo tem <b>dois relógios</b>, e só um
+    ''' estava congelado:
+    '''
+    ''' <list type="bullet">
+    ''' <item>as datas das mensagens saem daqui;</item>
+    ''' <item>o carimbo de <b>quando a pasta foi publicada</b> sai do relógio da
+    ''' máquina, porque a semeadura passa pela varredura de verdade — e isso é
+    ''' certo, é o que faz o teste valer.</item>
+    ''' </list>
+    '''
+    ''' A mensagem "chegou depois da varredura" era datada de <c>31/08 + 1 dia</c>
+    ''' e só ficava no futuro da publicação enquanto a máquina estivesse em 31/08.
+    ''' Em 01/09 ela virou passado, a cobertura passou a alcançá-la, e a fila
+    ''' afirmou sobre uma conversa que não devia.
+    '''
+    ''' Aumentar a margem só adiaria a mesma falha. Ancorar remove o descompasso:
+    ''' os dois relógios passam a ser o mesmo, e as distâncias — que é tudo o que
+    ''' este arquivo mede — continuam exatas. Achado em 01/09/2026, pela própria
+    ''' suíte, um dia depois de ela ter ficado verde.
+    ''' </summary>
+    Private Shared ReadOnly Agora As DateTimeOffset = DateTimeOffset.UtcNow
     Private Shared ReadOnly Fuso As TimeZoneInfo = TimeZoneInfo.Utc
 
     Private Const Eu As String = "ricardo@empresa.com"
