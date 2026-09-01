@@ -75,6 +75,23 @@ O `tools/` é PowerShell, e lá também: `$pid` é somente-leitura (é o PID do
 processo) e o PowerShell também é case-insensitive, então
 `foreach ($pid in ...)` aborta a execução.
 
+## Comentário de produção envelhece
+
+Um XML-doc que diz **o que a produção monta hoje** vira mentira no dia em que
+a composição muda — e ninguém o relê ao mexer no compositor. Aconteceu quatro
+vezes de uma vez: quatro comentários afirmando que a produção usava
+`ActivationRecord.DaProducao = Nothing` e um provedor indisponível, meses
+depois de o carregador de ativação e o adaptador de OpenRouter terem entrado.
+
+O estrago não é o comentário errado: é ele **convidar a remoção do código
+certo**. Quem lê "a produção não usa isto" e encontra o carregador conclui que
+o carregador é resto.
+
+**Regra prática:** comentário sobre produção aponta para *quem compõe*
+(`MontarAssistente`, `ActivationLoader`), e não para *qual implementação ele
+escolheu numa revisão anterior*. Se precisar nomear a implementação, diga a
+data e o motivo — assim o próximo sabe que é um retrato, e não uma regra.
+
 ## RCW: nunca encadeie expressões COM
 
 Cada acesso que **devolve outro objeto COM** pode criar um RCW

@@ -11,16 +11,20 @@ Namespace Global.Iris.App.ViewModels
     ''' <b>O contexto de verdade: a mensagem aberta, lida do Outlook.</b>
     '''
     ''' ------------------------------------------------------------------
-    ''' <b>POR QUE ELE EXISTE AGORA, SEM PROVEDOR ESCOLHIDO</b>
+    ''' <b>POR QUE ELE NÃO SABE QUAL É O PROVEDOR</b>
     '''
     ''' Ler a mensagem, classificar cada membro e montar o envelope são
-    ''' requisitos <b>do Iris</b>, e independem de qual API vai receber os
-    ''' bytes. Deixá-los para depois faria a frase "implementação e provas
-    ''' locais concluídas" ser falsa: mesmo depois da cerimônia de ativação
-    ''' ainda faltaria o caminho central até o Outlook.
+    ''' requisitos <b>do Iris</b>, e independem de qual API vai receber os bytes.
+    ''' Ele recebe o destino pronto e não escolhe nada.
     '''
-    ''' O que continua pendente é só o <b>adaptador externo</b> — o formato que
-    ''' o provedor aceita, a autenticação dele, a semântica de resposta.
+    ''' <b>O adaptador externo deixou de ser pendência</b> — há um de OpenRouter,
+    ''' escolhido pela ativação em <c>MainViewModel.ProvedorPara</c>. Este
+    ''' comentário dizia o contrário, e nascia falso no caminho que instancia a
+    ''' classe. Achado por revisão externa em 01/09/2026.
+    '''
+    ''' O que continua pendente é a borda <b>em lote</b>: ler o corpo de N
+    ''' mensagens de uma vez, para a classificação, os rascunhos em rodada e a
+    ''' pergunta ao acervo. Este contexto lê uma mensagem por vez.
     '''
     ''' ------------------------------------------------------------------
     ''' <b>A ORDEM, E POR QUE ELA É SÍNCRONA AQUI</b>

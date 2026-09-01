@@ -1,13 +1,55 @@
 # Plano da IA do Iris
 
-> Estado em 31/08/2026: **as dez etapas estão executadas**, cada uma validada
-> uma vez por revisão externa — e depois **mais cinco revisões seguidas sobre o
-> conjunto**, que acharam onze defeitos graves e nove médios. Suíte em **1413
-> verdes, nada pulado**, com o Outlook clássico respondendo ao `GetActiveObject`.
+> Estado em 01/09/2026: os **núcleos das dez etapas** estão construídos e
+> testados, e passaram por **quinze revisões externas** — uma por etapa, e depois
+> duas rodadas de cinco sobre o conjunto. Suíte em **1423 verdes, nada pulado**.
+>
+> **"Executadas" seria dizer demais**, e eu disse. Ver
+> [o que está ligado e o que não está](#o-que-está-ligado-e-o-que-não-está),
+> logo abaixo: quatro das dez não têm chamador de produção nenhum.
 >
 > Este documento não existia enquanto o plano era executado: ele viveu na
 > conversa, e os commits foram o registro. Está escrito agora para o plano
 > parar de morar só ali.
+
+## O que está ligado e o que não está
+
+Esta seção existe porque eu escrevi "as dez etapas estão executadas" e a décima
+revisão mostrou que isso descreve bibliotecas e testes como se descrevesse uma
+funcionalidade instalável.
+
+| Etapa | Núcleo | Chega ao dono? |
+|---|---|---|
+| 1 Resumo ao abrir | pronto | **sim** — interruptor por arquivo |
+| 2 Conversa e identidades | pronto | **sim** — alimenta a fila |
+| 3 As duas filas | pronto | **sim** — painel na janela |
+| 4 Superfície do classificador | pronto | não — sem chamador |
+| 5 Onde os rótulos moram | pronto | parcial — a leitura chega; a escrita não |
+| 6 Regras do dono | pronto | não — nada as usa ainda |
+| 7 Caixa dividida | pronto | não — montada, **sem XAML** |
+| 8 Rascunhos automáticos | pronto | não — sem chamador |
+| 9 Prioridade | pronto | **sim** — e os rótulos chegam vazios |
+| 10 Perguntar ao acervo | pronto | não — sem chamador |
+
+### E a borda de produção existe — eu disse que não
+
+Afirmei várias vezes, aqui e nos commits, que `IAssistContext` em produção era
+`ContextoIndisponivel` e que "não há para onde mandar". **Está errado.**
+`MainViewModel` carrega a ativação do disco, escolhe o provedor por ela
+(`OpenRouterAssistantProvider`) e monta `ContextoDoOutlook`, que lê o corpo,
+classifica sensibilidade e anexos, e monta o envelope. O caminho de **resumir e
+redigir** é real e roda.
+
+O que não existe é a borda **em lote**: ler o corpo de N mensagens de uma vez e
+mandar com a instrução do lote. É dela que `ClassificarUmaPasta`,
+`RascunhosDeUmaRodada` e `PerguntarAoAcervo` precisam, e é isso que os deixa sem
+chamador.
+
+A diferença importa para quem for continuar: eu estava descrevendo como "falta
+tudo" o que é, na verdade, **um adaptador a mais sobre um caminho que já
+funciona**.
+
+---
 
 ## Um aviso de numeração, antes de tudo
 
@@ -52,7 +94,7 @@ e todo desenho que depende dela quebra em silêncio.
 | 7 | A caixa dividida | `2ff6d4d`, `2749321` | **O controle era teatro: ele nunca era enviado** |
 | 8 | Rascunhos automáticos | `c0ecdba`, `5ab1b1e` | Uma dispensa podia ser desfeita por uma redação em voo |
 | 9 | Prioridade ponderada | `fb83913`, `8234a9a` | O botão dizia "reordena" e trocava o conteúdo |
-| 10 | Perguntar ao acervo | `0300161`, `7ea22ed` | O limite da prova: a borda de produção não existe |
+| 10 | Perguntar ao acervo | `0300161`, `7ea22ed` | O limite da prova: a borda em lote não existe |
 
 **Dez etapas, dez revisões, dez achados.** Nenhuma passou limpa. Vale dizer isso
 com todas as letras: a suíte estava verde antes de cada revisão, e ficou verde
@@ -192,6 +234,35 @@ uma vez em seis ele passava vazio, inclusive com o `Conferir` aceitando tudo.
 E entraram as costuras que não tinham teste: classificar de verdade, ler de
 verdade, e a mensagem aparecendo na gaveta certa.
 
+### A segunda rodada — e o que ela achou nos consertos da primeira
+
+Cinco passadas novas: o código que a primeira rodada escreveu, o núcleo antigo,
+a camada de tela, os caminhos de erro, e documentação contra código. **Onze
+graves e nove médios**, e três deles nos consertos de véspera.
+
+**A trava que eu tinha posto não travava nada.** Ela protegia a recarga do
+acervo contra ela mesma, e não contra os outros dois caminhos que tocam a mesma
+`SqliteConnection` — a leitura de rótulos, que a tela faz por linha desenhada, e
+a gravação em lote. Três travas diferentes sobre o mesmo recurso é o mesmo que
+nenhuma. Agora a trava mora onde a conexão mora.
+
+**O `CHECK` que eu mandei conferir era conferido por substring**: um banco em
+que a cláusula estivesse ausente passava, desde que o texto aparecesse em
+qualquer lugar do DDL.
+
+**Falha depois do `Save` voltava como sucesso** — em contato, tarefa e rascunho.
+O `Save` acontecia, a releitura da identidade nova falhava, o tradutor engolia, e
+o chamador recebia `Succeeded=True` sem objeto e sem `EntryID`. É a regra
+fundadora *"toda operação que salva devolve a identidade nova"* violada em três
+lugares.
+
+**Uma identidade não cadastrada erra em silêncio.** A proteção de "não sei" só
+funciona com o conjunto vazio; com ele pela metade, uma mensagem que o dono
+enviou por um alias vira "do outro" com toda a confiança. Não dá para adivinhar
+qual endereço é dele — dá para notar o sintoma: *numa pasta de enviados, quem
+envia é ele*. Virou ressalva com os endereços, porque sem eles ele não sabe o que
+escrever no arquivo.
+
 ### O que as cinco passadas não consertaram
 
 - O controle do lote **não pega injeção dirigida a uma mensagem só**. Já estava
@@ -201,17 +272,24 @@ verdade, e a mensagem aparecendo na gaveta certa.
   conteúdo hostil. A etapa 1 garante o que *sai*; não garante o que volta. Passou
   a estar escrito, junto com o que a citação prova: **origem, não sustentação**.
 - As contagens de `ResultadoDaClassificacao` continuam sem consumidor — quem as
-  consumiria é a borda de produção.
+  consumiria é a borda em lote.
+- **Toda republicação invalida todos os rótulos**, inclusive os de mensagens que
+  não mudaram. É decisão de desenho e é cara: uma varredura de manutenção apaga
+  a classificação inteira da pasta. Carregar os rótulos para a geração nova
+  quando a mensagem não mudou é possível e não foi feito.
+- **A fila bloqueia a interface** enquanto lê o acervo inteiro. Não é raro: é o
+  caminho normal do botão de reler.
 
 ---
 
 ## O que ficou aberto
 
-### 1. A borda de produção não existe — e é o limite de tudo acima
+### 1. A borda EM LOTE não existe — e é o limite de tudo acima
 
-`IAssistContext` em produção é `ContextoIndisponivel`: ele recusa. Não há leitor
-de corpo, não há adaptador de provedor, não há chamador de `PerguntarAoAcervo`
-nem de `ClassificarUmaPasta` fora dos testes.
+Corrigido em 01/09/2026: a borda de produção **existe** para resumir e redigir a
+mensagem aberta. O que não existe é a borda em lote — ler o corpo de N mensagens
+de uma vez —, e é dela que dependem `ClassificarUmaPasta`, `RascunhosDeUmaRodada`
+e `PerguntarAoAcervo`. Nenhum dos três tem chamador fora dos testes.
 
 Isso limita o que a suíte prova, e o limite está escrito nos arquivos:
 

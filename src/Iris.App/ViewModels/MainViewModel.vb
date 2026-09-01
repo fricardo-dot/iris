@@ -285,12 +285,23 @@ Namespace Global.Iris.App.ViewModels
         End Property
 
         ''' <summary>
-        ''' A IA — que hoje serve para dizer que <b>não está habilitada</b>.
+        ''' A IA <b>por mensagem</b>: resumir e redigir a que está aberta.
         '''
-        ''' A composição usa <c>ActivationRecord.DaProducao</c>, que é
-        ''' <c>Nothing</c>, e <see cref="AssistenteIndisponivel"/> como provedor.
-        ''' As duas coisas são a §28.2 em forma de código: o mecanismo está
-        ''' inteiro e o que falta é decisão do usuário.
+        ''' <b>O que ela monta depende do que houver no disco</b>, e não de uma
+        ''' decisão congelada aqui: <see cref="MontarAssistente"/> carrega a
+        ''' ativação de <c>%ProgramData%\Iris\ativacao.json</c> e escolhe o
+        ''' provedor por ela. Sem ativação, o portão recusa antes de qualquer
+        ''' leitura; com ativação, o caminho é o de verdade.
+        '''
+        ''' O comentário anterior dizia que a produção usava
+        ''' <c>ActivationRecord.DaProducao</c> — que é <c>Nothing</c> — e um
+        ''' provedor indisponível. Isso descrevia uma composição anterior, e
+        ''' descrevê-la como "a produção" convidava quem viesse depois a remover o
+        ''' carregador de verdade. Achado por revisão externa em 01/09/2026.
+        '''
+        ''' <b>Isto é a IA por mensagem, e só ela.</b> Classificar pasta, redigir em
+        ''' rodada e perguntar ao acervo têm núcleo construído e nenhum chamador
+        ''' aqui — ver o PLANO-IA.
         ''' </summary>
         Public ReadOnly Property Assistente As AssistenteViewModel
 
@@ -1012,10 +1023,17 @@ Namespace Global.Iris.App.ViewModels
         ''' ------------------------------------------------------------------
         ''' <b>O QUE A PRODUÇÃO MONTA</b>
         '''
-        ''' <c>ActivationRecord.DaProducao</c> é <c>Nothing</c>, e o provedor é
-        ''' <see cref="AssistenteIndisponivel"/>. Não é lacuna: é a §28.2 — a
-        ''' política corporativa aplicável não é inferível desta máquina, e a
-        ''' escolha do provedor e da credencial é do usuário.
+        ''' A ativação vem do <b>disco</b>, por <c>ActivationLoader</c>, e o
+        ''' provedor sai dela em <see cref="ProvedorPara"/>. Sem arquivo, sem
+        ''' ativação — e aí o portão recusa antes de qualquer leitura, que é a
+        ''' §28.2 cumprida e não uma lacuna: a política corporativa aplicável não é
+        ''' inferível desta máquina, e a escolha do provedor e da credencial é do
+        ''' usuário.
+        '''
+        ''' <b>Este comentário já disse que a produção usava
+        ''' <c>ActivationRecord.DaProducao</c> e um provedor indisponível.</b> Era
+        ''' verdade quando foi escrito e deixou de ser quando o carregador entrou.
+        ''' Achado por revisão externa em 01/09/2026.
         '''
         ''' Sem cache aberto não há diário, e sem diário a IA fica desligada:
         ''' transmitir sem poder registrar seria pior que não transmitir.
