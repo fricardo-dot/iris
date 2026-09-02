@@ -45,6 +45,22 @@ Public Class BindingsDaJanelaTests
     ''' propriedade pública cujo tipo é um ViewModel vira raiz. Acrescentar um
     ''' painel à janela passa a acrescentar a cobertura dele junto.
     ''' </summary>
+    ''' <summary>
+    ''' <b>Fontes que não saem do <c>MainViewModel</c>.</b>
+    '''
+    ''' Lista curta e explícita, e é para ficar curta: cada entrada aqui é um
+    ''' caminho que este teste <b>deixa de conferir</b>, e a razão tem de caber
+    ''' numa linha.
+    '''
+    ''' <c>DataContext.</c> aparece com <c>RelativeSource</c> dentro de
+    ''' <c>DataTemplate</c>: o alvo é o ViewModel da janela alcançado de dentro
+    ''' de um item, e o extrator já descarta a maioria desses pelo corpo do
+    ''' binding. Fica aqui o que escapar.
+    ''' </summary>
+    Private Shared Function FonteEspecial(caminho As String) As Boolean
+        Return caminho.StartsWith("DataContext.", StringComparison.Ordinal)
+    End Function
+
     Private Shared Function Raizes() As Dictionary(Of String, Type)
         Dim mapa As New Dictionary(Of String, Type)()
 
@@ -104,7 +120,24 @@ Public Class BindingsDaJanelaTests
 
         For Each caminho In CaminhosDeBinding(xaml)
             Dim raiz = conhecidas.Keys.FirstOrDefault(Function(k) caminho.StartsWith(k, StringComparison.Ordinal))
-            If raiz Is Nothing Then Continue For
+            If raiz Is Nothing Then
+                ' RAIZ DESCONHECIDA E VERMELHO, e nao silencio.
+                '
+                ' Este era o ultimo buraco: uma raiz fora do mapa caia num
+                ' Continue For, e "Acervoo.VarrerCommand" -- um "o" a mais --
+                ' sobrevivia a suite inteira, desde que restassem bindings
+                ' reconhecidos suficientes. Um teste que existe contra falha
+                ' silenciosa nao pode ter uma. Achado por revisao externa em
+                ' 01/09/2026, DEPOIS de eu ter consertado a metade de cima.
+                '
+                ' So caminhos COM PONTO: um caminho de um segmento so e relativo
+                ' ao DataContext do template em que esta, e este teste nao sabe
+                ' qual e -- cobra-lo seria inventar vermelho.
+                If caminho.Contains(".") AndAlso Not FonteEspecial(caminho) Then
+                    quebrados.Add($"{caminho}  (raiz desconhecida — este teste nao a confere)")
+                End If
+                Continue For
+            End If
 
             conferidos += 1
             Dim erro = Resolve(conhecidas(raiz), caminho.Substring(raiz.Length))

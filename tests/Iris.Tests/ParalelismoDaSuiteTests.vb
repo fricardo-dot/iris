@@ -88,12 +88,36 @@ Public Class ParalelismoDaSuiteTests
     ''' conferidas cair, alguem mexeu nas marcas ou nas classes, e o teste
     ''' para. Nao e garantia; e um alarme.
     ''' </summary>
+    ' O NOME DO TIPO, e nao "new " + o nome.
+    '
+    ' As marcas eram construcoes -- "new resolvedordoacervo" --, e uma classe
+    ' que chamasse um HELPER seu para abrir o banco nao casava com nenhuma: o
+    ' "new" mora no helper, e o helper pode estar noutra classe do mesmo
+    ' arquivo. Pelo TIPO, a declaracao do helper ja denuncia ("As
+    ' AcervoDeTodasAsPastas"), e um "Dim x = Abrir()" com inferencia continua
+    ' sendo pego pela assinatura de Abrir.
+    '
+    ' Nao e prova -- nada aqui e. E um alarme com a rede mais fechada, e o que
+    ' ele ainda deixa passar e uma classe que so receba o banco pronto por
+    ' parametro de um tipo que nao esta nesta lista. Achado por revisao externa
+    ' em 01/09/2026.
+    '
+    ' EXCECAO: CacheDatabase continua sendo "cachedatabase.open", e nao o tipo
+    ' nu. Ele aparece em ASSINATURA sem ser usado -- ArchitectureTests tem uma
+    ' isca "IscaQueUsaOManifestReader(db As CacheDatabase)" que nunca e chamada,
+    ' e que existe so para um teste de reflexao ter um uso plantado. Marca-la
+    ' obrigaria a por o atributo onde ele nao faz falta, e isso ensina a por o
+    ' atributo em toda parte -- que e como uma regra deixa de significar algo.
+    '
+    ' (Comentario AQUI e nao dentro das chaves: a virgula continua a expressao,
+    ' e um comentario no meio quebra a continuacao. Oitava vez nesta base.)
     Private Shared ReadOnly Marcas As String() = {
         "sqliteconnection", "sqlitecommand", "clearallpools",
-        "cachedatabase.open", "acervoviewmodel.abrir",
-        "new mainviewmodel", "new cachewriter", "new sqlitesweepsink",
-        "new sqlitedisclosurejournal", "new resolvedordoacervo",
-        "new varreduradapasta"
+        "acervoviewmodel.abrir", "new mainviewmodel",
+        "cachedatabase.open", "cachewriter", "sqlitesweepsink",
+        "sqlitedisclosurejournal", "resolvedordoacervo", "varreduradapasta",
+        "rotulosnocache", "acervodetodasaspastas", "publicationdrain",
+        "acervoservice", "classificarumapasta", "buscanoacervo"
     }
 
     Private Shared Function PastaDaSuite(<CallerFilePath> Optional aqui As String = Nothing) As String
@@ -116,8 +140,36 @@ Public Class ParalelismoDaSuiteTests
     Private Shared Function SemComentario(texto As String) As String
         Dim sb As New Text.StringBuilder()
         For Each linha In texto.Split(ChrW(10))
-            Dim corte = linha.IndexOf("'"c)
-            sb.AppendLine(If(corte >= 0, linha.Substring(0, corte), linha))
+            Dim limpa = SemTexto(linha)
+            Dim corte = limpa.IndexOf("'"c)
+            sb.AppendLine(If(corte >= 0, limpa.Substring(0, corte), limpa))
+        Next
+        Return sb.ToString()
+    End Function
+
+    ''' <summary>
+    ''' <b>Tira o conteúdo das aspas antes de procurar as marcas.</b>
+    '''
+    ''' Pelo mesmo motivo que os comentários saem: <c>ArchitectureTests</c> cita
+    ''' <c>AcervoService</c> dentro de uma <i>mensagem de asserção</i> — prosa que
+    ''' o compilador guarda como texto — e não toca em banco nenhum. Uma regra que
+    ''' não distingue código de prosa obriga a pôr o atributo onde ele não faz
+    ''' falta, e isso ensina a pô-lo em toda parte, que é como uma regra deixa de
+    ''' significar alguma coisa.
+    '''
+    ''' As aspas ficam no lugar do texto: tirar as duas juntas colaria o que vem
+    ''' antes no que vem depois e poderia <i>fabricar</i> uma marca.
+    ''' </summary>
+    Private Shared Function SemTexto(linha As String) As String
+        Dim sb As New Text.StringBuilder()
+        Dim dentro = False
+        For Each c In linha
+            If c = """"c Then
+                dentro = Not dentro
+                sb.Append(c)
+            ElseIf Not dentro Then
+                sb.Append(c)
+            End If
         Next
         Return sb.ToString()
     End Function
