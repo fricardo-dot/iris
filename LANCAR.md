@@ -23,7 +23,22 @@ divulgação tem para o que sai.
 ```
 
 Gera o par ECDSA P-256. A privada vai para `%USERPROFILE%\.iris\`, com ACL
-só para você; a pública é impressa na tela.
+só para você — o arquivo nasce vazio, já restrito, e só depois recebe conteúdo.
+A pública é impressa na tela.
+
+A criptografia não acontece no PowerShell, e sim em
+[`tools/Iris.Assinatura`](tools/Iris.Assinatura), que é .NET 10. Os dois
+scripts faziam tudo em PowerShell na primeira versão e **não rodavam**:
+`powershell.exe` nesta máquina é o Windows PowerShell 5.1, sobre .NET
+Framework, onde `ExportPkcs8PrivateKeyPem` e `ImportFromPem` não existem, e
+não há `pwsh` instalado. A descoberta teria sido na hora de gerar a chave.
+
+Se você perder a chave pública mas ainda tiver a privada, recupere-a sem gerar
+par novo:
+
+```powershell
+.\tools\publicar-versao.ps1 -MostrarChavePublica
+```
 
 Cole a pública em [`ChaveDeAtualizacao.vb`](src/Iris.App/ChaveDeAtualizacao.vb),
 junto com o endereço do manifesto:
@@ -34,6 +49,11 @@ https://github.com/<dono>/<repo>/releases/latest/download/iris.json
 
 `latest/download` é um endereço estável: não é preciso saber o número da
 última versão para perguntar qual é a última versão.
+
+Com uma ressalva que vale saber: *latest* é um **metadado do GitHub**, e não
+"a maior versão". Rascunhos e pré-lançamentos ficam de fora, e uma release
+pode ser marcada como *latest* à mão. Por isso o script publica com `--latest`
+explícito — deixar implícito seria deixar a conta certa para o acaso.
 
 **Guarde uma cópia da chave privada fora desta máquina.** Perdê-la não
 quebra o Iris que já está instalado — quebra a sua capacidade de publicar
@@ -50,13 +70,20 @@ confere"*, que seria acusar um ataque onde houve uma pendência.
 .\tools\publicar-versao.ps1 -Versao 0.2.0 -Repositorio dono/repo -Notas "O que mudou."
 ```
 
-O script grava a versão em `Directory.Build.props`, publica autocontido
-num `.exe` só, calcula o SHA-256 **do arquivo que acabou de sair**, escreve
-`iris.json` com esse hash, e assina o `iris.json` inteiro.
+O script publica autocontido num `.exe` só, calcula o SHA-256 **do arquivo
+que acabou de sair**, escreve `iris.json` com esse hash, assina o `iris.json`
+inteiro — e **só então** grava a versão em `Directory.Build.props`.
 
-Ele **não publica**. Deixa os três arquivos em `artefatos/<versao>/` e
-imprime o comando `gh release create`. Subir a release é um ato seu, e um
-ato público. Com `-Publicar`, ele sobe.
+Essa ordem é o conserto de um defeito real: a versão era gravada primeiro, e
+uma falha em qualquer etapa seguinte a deixava gravada. A reexecução com o
+mesmo número era então recusada pela própria conferência de "a versão tem de
+subir", e sair daquilo exigia editar o arquivo à mão. Agora a versão vai para
+o build por `-p:Version=`, e o arquivo só muda quando há um pacote assinado
+para acompanhá-lo.
+
+Ele **não publica**. Deixa os arquivos em `artefatos/<versao>/` e imprime o
+comando `gh release create`. Subir a release é um ato seu, e um ato público.
+Com `-Publicar`, ele sobe.
 
 Depois: **commite o `Directory.Build.props`**. O número da versão vive lá,
 e só lá.
@@ -92,26 +119,34 @@ anuncia, a cada abertura, que aquela máquina existe.
 Ela prova **origem**, e não **qualidade**: uma versão ruim assinada por você
 é uma versão ruim que o Iris aceita.
 
-E não é o certificado de código do Windows. O SmartScreen vai avisar na
-primeira execução de cada versão nova — "aplicativo não reconhecido", com
-um "Mais informações" → "Executar assim mesmo". Some depois que o
-executável ganha reputação, ou nunca, se cada versão for baixada por duas
-pessoas. Resolver isso custa um certificado EV de uma autoridade, com
-custo anual; para duas máquinas suas, não vale.
+E não é o certificado de código do Windows. Um executável sem assinatura
+Authenticode, baixado da Internet, **pode** provocar o aviso do SmartScreen —
+"aplicativo não reconhecido", com um "Mais informações" → "Executar assim
+mesmo". Digo *pode* e não *vai*: depende da marca de origem que o navegador
+gravou no arquivo, da política do Windows naquela máquina e da reputação que
+aquele binário ou aquele editor já tenha. Cada versão nova começa sem
+reputação nenhuma.
+
+Um certificado de assinatura de código comum já dá identidade ao editor e
+permite acumular reputação; o EV historicamente recebia tratamento melhor.
+Nenhum dos dois é garantia de silêncio, e os dois têm custo anual. Para duas
+máquinas suas, não vale.
 
 ## Antes do primeiro push
 
 Nada foi empurrado para lugar nenhum: os commits estão só aqui. Duas coisas
 para decidir antes de o repositório existir:
 
-1. **O histórico carrega o seu e-mail de trabalho.** Os arquivos foram
-   limpos (commit `800fc45`), mas `64da727` e `16dcbbb` ainda têm a string.
-   Como nada foi publicado, reescrever é barato — e depois do primeiro push
-   deixa de ser.
+1. ~~**O histórico carrega o seu e-mail de trabalho.**~~ **Feito.** Os
+   arquivos foram limpos e o histórico foi reescrito em 02/09/2026, antes de
+   qualquer push: a árvore do topo saiu idêntica, os 392 commits continuam
+   lá, e a string não aparece em nenhum objeto alcançável.
 
-2. **Repositório público ou privado.** As releases precisam ser públicas
-   para `latest/download` funcionar sem token. Repositório privado exigiria
-   hospedar os arquivos em outro lugar.
+2. **Repositório público ou privado.** O Iris não manda credencial nenhuma,
+   então `latest/download` só funciona para ele num repositório público.
+   Assets de repositório privado até podem ser baixados — com autenticação —,
+   e isso exigiria pôr um token dentro do atualizador, ou hospedar os arquivos
+   em outro lugar. As duas coisas são desenhos diferentes deste.
 
 ## Onde as peças moram
 
@@ -123,9 +158,15 @@ para decidir antes de o repositório existir:
 | Perguntar e baixar | [`ProcuraDeVersao.vb`](src/Iris.Update/ProcuraDeVersao.vb) |
 | A tela | [`AtualizacaoViewModel.vb`](src/Iris.App/ViewModels/AtualizacaoViewModel.vb) |
 | Os testes, com as sabotagens | [`AtualizacaoTests.vb`](tests/Iris.Tests/AtualizacaoTests.vb) |
+| Assinar (o que os scripts chamam) | [`Assinador.vb`](tools/Iris.Assinatura/Assinador.vb) |
 
 O `Iris.Update` é o **segundo** assembly de produção com rede, e o
-`EgressArquiteturaTests` cobra os dois pelo nome. A diferença entre eles
-está escrita lá: o de IA *manda* conteúdo do dono, e por isso tem portão,
-cofre e diário; este só *busca* arquivo público, e o que ele tem no lugar é
+`EgressArquiteturaTests` cobra os dois pelo nome. A diferença entre eles está
+escrita lá: o de IA *manda* conteúdo do dono, e por isso tem portão, cofre e
+diário; este só emite `GET`, com corpo vazio, e o que ele tem no lugar é
 assinatura, porque o risco dele é o que chega.
+
+"Arquivo público" é a implantação prevista, e não algo que o código imponha:
+ele exige `https` e mais nada. Uma chave legítima pode assinar um manifesto
+apontando para qualquer endereço `https`. Quem protege o conteúdo é o SHA-256
+de dentro do manifesto assinado, e não o nome do servidor.

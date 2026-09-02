@@ -63,7 +63,9 @@ Namespace Global.Iris.Update
         '''
         ''' <b>Vem de dentro do manifesto assinado</b>, e é isso que o torna útil:
         ''' um hash publicado ao lado do arquivo prova apenas que os dois vieram
-        ''' juntos. Este aqui prova que o pacote é o que o dono assinou.
+        ''' juntos. Este aqui prova que o pacote é o que o dono <i>descreveu no
+        ''' documento que assinou</i> — que é o mais forte que se consegue sem
+        ''' assinar o executável em si.
         ''' </summary>
         Public ReadOnly Property Sha256 As String
 
@@ -151,6 +153,18 @@ Namespace Global.Iris.Update
                 Using verificador = ECDsa.Create()
                     Dim lidos = 0
                     verificador.ImportSubjectPublicKeyInfo(chavePublica, lidos)
+
+                    ' A SPKI TEM DE SER CONSUMIDA INTEIRA. ImportSubjectPublicKeyInfo
+                    ' diz quantos bytes leu e ignora o resto; uma chave valida com
+                    ' lixo colado atras seria aceita, e o lixo seria conteudo que
+                    ' ninguem olhou dentro do executavel.
+                    If lidos <> chavePublica.Length Then Return False
+
+                    ' E TEM DE SER P-256. Ha outras curvas, e o desenho escrito diz
+                    ' P-256 -- um desenho que o codigo nao faz cumprir e intencao,
+                    ' nao desenho. Iris.Assinatura exige o mesmo na outra ponta.
+                    If verificador.KeySize <> 256 Then Return False
+
                     Return verificador.VerifyData(dados, assinatura, HashAlgorithmName.SHA256)
                 End Using
             Catch
@@ -158,24 +172,43 @@ Namespace Global.Iris.Update
             End Try
         End Function
 
-        Private Shared Function Interpretar(bytes As Byte(),
+        ' "conteudo", e nao "bytes": o parametro eclipsaria a propriedade
+        ' Bytes -- VB e insensivel a maiusculas -- e uma leitura nao qualificada
+        ' de Bytes acrescentada aqui pegaria o vetor em vez do tamanho.
+        Private Shared Function Interpretar(conteudo As Byte(),
                                             ByRef motivo As String) As ManifestoDeVersao
             Try
-                Using doc = JsonDocument.Parse(bytes)
+                Using doc = JsonDocument.Parse(conteudo)
                     Dim raiz = doc.RootElement
                     If raiz.ValueKind <> JsonValueKind.Object Then
                         motivo = "o manifesto não é um objeto"
                         Return Nothing
                     End If
 
-                    Dim versao = Texto(raiz, "versao")
+                    ' NOMES QUE NAO ECLIPSAM AS PROPRIEDADES. "versao" e
+                    ' "endereco" sombreariam Versao e Endereco, ignorando maiusculas,
+                    ' e uma referencia nao qualificada acrescentada depois pegaria o
+                    ' local. CLAUDE.md, secao 1.
+                    Dim numero = Texto(raiz, "versao")
                     Dim quando = Texto(raiz, "publicada")
-                    Dim endereco = Texto(raiz, "endereco")
+                    Dim ondeBaixar = Texto(raiz, "endereco")
                     Dim sha = Texto(raiz, "sha256")
 
                     Dim aVersao As Version = Nothing
-                    If Not Version.TryParse(versao, aVersao) Then
+                    If Not Version.TryParse(numero, aVersao) Then
                         motivo = "o manifesto não traz uma versão legível"
+                        Return Nothing
+                    End If
+
+                    ' EXATAMENTE TRES COMPONENTES, e nao "o que o TryParse aceitar".
+                    '
+                    ' Ele aceita "1.2" e "1.2.3.4". O primeiro faz ToString(3) LANCAR
+                    ' -- numa tela, longe daqui. O segundo e pior por ser silencioso:
+                    ' 1.2.3.4 e maior que 1.2.3 na comparacao, mas as duas aparecem
+                    ' como "1.2.3" na tela e produzem o mesmo nome de arquivo. O dono
+                    ' veria o Iris oferecendo a versao que ele ja tem.
+                    If aVersao.Build < 0 OrElse aVersao.Revision >= 0 Then
+                        motivo = "a versão do manifesto não tem três números"
                         Return Nothing
                     End If
 
@@ -184,7 +217,7 @@ Namespace Global.Iris.Update
                     ' Quem assina é o dono, e um endereco http:// assinado por ele
                     ' seria um engano dele -- e um engano que entrega o pacote a
                     ' quem estiver no caminho. A conferencia custa uma linha.
-                    If Not endereco.StartsWith("https://", StringComparison.OrdinalIgnoreCase) Then
+                    If Not ondeBaixar.StartsWith("https://", StringComparison.OrdinalIgnoreCase) Then
                         motivo = "o endereço do pacote não é https"
                         Return Nothing
                     End If
@@ -211,7 +244,7 @@ Namespace Global.Iris.Update
                                             publicada)
 
                     Return New ManifestoDeVersao(aVersao, publicada, Texto(raiz, "notas"),
-                                                 endereco, sha.ToLowerInvariant(), tamanho)
+                                                 ondeBaixar, sha.ToLowerInvariant(), tamanho)
                 End Using
             Catch
                 motivo = "o manifesto não é JSON legível"

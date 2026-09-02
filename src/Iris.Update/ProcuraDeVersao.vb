@@ -115,6 +115,16 @@ Namespace Global.Iris.Update
         Private ReadOnly _meu As Boolean
 
         ''' <summary>
+        ''' <b>False quando não deu para saber qual versão este executável é.</b>
+        '''
+        ''' Sem isto, um atributo de versão ilegível virava 0.0.0 — e a regra
+        ''' antirrebaixamento passava a aceitar qualquer manifesto assinado, por
+        ''' mais antigo que fosse, porque tudo é maior que zero. A proteção
+        ''' falhava aberta exatamente quando perdia a informação de que precisa.
+        ''' </summary>
+        Private ReadOnly _sabeAVersao As Boolean
+
+        ''' <summary>
         ''' <b>A versão que este executável é.</b>
         '''
         ''' Lida do <c>InformationalVersion</c>, que é o que o
@@ -122,12 +132,23 @@ Namespace Global.Iris.Update
         ''' o SDK acrescenta são cortados antes de interpretar.
         ''' </summary>
         Public Shared Function VersaoInstalada() As Version
+            Return If(Lida(), New Version(0, 0, 0))
+        End Function
+
+        ''' <summary>
+        ''' A versão lida do assembly, ou <c>Nothing</c> se não deu para ler.
+        ''' <see cref="VersaoInstalada"/> colapsa isso em 0.0.0 para a tela; quem
+        ''' precisa <b>decidir</b> usa esta, porque a diferença entre "sou a
+        ''' 0.0.0" e "não sei qual sou" é a diferença entre recusar e aceitar um
+        ''' rebaixamento.
+        ''' </summary>
+        Friend Shared Function Lida() As Version
             Try
                 Return Interpretar(Assembly.GetEntryAssembly()?.
                     GetCustomAttribute(Of AssemblyInformationalVersionAttribute)()?.
                     InformationalVersion)
             Catch
-                Return New Version(0, 0, 0)
+                Return Nothing
             End Try
         End Function
 
@@ -147,13 +168,19 @@ Namespace Global.Iris.Update
         ''' ler não pode virar um número que dá.
         ''' </summary>
         Friend Shared Function Interpretar(bruta As String) As Version
-            If String.IsNullOrWhiteSpace(bruta) Then Return New Version(0, 0, 0)
+            If String.IsNullOrWhiteSpace(bruta) Then Return Nothing
 
             Dim corte = bruta.IndexOfAny({"+"c, "-"c})
             If corte > 0 Then bruta = bruta.Substring(0, corte)
 
             Dim v As Version = Nothing
-            Return If(Version.TryParse(bruta, v), v, New Version(0, 0, 0))
+            If Not Version.TryParse(bruta, v) Then Return Nothing
+
+            ' SEMPRE TRES COMPONENTES. Version aceita "1.2" e "1.2.3.4", e
+            ' ToString(3) LANCA quando Build e -1 -- de dentro de uma frase de
+            ' tela, longe daqui. Normalizar aqui e uma linha; tratar a excecao
+            ' em cada lugar que formata seria quatro.
+            Return New Version(v.Major, v.Minor, Math.Max(v.Build, 0))
         End Function
 
         ''' <summary>
@@ -174,8 +201,12 @@ Namespace Global.Iris.Update
         ''' </summary>
         Public Sub New(enderecoDoManifesto As String, chavePublica As Byte(),
                        Optional instalada As Version = Nothing)
+            ' Lida() PODE DEVOLVER NOTHING, e é para devolver: o construtor
+            ' abaixo lê isso como "não sei qual versão sou", e a procura para
+            ' antes de comparar. Colapsar aqui em 0.0.0 faria a proteção contra
+            ' rebaixamento falhar aberta.
             Me.New(New HttpClient() With {.Timeout = TimeSpan.FromSeconds(30)},
-                   enderecoDoManifesto, chavePublica, instalada)
+                   enderecoDoManifesto, chavePublica, If(instalada, Lida()))
             _meu = True
         End Sub
 
@@ -184,6 +215,18 @@ Namespace Global.Iris.Update
         ''' responder sem socket. Público, ele seria a porta por onde um
         ''' <c>HttpClient</c> de fora entraria — e a auditoria de quem tem rede
         ''' passaria a depender de quem chama, e não de quem referencia.
+        '''
+        ''' <b><paramref name="instalada"/> a <c>Nothing</c> significa "não sei
+        ''' qual versão sou"</b>, e não "descubra". Quem descobre é o construtor
+        ''' público, que chama <see cref="Lida"/> — e passa adiante o
+        ''' <c>Nothing</c> dela quando o atributo não dá para ler.
+        '''
+        ''' A distinção não é preciosismo: sem ela, este construtor teria de
+        ''' adivinhar, e um teste do caminho "não sei" seria impossível de
+        ''' escrever. Foi o que aconteceu na primeira versão — o teste existia e
+        ''' passava porque o host do MSTest tem <c>InformationalVersion</c>
+        ''' 17.13.0, que é maior que qualquer manifesto de mentira. Ele provava
+        ''' "não ofereceu", pelo motivo errado.
         ''' </summary>
         Friend Sub New(cliente As HttpClient, enderecoDoManifesto As String,
                        chavePublica As Byte(), Optional instalada As Version = Nothing)
@@ -191,7 +234,8 @@ Namespace Global.Iris.Update
             _cliente = cliente
             _enderecoDoManifesto = If(enderecoDoManifesto, "")
             _chavePublica = chavePublica
-            _instalada = If(instalada, VersaoInstalada())
+            _instalada = instalada
+            _sabeAVersao = instalada IsNot Nothing
         End Sub
 
         ''' <summary>
@@ -211,6 +255,17 @@ Namespace Global.Iris.Update
                                                    StringComparison.OrdinalIgnoreCase) Then
                 Return Parar(DesfechoDaProcura.NaoDeuParaSaber,
                              "o endereço de versões não é https")
+            End If
+
+            ' NAO SEI QUAL VERSAO EU SOU -> NAO SEI SE HA VERSAO NOVA.
+            '
+            ' Seguir com 0.0.0 faria toda versao publicada parecer mais nova, e
+            ' um manifesto antigo legitimamente assinado seria oferecido como
+            ' atualizacao. A regra antirrebaixamento so vale se ela souber contra
+            ' o que comparar.
+            If Not _sabeAVersao OrElse _instalada Is Nothing Then
+                Return Parar(DesfechoDaProcura.NaoDeuParaSaber,
+                             "não consegui saber qual versão este programa é")
             End If
 
             Dim manifesto As Byte()
@@ -271,7 +326,13 @@ Namespace Global.Iris.Update
             End If
 
             Dim destino = Path.Combine(pasta, $"Iris-{manifesto.Versao.ToString(3)}.exe")
-            Dim temporario = destino & ".parcial"
+
+            ' NOME TEMPORARIO IMPREVISIVEL.
+            '
+            ' Era "<destino>.parcial", fixo. Um nome que se pode adivinhar e um
+            ' nome onde da para plantar um arquivo, ou trocar o nosso, entre o
+            ' fim da gravacao e a promocao. Custa um Guid.
+            Dim temporario = destino & "." & Guid.NewGuid().ToString("N") & ".parcial"
 
             Try
                 Directory.CreateDirectory(pasta)
@@ -305,8 +366,26 @@ Namespace Global.Iris.Update
                         "o pacote baixado não é o que o manifesto assinado descreve")
                 End If
 
-                If File.Exists(destino) Then File.Delete(destino)
-                File.Move(temporario, destino)
+                ' Move com overwrite, e nao Delete seguido de Move: entre os dois
+                ' havia um instante com o nome final livre para outra coisa ocupar.
+                File.Move(temporario, destino, overwrite:=True)
+
+                ' E O ARQUIVO PROMOVIDO E CONFERIDO DE NOVO.
+                '
+                ' O hash de cima e dos bytes que passaram pelo nosso handle. Entre
+                ' fechar esse handle e o Move ha um instante -- pequeno, e nao
+                ' zero -- em que o arquivo temporario e apenas um nome no disco.
+                ' Sem esta segunda leitura, "o pacote conferido e exatamente o que
+                ' foi assinado" seria uma frase mais forte que o codigo.
+                '
+                ' Custa uma releitura de 60 MB, uns dois decimos de segundo, uma
+                ' vez por atualizacao. E o que compra a frase.
+                If Not Confere(destino, manifesto.Sha256) Then
+                    Limpar(destino)
+                    Return PacoteBaixado.Nao(
+                        "o pacote mudou entre a conferência e a gravação")
+                End If
+
                 Return PacoteBaixado.Sim(destino)
             Catch ex As OperationCanceledException
                 Limpar(temporario)
@@ -327,14 +406,30 @@ Namespace Global.Iris.Update
             Using resposta = Await _cliente.GetAsync(
                     endereco, HttpCompletionOption.ResponseHeadersRead, ct)
                 resposta.EnsureSuccessStatusCode()
+                ExigirHttpsAteOFim(resposta)
 
                 Using entrada = Await resposta.Content.ReadAsStreamAsync(ct)
                     Using saida As New MemoryStream()
                         Dim buffer(81_919) As Byte
+                        Dim total As Long = 0
                         While True
-                            Dim lidos = Await entrada.ReadAsync(buffer, ct)
+                            ' PEDE NO MAXIMO O QUE FALTA, MAIS UM.
+                            '
+                            ' Pedir o buffer inteiro e conferir depois deixava o
+                            ' servidor entregar ate 80 KiB alem do teto antes da
+                            ' recusa -- e o comentario dizia "le no maximo teto".
+                            ' O byte a mais existe para o excesso ser DETECTADO:
+                            ' sem ele, uma resposta de exatamente teto+1 pararia
+                            ' no teto e passaria por completa.
+                            Dim cabem = CInt(Math.Min(CLng(buffer.Length), teto - total + 1L))
+                            If cabem <= 0 Then
+                                Throw New InvalidDataException("resposta maior que o teto")
+                            End If
+
+                            Dim lidos = Await entrada.ReadAsync(buffer.AsMemory(0, cabem), ct)
                             If lidos = 0 Then Exit While
-                            If saida.Length + lidos > teto Then
+                            total += lidos
+                            If total > teto Then
                                 Throw New InvalidDataException("resposta maior que o teto")
                             End If
                             saida.Write(buffer, 0, lidos)
@@ -358,6 +453,7 @@ Namespace Global.Iris.Update
             Using resposta = Await _cliente.GetAsync(
                     endereco, HttpCompletionOption.ResponseHeadersRead, ct)
                 resposta.EnsureSuccessStatusCode()
+                ExigirHttpsAteOFim(resposta)
 
                 Using hash = IncrementalHash.CreateHash(HashAlgorithmName.SHA256)
                     Using entrada = Await resposta.Content.ReadAsStreamAsync(ct)
@@ -366,7 +462,13 @@ Namespace Global.Iris.Update
                             Dim buffer(81_919) As Byte
                             Dim total As Long = 0
                             While True
-                                Dim lidos = Await entrada.ReadAsync(buffer, ct)
+                                ' Mesmo clamp da irma acima, e pelo mesmo motivo.
+                                Dim cabem = CInt(Math.Min(CLng(buffer.Length), teto - total + 1L))
+                                If cabem <= 0 Then
+                                    Throw New InvalidDataException("resposta maior que o teto")
+                                End If
+
+                                Dim lidos = Await entrada.ReadAsync(buffer.AsMemory(0, cabem), ct)
                                 If lidos = 0 Then Exit While
                                 total += lidos
                                 If total > teto Then
@@ -382,6 +484,50 @@ Namespace Global.Iris.Update
                 End Using
             End Using
         End Function
+
+        ''' <summary>
+        ''' Relê o arquivo do disco e compara o SHA-256 com o esperado. Falha de
+        ''' leitura é <c>False</c>: um arquivo que não dá para conferir não é um
+        ''' arquivo conferido.
+        ''' </summary>
+        Private Shared Function Confere(caminho As String, esperado As String) As Boolean
+            Try
+                Using lendo As New FileStream(caminho, FileMode.Open, FileAccess.Read,
+                                              FileShare.Read)
+                    Dim veio = Convert.ToHexString(SHA256.HashData(lendo)).ToLowerInvariant()
+                    Return String.Equals(veio, esperado, StringComparison.Ordinal)
+                End Using
+            Catch
+                Return False
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' <b>O endereço final também tem de ser https.</b>
+        '''
+        ''' Os redirecionamentos são seguidos, e têm de ser: o
+        ''' <c>releases/latest/download/</c> do GitHub existe justamente para
+        ''' redirecionar, e desligá-los quebraria o endereço estável que torna
+        ''' desnecessário saber o número da última versão para perguntar qual é
+        ''' a última versão.
+        '''
+        ''' O que dá para exigir é que a cadeia não termine fora do https. O
+        ''' runtime moderno já recusa https para http automaticamente; esta
+        ''' conferência é para o caso de ele deixar de recusar, e custa uma
+        ''' comparação.
+        '''
+        ''' <b>Não se exige o host</b>, e é deliberado: o endereço do pacote vem
+        ''' assinado pelo dono e pode legitimamente apontar para outro lugar. O
+        ''' que protege o conteúdo é o SHA-256 de dentro do manifesto assinado,
+        ''' não o nome do servidor.
+        ''' </summary>
+        Private Shared Sub ExigirHttpsAteOFim(resposta As HttpResponseMessage)
+            Dim onde = resposta.RequestMessage?.RequestUri
+            If onde Is Nothing Then Return
+            If Not String.Equals(onde.Scheme, "https", StringComparison.OrdinalIgnoreCase) Then
+                Throw New InvalidDataException("o redirecionamento saiu do https")
+            End If
+        End Sub
 
         Private Shared Sub Limpar(caminho As String)
             Try

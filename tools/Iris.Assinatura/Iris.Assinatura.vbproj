@@ -1,0 +1,44 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <!--
+      A CRIPTOGRAFIA DA PUBLICAÇÃO, EM .NET E NÃO EM POWERSHELL.
+
+      Os dois scripts nasceram fazendo tudo em PowerShell, e não rodavam:
+      `powershell.exe` nesta máquina é o Windows PowerShell 5.1, que roda sobre
+      o .NET Framework, onde ExportPkcs8PrivateKeyPem, ExportSubjectPublicKeyInfo
+      e ImportFromPem simplesmente não existem. Não há `pwsh` instalado. A chave
+      nunca teria sido gerada, e a descoberta seria na hora de publicar.
+
+      Exigir o PowerShell 7 seria empurrar uma instalação para cima de quem só
+      quer publicar uma versão. Reescrever em APIs do Framework significaria
+      montar DER na mão, que é a última coisa que se quer no caminho que decide
+      de quem o Iris aceita código.
+
+      Então o que precisa de .NET moderno vem para cá, e o PowerShell continua
+      fazendo o que ele faz bem: arquivo, ACL e gh.
+
+      E HÁ UM GANHO QUE NÃO ERA O OBJETIVO: agora as duas pontas se encontram
+      num teste. O mesmo código que assina é chamado pela suíte, e o manifesto
+      que ele produz é lido por ManifestoDeVersao.Ler — que é a única prova de
+      que os formatos combinam. Antes disso, "os dois usam IeeeP1363 por padrão"
+      era uma afirmação sobre a documentação da plataforma, e não sobre este
+      programa.
+
+      Sem rede: este projeto não referencia nada de System.Net, e o
+      EgressArquiteturaTests o trata como aparato, junto do harness de crash.
+    -->
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>Iris.Assinatura</RootNamespace>
+    <StartupObject>Iris.Assinatura.Program</StartupObject>
+    <OptionStrict>On</OptionStrict>
+    <OptionExplicit>On</OptionExplicit>
+    <OptionInfer>On</OptionInfer>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Iris.Tests" />
+  </ItemGroup>
+
+</Project>

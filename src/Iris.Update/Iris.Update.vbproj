@@ -15,9 +15,15 @@
 
       • o egress de IA MANDA conteúdo do dono, e por isso tem portão, cofre e
         diário;
-      • este aqui só BUSCA — um manifesto público e um pacote público. Não
-        carrega nada da caixa, e não tem o que registrar num diário de
-        divulgação porque não há divulgação.
+      • este aqui só BUSCA. Ele emite GET, e o corpo do pedido é vazio: não há
+        nada da caixa para carregar, e por isso não há o que registrar num
+        diário de divulgação.
+
+      "Manifesto público e pacote público" é a implantação prevista, e NÃO uma
+      propriedade que este código imponha: ele exige https e mais nada. Uma
+      chave legítima pode assinar um manifesto apontando para qualquer endereço
+      https, inclusive um interno. Quem protege o conteúdo é o SHA-256 de dentro
+      do manifesto assinado, e não o nome do servidor.
 
       O que ele tem, e o outro não precisa, é ASSINATURA: um atualizador é um
       canal de código entrando na máquina, e o risco não é o que sai, é o que

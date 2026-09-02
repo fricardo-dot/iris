@@ -95,6 +95,13 @@ Public Class AtualizacaoTests
         Inherits HttpMessageHandler
 
         Friend ReadOnly Corpos As New Dictionary(Of String, Byte())(StringComparer.Ordinal)
+
+        ''' <summary>
+        ''' Respostas cujo corpo é um fluxo, e não um vetor. Um vetor tem fim; o
+        ''' que os testes de teto precisam é de um que não tenha.
+        ''' </summary>
+        Friend ReadOnly Fluxos As New Dictionary(Of String, Stream)(StringComparer.Ordinal)
+
         Friend ReadOnly Pedidos As New List(Of String)()
 
         ''' <summary>Quando preenchido, toda requisição estoura com isto.</summary>
@@ -110,6 +117,13 @@ Public Class AtualizacaoTests
 
             If Explodir IsNot Nothing Then Throw Explodir
 
+            Dim fluxo As Stream = Nothing
+            If Fluxos.TryGetValue(onde, fluxo) Then
+                Return Task.FromResult(New HttpResponseMessage(HttpStatusCode.OK) With {
+                    .Content = New StreamContent(fluxo)
+                })
+            End If
+
             Dim corpo As Byte() = Nothing
             If Not Corpos.TryGetValue(onde, corpo) Then
                 Return Task.FromResult(New HttpResponseMessage(HttpStatusCode.NotFound))
@@ -119,6 +133,67 @@ Public Class AtualizacaoTests
                 .Content = New ByteArrayContent(corpo)
             }
             Return Task.FromResult(r)
+        End Function
+    End Class
+
+    ''' <summary>
+    ''' <b>Um fluxo que nunca acaba, e que conta quanto lhe foi pedido.</b>
+    '''
+    ''' Sem ele, o teto do download era provado apenas pelo desfecho — e um
+    ''' código que lesse o corpo inteiro e recusasse no fim daria o mesmo
+    ''' desfecho. O que precisa ser provado é <i>quanto</i> chegou a ser lido.
+    ''' </summary>
+    Private NotInheritable Class FluxoSemFim
+        Inherits Stream
+
+        Friend Property Entregues As Long
+
+        Public Overrides ReadOnly Property CanRead As Boolean
+            Get
+                Return True
+            End Get
+        End Property
+        Public Overrides ReadOnly Property CanSeek As Boolean
+            Get
+                Return False
+            End Get
+        End Property
+        Public Overrides ReadOnly Property CanWrite As Boolean
+            Get
+                Return False
+            End Get
+        End Property
+        Public Overrides ReadOnly Property Length As Long
+            Get
+                Throw New NotSupportedException()
+            End Get
+        End Property
+        Public Overrides Property Position As Long
+            Get
+                Throw New NotSupportedException()
+            End Get
+            Set
+                Throw New NotSupportedException()
+            End Set
+        End Property
+        Public Overrides Sub Flush()
+        End Sub
+        Public Overrides Function Seek(o As Long, r As SeekOrigin) As Long
+            Throw New NotSupportedException()
+        End Function
+        Public Overrides Sub SetLength(v As Long)
+            Throw New NotSupportedException()
+        End Sub
+        Public Overrides Sub Write(b As Byte(), o As Integer, c As Integer)
+            Throw New NotSupportedException()
+        End Sub
+
+        Public Overrides Function Read(buffer As Byte(), deslocamento As Integer,
+                                       quantos As Integer) As Integer
+            ' SEMPRE ENCHE O QUE LHE PEDIREM. E o servidor hostil do enunciado:
+            ' ele nao para, entao quem tem de parar e quem le.
+            Entregues += quantos
+            Return quantos
         End Function
     End Class
 
@@ -156,6 +231,14 @@ Public Class AtualizacaoTests
             Assert.AreEqual(New Version(1, 2, 3), lido.Versao)
             Assert.AreEqual(Base & "/Iris.exe", lido.Endereco)
             Assert.AreEqual(40_000_000L, lido.Bytes)
+
+            ' E OS CAMPOS QUE FALTAVAM. Sem eles, zerar Notas, Sha256 e Publicada
+            ' no construtor deixava este teste verde -- e sao justamente os
+            ' campos que a tela mostra e que o download compara.
+            Assert.AreEqual("coisas", lido.Notas)
+            Assert.AreEqual(New String("a"c, 64), lido.Sha256)
+            Assert.AreEqual(New DateTimeOffset(2026, 9, 2, 10, 0, 0, TimeSpan.Zero),
+                            lido.Publicada)
         End Using
     End Sub
 
@@ -272,12 +355,23 @@ Public Class AtualizacaoTests
     ''' </summary>
     <TestMethod>
     Public Sub Manifesto_grande_demais_nem_chega_na_assinatura()
-        Using dono = ParNovo()
+        Using dono = ParNovo(), impostor = ParNovo()
+            ' 64 KiB + 1 byte, que e o teto do manifesto -- e nao os 40 MB do
+            ' campo "bytes", que descreve o PACOTE.
             Dim enorme(ManifestoDeVersao.ManifestoMaximo) As Byte
+
+            ' A ASSINATURA E DE OUTRA CHAVE, e e isso que prova a ORDEM.
+            '
+            ' Com uma assinatura valida, o motivo seria "grande demais" tanto
+            ' antes quanto depois da conferencia criptografica, e o teste nao
+            ' distinguiria as duas ordens. Com uma invalida, so a ordem certa
+            ' produz "grande demais"; a trocada produziria "a assinatura nao
+            ' confere".
             Dim motivo As String = Nothing
-            Assert.IsNull(ManifestoDeVersao.Ler(enorme, Assinar(enorme, dono),
+            Assert.IsNull(ManifestoDeVersao.Ler(enorme, Assinar(enorme, impostor),
                                                 Publica(dono), motivo))
-            StringAssert.Contains(motivo, "grande demais")
+            StringAssert.Contains(motivo, "grande demais",
+                                  "conferiu a assinatura antes do teto de tamanho")
         End Using
     End Sub
 
@@ -365,27 +459,51 @@ Public Class AtualizacaoTests
             Dim servidor As RespostasDeVersao = Nothing
             Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
                                  New Version(1, 0, 0), servidor)
-            servidor.Explodir = New HttpRequestException("sem rede")
+            ' A MENSAGEM DA EXCECAO CARREGA UM SEGREDO, de proposito.
+            '
+            ' Antes, a excecao dizia so "sem rede", e a assercao procurava o
+            ' dominio -- entao devolver ex.Message inteiro deixava o teste verde.
+            ' Agora o segredo esta na mensagem, e so uma frase que NAO a repete
+            ' passa.
+            Const segredo = "Authorization: Bearer abc123"
+            servidor.Explodir = New HttpRequestException(
+                "falha ao chamar https://exemplo.invalido/iris.json (" & segredo & ")")
 
             Dim r = Await procura.Procurar(CancellationToken.None)
 
             Assert.AreEqual(DesfechoDaProcura.NaoDeuParaSaber, r.Desfecho)
             ' A FRASE VAI PARA A TELA. A mensagem de uma excecao de rede carrega
             ' endereco e as vezes cabecalhos; so o tipo pode sair.
+            Assert.IsFalse(r.Frase.Contains(segredo),
+                           "a frase da tela repetiu a mensagem da excecao: " & r.Frase)
             Assert.IsFalse(r.Frase.Contains("exemplo.invalido"),
                            "a frase da tela vazou o endereco: " & r.Frase)
+            StringAssert.Contains(r.Frase, "HttpRequestException",
+                                  "sem o tipo, a frase nao ajuda ninguem a diagnosticar")
         End Using
     End Function
 
+    ''' <summary>
+    ''' <b>E nenhum pedido chega a sair.</b>
+    '''
+    ''' Só o desfecho não provava nada: <c>NaoDeuParaSaber</c> é também o
+    ''' resultado de 404, de rede caída e de JSON ilegível. Sem a contagem de
+    ''' pedidos, remover a conferência de <c>https</c> deixaria o teste verde —
+    ''' o fake responderia 404 e o <c>Catch</c> devolveria o mesmo desfecho.
+    ''' </summary>
     <TestMethod>
     Public Async Function Endereco_de_versoes_precisa_ser_https() As Task
         Using dono = ParNovo()
-            Dim procura = New ProcuraDeVersao(New HttpClient(New RespostasDeVersao()),
+            Dim servidor As New RespostasDeVersao()
+            Dim procura = New ProcuraDeVersao(New HttpClient(servidor),
                                               "http://exemplo.invalido/iris.json",
                                               Publica(dono), New Version(1, 0, 0))
 
             Assert.AreEqual(DesfechoDaProcura.NaoDeuParaSaber,
                             (Await procura.Procurar(CancellationToken.None)).Desfecho)
+            Assert.AreEqual(0, servidor.Pedidos.Count,
+                            "falou com o servidor por http antes de recusar: " &
+                            String.Join(", ", servidor.Pedidos))
         End Using
     End Function
 
@@ -471,19 +589,31 @@ Public Class AtualizacaoTests
         Dim onde = PastaNova()
         Try
             Using dono = ParNovo()
-                Dim conteudo = New Byte(200_000) {}
-                Dim corpo = MontarJson("2.0.0", quantos:=1_000)
+                Const teto = 1_000L
+                Dim corpo = MontarJson("2.0.0", quantos:=teto)
 
                 Dim servidor As RespostasDeVersao = Nothing
                 Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
                                      New Version(1, 0, 0), servidor)
-                servidor.Corpos(Base & "/Iris.exe") = conteudo
+
+                ' UM SERVIDOR QUE NAO PARA. Um vetor grande provaria o desfecho e
+                ' nao a propriedade: um codigo que lesse o corpo inteiro e
+                ' recusasse no fim daria o mesmo desfecho. Aqui nao ha fim.
+                Dim semFim As New FluxoSemFim()
+                servidor.Fluxos(Base & "/Iris.exe") = semFim
 
                 Dim r = Await procura.Procurar(CancellationToken.None)
                 Dim pacote = Await procura.Baixar(r.Manifesto, onde, CancellationToken.None)
 
                 Assert.IsFalse(pacote.Veio, "gravou mais do que o manifesto declarava")
                 CollectionAssert.AreEqual(Array.Empty(Of String)(), Directory.GetFiles(onde))
+
+                ' E A MEDIDA. Com o clamp, o maximo que se pede e teto+1 -- o
+                ' byte a mais existe so para o excesso ser detectado. Sem ele,
+                ' a primeira leitura ja pediria os 80 KiB do buffer.
+                Assert.IsTrue(semFim.Entregues <= teto + 1,
+                              "leu " & semFim.Entregues & " bytes para um teto de " &
+                              teto & ": o teto nao esta sendo aplicado NA leitura")
             End Using
         Finally
             Directory.Delete(onde, recursive:=True)
@@ -516,7 +646,11 @@ Public Class AtualizacaoTests
                         "nao cortou o commit que o SDK cola no InformationalVersion")
         Assert.AreEqual(New Version(1, 2, 3), ProcuraDeVersao.Interpretar("1.2.3"))
         Assert.AreEqual(New Version(1, 2, 3), ProcuraDeVersao.Interpretar("1.2.3-beta.1"))
-        Assert.AreEqual(New Version(1, 2, 3, 4), ProcuraDeVersao.Interpretar("1.2.3.4"))
+
+        ' QUATRO COMPONENTES VIRAM TRES. O AssemblyVersion do .NET tem quatro, e
+        ' a quarta nunca aparece na tela nem no nome do arquivo -- mantê-la faria
+        ' 1.2.3.4 comparar como maior que 1.2.3 e exibir-se como "1.2.3".
+        Assert.AreEqual(New Version(1, 2, 3), ProcuraDeVersao.Interpretar("1.2.3.4"))
     End Sub
 
     ''' <summary>
@@ -525,11 +659,22 @@ Public Class AtualizacaoTests
     ''' de compilação.
     ''' </summary>
     <TestMethod>
-    Public Sub Versao_ilegivel_vira_zero_e_nao_excecao()
+    Public Sub Versao_ilegivel_vira_NOTHING_e_nao_excecao()
         For Each ruim In {Nothing, "", "   ", "abc", "1", "1.", "versao 2"}
-            Assert.AreEqual(New Version(0, 0, 0), ProcuraDeVersao.Interpretar(ruim),
-                            "aceitou '" & If(ruim, "<Nothing>") & "' como versao")
+            Assert.IsNull(ProcuraDeVersao.Interpretar(ruim),
+                          "aceitou '" & If(ruim, "<Nothing>") & "' como versao")
         Next
+
+        ' NOTHING, E NAO 0.0.0, e a mudanca nao e cosmetica: com zero, a regra
+        ' antirrebaixamento passava a aceitar qualquer manifesto assinado, por
+        ' mais antigo que fosse, porque tudo e maior que zero. Ela falhava aberta
+        ' exatamente quando perdia a informacao de que precisa.
+        '
+        ' VersaoInstalada() continua colapsando em 0.0.0 para a TELA, que precisa
+        ' mostrar alguma coisa -- mas NAO da para afirmar isso aqui: sob o MSTest,
+        ' GetEntryAssembly() e o host, cujo InformationalVersion e 17.13.0. Uma
+        ' assercao sobre ela mediria a versao do VSTest, e quebraria no dia em
+        ' que ele fosse atualizado.
     End Sub
 
     <TestMethod>
@@ -551,25 +696,348 @@ Public Class AtualizacaoTests
     ''' </summary>
     <TestMethod>
     Public Async Function Segunda_procura_apaga_a_oferta_da_primeira() As Task
+        Dim onde = PastaNova()
+        Try
+            Using dono = ParNovo()
+                ' O CICLO COMPLETO ANTES DA SEGUNDA PROCURA: procurar, BAIXAR, e
+                ' so entao procurar de novo. Sem o download, o teste nao provava
+                ' que Esquecer() limpa "Baixado" -- e uma tela que mantivesse o
+                ' arquivo da oferta anterior mostraria um caminho ao lado de uma
+                ' frase que fala de outra coisa.
+                Dim conteudo = Encoding.UTF8.GetBytes("um executavel de mentira")
+                Dim hash = Convert.ToHexString(SHA256.HashData(conteudo)).ToLowerInvariant()
+                Dim corpo = MontarJson("2.0.0", hash:=hash, quantos:=conteudo.LongLength)
+
+                Dim servidor As RespostasDeVersao = Nothing
+                Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                     New Version(1, 0, 0), servidor)
+                servidor.Corpos(Base & "/Iris.exe") = conteudo
+
+                Using tela As New AtualizacaoViewModel(procura, onde)
+                    Await tela.VerificarCommand.ExecuteAsync(Nothing)
+                    Assert.IsTrue(tela.HaVersaoNova, "nao achou a versao nova: " & tela.Frase)
+                    Assert.IsTrue(tela.BaixarCommand.CanExecute(Nothing))
+
+                    Await tela.BaixarCommand.ExecuteAsync(Nothing)
+                    Assert.IsTrue(tela.TemBaixado, "nao baixou: " & tela.Frase)
+                    Assert.IsTrue(tela.MostrarNaPastaCommand.CanExecute(Nothing))
+
+                    servidor.Explodir = New HttpRequestException("caiu")
+                    Await tela.VerificarCommand.ExecuteAsync(Nothing)
+
+                    Assert.IsFalse(tela.HaVersaoNova, "manteve a oferta de uma procura que falhou")
+                    Assert.IsFalse(tela.BaixarCommand.CanExecute(Nothing),
+                                   "o botao Baixar sobreviveu a uma procura sem resposta")
+                    Assert.AreEqual("", tela.Notas)
+                    Assert.AreEqual("", tela.Baixado,
+                                    "a tela ainda aponta para o arquivo da oferta anterior")
+                    Assert.IsFalse(tela.MostrarNaPastaCommand.CanExecute(Nothing))
+                End Using
+            End Using
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' <b>O caminho feliz da tela, do clique ao arquivo.</b>
+    '''
+    ''' Ele não existia: os testes da tela cobriam só as recusas, e o
+    ''' <c>BaixarAsync</c> inteiro — a frase final, o caminho, o
+    ''' <c>MostrarNaPastaCommand</c> — não era tocado por ninguém.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function A_tela_baixa_e_diz_onde_o_arquivo_ficou() As Task
+        Dim onde = PastaNova()
+        Try
+            Using dono = ParNovo()
+                Dim conteudo = Encoding.UTF8.GetBytes("outro executavel de mentira")
+                Dim hash = Convert.ToHexString(SHA256.HashData(conteudo)).ToLowerInvariant()
+                Dim corpo = MontarJson("3.1.4", hash:=hash, quantos:=conteudo.LongLength,
+                                       oQueMudou:="consertos")
+
+                Dim servidor As RespostasDeVersao = Nothing
+                Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                     New Version(1, 0, 0), servidor)
+                servidor.Corpos(Base & "/Iris.exe") = conteudo
+
+                Using tela As New AtualizacaoViewModel(procura, onde)
+                    Assert.IsFalse(tela.BaixarCommand.CanExecute(Nothing),
+                                   "da para baixar antes de procurar")
+
+                    Await tela.VerificarCommand.ExecuteAsync(Nothing)
+                    Assert.AreEqual("consertos", tela.Notas)
+                    Assert.IsTrue(tela.TemNotas)
+
+                    Await tela.BaixarCommand.ExecuteAsync(Nothing)
+
+                    Assert.AreEqual(Path.Combine(onde, "Iris-3.1.4.exe"), tela.Baixado)
+                    Assert.IsTrue(File.Exists(tela.Baixado))
+                    ' A FRASE DIZ O QUE FALTA FAZER. "Baixado com sucesso" e
+                    ' verdade e nao ajuda: o programa novo so passa a existir
+                    ' quando alguem executa o arquivo.
+                    StringAssert.Contains(tela.Frase, "execute o arquivo")
+                    Assert.IsFalse(tela.Ocupado)
+                End Using
+            End Using
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' Descartar a tela cancela o que estiver em voo, e a continuação não
+    ''' escreve em nada depois disso.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Descartar_a_tela_nao_deixa_nada_em_voo()
+        Dim tela As New AtualizacaoViewModel(Nothing, "")
+        tela.Dispose()
+        ' Duas vezes, porque o Application_Exit e o Dispose do MainViewModel
+        ' podem alcancar o mesmo objeto e um ObjectDisposedException aqui
+        ' interromperia o descarte de tudo que vem depois.
+        tela.Dispose()
+    End Sub
+
+    ' ==================================================================
+    ' As duas pontas se encontram
+    ' ==================================================================
+
+    ''' <summary>
+    ''' <b>Assinado pela ferramenta de publicação, lido pelo cliente.</b>
+    '''
+    ''' Este é o teste que faltava, e a falta não era pequena: até aqui, "os dois
+    ''' lados usam o mesmo formato de assinatura" era uma afirmação sobre a
+    ''' documentação do .NET — <c>SignData</c> e <c>VerifyData</c> usam
+    ''' IeeeP1363 por padrão — e não sobre este programa. Os testes antigos
+    ''' assinavam com o mesmo <c>ECDsa</c> que verificavam, então concordariam
+    ''' entre si em qualquer formato.
+    '''
+    ''' Aqui quem assina é <c>Iris.Assinatura.Assinador</c>, que é o código que
+    ''' <c>tools/publicar-versao.ps1</c> chama, e quem lê é
+    ''' <c>ManifestoDeVersao.Ler</c>, que é o código que roda na máquina do
+    ''' usuário. A chave pública atravessa como Base64, que é a forma em que ela
+    ''' é colada em <c>ChaveDeAtualizacao.vb</c>.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_ferramenta_assina_e_o_cliente_le()
+        Dim publicaBase64 As String = Nothing
+        Dim privadaEmPem = Assinatura.Assinador.GerarPar(publicaBase64)
+
+        Dim corpo = MontarJson("2.0.0", oQueMudou:="notas com acento: ção, ümlaut, 日本")
+        Dim aAssinatura = Assinatura.Assinador.Assinar(privadaEmPem, corpo)
+
+        ' Convert.FromBase64String e exatamente o que ChaveDeAtualizacao.Bytes
+        ' faz com a string que o dono cola no codigo.
+        Dim motivo As String = Nothing
+        Dim lido = ManifestoDeVersao.Ler(corpo, aAssinatura,
+                                         Convert.FromBase64String(publicaBase64), motivo)
+
+        Assert.IsNotNull(lido, "o cliente recusou o que a ferramenta assinou: " & motivo)
+        Assert.AreEqual(New Version(2, 0, 0), lido.Versao)
+        Assert.AreEqual("notas com acento: ção, ümlaut, 日本", lido.Notas,
+                        "os acentos nao sobreviveram a viagem")
+        Assert.AreEqual(64, aAssinatura.Length,
+                        "uma assinatura P-256 em IeeeP1363 tem 64 bytes; " &
+                        "128 e mais seria DER, e o cliente nao le DER")
+    End Sub
+
+    ''' <summary>
+    ''' E a chave errada continua sendo recusada quando quem assina é a
+    ''' ferramenta de verdade — sem isto, o teste de cima provaria só que
+    ''' <c>Ler</c> aceita coisas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_ferramenta_assinando_com_OUTRA_chave_e_recusada()
+        Dim doDono As String = Nothing
+        Assinatura.Assinador.GerarPar(doDono)
+
+        Dim doImpostor As String = Nothing
+        Dim privadaDoImpostor = Assinatura.Assinador.GerarPar(doImpostor)
+
+        Dim corpo = MontarJson("2.0.0")
+        Dim motivo As String = Nothing
+
+        Assert.IsNull(ManifestoDeVersao.Ler(
+            corpo, Assinatura.Assinador.Assinar(privadaDoImpostor, corpo),
+            Convert.FromBase64String(doDono), motivo))
+        StringAssert.Contains(motivo, "assinatura")
+    End Sub
+
+    ''' <summary>
+    ''' A ferramenta recusa curva que não seja P-256, dos dois lados. Uma chave
+    ''' de outra curva produziria assinatura que nenhuma cópia do Iris confere, e
+    ''' o erro apareceria na máquina do usuário como "não foi publicado por você"
+    ''' — dito sobre um arquivo que foi.
+    '''
+    ''' <b>O que este teste prova é a metade do tamanho da chave.</b> A P-384 é
+    ''' recusada pelo <c>KeySize</c>; a conferência do tamanho da SPKI, que existe
+    ''' para outras curvas <i>de 256 bits</i>, sobrevive à sabotagem deste teste.
+    ''' Está declarado como tal em <c>Assinador.ExigirP256</c>.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Curva_diferente_e_recusada_nas_duas_pontas()
+        Using outraCurva = ECDsa.Create(ECCurve.NamedCurves.nistP384)
+            Dim pem = outraCurva.ExportPkcs8PrivateKeyPem()
+
+            Assert.ThrowsException(Of CryptographicException)(
+                Sub() Assinatura.Assinador.Assinar(pem, {1, 2, 3}),
+                "a ferramenta assinou com uma curva que o cliente nao confere")
+
+            ' E o cliente tambem recusa, mesmo que a assinatura fosse coerente.
+            Dim corpo = MontarJson("2.0.0")
+            Dim motivo As String = Nothing
+            Assert.IsNull(ManifestoDeVersao.Ler(
+                corpo, outraCurva.SignData(corpo, HashAlgorithmName.SHA256),
+                outraCurva.ExportSubjectPublicKeyInfo(), motivo))
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Lixo colado atrás de uma chave válida não é chave válida.</b>
+    '''
+    ''' <c>ImportSubjectPublicKeyInfo</c> diz quantos bytes leu e ignora o resto.
+    ''' Sem conferir, aquilo seria conteúdo que ninguém olhou viajando dentro do
+    ''' executável.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Chave_publica_com_lixo_atras_e_recusada()
         Using dono = ParNovo()
             Dim corpo = MontarJson("2.0.0")
-            Dim servidor As RespostasDeVersao = Nothing
-            Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
-                                 New Version(1, 0, 0), servidor)
-            Dim tela As New AtualizacaoViewModel(procura, PastaNova())
+            Dim inchada = Publica(dono).Concat(New Byte() {9, 9, 9}).ToArray()
 
-            Await tela.VerificarCommand.ExecuteAsync(Nothing)
-            Assert.IsTrue(tela.HaVersaoNova, "nao achou a versao nova: " & tela.Frase)
-            Assert.IsTrue(tela.BaixarCommand.CanExecute(Nothing))
+            Dim motivo As String = Nothing
+            Assert.IsNull(ManifestoDeVersao.Ler(corpo, Assinar(corpo, dono), inchada, motivo),
+                          "aceitou uma chave com bytes sobrando")
+        End Using
+    End Sub
 
-            servidor.Explodir = New HttpRequestException("caiu")
-            Await tela.VerificarCommand.ExecuteAsync(Nothing)
+    ''' <summary>
+    ''' <b>A forma exata que o ConvertTo-Json do PowerShell 5.1 escreve.</b>
+    '''
+    ''' Este texto não foi inventado: é o <c>iris.json</c> que
+    ''' <c>tools/publicar-versao.ps1</c> produziu ao ser rodado de verdade em
+    ''' 02/09/2026, copiado byte a byte — dois espaços depois dos dois pontos,
+    ''' <c>CRLF</c>, <c>bytes</c> como número e não string, aspas escapadas
+    ''' dentro das notas, e sem BOM.
+    '''
+    ''' <b>Era o último elo sem teste.</b> O teste de ida e volta prova que a
+    ''' assinatura combina; este prova que o <i>documento</i> combina. São
+    ''' coisas diferentes: uma assinatura perfeita sobre um JSON que o cliente
+    ''' não sabe ler produz "o manifesto não é JSON legível" — depois de a
+    ''' assinatura conferir, que é o pior lugar para procurar.
+    '''
+    ''' Se o script mudar a forma, este teste cai. É para cair.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_JSON_QUE_O_SCRIPT_ESCREVE_e_lido_pelo_cliente()
+        ' CRLF explicito: ele faz parte dos bytes assinados, e um vbLf aqui
+        ' provaria outra coisa.
+        Dim comoOScriptEscreve = String.Join(vbCrLf, {
+            "{",
+            "    ""versao"":  ""0.2.0"",",
+            "    ""publicada"":  ""2026-09-02T13:55:33.8968678Z"",",
+            "    ""notas"":  ""Verificacao de versoes, com aspas \"" e acento: coracao."",",
+            "    ""endereco"":  ""https://github.com/ricardo/iris/releases/download/" &
+            "v0.2.0/Iris-0.2.0.exe"",",
+            "    ""sha256"":  ""ed5fd4ca3ba32dd2f8602eb32055a6a2c545679e2f84ed5facf4af00b7ac0f1a"",",
+            "    ""bytes"":  66422058",
+            "}"})
 
-            Assert.IsFalse(tela.HaVersaoNova, "manteve a oferta de uma procura que falhou")
-            Assert.IsFalse(tela.BaixarCommand.CanExecute(Nothing),
-                           "o botao Baixar sobreviveu a uma procura sem resposta")
-            Assert.AreEqual("", tela.Notas)
+        ' SEM BOM, como o script grava. Tres bytes invisiveis na frente ainda
+        ' fariam a assinatura conferir -- eles seriam assinados junto -- e
+        ' JsonDocument.Parse tropecaria neles logo depois.
+        Dim corpo = New UTF8Encoding(False).GetBytes(comoOScriptEscreve)
+
+        Dim publicaBase64 As String = Nothing
+        Dim privadaEmPem = Assinatura.Assinador.GerarPar(publicaBase64)
+
+        Dim motivo As String = Nothing
+        Dim lido = ManifestoDeVersao.Ler(
+            corpo, Assinatura.Assinador.Assinar(privadaEmPem, corpo),
+            Convert.FromBase64String(publicaBase64), motivo)
+
+        Assert.IsNotNull(lido, "o cliente nao le o que o script publica: " & motivo)
+        Assert.AreEqual(New Version(0, 2, 0), lido.Versao)
+        Assert.AreEqual(66_422_058L, lido.Bytes, "o campo bytes veio como numero")
+        Assert.AreEqual("ed5fd4ca3ba32dd2f8602eb32055a6a2c545679e2f84ed5facf4af00b7ac0f1a",
+                        lido.Sha256)
+        StringAssert.Contains(lido.Notas, "aspas """, "as aspas escapadas nao voltaram")
+        Assert.AreEqual(2026, lido.Publicada.Year)
+    End Sub
+
+    ' ==================================================================
+    ' A versão do manifesto
+    ' ==================================================================
+
+    ''' <summary>
+    ''' <b>Três números, nem dois nem quatro.</b>
+    '''
+    ''' <c>Version.TryParse</c> aceita os três. "1.2" faz <c>ToString(3)</c>
+    ''' <b>lançar</b>, numa frase de tela e longe da causa. "1.2.3.4" é pior por
+    ''' ser silencioso: ela é maior que 1.2.3 na comparação, mas as duas
+    ''' aparecem como "1.2.3" e produzem o mesmo nome de arquivo — o dono veria
+    ''' o Iris oferecendo a versão que ele já tem.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Versao_do_manifesto_tem_de_ter_TRES_numeros()
+        Using dono = ParNovo()
+            For Each ruim In {"1.2", "1.2.3.4", "1", "", "dois"}
+                Dim corpo = MontarJson(ruim)
+                Dim motivo As String = Nothing
+                Assert.IsNull(ManifestoDeVersao.Ler(corpo, Assinar(corpo, dono),
+                                                    Publica(dono), motivo),
+                              "aceitou a versao '" & ruim & "'")
+            Next
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>Não saber a própria versão não pode virar "sou a 0.0.0".</b>
+    '''
+    ''' Seguir com zero faria toda versão publicada parecer mais nova, e um
+    ''' manifesto antigo legitimamente assinado seria oferecido como atualização.
+    ''' A proteção contra rebaixamento falharia aberta exatamente quando perde a
+    ''' informação de que precisa.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Sem_saber_a_versao_instalada_nao_ha_oferta() As Task
+        Using dono = ParNovo()
+            Dim corpo = MontarJson("2.0.0")
+            Dim servidor As New RespostasDeVersao()
+            servidor.Corpos(Base & "/iris.json") = corpo
+            servidor.Corpos(Base & "/iris.json.sig") = Assinar(corpo, dono)
+
+            ' SEM instalada: e o construtor Friend le isso como "nao sei qual
+            ' versao sou". Nao e "descubra" -- quem descobre e o construtor
+            ' publico. A distincao existe porque, sem ela, este teste passava
+            ' pelo motivo errado: o host do MSTest tem InformationalVersion
+            ' 17.13.0, maior que qualquer manifesto de mentira, entao o desfecho
+            ' era JaEstaEmDia e a assercao ficava verde sem tocar na guarda.
+            Dim procura = New ProcuraDeVersao(New HttpClient(servidor),
+                                              Base & "/iris.json", Publica(dono))
+
+            Dim r = Await procura.Procurar(CancellationToken.None)
+
+            Assert.AreEqual(DesfechoDaProcura.NaoDeuParaSaber, r.Desfecho,
+                            "ofereceu atualizacao sem saber contra o que comparar")
+            Assert.AreEqual(0, servidor.Pedidos.Count,
+                            "foi a rede antes de descobrir que nao sabe se comparar")
         End Using
     End Function
+
+    <TestMethod>
+    Public Sub A_versao_ilegivel_e_DESCONHECIDA_e_nao_zero()
+        ' Interpretar devolve Nothing, e nao 0.0.0: quem decide precisa da
+        ' diferenca entre "sou a 0.0.0" e "nao sei qual sou".
+        Assert.IsNull(ProcuraDeVersao.Interpretar("abc"))
+        Assert.IsNull(ProcuraDeVersao.Interpretar(""))
+        Assert.IsNull(ProcuraDeVersao.Interpretar(Nothing))
+
+        ' E o que ela devolve tem sempre tres componentes, para ToString(3) nao
+        ' lancar numa frase de tela.
+        Assert.AreEqual(New Version(1, 2, 0), ProcuraDeVersao.Interpretar("1.2"))
+        Assert.AreEqual("1.2.0", ProcuraDeVersao.Interpretar("1.2").ToString(3))
+    End Sub
 
 End Class

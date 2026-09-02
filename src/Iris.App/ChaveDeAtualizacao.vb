@@ -76,6 +76,13 @@ Namespace Global.Iris.App
                 Using verificador = ECDsa.Create()
                     Dim consumidos = 0
                     verificador.ImportSubjectPublicKeyInfo(lidos, consumidos)
+
+                    ' A SPKI INTEIRA, E P-256. ImportSubjectPublicKeyInfo ignora o
+                    ' que sobrar depois da chave, e aceita qualquer curva. As duas
+                    ' coisas passariam calado aqui e reapareceriam como "a assinatura
+                    ' nao confere" na tela -- mandando procurar no lugar errado.
+                    If consumidos <> lidos.Length Then Return Array.Empty(Of Byte)()
+                    If verificador.KeySize <> 256 Then Return Array.Empty(Of Byte)()
                 End Using
 
                 Return lidos

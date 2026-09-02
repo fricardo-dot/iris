@@ -22,7 +22,14 @@ Namespace Global.Iris.App.ViewModels
     '''
     ''' Aqui ele baixa, <b>confere a assinatura e o hash</b>, e diz onde o
     ''' arquivo ficou. O clique duplo é do dono. O que se perde é conveniência; o
-    ''' que não se perde é a garantia de que só entra o que foi assinado.
+    ''' que não se perde é que nada chega ao disco sem o hash bater com o
+    ''' manifesto que o dono assinou.
+    '''
+    ''' <b>Até o disco</b>, e a fronteira é essa mesma. Depois que o caminho
+    ''' aparece na tela, o arquivo é um arquivo como outro qualquer: o Iris não
+    ''' o vigia, e não haveria como. Assinatura Authenticode no executável é o
+    ''' que estenderia a garantia até o duplo clique, e é outro assunto — está
+    ''' em LANCAR.md, na seção do que a assinatura não compra.
     '''
     ''' ------------------------------------------------------------------
     ''' <b>E ELE NÃO PERGUNTA SOZINHO</b>
@@ -34,6 +41,7 @@ Namespace Global.Iris.App.ViewModels
     ''' </summary>
     Public NotInheritable Class AtualizacaoViewModel
         Inherits ObservableObject
+        Implements IDisposable
 
         ''' <summary><c>Nothing</c> quando a chave de assinatura ainda não foi
         ''' configurada — ver <c>ChaveDeAtualizacao</c>.</summary>
@@ -48,14 +56,35 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private _oferta As ManifestoDeVersao
 
+        ''' <summary>
+        ''' <b>Cancela o que estiver em voo quando a janela fecha.</b>
+        '''
+        ''' Sem isto, uma procura ou um download em andamento continuava vivo
+        ''' depois do descarte e voltava para escrever <c>Frase</c> e
+        ''' <c>Baixado</c> num ViewModel que já não é de ninguém. Não derrubava o
+        ''' programa — a janela já tinha ido — mas mantinha um download de 60 MB
+        ''' correndo depois de o dono mandar fechar.
+        ''' </summary>
+        Private ReadOnly _ateFechar As New CancellationTokenSource()
+        Private _descartado As Boolean
+
         Public Sub New(procuraDeVersao As ProcuraDeVersao, pastaDeDestino As String)
             _procura = procuraDeVersao
             _pasta = If(pastaDeDestino, "")
 
-            VerificarCommand = New AsyncRelayCommand(AddressOf VerificarAsync,
-                                                     Function() _procura IsNot Nothing)
-            BaixarCommand = New AsyncRelayCommand(AddressOf BaixarAsync,
-                                                  Function() _oferta IsNot Nothing)
+            ' "E NAO ESTA OCUPADO" NOS DOIS.
+            '
+            ' Cada AsyncRelayCommand ja impede a propria reentrancia, e os dois
+            ' sao comandos DIFERENTES: dava para clicar "Verificar" no meio de um
+            ' download. Esquecer() limpava a oferta enquanto o download dela
+            ' continuava, e a tela terminava mostrando a frase de uma procura ao
+            ' lado do arquivo da outra.
+            VerificarCommand = New AsyncRelayCommand(
+                AddressOf VerificarAsync,
+                Function() _procura IsNot Nothing AndAlso Not Ocupado)
+            BaixarCommand = New AsyncRelayCommand(
+                AddressOf BaixarAsync,
+                Function() _oferta IsNot Nothing AndAlso Not Ocupado)
             MostrarNaPastaCommand = New RelayCommand(AddressOf MostrarNaPasta,
                                                      Function() Baixado.Length > 0)
 
@@ -118,7 +147,12 @@ Namespace Global.Iris.App.ViewModels
                 Return _ocupado
             End Get
             Set
-                SetProperty(_ocupado, Value)
+                If Not SetProperty(_ocupado, Value) Then Return
+                ' OS DOIS COMANDOS DEPENDEM DISTO, entao os dois sao reavaliados.
+                ' Sem o aviso, o CanExecute continuaria devolvendo o valor de
+                ' antes ate algo mais mexer na tela.
+                VerificarCommand?.NotifyCanExecuteChanged()
+                BaixarCommand?.NotifyCanExecuteChanged()
             End Set
         End Property
 
@@ -161,7 +195,8 @@ Namespace Global.Iris.App.ViewModels
             Ocupado = True
             Frase = "Perguntando…"
             Try
-                Dim r = Await _procura.Procurar(CancellationToken.None)
+                Dim r = Await _procura.Procurar(_ateFechar.Token)
+                If _descartado Then Return
                 Frase = r.Frase
 
                 If r.Desfecho = DesfechoDaProcura.HaVersaoNova AndAlso
@@ -183,7 +218,8 @@ Namespace Global.Iris.App.ViewModels
             Ocupado = True
             Frase = "Baixando a versão " & oQue.Versao.ToString(3) & "…"
             Try
-                Dim pacote = Await _procura.Baixar(oQue, _pasta, CancellationToken.None)
+                Dim pacote = Await _procura.Baixar(oQue, _pasta, _ateFechar.Token)
+                If _descartado Then Return
                 If pacote.Veio Then
                     Baixado = pacote.Caminho
                     ' A FRASE DIZ O QUE FALTA FAZER. "Baixado com sucesso" e
@@ -225,6 +261,21 @@ Namespace Global.Iris.App.ViewModels
                 ' motivo para derrubar o programa.
                 Frase = "O arquivo está em " & Baixado
             End Try
+        End Sub
+
+        ''' <summary>
+        ''' Cancela o que estiver em voo e marca a tela como descartada, para as
+        ''' continuações que já estiverem depois do <c>Await</c> não escreverem
+        ''' num ViewModel que ninguém mais mostra.
+        ''' </summary>
+        Public Sub Dispose() Implements IDisposable.Dispose
+            If _descartado Then Return
+            _descartado = True
+            Try
+                _ateFechar.Cancel()
+            Catch
+            End Try
+            _ateFechar.Dispose()
         End Sub
 
         ''' <summary>

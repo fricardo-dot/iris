@@ -48,6 +48,13 @@
     -->
     <ProjectReference Include="..\..\tools\Iris.CrashHarness\Iris.CrashHarness.vbproj"
                       ReferenceOutputAssembly="false" />
+    <!-- A ferramenta que ASSINA. Referenciada de verdade, e nao com
+         ReferenceOutputAssembly="false" como o harness de crash: o teste de
+         ida e volta chama o Assinador e le o resultado com
+         ManifestoDeVersao.Ler. E a unica prova de que as duas pontas usam o
+         mesmo formato de assinatura. Antes dela, isso era uma afirmacao
+         sobre a documentacao da plataforma. -->
+    <ProjectReference Include="..\..\tools\Iris.Assinatura\Iris.Assinatura.vbproj" />
     <ProjectReference Include="..\..\src\Iris.App\Iris.App.vbproj" />
   </ItemGroup>
 

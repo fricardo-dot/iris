@@ -16,15 +16,22 @@ Imports Microsoft.VisualStudio.TestTools.UnitTesting
 ''' nenhuma outra abre rede. Um adaptador esquecido no <c>Iris.Integration</c>
 ''' passaria.
 '''
-''' A regra que vale é sobre a <b>capacidade</b>, não sobre o uso: só um
-''' assembly pode falar HTTP, e é o que existe para isso.
+''' A regra que vale é sobre a <b>capacidade</b>, não sobre o uso: a lista de
+''' quem pode falar HTTP é <b>fechada e nominal</b>, e hoje tem dois — o egress
+''' de IA e o verificador de versões. Era um; o segundo entrou em 02/09/2026,
+''' e o motivo está no teste que cobra os dois.
+'''
+''' <b>Este parágrafo já disse "só um" depois de serem dois.</b> Ficou assim
+''' por um dia, e é o defeito que o CLAUDE.md chama de comentário que
+''' envelhece: quem lesse acharia que o Iris.Update é resto a remover.
 '''
 ''' ------------------------------------------------------------------
 ''' <b>O QUE ESTE TESTE PROVA, E O QUE NÃO PROVA</b>
 '''
-''' Prova que os assemblies de domínio <b>não referenciam</b> a biblioteca de
-''' HTTP — então não há como um deles abrir conexão sem que a referência
-''' apareça, e ela apareceria aqui.
+''' Prova <b>ausência de referência estática direta</b> às bibliotecas de rede
+''' nomeadas em <c>DeRede</c>. É menos do que "não abre conexão", e a
+''' diferença importa: reflexão, uma biblioteca de terceiros que fale HTTP por
+''' dentro, ou um processo externo passariam por aqui sem aparecer.
 '''
 ''' Não prova ausência de qualquer egress concebível: sockets crus, um
 ''' processo externo, um COM que busque URL. Essas seriam outras portas, e
@@ -53,7 +60,7 @@ Public Class EgressArquiteturaTests
     ''' crash.
     ''' </summary>
     Private Shared Function Producao() As IEnumerable(Of Assembly)
-        Dim aparato = {"Iris.Tests", "Iris.CrashHarness"}
+        Dim aparato = {"Iris.Tests", "Iris.CrashHarness", "Iris.Assinatura"}
 
         ' "Iris*.dll", e nao "Iris.*.dll": o Iris.App produz Iris.dll, e o
         ' padrao com ponto o deixava de fora — justamente a camada que compoe

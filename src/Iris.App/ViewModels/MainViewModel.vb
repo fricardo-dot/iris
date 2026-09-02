@@ -1827,6 +1827,10 @@ Namespace Global.Iris.App.ViewModels
             ' mandadas outra vez na proxima abertura.
             EsperarOLoteEmVoo()
 
+            ' A VERIFICACAO DE VERSOES VEM CEDO: o que ela pode ter em voo e um
+            ' download de dezenas de megabytes, e ele nao tem por que continuar
+            ' depois de o dono mandar fechar. Cancelar nao espera.
+            Descartar("atualizacao", Sub() Atualizacao.Dispose())
             Descartar("busca", Sub() Busca?.Dispose())
             Descartar("watcher", Sub() _watcher.Dispose())
             Descartar("compositor", Sub() Composer.Dispose())
