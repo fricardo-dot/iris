@@ -381,18 +381,25 @@ Namespace Global.Iris.Update
                 ' fecha e o caminho e devolvido, o arquivo volta a ser um arquivo
                 ' como outro qualquer. A garantia e PONTUAL -- "conferia no
                 ' instante desta leitura" --, e nao uma propriedade duravel do
-                ' caminho devolvido. Fecha-la exigiria assinar o executavel
-                ' (Authenticode) ou nunca soltar o handle, e as duas coisas sao
-                ' outro desenho. Ver LANCAR.md.
+                ' caminho devolvido. Fecha-la seria outro desenho -- assinatura
+                ' Authenticode no executavel, uma pasta que so o Iris possa
+                ' escrever, o proprio Iris executar o pacote reconferindo
+                ' imediatamente antes, entre outros. Nenhum deles e este.
+                ' Ver LANCAR.md.
                 '
                 ' Custa uma releitura do arquivo, uma vez por atualizacao.
                 If Not Confere(destino, manifesto.Sha256) Then
                     ' APAGA PELO NOME, e sim, isso pode apagar o arquivo que uma
                     ' segunda instancia do Iris acabou de promover. E a escolha
-                    ' certa mesmo assim: um arquivo NESTE caminho cujo hash nao
-                    ' bate com o manifesto nao pode sobreviver, tenha sido escrito
-                    ' por quem for. O custo do engano e baixar de novo; o custo do
+                    ' certa mesmo assim: um arquivo NESTE caminho que nao pode
+                    ' ser CONFIRMADO nao pode sobreviver, tenha sido escrito por
+                    ' quem for. O custo do engano e baixar de novo; o custo do
                     ' contrario e um .exe nao conferido com nome de pacote pronto.
+                    '
+                    ' "Nao confirmado", e nao "hash diferente": Confere devolve
+                    ' False tambem quando nao consegue LER o arquivo -- disco
+                    ' ocupado, permissao, outro processo com ele aberto. Sao
+                    ' coisas diferentes, e a acao e a mesma.
                     Limpar(destino)
                     Return PacoteBaixado.Nao(
                         "o pacote mudou entre a conferência e a gravação")
@@ -549,9 +556,11 @@ Namespace Global.Iris.Update
         ''' vem assinado — é para onde o <c>releases/latest/download/</c>
         ''' redirecionar. Aqui o que protege não é o host, é a assinatura: um
         ''' manifesto servido por qualquer host é recusado se não for do dono.
-        ''' O que se perde ao aceitar qualquer host são privacidade e
-        ''' disponibilidade — quem controlar o redirecionamento pode atrasar
-        ''' ou negar o arquivo —, e não integridade.</item>
+        ''' O que se perde ao aceitar qualquer host é privacidade — mais gente
+        ''' pode ver que esta máquina pediu o arquivo —, e não integridade.
+        ''' <b>Disponibilidade não entra na conta</b>: quem controla o
+        ''' redirecionamento já pode negar ou atrasar a resposta, exigindo-se o
+        ''' host ou não.</item>
         ''' </list>
         ''' </summary>
         Private Shared Sub ExigirHttpsAteOFim(resposta As HttpResponseMessage)

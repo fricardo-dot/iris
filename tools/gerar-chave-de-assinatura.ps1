@@ -34,7 +34,12 @@
 #>
 [CmdletBinding()]
 param(
-    [string] $Destino = (Join-Path $env:USERPROFILE '.iris\chave-de-assinatura.pem')
+    [string] $Destino = (Join-Path $env:USERPROFILE '.iris\chave-de-assinatura.pem'),
+
+    # A saida para quando a pasta escolhida e mesmo compartilhada e voce sabe
+    # disso. Existe para a recusa poder ser ESTRITA: sem escape, uma conferencia
+    # que atrapalha vira uma conferencia que alguem apaga.
+    [switch] $AceitarPastaCompartilhada
 )
 
 $ErrorActionPreference = 'Stop'
@@ -100,7 +105,11 @@ if (-not $oGit) {
 
 $como = New-Object System.Diagnostics.ProcessStartInfo
 $como.FileName = $oGit.Source
-$como.Arguments = "-C `"$pastaAbsoluta`" rev-parse --git-dir"
+# BARRA NORMAL, e nao invertida: um caminho de raiz ("C:\") termina em barra
+# invertida, e ela escaparia a aspa de fechamento na linha de comando. O git
+# aceita "/" no Windows.
+$paraOGit = $pastaAbsoluta.Replace('\', '/')
+$como.Arguments = "-C `"$paraOGit`" rev-parse --git-dir"
 $como.RedirectStandardOutput = $true
 $como.RedirectStandardError = $true
 $como.UseShellExecute = $false
@@ -115,9 +124,23 @@ foreach ($nome in 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CEILING_DIR
     }
 }
 
+# E O GIT FALA INGLES AQUI. A decisao depende de reconhecer a frase "not a git
+# repository"; num git localizado ela vem em outro idioma, e a barreira passaria
+# a recusar TODO destino -- falha fechada, e um script que nao gera chave
+# nenhuma. LC_ALL fixa a lingua so deste processo filho.
+foreach ($nome in 'LC_ALL', 'LANG', 'LC_MESSAGES') {
+    $como.EnvironmentVariables[$nome] = 'C'
+}
+
 $quem = [System.Diagnostics.Process]::Start($como)
-$oQueOGitDisse = ($quem.StandardOutput.ReadToEnd() + ' ' +
-                  $quem.StandardError.ReadToEnd()).Trim()
+
+# OS DOIS CANAIS SAO LIDOS AO MESMO TEMPO. Drenar um e depois o outro trava o
+# processo se o segundo encher o buffer antes de o primeiro fechar -- o filho
+# fica esperando espaco, o pai esperando EOF.
+$lendoASaida = $quem.StandardOutput.ReadToEndAsync()
+$lendoOErro = $quem.StandardError.ReadToEndAsync()
+[System.Threading.Tasks.Task]::WaitAll(@($lendoASaida, $lendoOErro))
+$oQueOGitDisse = ($lendoASaida.Result + ' ' + $lendoOErro.Result).Trim()
 $quem.WaitForExit()
 $codigoDoGit = $quem.ExitCode
 $quem.Dispose()
@@ -157,68 +180,97 @@ if ((Test-Path $absoluto) -and (Get-Item $absoluto).Length -gt 0) {
 # outra pessoa. Conferir a ACL do arquivo depois nao resolve, porque a conferencia
 # tem a mesma corrida.
 #
-# O que fecha isso e a pasta nao ser gravavel por terceiros.
+# O que fecha isso e a pasta nao ser gravavel por terceiros, e AGORA ELA RECUSA
+# de verdade.
 #
-# A CONFERENCIA E CALIBRADA, e a calibragem tem motivo. A primeira versao
-# recusava qualquer identidade fora de uma lista curta, e recusou o proprio
-# perfil do dono: um perfil do Windows costuma carregar ACEs de SIDs ORFAOS --
-# restos de instalacao anterior, que nao resolvem para conta nenhuma e que
-# ninguem pode usar para entrar. Recusar por causa deles tornaria o script
-# inutil, e um script inutil e um script que se contorna.
+# A primeira versao so recusava seis grupos conhecidos e AVISAVA o resto -- entao
+# outro usuario com escrita na pasta passava, e o comentario dizia que a corrida
+# estava fechada. Nao estava.
 #
-# Entao: GRUPO AMPLO recusa, porque "Todos pode escrever aqui" e exatamente a
-# ameaca. Identidade individual avisa, porque pode ser um SID orfao (inofensivo)
-# ou outra pessoa de verdade (nao inofensiva) -- e daqui nao da para distinguir
-# uma coisa da outra com confianca suficiente para impedir alguem de gerar a
-# propria chave.
-$gruposAmplos = @{
-    'S-1-1-0'       = 'Todos'
-    'S-1-5-11'      = 'Usuarios Autenticados'
-    'S-1-5-32-545'  = 'Usuarios'
-    'S-1-5-32-546'  = 'Convidados'
-    'S-1-5-4'       = 'INTERATIVO'
-    'S-1-5-7'       = 'LOGON ANONIMO'
-}
+# A CALIBRAGEM QUE SOBROU e outra, e e sobre CONSEGUIR RESOLVER O NOME:
+#
+#   • identidade que RESOLVE para uma conta ou grupo desta maquina/dominio e
+#     nao esta na lista de confianca: RECUSA. E alguem que pode entrar.
+#   • identidade que NAO resolve: AVISA. Perfis do Windows carregam SIDs de
+#     instalacoes anteriores, que nao pertencem a conta nenhuma. Recusar por
+#     causa deles bloquearia o proprio %USERPROFILE% do dono -- foi o que
+#     aconteceu na primeira tentativa.
+#
+# A RESSALVA DESSA CALIBRAGEM, porque ela tem uma: um SID de dominio tambem
+# deixa de resolver quando o controlador esta fora do ar, e nesse instante ele
+# vira "aviso" em vez de "recusa". Quem gera a chave com a rede corporativa
+# caida ve o aviso e decide.
+#
+# E -AceitarPastaCompartilhada existe para o caso de a recusa estar errada. Uma
+# conferencia sem escape e uma conferencia que alguem apaga.
 $deConfianca = @(
     [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
     'S-1-5-18',      # SYSTEM
     'S-1-5-32-544',  # BUILTIN\Administrators
     'S-1-3-0'        # CREATOR OWNER
 )
-$escrita = 'WriteData|CreateFiles|Delete|DeleteSubdirectoriesAndFiles|' +
-           'ChangePermissions|TakeOwnership|FullControl|Modify|Write'
 
+# BITS, E NAO TEXTO. FileSystemRights e um campo de bits, e o ToString() de uma
+# combinacao que o enum nao sabe decompor devolve um NUMERO -- que nao casaria
+# com nenhum nome numa comparacao de texto, e a ACE passaria calada.
+$direitosPerigosos = (
+    [System.Security.AccessControl.FileSystemRights]::WriteData -bor
+    [System.Security.AccessControl.FileSystemRights]::AppendData -bor
+    [System.Security.AccessControl.FileSystemRights]::Delete -bor
+    [System.Security.AccessControl.FileSystemRights]::DeleteSubdirectoriesAndFiles -bor
+    [System.Security.AccessControl.FileSystemRights]::WriteAttributes -bor
+    [System.Security.AccessControl.FileSystemRights]::WriteExtendedAttributes -bor
+    [System.Security.AccessControl.FileSystemRights]::ChangePermissions -bor
+    [System.Security.AccessControl.FileSystemRights]::TakeOwnership)
+
+$recusar = @()
 $avisar = @()
 foreach ($regra in (Get-Acl $pastaAbsoluta).Access) {
     if ($regra.AccessControlType -ne 'Allow') { continue }
-    if ($regra.FileSystemRights.ToString() -notmatch $escrita) { continue }
+    if (([int] $regra.FileSystemRights -band [int] $direitosPerigosos) -eq 0) { continue }
 
-    $quem = try {
-        $regra.IdentityReference.Translate(
+    $sid = $null
+    try {
+        $sid = $regra.IdentityReference.Translate(
             [System.Security.Principal.SecurityIdentifier]).Value
-    } catch { "$($regra.IdentityReference)" }
+    } catch { }
+    if ($sid -and ($deConfianca -contains $sid)) { continue }
 
-    if ($deConfianca -contains $quem) { continue }
+    $temNome = $false
+    try {
+        $regra.IdentityReference.Translate([System.Security.Principal.NTAccount]) | Out-Null
+        $temNome = $true
+    } catch { }
 
-    if ($gruposAmplos.ContainsKey($quem)) {
-        throw ("RECUSADO: '$($gruposAmplos[$quem])' pode escrever em " +
-               "$pastaAbsoluta. Quem escreve na pasta pode trocar o arquivo da " +
-               "chave depois de ele receber a ACL, e a ACL do arquivo nao " +
-               "protege o NOME dentro da pasta. Escolha uma pasta que so voce " +
-               "possa alterar -- o padrao, %USERPROFILE%\.iris, e uma.")
-    }
-    $avisar += "$($regra.IdentityReference) ($($regra.FileSystemRights))"
+    $linha = "$($regra.IdentityReference) ($($regra.FileSystemRights))"
+    if ($temNome) { $recusar += $linha } else { $avisar += $linha }
 }
 
 if ($avisar.Count -gt 0) {
     Write-Host ''
-    Write-Host 'ATENCAO: estas identidades tambem podem escrever na pasta da chave:' -ForegroundColor Yellow
+    Write-Host 'Estas identidades tambem podem escrever na pasta da chave, e nao' -ForegroundColor Yellow
+    Write-Host 'resolvem para conta nenhuma nesta maquina:' -ForegroundColor Yellow
     $avisar | ForEach-Object { Write-Host "  $_" }
     Write-Host ''
-    Write-Host 'Se alguma delas for outra PESSOA, ela pode trocar o arquivo da chave'
-    Write-Host 'depois de ele receber a ACL. SIDs que aparecem como numero cru'
-    Write-Host 'costumam ser restos de instalacao anterior, e nao pertencem a conta'
-    Write-Host 'nenhuma -- esses sao inofensivos.'
+    Write-Host 'Isso costuma ser resto de instalacao anterior, e e inofensivo --'
+    Write-Host 'ninguem consegue entrar com um SID que nao existe. Mas um SID de'
+    Write-Host 'dominio tambem deixa de resolver com o controlador fora do ar.'
+    Write-Host ''
+}
+
+if ($recusar.Count -gt 0 -and -not $AceitarPastaCompartilhada) {
+    throw ("RECUSADO: estas identidades podem escrever em ${pastaAbsoluta}: " +
+           ($recusar -join '; ') + ". Quem escreve na pasta pode trocar o " +
+           "arquivo da chave depois de ele receber a ACL -- a ACL do arquivo " +
+           "nao protege o NOME dentro da pasta. Escolha uma pasta que so voce " +
+           "possa alterar (o padrao, %USERPROFILE%\.iris, costuma ser uma), ou " +
+           "rode de novo com -AceitarPastaCompartilhada se voce sabe o que " +
+           "essas identidades sao.")
+}
+if ($recusar.Count -gt 0) {
+    Write-Host ''
+    Write-Host 'ACEITANDO UMA PASTA COMPARTILHADA a seu pedido. Podem escrever aqui:' -ForegroundColor Yellow
+    $recusar | ForEach-Object { Write-Host "  $_" }
     Write-Host ''
 }
 

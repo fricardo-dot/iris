@@ -26,6 +26,22 @@ Gera o par ECDSA P-256. A privada vai para `%USERPROFILE%\.iris\`, com ACL
 só para você — o arquivo nasce vazio, já restrito, e só depois recebe conteúdo.
 A pública é impressa na tela.
 
+**A pasta importa tanto quanto o arquivo**, e por um motivo que não é óbvio: a
+ACL de um arquivo não protege o *nome* dele dentro da pasta. Quem pode criar e
+apagar entradas ali troca o arquivo depois que ele recebeu a ACL, e a chave
+acaba escrita num objeto de outra pessoa.
+
+Por isso o script **recusa** uma pasta onde alguma identidade que ele consegue
+resolver — um usuário, um grupo local ou de domínio — possa escrever, e nomeia
+quais são. Ele **avisa**, sem recusar, quando a identidade não resolve para
+conta nenhuma: perfis do Windows costumam carregar SIDs órfãos de instalações
+anteriores, que ninguém pode usar para entrar. A ressalva é que um SID de
+domínio também deixa de resolver com o controlador fora do ar — nesse caso vira
+aviso, e a decisão é sua.
+
+`-AceitarPastaCompartilhada` passa por cima da recusa. Existe porque uma
+conferência sem saída é uma conferência que alguém apaga.
+
 A criptografia não acontece no PowerShell, e sim em
 [`tools/Iris.Assinatura`](tools/Iris.Assinatura), que é .NET 10. Os dois
 scripts faziam tudo em PowerShell na primeira versão e **não rodavam**:

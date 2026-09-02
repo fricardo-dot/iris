@@ -77,6 +77,12 @@ try {
     # Move-Item -Force, e nao [File]::Move com tres argumentos: a sobrecarga
     # com overwrite nao existe no .NET Framework, que e onde o PowerShell 5.1
     # roda. Ela existe no .NET moderno, e foi de la que eu a copiei.
+    #
+    # E O QUE ISTO COMPRA E MENOS DO QUE PARECE. O ganho real e nao gravar
+    # direto no nome final: uma falha no meio do WriteAllBytes nao deixa um
+    # iris.json parcial com cara de pronto. Se a PROMOCAO em si e atomica
+    # depende do provider e nao esta demonstrado aqui -- e para este arquivo,
+    # que e lido logo depois pelo mesmo script, isso nao muda nada.
     Move-Item -LiteralPath $temporario -Destination $Destino -Force
 }
 catch {

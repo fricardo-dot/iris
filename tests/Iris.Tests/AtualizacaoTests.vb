@@ -1174,6 +1174,15 @@ Public Class AtualizacaoTests
         Friend ReadOnly Comecou As New TaskCompletionSource(
             TaskCreationOptions.RunContinuationsAsynchronously)
 
+        ''' <summary>
+        ''' <b>True quando a leitura de verdade foi cancelada.</b>
+        '''
+        ''' Sem isto, o teste do descarte provava que a <i>tarefa do comando</i>
+        ''' terminou — e um <c>BaixarAsync</c> que devolvesse uma tarefa pronta
+        ''' deixando a rede correndo solta o deixava verde.
+        ''' </summary>
+        Friend Property Cancelaram As Boolean
+
         Public Overrides ReadOnly Property CanRead As Boolean
             Get
                 Return True
@@ -1231,7 +1240,9 @@ Public Class AtualizacaoTests
             ' provar cancelamento. Apagar o Catch OperationCanceledException da
             ' producao o deixava verde.
             '
-            ' Agora a tarefa termina CANCELADA, como um fluxo de rede termina.
+            ' Agora a tarefa termina CANCELADA, como um fluxo de rede termina --
+            ' e registra que terminou assim.
+            ct.Register(Sub() Cancelaram = True)
             Return New ValueTask(Of Integer)(
                 Task.Run(Async Function() As Task(Of Integer)
                              Await Task.Delay(Timeout.Infinite, ct)
@@ -1266,7 +1277,14 @@ Public Class AtualizacaoTests
                 Assert.IsTrue(tela.HaVersaoNova, tela.Frase)
 
                 Dim baixando = tela.BaixarCommand.ExecuteAsync(Nothing)
-                Await travado.Comecou.Task
+
+                ' COM PRAZO TAMBEM AQUI. Se a producao deixar de ler o corpo,
+                ' este Await nao volta -- e um teste que pendura nao e vermelho,
+                ' e suite parada.
+                Assert.AreSame(travado.Comecou.Task,
+                    Await Task.WhenAny(travado.Comecou.Task,
+                                       Task.Delay(TimeSpan.FromSeconds(10))),
+                    "o download nem chegou a comecar a ler")
 
                 ' EM VOO: e agora da para observar o que so existe durante.
                 Assert.IsTrue(tela.Ocupado, "nao ficou ocupado durante o download")
@@ -1308,6 +1326,9 @@ Public Class AtualizacaoTests
 
                 Assert.AreEqual(aFraseDoMomento, tela.Frase,
                                 "a continuacao escreveu na tela depois do descarte")
+                ' A LEITURA DE REDE FOI CANCELADA, e nao so a tarefa do comando.
+                Assert.IsTrue(travado.Cancelaram,
+                    "o comando terminou, mas a leitura de rede seguiu viva")
                 Assert.IsFalse(tela.TemBaixado, "deu por baixado um download cancelado")
                 CollectionAssert.AreEqual(Array.Empty(Of String)(), Directory.GetFiles(onde),
                                           "sobrou arquivo de um download cancelado")
@@ -1434,8 +1455,13 @@ Public Class AtualizacaoTests
         Next
 
         Using quem = Process.Start(como)
-            saiu = quem.StandardOutput.ReadToEnd().Trim()
-            errou = quem.StandardError.ReadToEnd().Trim()
+            ' OS DOIS CANAIS AO MESMO TEMPO: drenar um e depois o outro trava se
+            ' o segundo encher o buffer antes de o primeiro fechar.
+            Dim lendoASaida = quem.StandardOutput.ReadToEndAsync()
+            Dim lendoOErro = quem.StandardError.ReadToEndAsync()
+            Task.WaitAll(lendoASaida, lendoOErro)
+            saiu = lendoASaida.Result.Trim()
+            errou = lendoOErro.Result.Trim()
             Assert.IsTrue(quem.WaitForExit(60_000), "o assinador nao terminou")
             Return quem.ExitCode
         End Using
@@ -1470,7 +1496,8 @@ Public Class AtualizacaoTests
                              Replace("-----END PRIVATE KEY-----", "").
                              Replace(vbCr, "").Replace(vbLf, "").Trim()
             For Each saida In {publicaBase64, errou}
-                Assert.IsFalse(saida.Contains("PRIVATE"),
+                ' Sem diferenciar maiusculas: "private key" tambem e vazamento.
+                Assert.IsFalse(saida.Contains("PRIVATE", StringComparison.OrdinalIgnoreCase),
                                "saiu 'PRIVATE' por um dos canais: " & saida)
                 Assert.IsFalse(saida.Contains(miolo),
                                "a chave privada vazou por um dos canais")
@@ -1518,6 +1545,30 @@ Public Class AtualizacaoTests
         End Try
     End Sub
 
+    ''' <summary>
+    ''' <b>E um redirecionamento que continua em https é ACEITO.</b>
+    '''
+    ''' É o controle positivo dos dois testes acima: sem ele, uma produção que
+    ''' recusasse <i>todo</i> redirecionamento — ou toda procura — passaria nos
+    ''' dois. E recusar redirecionamento quebraria o
+    ''' <c>releases/latest/download/</c>, que existe para redirecionar.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Redirecionamento_que_segue_em_https_e_aceito() As Task
+        Using dono = ParNovo()
+            Dim corpo = MontarJson("2.0.0")
+            Dim servidor As RespostasDeVersao = Nothing
+            Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                 New Version(1, 0, 0), servidor)
+
+            ' Outro host, outro caminho -- e https.
+            servidor.EnderecoFinal = New Uri("https://objects.exemplo.invalido/a/b")
+
+            Dim r = Await procura.Procurar(CancellationToken.None)
+            Assert.AreEqual(DesfechoDaProcura.HaVersaoNova, r.Desfecho, r.Frase)
+        End Using
+    End Function
+
     ' ==================================================================
     ' Os elos: cada peça é testada, e alguém tem de chamar a peça certa
     ' ==================================================================
@@ -1532,30 +1583,70 @@ Public Class AtualizacaoTests
     '''
     ''' Isto é uma verificação de <b>texto do script</b>, e não de execução —
     ''' rodar a publicação inteira custa três minutos e um <c>.exe</c> de 63 MB.
-    ''' É o mesmo recurso de <c>MarcaDaMutacaoTests</c>: quando o que importa é
-    ''' que uma chamada esteja num lugar, olhar o lugar é a prova mais direta.
+    ''' É o mesmo <i>recurso</i> de <c>MarcaDaMutacaoTests</c> — olhar onde a
+    ''' chamada está —, e é <b>menos rigoroso que ele</b>: aquele confere
+    ''' adjacência, contagens e ausência de ramo constante; este lê linhas sem
+    ''' entender bloco nem fluxo. Comentários são descartados e os campos são
+    ''' cobrados dentro do comando, o que fecha os enganos que aparecem de
+    ''' verdade; um <c>if ($false)</c> em volta da chamada, não.
     ''' </summary>
     <TestMethod>
     Public Sub O_publicador_chama_o_script_do_manifesto()
-        Dim script = File.ReadAllText(
-            Path.Combine(RaizDoRepositorio(), "tools", "publicar-versao.ps1"))
+        Dim script = SemComentarios(Path.Combine(
+            RaizDoRepositorio(), "tools", "publicar-versao.ps1"), "#")
 
-        StringAssert.Contains(script, "montar-manifesto.ps1",
+        ' A CHAMADA, e nao o nome em qualquer lugar. A primeira versao procurava
+        ' as substrings no arquivo inteiro: deixar "montar-manifesto.ps1" num
+        ' comentario e montar o JSON a mao a deixava verde.
+        Dim aChamada = Array.FindIndex(
+            script, Function(l) l.Contains("montar-manifesto.ps1"))
+        Assert.IsTrue(aChamada >= 0,
             "a publicacao nao chama o script do manifesto: o teste que prova a " &
             "forma do iris.json passou a cobrir codigo que ninguem usa")
 
-        ' E PASSA TODOS OS CAMPOS. Faltar um faria o manifesto sair sem ele --
-        ' e o -Bytes ausente, por exemplo, sai como zero, que o cliente recusa
-        ' por "tamanho nao plausivel" depois de a assinatura conferir.
+        ' E OS CAMPOS SAO DAQUELA CHAMADA. No PowerShell a crase no fim da linha
+        ' continua o comando; entao o comando e a linha da chamada mais as
+        ' seguintes, ate uma que nao termine em crase.
+        Dim comando = script(aChamada)
+        Dim i = aChamada
+        While script(i).TrimEnd().EndsWith("`") AndAlso i + 1 < script.Length
+            i += 1
+            comando &= " " & script(i)
+        End While
+
+        ' Faltar um campo faria o manifesto sair sem ele -- e o -Bytes ausente,
+        ' por exemplo, sai como zero, que o cliente recusa por "tamanho nao
+        ' plausivel" DEPOIS de a assinatura conferir.
         For Each campo In {"-Versao", "-Notas", "-Endereco", "-Sha256", "-Bytes", "-Destino"}
-            StringAssert.Contains(script, campo & " ",
-                "a chamada de montar-manifesto.ps1 nao passa " & campo)
+            StringAssert.Contains(comando, campo & " ",
+                "a chamada de montar-manifesto.ps1 nao passa " & campo &
+                vbLf & comando)
         Next
 
         ' E ASSINA O ARQUIVO QUE ELE ACABOU DE MONTAR.
-        StringAssert.Contains(script, "assinar --chave $Chave --arquivo $arquivoDoManifesto",
+        Assert.IsTrue(script.Any(Function(l) l.Contains(
+            "assinar --chave $Chave --arquivo $arquivoDoManifesto")),
             "a publicacao assina outra coisa que nao o manifesto que montou")
     End Sub
+
+    ''' <summary>
+    ''' As linhas de um arquivo <b>sem os comentários</b>, e sem as vazias.
+    '''
+    ''' Existe porque os meta-testes de posição são buscas de texto, e busca de
+    ''' texto aceita comentário: escrever a chamada num comentário satisfazia
+    ''' todos eles. Não é análise sintática — uma <c>#</c> dentro de uma string
+    ''' ainda confunde — mas fecha o caso que aparece de verdade.
+    ''' </summary>
+    Private Shared Function SemComentarios(arquivo As String,
+                                           marca As String) As String()
+        Return File.ReadAllLines(arquivo).
+            Select(Function(l)
+                       Dim onde = l.IndexOf(marca, StringComparison.Ordinal)
+                       Return If(onde >= 0, l.Substring(0, onde), l)
+                   End Function).
+            Where(Function(l) l.Trim().Length > 0).
+            ToArray()
+    End Function
 
     ''' <summary>
     ''' <b>Os dois scripts chamam o assinador pelo mesmo caminho.</b>
@@ -1567,13 +1658,27 @@ Public Class AtualizacaoTests
     <TestMethod>
     Public Sub Os_scripts_chamam_o_assinador_pelo_mesmo_caminho()
         For Each qual In {"gerar-chave-de-assinatura.ps1", "publicar-versao.ps1"}
-            Dim script = File.ReadAllText(
-                Path.Combine(RaizDoRepositorio(), "tools", qual))
-            StringAssert.Contains(script, "montar-assinador.ps1",
-                qual & " nao usa o montar-assinador.ps1")
-            Assert.IsFalse(script.Contains("dotnet build"),
-                qual & " compila o assinador por conta propria, em vez de usar " &
-                "o montar-assinador.ps1 -- e uma copia que vai divergir")
+            Dim script = SemComentarios(
+                Path.Combine(RaizDoRepositorio(), "tools", qual), "#")
+
+            ' A CHAMADA E ATRIBUIDA A ALGUMA COISA. "$ferramenta = & (...)" e a
+            ' forma; so o nome aparecer nao prova que a saida e usada.
+            Assert.IsTrue(script.Any(Function(l) l.Contains("montar-assinador.ps1") AndAlso
+                                                 l.Contains("=") AndAlso l.Contains("&")),
+                qual & " nao usa a saida do montar-assinador.ps1")
+
+            ' E NENHUM DELES COMPILA O ASSINADOR POR CONTA PROPRIA.
+            '
+            ' A proibicao e sobre O ASSINADOR, e nao sobre compilar: o
+            ' publicar-versao.ps1 chama "dotnet publish" para o proprio Iris, que
+            ' e o trabalho dele. Banir o verbo inteiro reprovava o script certo --
+            ' foi o que aconteceu na primeira versao desta assercao.
+            For Each porFora In {"dotnet build", "dotnet publish", "dotnet msbuild", "msbuild "}
+                Assert.IsFalse(script.Any(Function(l) l.Contains(porFora) AndAlso
+                                                      l.Contains("Iris.Assinatura")),
+                    qual & " compila o assinador com '" & porFora & "' em vez de " &
+                    "usar o montar-assinador.ps1 -- e uma copia que vai divergir")
+            Next
         Next
     End Sub
 
@@ -1589,17 +1694,22 @@ Public Class AtualizacaoTests
     ''' </summary>
     <TestMethod>
     Public Sub A_reconferencia_vem_depois_do_Move_e_antes_do_sucesso()
-        Dim fonte = File.ReadAllLines(Path.Combine(
-            RaizDoRepositorio(), "src", "Iris.Update", "ProcuraDeVersao.vb"))
+        ' SEM COMENTARIOS: este arquivo fala bastante sobre Move e sobre
+        ' Confere, e a versao anterior aceitava qualquer uma dessas mencoes.
+        Dim fonte = SemComentarios(Path.Combine(
+            RaizDoRepositorio(), "src", "Iris.Update", "ProcuraDeVersao.vb"), "'")
 
         Dim linhaDoMove = Array.FindIndex(
             fonte, Function(l) l.Contains("File.Move(temporario, destino"))
         Assert.IsTrue(linhaDoMove >= 0, "nao achei a promocao do arquivo temporario")
 
+        ' "If Not Confere(destino," e nao "Confere(destino,": o resultado tem de
+        ' ser USADO. Chamar e descartar satisfazia a busca antiga.
         Dim linhaDaConferencia = Array.FindIndex(
-            fonte, Function(l) l.Contains("Confere(destino,"))
+            fonte, Function(l) l.Contains("If Not Confere(destino,"))
         Assert.IsTrue(linhaDaConferencia >= 0,
-                      "nao ha reconferencia do arquivo promovido")
+                      "nao ha reconferencia do arquivo promovido, ou o resultado " &
+                      "dela nao decide nada")
 
         Assert.IsTrue(linhaDaConferencia > linhaDoMove,
             "a reconferencia esta ANTES do Move: ela conferiria o temporario, e " &
@@ -1655,8 +1765,9 @@ Public Class AtualizacaoTests
 
             servidor.EsquecerODePedido = True
 
-            Assert.AreEqual(DesfechoDaProcura.NaoDeuParaSaber,
-                            (Await procura.Procurar(CancellationToken.None)).Desfecho)
+            Dim r = Await procura.Procurar(CancellationToken.None)
+            Assert.AreEqual(DesfechoDaProcura.NaoDeuParaSaber, r.Desfecho)
+            Assert.IsNull(r.Manifesto, "devolveu manifesto de um pedido sem endereco final")
         End Using
     End Function
 
