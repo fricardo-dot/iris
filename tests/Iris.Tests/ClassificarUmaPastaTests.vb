@@ -93,7 +93,7 @@ Public Class ClassificarUmaPastaTests
                                  rotulo & """" & marcadas & "}")
                        i += 1
                    Next
-                   Return "[" & String.Join(",", itens) & "]"
+                   Return RespostaDoLote.Respondeu("[" & String.Join(",", itens) & "]")
                End Function
     End Function
 
@@ -202,7 +202,7 @@ Public Class ClassificarUmaPastaTests
                    Dim caotico As ClassificarUmaPasta.Envio =
                        Function(instrucao, partes, ct)
                            lotes += 1
-                           If lotes = 1 Then Return "isto nao e json"
+                           If lotes = 1 Then Return RespostaDoLote.Respondeu("isto nao e json")
                            Return Responde("fyi")(instrucao, partes, ct)
                        End Function
 
@@ -230,7 +230,7 @@ Public Class ClassificarUmaPastaTests
 
                    Dim r = New ClassificarUmaPasta(Acervo(db), cache).
                            Passar(pasta, Nothing, "ativacao-1", Quando, Entrega(),
-                                  Function(instrucao, partes, ct) "[]")
+                                  Function(instrucao, partes, ct) RespostaDoLote.Respondeu("[]"))
 
                    Assert.AreEqual(1, r.LotesRecusados)
                    Assert.AreEqual(0, cache.Publicados(pasta).Count)
@@ -266,9 +266,10 @@ Public Class ClassificarUmaPastaTests
                        Dim pasta = Varrer(db, "f" & tentativa, {"a", "b"})
 
                        Dim obediente As ClassificarUmaPasta.Envio =
-                           Function(instrucao, partes, ct) "[" & String.Join(",",
-                               partes.Select(Function(p) "{""item_key"":""" & p.Ficha &
-                                                         """,""label"":""fyi""}")) & "]"
+                           Function(instrucao, partes, ct) RespostaDoLote.Respondeu(
+                               "[" & String.Join(",",
+                                   partes.Select(Function(p) "{""item_key"":""" & p.Ficha &
+                                                             """,""label"":""fyi""}")) & "]")
 
                        Dim r = New ClassificarUmaPasta(Acervo(db), cache).
                                Passar(pasta, Nothing, "ativacao-1", Quando,
@@ -357,7 +358,7 @@ Public Class ClassificarUmaPastaTests
                                   "ativacao-1", Quando, Entrega(),
                                   Function(instrucao, partes, ct)
                                       mandou += 1
-                                      Return "[]"
+                                      Return RespostaDoLote.Respondeu("[]")
                                   End Function)
 
                    Assert.AreEqual(MotivoDaClassificacao.RegrasDemais, r.Motivo)

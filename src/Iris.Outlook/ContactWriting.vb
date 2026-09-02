@@ -128,8 +128,16 @@ Namespace Global.Iris.Outlook
         ''' <c>Items.Add</c> na pasta escolhida, e não criar na padrão e mover:
         ''' um <c>Move</c> que falhe deixaria o contato no catálogo de verdade.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function Create(ns As OL.NameSpace, pasta As FolderKey,
-                               rascunho As ContactDraft) As OperationResult(Of ContactInfo)
+                               rascunho As ContactDraft,
+                                                                            Optional marcar As Action = Nothing) _
+                                                                            As OperationResult(Of ContactInfo)
             Dim recusa = RecusarRascunho(rascunho)
             If recusa IsNot Nothing Then
                 Return OperationResult(Of ContactInfo).Fail(ErrorKind.Denied, recusa)
@@ -157,6 +165,7 @@ Namespace Global.Iris.Outlook
                 ' NADA MAIS. Sem Body, sem nota, sem endereco: o que entra e o
                 ' que a mensagem ja dizia. E nao ha Forward em lugar nenhum
                 ' deste modulo, que e o unico caminho de envio deste objeto.
+                If marcar IsNot Nothing Then marcar()
                 c.Save()
 
                 ' O SAVE ACONTECEU. Se a releitura falhar daqui para a frente, o

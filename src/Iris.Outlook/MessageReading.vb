@@ -288,8 +288,15 @@ Namespace Global.Iris.Outlook
         ''' ItemChange à toa, que suja a pasta, que recarrega a lista, que
         ''' muda a seleção, que marca de novo — o laço do F1-G.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>.
+        ''' </param>
         Public Function SetReadState(ns As OL.NameSpace, item As ItemKey,
-                                     isRead As Boolean) As OperationResult(Of Boolean)
+                                     isRead As Boolean,
+                                     Optional marcar As Action = Nothing) _
+                                     As OperationResult(Of Boolean)
             Dim mail As OL.MailItem = Nothing
             Try
                 Try
@@ -308,7 +315,15 @@ Namespace Global.Iris.Outlook
                     Return OperationResult(Of Boolean).Ok(False)
                 End If
 
+                ' A MARCA VAI ANTES DO SAVE, e nao antes do UnRead.
+                '
+                ' Escrever UnRead num item aberto do store nao persiste nada: uma
+                ' falha entre a escrita e o Save deixa o item COMO ESTAVA. Marcar
+                ' antes dela reportaria ambiguidade sobre algo que nao aconteceu
+                ' -- que e exatamente o defeito que esta mudanca conserta, so que
+                ' um passo menor. O meta-teste da marca pegou isto.
                 mail.UnRead = Not isRead
+                If marcar IsNot Nothing Then marcar()
                 mail.Save()
                 Return OperationResult(Of Boolean).Ok(True)
             Finally
@@ -323,8 +338,14 @@ Namespace Global.Iris.Outlook
         ''' O índice é validado contra nome e tamanho antes de gravar, porque
         ''' a coleção pode ter mudado entre listar e salvar.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>.
+        ''' </param>
         Public Function SaveAttachment(ns As OL.NameSpace, key As AttachmentKey,
-                                       destino As String, overwrite As Boolean) _
+                                       destino As String, overwrite As Boolean,
+                                       Optional marcar As Action = Nothing) _
             As OperationResult(Of String)
 
             If String.IsNullOrWhiteSpace(destino) Then
@@ -390,7 +411,7 @@ Namespace Global.Iris.Outlook
                                 "o anexo mudou, ou nao deu para conferir a identidade dele")
                         End If
 
-                        Return GravarComTemporario(a, destino, overwrite)
+                        Return GravarComTemporario(marcar, a, destino, overwrite)
                     Finally
                         ComHelpers.Release(a)
                     End Try
@@ -457,7 +478,8 @@ Namespace Global.Iris.Outlook
         ''' entre o File.Exists e a gravacao, em que outro processo poderia
         ''' criar o arquivo.
         ''' </summary>
-        Private Function GravarComTemporario(a As OL.Attachment, destino As String,
+        Private Function GravarComTemporario(marcar As Action,
+                                             a As OL.Attachment, destino As String,
                                              overwrite As Boolean) As OperationResult(Of String)
             Dim completo As String
             Try
@@ -481,6 +503,9 @@ Namespace Global.Iris.Outlook
             Dim temporario = Path.Combine(pasta, $".iris-{Guid.NewGuid():N}.tmp")
 
             Try
+                ' O PRIMEIRO EFEITO QUE FICA NO MUNDO e este: a partir daqui ha
+                ' arquivo no disco, mesmo que o Move seguinte falhe.
+                If marcar IsNot Nothing Then marcar()
                 a.SaveAsFile(temporario)
                 File.Move(temporario, completo, overwrite)
                 Return OperationResult(Of String).Ok(completo)

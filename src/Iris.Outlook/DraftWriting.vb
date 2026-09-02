@@ -50,7 +50,15 @@ Namespace Global.Iris.Outlook
         ' Criação
         ' ===================================================================
 
-        Public Function CreateNew(app As OL.Application, ns As OL.NameSpace) As OperationResult(Of DraftInfo)
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
+        Public Function CreateNew(app As OL.Application, ns As OL.NameSpace,
+                                  Optional marcar As Action = Nothing) _
+                                  As OperationResult(Of DraftInfo)
             Dim item As OL.MailItem = Nothing
             Try
                 item = TryCast(app.CreateItem(OL.OlItemType.olMailItem), OL.MailItem)
@@ -64,6 +72,7 @@ Namespace Global.Iris.Outlook
                 ' Salvo JÁ: o rascunho precisa existir antes de o usuário
                 ' digitar qualquer coisa, para sobreviver a um fechamento
                 ' acidental e ter chave estável.
+                If marcar IsNot Nothing Then marcar()
                 item.Save()
                 Return DepoisDoSave(Descrever(item, ns))
             Finally
@@ -71,8 +80,16 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function CreateReply(ns As OL.NameSpace, origem As ItemKey,
-                                    replyAll As Boolean) As OperationResult(Of DraftInfo)
+                                    replyAll As Boolean,
+                                                                            Optional marcar As Action = Nothing) _
+                                                                            As OperationResult(Of DraftInfo)
             Dim original As OL.MailItem = Nothing
             Try
                 Try
@@ -96,6 +113,7 @@ Namespace Global.Iris.Outlook
                     ' O corpo que o Reply gerou — citação e assinatura —
                     ' é citação por inteiro.
                     PlantarMarca(resposta, temCitacao:=True)
+                    If marcar IsNot Nothing Then marcar()
                     resposta.Save()
                     Return DepoisDoSave(Descrever(resposta, ns))
                 Finally
@@ -106,7 +124,15 @@ Namespace Global.Iris.Outlook
             End Try
         End Function
 
-        Public Function CreateForward(ns As OL.NameSpace, origem As ItemKey) As OperationResult(Of DraftInfo)
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
+        Public Function CreateForward(ns As OL.NameSpace, origem As ItemKey,
+                                      Optional marcar As Action = Nothing) _
+                                      As OperationResult(Of DraftInfo)
             Dim original As OL.MailItem = Nothing
             Try
                 Try
@@ -129,6 +155,7 @@ Namespace Global.Iris.Outlook
                     End If
 
                     PlantarMarca(encaminhada, temCitacao:=True)
+                    If marcar IsNot Nothing Then marcar()
                     encaminhada.Save()
                     Return DepoisDoSave(Descrever(encaminhada, ns))
                 Finally
@@ -143,8 +170,16 @@ Namespace Global.Iris.Outlook
         ' Edição
         ' ===================================================================
 
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function Update(ns As OL.NameSpace, chave As DraftKey,
-                               conteudo As DraftContent) As OperationResult(Of DraftInfo)
+                               conteudo As DraftContent,
+                                                                            Optional marcar As Action = Nothing) _
+                                                                            As OperationResult(Of DraftInfo)
             Dim item As OL.MailItem = Nothing
             Try
                 Try
@@ -161,6 +196,7 @@ Namespace Global.Iris.Outlook
                 AplicarDestinatarios(item, conteudo)
                 AplicarCorpo(item, conteudo.UserText)
 
+                If marcar IsNot Nothing Then marcar()
                 item.Save()
 
                 ' O EntryID é relido DEPOIS do Save: ele muda quando o item é
@@ -281,8 +317,16 @@ Namespace Global.Iris.Outlook
         ''' seguinte, ou o envio, daria NotFound. Quem salva devolve a
         ''' identidade nova; nao ha excecao.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function AddAttachment(ns As OL.NameSpace, chave As DraftKey,
-                                      caminho As String) As OperationResult(Of DraftInfo)
+                                      caminho As String,
+                                                                            Optional marcar As Action = Nothing) _
+                                                                            As OperationResult(Of DraftInfo)
             If String.IsNullOrWhiteSpace(caminho) OrElse Not File.Exists(caminho) Then
                 Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "arquivo")
             End If
@@ -299,6 +343,13 @@ Namespace Global.Iris.Outlook
                     anexos = item.Attachments
                     Dim a As OL.Attachment = Nothing
                     Try
+                        ' O PRIMEIRO EFEITO E O Add, e nao o Save.
+                        '
+                        ' Anexar a um item ja gravado mexe no item, e em alguns
+                        ' stores grava na hora. Marcar so antes do Save deixaria
+                        ' uma falha entre os dois passar por "nada aconteceu"
+                        ' sobre um rascunho que ja tem o anexo.
+                        If marcar IsNot Nothing Then marcar()
                         a = anexos.Add(caminho)
                     Finally
                         ComHelpers.Release(a)
@@ -307,6 +358,7 @@ Namespace Global.Iris.Outlook
                     ComHelpers.Release(anexos)
                 End Try
 
+                If marcar IsNot Nothing Then marcar()
                 item.Save()
                 Return DepoisDoSave(Descrever(item, ns))
             Finally
@@ -325,8 +377,16 @@ Namespace Global.Iris.Outlook
         '''
         ''' O índice entra como desempate quando há nomes repetidos.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function RemoveAttachment(ns As OL.NameSpace, chave As DraftKey,
-                                         anexo As AttachmentKey) As OperationResult(Of DraftInfo)
+                                         anexo As AttachmentKey,
+                                                                                    Optional marcar As Action = Nothing) _
+                                                                                    As OperationResult(Of DraftInfo)
             If anexo Is Nothing Then
                 Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "anexo")
             End If
@@ -417,6 +477,7 @@ Namespace Global.Iris.Outlook
                                 "o anexo naquele indice mudou entre conferir e apagar")
                         End If
 
+                        If marcar IsNot Nothing Then marcar()
                         aAlvo.Delete()
                     Finally
                         ComHelpers.Release(aAlvo)
@@ -491,7 +552,15 @@ Namespace Global.Iris.Outlook
             Return 0
         End Function
 
-        Public Function Delete(ns As OL.NameSpace, chave As DraftKey) As OperationResult(Of Boolean)
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
+        Public Function Delete(ns As OL.NameSpace, chave As DraftKey,
+                               Optional marcar As Action = Nothing) _
+                               As OperationResult(Of Boolean)
             Dim item As OL.MailItem = Nothing
             Try
                 Try
@@ -501,6 +570,7 @@ Namespace Global.Iris.Outlook
                 End Try
 
                 If item Is Nothing Then Return OperationResult(Of Boolean).Ok(False)
+                If marcar IsNot Nothing Then marcar()
                 item.Delete()
                 Return OperationResult(Of Boolean).Ok(True)
             Finally
@@ -782,8 +852,16 @@ Namespace Global.Iris.Outlook
         ''' contador de edições da tela não os vê. Achado por revisão externa em
         ''' 01/09/2026.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function Send(ns As OL.NameSpace, chave As DraftKey,
-                             versaoEsperada As String) As OperationResult(Of Boolean)
+                             versaoEsperada As String,
+                                                                          Optional marcar As Action = Nothing) _
+                                                                          As OperationResult(Of Boolean)
             Dim item As OL.MailItem = Nothing
             Try
                 Try
@@ -821,6 +899,7 @@ Namespace Global.Iris.Outlook
                     ComHelpers.Release(recipients)
                 End Try
 
+                If marcar IsNot Nothing Then marcar()
                 item.Send()
                 Return OperationResult(Of Boolean).Ok(True)
             Finally

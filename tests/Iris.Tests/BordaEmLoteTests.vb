@@ -213,7 +213,8 @@ Public Class BordaEmLoteTests
 
         Dim saiu = borda.Envio("instrução", {ParteQualquer()}, CancellationToken.None)
 
-        Assert.IsNull(saiu, "mandou um lote que ninguem leu")
+        Assert.IsFalse(saiu.Incerta, "recusa nao e incerteza: nada saiu")
+        Assert.AreEqual(0, saiu.Texto.Length, "mandou um lote que ninguem leu")
         Assert.AreEqual(0, provedor.Chamadas)
     End Sub
 
@@ -281,6 +282,65 @@ Public Class BordaEmLoteTests
 
         Assert.IsTrue(ContentPipeline.Preparar(retrato, Nothing).Ok,
             "fora de lote não há ficha, e isso é legítimo")
+    End Sub
+
+    ' ==================================================================
+    ' O LOTE QUE PODE TER SAIDO
+
+    ''' <summary>
+    ''' <b>Ambíguo não é recusado, e a passagem para.</b>
+    '''
+    ''' A borda dobrava todo insucesso num <c>Nothing</c>, e o <c>Nothing</c>
+    ''' incluía <i>a rede caiu depois do primeiro byte</i>. A passagem contava
+    ''' "lote recusado" — que quer dizer <b>nada saiu</b> — sobre um lote que pode
+    ''' ter voado. A afirmação oposta à verdade, na única categoria em que este
+    ''' projeto não pode errar.
+    '''
+    ''' E para na hora: seguir mandando gastaria dinheiro e divulgaria mais
+    ''' enquanto o dono ainda não sabe do primeiro.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Lote_AMBIGUO_nao_e_contado_como_recusado_e_a_passagem_para()
+        Comigo(Sub(db)
+                   ' Tres lotes de uma mensagem cada.
+                   Dim noCache = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   provedor.Desfecho = New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
+
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao())
+
+                   Assert.AreEqual(MotivoDaClassificacao.Incerta, r.Motivo,
+                       "UM LOTE QUE PODE TER SAIDO FOI REPORTADO COMO OUTRA COISA")
+                   Assert.AreEqual(1, r.LotesIncertos)
+                   Assert.AreEqual(0, r.LotesRecusados,
+                       "incerto NAO pode ser somado a recusado: sao afirmacoes opostas")
+                   Assert.AreEqual(1, provedor.Chamadas,
+                       "a passagem tinha de PARAR no primeiro lote incerto")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' O controle negativo: uma recusa <b>conhecida</b> — o portão negando —
+    ''' continua sendo recusa, não vira incerteza, e a passagem <b>segue</b>.
+    '''
+    ''' Sem ele, uma borda que chamasse tudo de incerto passaria no teste acima e
+    ''' encheria a tela de "pode ter saído" sobre coisas que sabidamente não
+    ''' saíram — o erro simétrico, e igualmente caro.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Recusa_CONHECIDA_nao_vira_incerteza()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+
+                   Dim r = Classificar(db, noCache, provedor, ativacao:=Nothing)
+
+                   Assert.AreEqual(0, r.LotesIncertos,
+                       "o portao negou ANTES da rede: nada saiu, e isso se sabe")
+                   Assert.AreEqual(1, r.LotesRecusados)
+                   Assert.AreEqual(MotivoDaClassificacao.Passou, r.Motivo,
+                       "recusa conhecida nao para a passagem")
+               End Sub)
     End Sub
 
     ' ==================================================================
@@ -790,11 +850,21 @@ Public Class BordaEmLoteTests
         ''' Recebe o mapa ficha→corpo do envelope que chegou, para poder responder
         ''' <i>quase</i> certo — que é o caso interessante.
         ''' </summary>
+        ''' <summary>
+        ''' O desfecho do <b>transporte</b>, quando o teste quiser um que não seja
+        ''' resposta — conexão caindo depois do primeiro byte, por exemplo. É por
+        ''' onde se finge o desfecho <i>ambíguo</i>, que é o único que a borda não
+        ''' pode dobrar em "recusado".
+        ''' </summary>
+        Friend Property Desfecho As ProviderOutcome
+
         Friend Property Responder As Func(Of Dictionary(Of String, String), String)
 
         Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _
                                Implements IAssistantProvider.Enviar
             Recebidos.Add(bytes)
+
+            If Desfecho IsNot Nothing Then Return Desfecho
 
             If Responder IsNot Nothing Then
                 Return New ProviderOutcome(ProviderStatus.Respondeu,

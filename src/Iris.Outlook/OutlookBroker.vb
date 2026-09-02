@@ -279,17 +279,47 @@ Namespace Global.Iris.Outlook
         ''' <see cref="SemRetryAsync"/> — dois <c>&lt;summary&gt;</c> seguidos na
         ''' mesma funcao, e o texto da mutacao documentando a que NAO e mutacao.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Uma mutação, e ela diz sozinha quando começou.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>A MARCA ERA POSTA CEDO DEMAIS, E ISSO INVENTAVA AMBIGUIDADE</b>
+        '''
+        ''' O despacho marcava a fase como iniciada <i>antes</i> de chamar o
+        ''' trabalho. Uma queda de conexão em <c>GetItemFromID</c> — abrir o item,
+        ''' antes de existir qualquer <c>Send</c> ou <c>Save</c> — era classificada
+        ''' como <see cref="ErrorKind.Ambiguous"/>, e o compositor dizia <i>"a
+        ''' mensagem pode ter sido enviada, confira Itens Enviados"</i> sobre um
+        ''' envio que comprovadamente não começou.
+        '''
+        ''' É o erro <b>simétrico</b> do pecado central deste projeto: em vez de
+        ''' dizer que nada aconteceu quando algo pode ter acontecido, dizia que algo
+        ''' pode ter acontecido quando nada aconteceu. Custa diferente e custa: o
+        ''' dono vai procurar em Itens Enviados uma mensagem que nunca existiu, e
+        ''' aprende a não acreditar no aviso — que é o que o torna inútil no dia em
+        ''' que ele for verdadeiro. Achado por revisão externa em 01/09/2026.
+        '''
+        ''' Agora o trabalho recebe o marcador e o aciona <b>imediatamente antes</b>
+        ''' do primeiro efeito que fica no mundo. Antes disso, falha é falha
+        ''' conhecida; depois, é ambiguidade de verdade.
+        ''' </summary>
         Private Async Function MutateAsync(Of T)(operation As String,
-                                                 work As Func(Of OL.Application, OL.NameSpace, OperationResult(Of T)),
+                                                 work As Func(Of OL.Application, OL.NameSpace, Action, OperationResult(Of T)),
                                                  cancel As CancellationToken) As Task(Of OperationResult(Of T))
-            Return Await RunAsync(operation, work, allowRetry:=False, isMutation:=True, cancel:=cancel)
+            Dim fase As New FaseDaOperacao()
+            Return Await RunAsync(operation,
+                                  Function(app, ns) work(app, ns, AddressOf fase.Marcar),
+                                  allowRetry:=False, isMutation:=True, cancel:=cancel,
+                                  faseDaMutacao:=fase)
         End Function
 
         Private Async Function RunAsync(Of T)(operation As String,
                                               work As Func(Of OL.Application, OL.NameSpace, OperationResult(Of T)),
                                               allowRetry As Boolean,
                                               isMutation As Boolean,
-                                              cancel As CancellationToken) As Task(Of OperationResult(Of T))
+                                              cancel As CancellationToken,
+                                              Optional faseDaMutacao As FaseDaOperacao = Nothing) _
+                                              As Task(Of OperationResult(Of T))
             ' Cancelar antes de começar evita o trabalho. Depois que a
             ' chamada COM começou, cancelar só libera o CHAMADOR — a
             ' operação segue no broker.
@@ -312,7 +342,10 @@ Namespace Global.Iris.Outlook
             ' como NotConnected, que é retentável.
             '
             ' A regra estava certa e lia estado errado.
-            Dim fase As New FaseDaOperacao()
+            ' A FASE VEM DE FORA NUMA MUTACAO: e a operacao que sabe onde esta o
+            ' primeiro efeito irreversivel, e nao o despacho. Numa leitura ela
+            ' nunca e marcada, e existe so para o classificador ter o que ler.
+            Dim fase = If(faseDaMutacao, New FaseDaOperacao())
 
             Try
                 Dim resultado = Await InvokeAsync(
@@ -324,7 +357,6 @@ Namespace Global.Iris.Outlook
                         ' é lido e escrito só aqui dentro, na STA, que roda
                         ' uma operação por vez.
                         _filter.AllowRetry = allowRetry
-                        fase.Marcar()
                         Try
                             Return work(_application, _namespace)
                         Finally
@@ -789,7 +821,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of AppointmentInfo)(
                 "outlook.createAppointment",
-                Function(app, ns) CalendarWriting.Create(ns, folder, rascunho),
+                Function(app, ns, marcar) CalendarWriting.Create(ns, folder, rascunho, marcar),
                 cancel)
         End Function
 
@@ -801,7 +833,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of AppointmentInfo)(
                 "outlook.updateAppointment",
-                Function(app, ns) CalendarWriting.Update(ns, chave, rascunho),
+                Function(app, ns, marcar) CalendarWriting.Update(ns, chave, rascunho, marcar),
                 cancel)
         End Function
 
@@ -812,7 +844,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of Boolean)(
                 "outlook.deleteAppointment",
-                Function(app, ns) CalendarWriting.Delete(ns, chave),
+                Function(app, ns, marcar) CalendarWriting.Delete(ns, chave, marcar),
                 cancel)
         End Function
 
@@ -865,7 +897,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of TaskInfo)(
                 "outlook.createTask",
-                Function(app, ns) TaskWriting.Create(ns, folder, rascunho),
+                Function(app, ns, marcar) TaskWriting.Create(ns, folder, rascunho, marcar),
                 cancel)
         End Function
 
@@ -876,7 +908,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of TaskInfo)(
                 "outlook.completeTask",
-                Function(app, ns) TaskWriting.Concluir(ns, chave),
+                Function(app, ns, marcar) TaskWriting.Concluir(ns, chave, marcar),
                 cancel)
         End Function
         ''' <summary>
@@ -929,7 +961,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of ContactInfo)(
                 "outlook.createContact",
-                Function(app, ns) ContactWriting.Create(ns, folder, rascunho),
+                Function(app, ns, marcar) ContactWriting.Create(ns, folder, rascunho, marcar),
                 cancel)
         End Function
 
@@ -1026,7 +1058,7 @@ Namespace Global.Iris.Outlook
             ' idempotente. Retry cego aqui poderia reescrever um arquivo.
             Return Await MutateAsync(Of String)(
                 "outlook.saveAttachment",
-                Function(app, ns) MessageReading.SaveAttachment(ns, attachment, destinationPath, overwrite),
+                Function(app, ns, marcar) MessageReading.SaveAttachment(ns, attachment, destinationPath, overwrite, marcar),
                 cancel)
         End Function
 
@@ -1035,7 +1067,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of Boolean)(
                 "outlook.markRead",
-                Function(app, ns) MessageReading.SetReadState(ns, item, isRead),
+                Function(app, ns, marcar) MessageReading.SetReadState(ns, item, isRead, marcar),
                 cancel)
         End Function
 
@@ -1048,7 +1080,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of DraftInfo)(
                 "outlook.createDraft",
-                Function(app, ns) DraftWriting.CreateNew(app, ns), cancel)
+                Function(app, ns, marcar) DraftWriting.CreateNew(app, ns, marcar), cancel)
         End Function
 
         Public Async Function CreateReplyDraftAsync(item As ItemKey, replyAll As Boolean,
@@ -1057,7 +1089,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of DraftInfo)(
                 "outlook.createReplyDraft",
-                Function(app, ns) DraftWriting.CreateReply(ns, item, replyAll), cancel)
+                Function(app, ns, marcar) DraftWriting.CreateReply(ns, item, replyAll, marcar), cancel)
         End Function
 
         Public Async Function CreateForwardDraftAsync(item As ItemKey, cancel As CancellationToken) _
@@ -1065,7 +1097,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of DraftInfo)(
                 "outlook.createForwardDraft",
-                Function(app, ns) DraftWriting.CreateForward(ns, item), cancel)
+                Function(app, ns, marcar) DraftWriting.CreateForward(ns, item, marcar), cancel)
         End Function
 
         Public Async Function UpdateDraftAsync(draft As DraftKey, content As DraftContent,
@@ -1074,7 +1106,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of DraftInfo)(
                 "outlook.updateDraft",
-                Function(app, ns) DraftWriting.Update(ns, draft, content), cancel)
+                Function(app, ns, marcar) DraftWriting.Update(ns, draft, content, marcar), cancel)
         End Function
 
         Public Async Function AddDraftAttachmentAsync(draft As DraftKey, filePath As String,
@@ -1083,7 +1115,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of DraftInfo)(
                 "outlook.addDraftAttachment",
-                Function(app, ns) DraftWriting.AddAttachment(ns, draft, filePath), cancel)
+                Function(app, ns, marcar) DraftWriting.AddAttachment(ns, draft, filePath, marcar), cancel)
         End Function
 
         Public Async Function RemoveDraftAttachmentAsync(draft As DraftKey, attachment As AttachmentKey,
@@ -1092,7 +1124,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of DraftInfo)(
                 "outlook.removeDraftAttachment",
-                Function(app, ns) DraftWriting.RemoveAttachment(ns, draft, attachment), cancel)
+                Function(app, ns, marcar) DraftWriting.RemoveAttachment(ns, draft, attachment, marcar), cancel)
         End Function
 
         ''' <summary>
@@ -1127,7 +1159,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of Boolean)(
                 "outlook.sendDraft",
-                Function(app, ns) DraftWriting.Send(ns, draft, versaoEsperada), cancel)
+                Function(app, ns, marcar) DraftWriting.Send(ns, draft, versaoEsperada, marcar), cancel)
         End Function
 
         Public Async Function DeleteDraftAsync(draft As DraftKey, cancel As CancellationToken) _
@@ -1135,7 +1167,7 @@ Namespace Global.Iris.Outlook
 
             Return Await MutateAsync(Of Boolean)(
                 "outlook.deleteDraft",
-                Function(app, ns) DraftWriting.Delete(ns, draft), cancel)
+                Function(app, ns, marcar) DraftWriting.Delete(ns, draft, marcar), cancel)
         End Function
 
         Public Async Function SubscribeFolderAsync(folder As FolderKey, cancel As CancellationToken) _

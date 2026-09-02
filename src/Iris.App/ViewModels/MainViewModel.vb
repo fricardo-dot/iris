@@ -1467,6 +1467,15 @@ Namespace Global.Iris.App.ViewModels
                     Return "A classificação não foi montada corretamente."
                 Case MotivoDaClassificacao.JaEstaRodando
                     Return "Já há uma classificação em andamento neste acervo."
+                Case MotivoDaClassificacao.Incerta
+                    ' O DESFECHO QUE NAO PODE SER SUAVIZADO. Ele cai fora da
+                    ' composicao de baixo de proposito: um "12 de 37" na frente
+                    ' faria o dono ler isto como um resultado parcial normal.
+                    Return $"PAREI: um lote pode ter saído e não dá para saber o que " &
+                           $"aconteceu com ele. {r.Classificados} de {r.Pedidos} foram " &
+                           $"classificadas em {nome} antes disso. " &
+                           If(r.PrimeiraRecusa.Length > 0, r.PrimeiraRecusa & ". ", "") &
+                           "O Iris não vai tentar de novo sozinho."
                 Case MotivoDaClassificacao.Parada
                     ' PARADA NAO E "NADA ACONTECEU": os lotes que rodaram valem, e
                     ' as contagens dizem quantos. Cai na composicao de baixo.
@@ -1486,6 +1495,9 @@ Namespace Global.Iris.App.ViewModels
                 porques.Add($"{r.RecusadasPeloConteudo} não puderam ser lidas " &
                             "(anexo, corpo incompleto ou imagem embutida) e " &
                             "não saíram daqui")
+            End If
+            If r.LotesIncertos > 0 Then
+                porques.Add($"{r.LotesIncertos} lote(s) PODEM ter saído sem resposta")
             End If
             If r.SemRotulo > 0 Then porques.Add($"{r.SemRotulo} sem rótulo válido")
             If r.ForaDaPasta > 0 Then porques.Add($"{r.ForaDaPasta} já não estão na pasta")

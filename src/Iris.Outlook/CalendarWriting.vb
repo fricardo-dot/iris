@@ -57,8 +57,16 @@ Namespace Global.Iris.Outlook
         ''' compromisso na agenda de verdade de quem estiver olhando — e um
         ''' <c>Move</c> que falhe deixa ele lá.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function Create(ns As OL.NameSpace, pasta As FolderKey,
-                               rascunho As AppointmentDraft) As OperationResult(Of AppointmentInfo)
+                               rascunho As AppointmentDraft,
+                                                                                Optional marcar As Action = Nothing) _
+                                                                                As OperationResult(Of AppointmentInfo)
             If rascunho Is Nothing Then
                 Return OperationResult(Of AppointmentInfo).Fail(ErrorKind.Unexpected, "rascunho nulo")
             End If
@@ -87,6 +95,7 @@ Namespace Global.Iris.Outlook
 
                 ' NASCE E CONTINUA SEM PARTICIPANTE. Nao ha Recipients aqui, e
                 ' e por isso que o Save nao manda convite nenhum.
+                If marcar IsNot Nothing Then marcar()
                 item.Save()
 
                 Return OperationResult(Of AppointmentInfo).Ok(Descrever(item))
@@ -110,8 +119,16 @@ Namespace Global.Iris.Outlook
         ''' e o <c>Save</c> seguinte — feito por qualquer outra coisa — mandaria
         ''' a atualização.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function Update(ns As OL.NameSpace, chave As AppointmentKey,
-                               rascunho As AppointmentDraft) As OperationResult(Of AppointmentInfo)
+                               rascunho As AppointmentDraft,
+                                                                                Optional marcar As Action = Nothing) _
+                                                                                As OperationResult(Of AppointmentInfo)
             If rascunho Is Nothing Then
                 Return OperationResult(Of AppointmentInfo).Fail(ErrorKind.Unexpected, "rascunho nulo")
             End If
@@ -133,6 +150,7 @@ Namespace Global.Iris.Outlook
                 End If
 
                 Aplicar(item, rascunho)
+                If marcar IsNot Nothing Then marcar()
                 item.Save()
 
                 Return OperationResult(Of AppointmentInfo).Ok(Descrever(item))
@@ -152,7 +170,15 @@ Namespace Global.Iris.Outlook
         ''' Apagar reunião manda cancelamento para todo mundo — é a forma mais
         ''' cara de violar a invariante, porque o estrago chega a terceiros.
         ''' </summary>
-        Public Function Delete(ns As OL.NameSpace, chave As AppointmentKey) As OperationResult(Of Boolean)
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
+        Public Function Delete(ns As OL.NameSpace, chave As AppointmentKey,
+                               Optional marcar As Action = Nothing) _
+                               As OperationResult(Of Boolean)
             Dim item As OL.AppointmentItem = Nothing
             Try
                 item = Abrir(ns, chave)
@@ -164,6 +190,7 @@ Namespace Global.Iris.Outlook
                     Return OperationResult(Of Boolean).Fail(ErrorKind.Denied, MotivoDaReuniao)
                 End If
 
+                If marcar IsNot Nothing Then marcar()
                 item.Delete()
                 Return OperationResult(Of Boolean).Ok(True)
             Catch ex As COMException

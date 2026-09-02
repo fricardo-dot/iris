@@ -246,7 +246,7 @@ Public Class CosturaDosRotulosTests
                     Function(p) "{""item_key"":""" & p.Ficha & """,""label"":""" &
                                 If(p.Ficha = doControle.Ficha, doControle.Rotulo, rotulo) &
                                 """}")
-                Return "[" & String.Join(",", itens) & "]"
+                Return RespostaDoLote.Respondeu("[" & String.Join(",", itens) & "]")
             End Function)
 
         Assert.AreEqual(MotivoDaClassificacao.Passou, r.Motivo,

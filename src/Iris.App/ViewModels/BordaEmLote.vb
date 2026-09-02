@@ -143,7 +143,7 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Friend Function Envio(instrucao As String,
                               partes As IReadOnlyList(Of MessagePart),
-                              ct As CancellationToken) As String
+                              ct As CancellationToken) As RespostaDoLote
             ' O LOTE E CONSUMIDO, e nao so lido.
             '
             ' Ele ficava guardado depois do envio, e um segundo Envio sem um
@@ -157,9 +157,13 @@ Namespace Global.Iris.App.ViewModels
             _lote = Nothing
             _fichas = Nothing
 
-            If lote Is Nothing Then Return Nothing
-            If ct.IsCancellationRequested Then Return Nothing
-            If partes Is Nothing OrElse partes.Count = 0 Then Return Nothing
+            If lote Is Nothing Then Return RespostaDoLote.Recusada("o lote não foi lido")
+            If ct.IsCancellationRequested Then
+                Return RespostaDoLote.Recusada("a classificação foi interrompida")
+            End If
+            If partes Is Nothing OrElse partes.Count = 0 Then
+                Return RespostaDoLote.Recusada("nenhuma mensagem do lote pôde ser lida")
+            End If
 
             ' O CONTEXTO E MONTADO COM AS CHAVES DAS PARTES QUE VAO SAIR, e
             ' nao com as do lote pedido.
@@ -190,7 +194,9 @@ Namespace Global.Iris.App.ViewModels
             ' para o portao classificar, e a isencao dela vive no envelope.
             Dim itens = partes.Where(Function(p) p IsNot Nothing AndAlso p.Item IsNot Nothing).
                                Select(Function(p) p.Item).ToList()
-            If itens.Count = 0 Then Return Nothing
+            If itens.Count = 0 Then
+                Return RespostaDoLote.Recusada("nenhuma mensagem do lote pôde ser lida")
+            End If
 
             Dim contexto = ContextoDo(itens, fichas)
 
@@ -201,9 +207,64 @@ Namespace Global.Iris.App.ViewModels
                     AssistOperation.Classificar, instrucao, partes),
                 ct)
 
-            If desfecho Is Nothing Then Return Nothing
-            If desfecho.Kind <> AssistOutcomeKind.Respondeu Then Return Nothing
-            Return desfecho.Texto
+            Return Traduzir(desfecho)
+        End Function
+
+        ''' <summary>
+        ''' <b>O desfecho do transmissor, sem dobrar o incerto no recusado.</b>
+        '''
+        ''' Isto era <c>If Kind &lt;&gt; Respondeu Then Return Nothing</c>, e o
+        ''' <c>Nothing</c> engolia <see cref="AssistOutcomeKind.Ambiguo"/> junto com
+        ''' todo o resto. A passagem contava "lote recusado" — que quer dizer
+        ''' <b>nada saiu</b> — sobre um lote que pode ter voado. Era a afirmação
+        ''' oposta à verdade, na única categoria em que este projeto não pode errar.
+        ''' Achado por revisão externa em 01/09/2026.
+        '''
+        ''' Os motivos são os que o dono pode <b>agir sobre</b>: assinar a ativação,
+        ''' olhar a credencial, ou ir conferir o que saiu. Um "não deu" único não
+        ''' distingue nenhum dos três.
+        ''' </summary>
+        Private Shared Function Traduzir(d As AssistOutcome) As RespostaDoLote
+            If d Is Nothing Then
+                Return RespostaDoLote.Recusada("o envio não devolveu desfecho")
+            End If
+
+            Select Case d.Kind
+                Case AssistOutcomeKind.Respondeu
+                    Return RespostaDoLote.Respondeu(d.Texto)
+
+                Case AssistOutcomeKind.Negado
+                    Return RespostaDoLote.Recusada(
+                        "a autorização não cobre isto (" & d.MotivoDoPortao.ToString() & ")")
+
+                Case AssistOutcomeKind.NaoComecou
+                    Return RespostaDoLote.Recusada(
+                        "o provedor não estava pronto — confira a credencial")
+
+                Case AssistOutcomeKind.SemDiario
+                    ' NADA SAIU, e sabe-se: a transmissao nao chegou a ser tentada
+                    ' porque o diario nao pode registrar a intencao. Sem registro
+                    ' nao se transmite.
+                    Return RespostaDoLote.Recusada(
+                        "o diário do que sai não pôde registrar — nada foi mandado")
+
+                Case AssistOutcomeKind.Ambiguo,
+                     AssistOutcomeKind.AmbiguoSemFechamentoDoDiario
+                    Return RespostaDoLote.NaoSeSabe(
+                        "um lote PODE ter saído e não dá para saber o que aconteceu " &
+                        "com ele" & Codigo(d))
+
+                Case Else
+                    ' Recusado e Desconhecido. Recusado e o cofre negando, e nada
+                    ' saiu; Desconhecido e o zero do enum, que nunca e sucesso.
+                    Return RespostaDoLote.Recusada(
+                        "o pedido foi recusado antes de sair" & Codigo(d))
+            End Select
+        End Function
+
+        Private Shared Function Codigo(d As AssistOutcome) As String
+            If Not d.CodigoHttp.HasValue Then Return ""
+            Return " (HTTP " & d.CodigoHttp.Value.ToString() & ")"
         End Function
 
         ''' <summary>

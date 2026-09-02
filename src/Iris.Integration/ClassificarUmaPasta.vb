@@ -72,12 +72,16 @@ Namespace Global.Iris.Integration
             ct As CancellationToken) As IReadOnlyList(Of MessagePart)
 
         ''' <summary>
-        ''' O que a borda do transporte tem de devolver: o texto cru da resposta.
-        ''' <c>Nothing</c> vale como lote recusado.
+        ''' O que a borda do transporte tem de devolver.
+        '''
+        ''' <b>Não é uma string.</b> Era, e a string apagava a diferença entre
+        ''' <i>não saiu</i> e <i>pode ter saído</i>: todo insucesso virava
+        ''' <c>Nothing</c>, a passagem contava "lote recusado", e a tela dizia isso
+        ''' sobre um lote que talvez tivesse voado. Ver <see cref="RespostaDoLote"/>.
         ''' </summary>
         Public Delegate Function Envio(instrucao As String,
                                        partes As IReadOnlyList(Of MessagePart),
-                                       ct As CancellationToken) As String
+                                       ct As CancellationToken) As RespostaDoLote
 
         ''' <summary>
         ''' <b>Uma passagem por vez, no programa inteiro.</b>
@@ -277,10 +281,36 @@ Namespace Global.Iris.Integration
                 ' Classificados divergiam e nada explicava a diferenca.
                 r.RecusadasPeloConteudo(chavesDoLote.Count - enviadas.Count)
 
-                Dim conferido = montado.Conferir(envio(montado.Instrucao(), partes, ct),
+                Dim veio = envio(montado.Instrucao(), partes, ct)
+
+                ' AMBIGUO NAO E RECUSADO, E A PASSAGEM PARA AQUI.
+                '
+                ' "Pode ter saido e nao se sabe o que aconteceu" e o desfecho que
+                ' este projeto trata com mais cuidado que qualquer outro, e ele
+                ' estava sendo dobrado em "lote recusado" -- que quer dizer NADA
+                ' SAIU. A tela dizia a coisa oposta do que aconteceu, e o diario,
+                ' que sabia a verdade, ninguem le.
+                '
+                ' E para: uma resposta incerta quase sempre quer dizer que a rede
+                ' ou o provedor estao num estado ruim, e seguir mandando gasta
+                ' dinheiro e divulga mais enquanto o dono ainda nao sabe do
+                ' primeiro. Nao e retry -- os lotes seguintes sao outras mensagens
+                ' --, e parar e o que da a ele a chance de olhar. Achado por
+                ' revisao externa em 01/09/2026.
+                If veio IsNot Nothing AndAlso veio.Incerta Then
+                    r.LoteIncerto(chavesDoLote.Count, veio.Motivo)
+                    Return r.Fechar(MotivoDaClassificacao.Incerta)
+                End If
+
+                Dim conferido = montado.Conferir(If(veio Is Nothing, Nothing, veio.Texto),
                                                  enviadas)
                 If Not conferido.IdentidadesConferem Then
-                    r.LoteRecusado(chavesDoLote.Count, conferido.Motivo)
+                    ' O MOTIVO DA BORDA GANHA DO MOTIVO DO PARSER. "A resposta nao
+                    ' e JSON valido" e verdade sobre um Nothing e nao explica nada;
+                    ' "o portao negou" explica.
+                    Dim porque = If(veio IsNot Nothing AndAlso veio.Motivo.Length > 0,
+                                    veio.Motivo, conferido.Motivo)
+                    r.LoteRecusado(chavesDoLote.Count, porque)
                     Continue For
                 End If
 
@@ -393,6 +423,7 @@ Namespace Global.Iris.Integration
             Private _naoClassificados As Integer
             Private _primeiraRecusa As String = ""
             Private _recusadasPeloConteudo As Integer
+            Private _lotesIncertos As Integer
             Private _geracaoErrada As Boolean
 
             Public Sub New(pedidos As Integer)
@@ -428,6 +459,17 @@ Namespace Global.Iris.Integration
             ''' dele entram como não classificadas — elas não foram, e some-las ao
             ''' que ficou de fora por outro motivo seria misturar duas coisas.
             ''' </summary>
+            ''' <summary>
+            ''' <b>Um lote cujo desfecho não se sabe.</b> Conta separado de
+            ''' <c>LotesRecusados</c> porque as duas afirmações são opostas: recusado
+            ''' é <i>nada saiu</i>, incerto é <i>pode ter saído</i>.
+            ''' </summary>
+            Public Sub LoteIncerto(quantos As Integer, motivo As String)
+                _lotesIncertos += 1
+                _naoClassificados += quantos
+                If _primeiraRecusa.Length = 0 Then _primeiraRecusa = If(motivo, "")
+            End Sub
+
             Public Sub Revarrida(quantos As Integer)
                 _geracaoErrada = True
                 _naoClassificados += quantos
@@ -481,9 +523,58 @@ Namespace Global.Iris.Integration
                     qual, _pedidos, _classificados,
                     _semRotulo, _semRegras, _foraDaPasta,
                     _lotesRecusados, _naoClassificados, _primeiraRecusa,
-                    _recusadasPeloConteudo)
+                    _recusadasPeloConteudo, _lotesIncertos)
             End Function
         End Class
+
+    End Class
+
+    ''' <summary>
+    ''' <b>O que a borda do transporte devolve — e o que ela não pode esconder.</b>
+    '''
+    ''' Era uma <c>String</c>, e <c>Nothing</c> significava "não deu". Isso dobrava
+    ''' num só valor coisas que levam a ações opostas: <i>o portão negou</i> (nada
+    ''' saiu, e o dono precisa assinar a ativação), <i>o provedor recusou</i> (nada
+    ''' saiu, e o dono precisa olhar a credencial) e <i>a rede caiu depois do
+    ''' primeiro byte</i> (<b>pode ter saído</b>, e o dono precisa saber disso).
+    '''
+    ''' A última é a que não podia estar aqui dentro. Dizer "lote recusado" sobre
+    ''' ela é dizer que nada saiu quando algo pode ter saído — o defeito que este
+    ''' projeto persegue desde o começo. Achado por revisão externa em 01/09/2026.
+    ''' </summary>
+    Public NotInheritable Class RespostaDoLote
+
+        ''' <summary>O texto cru do modelo. Vazio quando não houve resposta.</summary>
+        Public ReadOnly Property Texto As String
+
+        ''' <summary>
+        ''' <b>Pode ter saído, e não se sabe o que aconteceu.</b> Nunca é o mesmo
+        ''' que recusado, e nunca é somado a ele.
+        ''' </summary>
+        Public ReadOnly Property Incerta As Boolean
+
+        ''' <summary>Em português, para a tela. Vazio quando houve resposta.</summary>
+        Public ReadOnly Property Motivo As String
+
+        Private Sub New(texto As String, incerta As Boolean, motivo As String)
+            Me.Texto = If(texto, "")
+            Me.Incerta = incerta
+            Me.Motivo = If(motivo, "")
+        End Sub
+
+        Public Shared Function Respondeu(texto As String) As RespostaDoLote
+            Return New RespostaDoLote(texto, False, "")
+        End Function
+
+        ''' <summary>Nada saiu, e sabe-se por quê.</summary>
+        Public Shared Function Recusada(motivo As String) As RespostaDoLote
+            Return New RespostaDoLote("", False, motivo)
+        End Function
+
+        ''' <summary>Pode ter saído. Ver <see cref="Incerta"/>.</summary>
+        Public Shared Function NaoSeSabe(motivo As String) As RespostaDoLote
+            Return New RespostaDoLote("", True, motivo)
+        End Function
 
     End Class
 
@@ -518,11 +609,20 @@ Namespace Global.Iris.Integration
         JaEstaRodando
 
         ''' <summary>
-        ''' <b>Alguém pediu para parar</b> — a janela fechou, a pasta mudou, a
-        ''' sessão caiu. Os lotes que já rodaram valem, e as contagens dizem
-        ''' quantos foram. <b>Não é erro</b>, e não é "nada aconteceu".
+        ''' <b>Alguém pediu para parar</b> — hoje, o fechamento da janela. Os lotes
+        ''' que já rodaram valem, e as contagens dizem quantos foram. <b>Não é
+        ''' erro</b>, e não é "nada aconteceu".
         ''' </summary>
         Parada
+
+        ''' <summary>
+        ''' <b>Um lote pode ter saído e não se sabe o que aconteceu com ele.</b>
+        '''
+        ''' A passagem para aqui, de propósito: seguir mandando gastaria dinheiro e
+        ''' divulgaria mais enquanto o dono ainda não sabe do primeiro. O diário tem
+        ''' a linha; a tela tem de dizer, porque ninguém lê o diário.
+        ''' </summary>
+        Incerta
     End Enum
 
     ''' <summary>
@@ -564,14 +664,22 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Public ReadOnly Property RecusadasPeloConteudo As Integer
 
+        ''' <summary>
+        ''' Lotes cujo desfecho <b>não se sabe</b> — podem ter saído. O oposto de
+        ''' <see cref="LotesRecusados"/>, e nunca somado a ele.
+        ''' </summary>
+        Public ReadOnly Property LotesIncertos As Integer
+
         Friend Sub New(motivo As MotivoDaClassificacao, pedidos As Integer,
                        classificados As Integer, semRotulo As Integer,
                        semRegras As Integer, foraDaPasta As Integer,
                        lotesRecusados As Integer, naoClassificados As Integer,
                        primeiraRecusa As String,
-                       Optional recusadasPeloConteudo As Integer = 0)
+                       Optional recusadasPeloConteudo As Integer = 0,
+                       Optional lotesIncertos As Integer = 0)
             Me.Motivo = motivo
             Me.RecusadasPeloConteudo = recusadasPeloConteudo
+            Me.LotesIncertos = lotesIncertos
             Me.Pedidos = pedidos
             Me.Classificados = classificados
             Me.SemRotulo = semRotulo

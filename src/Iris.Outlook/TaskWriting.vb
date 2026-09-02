@@ -125,8 +125,16 @@ Namespace Global.Iris.Outlook
         ''' <c>Items.Add</c> na pasta escolhida, e não criar na padrão e mover:
         ''' um <c>Move</c> que falhe deixaria a tarefa na lista de verdade.
         ''' </summary>
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
         Public Function Create(ns As OL.NameSpace, pasta As FolderKey,
-                               rascunho As TaskDraft) As OperationResult(Of TaskInfo)
+                               rascunho As TaskDraft,
+                                                                         Optional marcar As Action = Nothing) _
+                                                                         As OperationResult(Of TaskInfo)
             Dim recusa = RecusarRascunho(rascunho)
             If recusa IsNot Nothing Then
                 Return OperationResult(Of TaskInfo).Fail(ErrorKind.Denied, recusa)
@@ -157,6 +165,7 @@ Namespace Global.Iris.Outlook
 
                 ' NASCE E CONTINUA SEM RESPONSAVEL. Nao ha Assign aqui, e e por
                 ' isso que o Save nao manda pedido nenhum.
+                If marcar IsNot Nothing Then marcar()
                 t.Save()
 
                 ' O SAVE ACONTECEU. Ver o comentario gemeo em Concluir.
@@ -177,7 +186,15 @@ Namespace Global.Iris.Outlook
         ''' Marca como concluída — e <b>recusa</b> tarefa atribuída, porque ali
         ''' concluir manda atualização a quem atribuiu.
         ''' </summary>
-        Public Function Concluir(ns As OL.NameSpace, chave As TaskKey) As OperationResult(Of TaskInfo)
+        ''' <param name="marcar">
+        ''' Acionado <b>imediatamente antes</b> do primeiro efeito que fica no mundo.
+        ''' É o que separa <i>"falhou e nada aconteceu"</i> de <i>"falhou e não se
+        ''' sabe"</i> — ver <c>OutlookBroker.MutateAsync</c>, que tem o motivo por
+        ''' extenso.
+        ''' </param>
+        Public Function Concluir(ns As OL.NameSpace, chave As TaskKey,
+                                 Optional marcar As Action = Nothing) _
+                                 As OperationResult(Of TaskInfo)
             Dim t As OL.TaskItem = Nothing
             Try
                 t = Abrir(ns, chave)
@@ -190,6 +207,7 @@ Namespace Global.Iris.Outlook
                 End If
 
                 t.Complete = True
+                If marcar IsNot Nothing Then marcar()
                 t.Save()
 
                 ' O SAVE ACONTECEU. Se a releitura falhar daqui para a frente, a
