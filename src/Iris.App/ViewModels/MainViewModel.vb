@@ -343,6 +343,24 @@ Namespace Global.Iris.App.ViewModels
         ''' 01/09/2026.
         ''' </summary>
         Private _pararClassificacao As Threading.CancellationTokenSource
+
+        ''' <summary>
+        ''' <b>O trabalho de fundo da classificação, para o fechamento poder
+        ''' esperá-lo.</b>
+        '''
+        ''' Cancelar não basta, e este é o motivo: o pedido de parada é olhado
+        ''' <i>entre</i> lotes, e o lote que já está na rede vai até o fim. Se a
+        ''' janela descartar o cache antes disso, a resposta chega, a gravação falha
+        ''' num banco morto, e <b>os mesmos corpos são mandados de novo</b> na
+        ''' próxima abertura — porque as mensagens continuam sem rótulo. Divulgação
+        ''' duplicada, paga duas vezes. Achado por revisão externa em 01/09/2026.
+        '''
+        ''' É a tarefa do <c>Task.Run</c>, e não a do método assíncrono: esta
+        ''' termina no <i>pool</i> e pode ser esperada da thread da tela sem travar.
+        ''' Esperar a outra seria esperar uma continuação que precisa desta mesma
+        ''' thread para rodar — o desenho clássico de bloqueio mútuo.
+        ''' </summary>
+        Private _classificacaoEmVoo As Task
         Private _destinoDaIa As AssistDestination
         Private _ativacaoDaIa As String = ""
 
@@ -1357,22 +1375,40 @@ Namespace Global.Iris.App.ViewModels
             Classificacao = "Classificando " & quantas.ToString() &
                             " mensagem(ns) em " & alvo.Nome & "…"
             Try
-                Dim r = Await Task.Run(
+                Dim trabalho = Task.Run(
                     Function() Acervo.Classificar(chave, regras, ativacao, quando,
                                                   AddressOf borda.Conteudo,
                                                   AddressOf borda.Envio, ct))
+                _classificacaoEmVoo = trabalho
+                Dim r = Await trabalho
 
                 ' A JANELA PODE TER FECHADO ENQUANTO ISTO CORRIA. Escrever aqui
                 ' seria escrever em ViewModel descartado, e o desfecho nao tem
                 ' para quem ser dito.
                 If _disposed Then Return
-                Classificacao = EmPortugues(r, alvo.Nome)
+
+                ' A FRASE E DE UMA PASTA, E O DONO PODE TER TROCADO.
+                '
+                ' Ela mora na faixa do acervo, que descreve a pasta corrente. Se
+                ' o alvo mudou enquanto a passagem corria, publicar aqui poria o
+                ' desfecho de A sob o painel de B -- e a posicao diz que o texto
+                ' fala de B. O OAlvoMudou nao resolvia isto: ele devolve cedo
+                ' enquanto Classificando e True, e nao e chamado de novo no fim.
+                ' Achado por revisao externa em 01/09/2026.
+                If ContinuaNaMesmaPasta(alvo.Chave) Then
+                    Classificacao = EmPortugues(r, alvo.Nome)
+                Else
+                    Classificacao = ""
+                End If
             Catch ex As Exception
                 If _disposed Then Return
-                Classificacao = "A classificação falhou (" & ex.GetType().Name & ")."
+                If ContinuaNaMesmaPasta(alvo.Chave) Then
+                    Classificacao = "A classificação falhou (" & ex.GetType().Name & ")."
+                End If
             Finally
                 If Not _disposed Then Classificando = False
                 If ReferenceEquals(_pararClassificacao, cts) Then _pararClassificacao = Nothing
+                _classificacaoEmVoo = Nothing
                 cts.Dispose()
             End Try
 
@@ -1440,6 +1476,21 @@ Namespace Global.Iris.App.ViewModels
         ''' classificação de A continua correndo, e sumir com o aviso esconderia que
         ''' há conteúdo saindo agora.
         ''' </summary>
+        ''' <summary>
+        ''' O acervo ainda aponta para a pasta que esta passagem classificou?
+        '''
+        ''' <b>Falha de leitura responde que sim</b>: não saber para onde o acervo
+        ''' aponta não é razão para engolir o desfecho de uma passagem que gastou
+        ''' rede. Errar para o lado de mostrar é o barato aqui.
+        ''' </summary>
+        Private Function ContinuaNaMesmaPasta(chave As Long) As Boolean
+            Try
+                Return Acervo Is Nothing OrElse Acervo.PastaParaClassificar().Chave = chave
+            Catch
+                Return True
+            End Try
+        End Function
+
         Friend Sub OAlvoMudou()
             If Classificando Then Return
             Classificacao = ""
@@ -1638,6 +1689,23 @@ Namespace Global.Iris.App.ViewModels
             Try
                 _pararClassificacao?.Cancel()
             Catch
+            End Try
+
+            ' E ESPERA O LOTE QUE JA ESTA NA REDE.
+            '
+            ' Cancelar so impede os PROXIMOS: o pedido de parada e olhado entre
+            ' lotes, e o que ja voou vai ate o fim. Descartar o cache agora faria
+            ' a gravacao falhar num banco morto, e as mesmas mensagens seriam
+            ' mandadas outra vez na proxima abertura.
+            '
+            ' O teto e curto de proposito: uma chamada ao provedor, e nao a
+            ' passagem inteira. Fechar uma janela nao pode virar espera de
+            ' minutos, e se estourar o pior caso e o que ja acontecia.
+            Try
+                _classificacaoEmVoo?.Wait(TimeSpan.FromSeconds(20))
+            Catch
+                ' A tarefa pode terminar com excecao -- isso e desfecho dela, e
+                ' nao do fechamento.
             End Try
 
             Busca?.Dispose()

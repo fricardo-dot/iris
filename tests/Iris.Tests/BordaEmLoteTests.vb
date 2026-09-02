@@ -412,6 +412,49 @@ Public Class BordaEmLoteTests
                End Sub)
     End Sub
 
+    ''' <summary>
+    ''' <b>A mensagem recusada pelo pipeline não é contada duas vezes.</b>
+    '''
+    ''' Um lote de três com uma recusada por anexo, e a resposta das outras duas
+    ''' malformada: a recusada já entrou em <c>RecusadasPeloConteudo</c>, e o
+    ''' <c>LoteRecusado</c> somava o lote <i>inteiro</i> por cima —
+    ''' <c>NaoClassificados</c> saía maior que <c>Pedidos</c>.
+    '''
+    ''' Uma conta que não fecha não é um detalhe de relatório: é a tela dizendo
+    ''' "faltaram 4" sobre um lote de 3, e o dono não tem como saber qual dos dois
+    ''' números está errado. Achado por revisão externa em 01/09/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Recusada_pelo_conteudo_nao_e_contada_DUAS_vezes()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   provedor.Responder = Function(fichas) "isto nao e json"
+                   Dim broker = BrokerBom({"a", "b", "c"})
+
+                   ' A "b" tem anexo: o pipeline a recusa antes de qualquer envio.
+                   broker.Instantaneos =
+                       Function(k) OperationResult(Of MessageSnapshot).Ok(
+                           New MessageSnapshot(k, "CK-" & k.EntryId, "assunto",
+                                               "de@x.invalido", {"para@x.invalido"},
+                                               "corpo de " & SufixoDe(k), False,
+                                               corpoCompleto:=True,
+                                               temAnexo:=(SufixoDe(k) = "b"),
+                                               pasta:=Pasta))
+
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao(),
+                                       broker:=broker)
+
+                   Assert.AreEqual(3, r.Pedidos)
+                   Assert.AreEqual(1, r.RecusadasPeloConteudo)
+                   Assert.AreEqual(1, r.LotesRecusados)
+                   Assert.AreEqual(3, r.NaoClassificados,
+                       "A MESMA MENSAGEM FOI CONTADA DUAS VEZES")
+                   Assert.IsTrue(r.NaoClassificados <= r.Pedidos,
+                       "faltaram mais do que foram pedidas")
+               End Sub)
+    End Sub
+
     ' ==================================================================
     ' O LOTE QUE VAI PELA METADE
 

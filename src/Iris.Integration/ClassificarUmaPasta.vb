@@ -298,7 +298,8 @@ Namespace Global.Iris.Integration
                 ' --, e parar e o que da a ele a chance de olhar. Achado por
                 ' revisao externa em 01/09/2026.
                 If veio IsNot Nothing AndAlso veio.Incerta Then
-                    r.LoteIncerto(chavesDoLote.Count, veio.Motivo)
+                    ' So as que sairam -- ver o comentario do LoteRecusado.
+                    r.LoteIncerto(enviadas.Count, veio.Motivo)
                     Return r.Fechar(MotivoDaClassificacao.Incerta)
                 End If
 
@@ -310,7 +311,13 @@ Namespace Global.Iris.Integration
                     ' "o portao negou" explica.
                     Dim porque = If(veio IsNot Nothing AndAlso veio.Motivo.Length > 0,
                                     veio.Motivo, conferido.Motivo)
-                    r.LoteRecusado(chavesDoLote.Count, porque)
+                    ' AS RECUSADAS PELO CONTEUDO JA FORAM CONTADAS.
+                    '
+                    ' Passar chavesDoLote.Count aqui somava de novo a mensagem que
+                    ' o pipeline ja tinha descontado: um lote de vinte com uma
+                    ' recusada e a resposta ruim dava NaoClassificados = 21 sobre
+                    ' Pedidos = 20. Achado por revisao externa em 01/09/2026.
+                    r.LoteRecusado(enviadas.Count, porque)
                     Continue For
                 End If
 
