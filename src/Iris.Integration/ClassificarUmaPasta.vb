@@ -636,9 +636,13 @@ Namespace Global.Iris.Integration
     ''' O que a passagem fez.
     '''
     ''' <b><see cref="Classificados"/> menor que <see cref="Pedidos"/> é normal</b>,
-    ''' e as três razões aparecem separadas de propósito: lote recusado, rótulo
-    ''' inventado e mensagem que saiu da pasta são problemas diferentes, e
-    ''' somá-los num "faltaram 30" esconderia qual deles está acontecendo.
+    ''' e as razões aparecem <b>separadas</b> de propósito — lote recusado, lote
+    ''' incerto, recusada pelo conteúdo, rótulo inventado, regras sem resposta e
+    ''' mensagem que saiu da pasta são problemas diferentes, e somá-los num
+    ''' "faltaram 30" esconderia qual deles está acontecendo.
+    '''
+    ''' O número delas não fica escrito aqui: já esteve, ficou vencido, e um
+    ''' comentário que conta errado é pior que um que não conta.
     ''' </summary>
     Public NotInheritable Class ResultadoDaClassificacao
         Public ReadOnly Property Motivo As MotivoDaClassificacao

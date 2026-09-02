@@ -49,7 +49,22 @@ Namespace Global.Iris.Outlook
             _Id = Interlocked.Increment(_nextId)
             _Key = key
             _folder = folder
-            _items = folder.Items
+
+            ' folder.Items DENTRO DA TRANSACAO, e nao antes dela.
+            '
+            ' Ele era adquirido fora do Try. Se o Outlook reiniciar ou o RPC cair
+            ' nesta propriedade, o construtor termina por excecao SEM liberar a
+            ' pasta que ele acabou de receber -- e o broker ja passou a posse dela
+            ' para ca, entao ninguem mais tem referencia para limpar. Tentativas
+            ' repetidas de assinar acumulam RCW de pasta. Achado por revisao
+            ' externa em 01/09/2026.
+            Try
+                _items = folder.Items
+            Catch
+                ComHelpers.Release(_folder)
+                _folder = Nothing
+                Throw
+            End Try
 
             _onAdd = Sub(item) Handle(InvalidationKind.ItemAdded, item, sink)
             _onChange = Sub(item) Handle(InvalidationKind.ItemChanged, item, sink)

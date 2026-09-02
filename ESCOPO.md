@@ -467,15 +467,21 @@ mensagens que *parecem* da mesma conversa seria decidir divulgação por
 semelhança. O mecanismo aceita várias mensagens; o que não existe é quem as
 escolha.
 
-### Fase 4 — Triagem e busca semântica (Grupo B) — *A BUSCA TEXTUAL ESTÁ ENTREGUE; A TRIAGEM TEM NÚCLEO CONSTRUÍDO E NENHUM CHAMADOR*
+### Fase 4 — Triagem e busca semântica (Grupo B) — *ENTREGUES, E NÃO MEDIDAS CONTRA A CAIXA REAL*
 
-> **Atualizado em 01/09/2026.** O título anterior — "NÃO EXECUTADA" — deixou de
-> descrever o estado: a busca textual está na janela desde 28/08, e a triagem
-> ganhou núcleo, testes e vinte revisões externas nas etapas 4 a 7 do
-> [PLANO-IA](PLANO-IA.md). O que ela ainda não tem é a borda em lote e um
-> comando na tela — ou seja, o dono ainda não consegue mandar classificar uma
-> pasta. "Não executada" e "construída e não ligada" são estados diferentes, e
-> um documento que os confunde faz alguém reconstruir o que já existe.
+> **Atualizado em 01/09/2026, pela segunda vez no mesmo dia.** O título dizia
+> *"a triagem tem núcleo construído e nenhum chamador"*, e o parágrafo dizia que
+> faltava a borda em lote e um comando na tela. As duas coisas passaram a existir
+> horas depois — há botão "classificar esta pasta" ao lado do de varrer.
+>
+> Este é o quinto documento desta base a descrever uma composição anterior como
+> se fosse a de hoje, e o estrago é sempre o mesmo: quem lê "não tem chamador" e
+> encontra a borda conclui que a borda é resto. Corrigido no mesmo dia porque uma
+> revisão externa o pegou; sem ela, teria durado.
+>
+> **O que de fato falta** é medição: tudo foi provado contra um provedor de teste
+> que responde certo, e ninguém sabe ainda quantos rótulos um modelo real inventa
+> numa caixa de verdade, nem quanto custa. Ver o [PLANO-IA](PLANO-IA.md).
 
 > **Esta seção já teve um título mais forte, e a revisão externa derrubou.**
 >

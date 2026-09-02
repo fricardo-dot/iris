@@ -974,10 +974,16 @@
                                     AutomationProperties.Name="Fechar a fila" />
                         </StackPanel>
 
+                        <!-- SEM AutomationProperties.Name: nome fixo SUBSTITUI o nome
+                             acessivel derivado do Text, e o leitor de tela ouvia o
+                             rotulo em vez do dado. LiveSetting porque estas frases
+                             mudam sozinhas depois de uma releitura ou de uma
+                             classificacao. Mesmo conserto que a frase da
+                             classificacao recebeu; faltava procurar os vizinhos. -->
                         <TextBlock Text="{Binding Fila.Frase}"
                                    Style="{DynamicResource Text.Body}"
                                    TextWrapping="Wrap"
-                                   AutomationProperties.Name="Situacao da fila" />
+                                   AutomationProperties.LiveSetting="Polite" />
 
                         <TextBlock Text="{Binding Fila.Ressalva}"
                                    Style="{DynamicResource Text.Muted}"
@@ -985,7 +991,7 @@
                                    Visibility="{Binding Fila.TemRessalva,
                                                         Converter={StaticResource BoolToVis},
                                                         FallbackValue=Collapsed}"
-                                   AutomationProperties.Name="O que ficou fora da fila" />
+                                   AutomationProperties.LiveSetting="Polite" />
 
                         <StackPanel Visibility="{Binding Fila.Respondeu,
                                                          Converter={StaticResource BoolToVis},

@@ -1350,6 +1350,14 @@ Namespace Global.Iris.App.ViewModels
 
             ' QUANTAS VAO SAIR -- contado ANTES de qualquer divulgacao.
             Dim quantas = Acervo.QuantasSemRotulo(alvo.Chave)
+            If quantas < 0 Then
+                ' NAO SEI QUANTAS SAIRIAM. Pedir confirmacao sem o numero seria
+                ' pedir um cheque em branco, e mandar sem pedir seria pior.
+                Classificacao = "Não consegui ler os rótulos já gravados desta " &
+                                "pasta, então não sei quantas mensagens sairiam. " &
+                                "Nada foi mandado."
+                Return
+            End If
             If quantas = 0 Then
                 Classificacao = "Nada a classificar em " & alvo.Nome & ": tudo o que " &
                                 "está presente já tem rótulo nesta varredura."
@@ -1357,7 +1365,9 @@ Namespace Global.Iris.App.ViewModels
             End If
 
             If quantas > SemPerguntar AndAlso Not Confirmar(alvo.Nome, quantas) Then
-                Classificacao = "Nada foi mandado."
+                ' QUEM CANCELOU FOI ELE, e a frase tem de dizer: "nada foi
+                ' mandado" sozinho e indistinguivel de uma recusa tecnica.
+                Classificacao = "Classificação cancelada por você. Nada foi mandado."
                 Return
             End If
 
@@ -1543,9 +1553,13 @@ Namespace Global.Iris.App.ViewModels
             ' ANEXO PRIMEIRO: e o unico motivo que o dono pode agir sobre, e o
             ' mais comum numa caixa de verdade.
             If r.RecusadasPeloConteudo > 0 Then
-                porques.Add($"{r.RecusadasPeloConteudo} não puderam ser lidas " &
-                            "(anexo, corpo incompleto ou imagem embutida) e " &
-                            "não saíram daqui")
+                ' "RECUSADAS", e nao "nao puderam ser lidas": anexo e imagem
+                ' embutida sao detectados DEPOIS de uma leitura bem-sucedida, e
+                ' dizer que a leitura falhou manda o dono investigar um problema
+                ' que nao existe.
+                porques.Add($"{r.RecusadasPeloConteudo} foram recusadas antes do " &
+                            "envio (anexo, corpo incompleto, conteúdo embutido ou " &
+                            "grande demais para um lote) e não saíram daqui")
             End If
             If r.LotesIncertos > 0 Then
                 porques.Add($"{r.LotesIncertos} lote(s) PODEM ter saído sem resposta")

@@ -209,7 +209,7 @@
                                        TextWrapping="Wrap"
                                        Visibility="{Binding TemAviso, Converter={StaticResource BoolToVis},
                                                             FallbackValue=Collapsed}"
-                                       AutomationProperties.Name="Situacao da IA" />
+                                       AutomationProperties.LiveSetting="Polite" />
                             <!-- O AVISO INTEIRO, e o botao que o encolhe.
 
                                  Ele dizia "este aviso nao desaparece sozinho", e era
@@ -227,7 +227,7 @@
                                 <TextBlock Text="{Binding Reconciliacao.Aviso}"
                                            Style="{DynamicResource Text.Secondary}"
                                            TextWrapping="Wrap"
-                                           AutomationProperties.Name="Envios sem desfecho conhecido" />
+                                           AutomationProperties.LiveSetting="Assertive" />
                                 <Button Content="Eu vi este aviso"
                                         Style="{DynamicResource Toolbar.Button}"
                                         Command="{Binding ReconhecerAmbiguasCommand}"
@@ -245,7 +245,7 @@
                                        Visibility="{Binding TemMarcaDaReconciliacao,
                                                             Converter={StaticResource BoolToVis},
                                                             FallbackValue=Collapsed}"
-                                       AutomationProperties.Name="Envios sem desfecho conhecido, ja reconhecidos" />
+                                       AutomationProperties.LiveSetting="Polite" />
                         </StackPanel>
                     </Border>
 

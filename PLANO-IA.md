@@ -533,9 +533,8 @@ chegam à fila, lidos uma vez por retrato do acervo — e não uma consulta SQL 
 linha desenhada.
 
 **Continua faltando** ligar "pessoa próxima" aos Contatos e "prazo" às Tarefas.
-E, enquanto a borda do item 1 não existir, os rótulos são sempre vazios: as
-parcelas agora são *alcançáveis*, e ainda não têm o que contar. As duas coisas
-são diferentes, e só a segunda depende de você.
+Os rótulos, que eram sempre vazios, passaram a existir com a borda em lote — a
+nota da fila conta rótulo e regra de verdade desde 01/09/2026.
 
 ### 3. ~~A caixa dividida~~ — na tela desde 31/08/2026
 

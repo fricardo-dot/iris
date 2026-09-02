@@ -694,11 +694,17 @@ Namespace Global.Iris.App.ViewModels
             Try
                 jaTem = New Iris.Cache.RotulosNoCache(_db).Publicados(pasta)
             Catch
-                ' Falha de leitura conta como "nenhum rotulado", que SUPERESTIMA o
-                ' quanto sairia. Errar para cima faz o dono ver um numero maior e
-                ' confirmar com mais cuidado; errar para baixo o faria autorizar
-                ' menos do que sai.
-                ' ".Where(...).Count()", e nao ".Count(predicado)": a propriedade
+                ' NAO SEI QUANTAS: e isso e diferente de zero E de "todas".
+                '
+                ' Aqui devolvia "todas as presentes", com o argumento de que
+                ' superestimar e o lado seguro. So que a passagem le os rotulos de
+                ' novo e ESTOURA se a leitura falhar: o dono confirmava "mandar 37"
+                ' e recebia "a classificacao falhou". Um numero que ele aprova e que
+                ' nunca se cumpre e pior que nenhum numero. Achado por revisao
+                ' externa em 01/09/2026.
+                '
+                ' -1 quer dizer "nao sei", e quem chama recusa em vez de perguntar.
+                Return -1
                 ' Count da lista eclipsa a extensao Count(Of T) do LINQ, e o erro
                 ' sai como "Integer nao pode ser indexado". CLAUDE.md, secao 1.
                 Return daPasta.Manifesto.Items.
