@@ -187,6 +187,9 @@ Namespace Global.Iris.Assist
         ''' <see cref="LoteDeClassificacao.EhFichaValida"/>.
         ''' </param>
         ''' <param name="tetoDoCorpo">
+        ''' <b>Em bytes UTF-8</b>, e não em caracteres — é um orçamento de
+        ''' transporte, e transporte conta bytes.
+        '''
         ''' O corpo mais longo que <b>este chamador</b> consegue transportar.
         '''
         ''' ------------------------------------------------------------------
@@ -318,8 +321,28 @@ Namespace Global.Iris.Assist
 
             If tema.Length > MaxAssunto OrElse de.Length > MaxRemetente OrElse
                quem.Count > MaxDestinatarios OrElse
-               texto.Length > Math.Min(MaxCorpo, tetoDoCorpo) OrElse
+               texto.Length > MaxCorpo OrElse
                quem.Sum(Function(d) d.Length) > MaxDestinatarios * MaxUmDestinatario Then
+                Return Recusar(ContentRefusal.CampoLongoDemais)
+            End If
+
+            ' O TETO DO CHAMADOR E EM BYTES, e nao em caracteres.
+            '
+            ' Era comparado contra texto.Length, e o orcamento que ele divide e o
+            ' do envelope, que e de BYTES UTF-8. Um caractere acentuado pesa dois,
+            ' um emoji pesa quatro, e o JSON ainda escapa alguns: vinte corpos
+            ' "dentro do teto" podiam somar o dobro do orcamento, o envelope saia
+            ' truncado, o cofre recusava, e aquele grupo nunca era classificado.
+            '
+            ' A conta anterior dividia por dois e o comentario a chamava de
+            ' "conservadora em portugues" -- e portugues tem emoji como qualquer
+            ' outra lingua. Achado por revisao externa em 02/09/2026.
+            '
+            ' Aqui a medida e o proprio numero de bytes do que vai sair. Nao conta
+            ' o escape do JSON, que e por caractere e cresce so em aspas e
+            ' controles; a folga do chamador cobre isso.
+            If tetoDoCorpo < MaxCorpo AndAlso
+               Text.Encoding.UTF8.GetByteCount(texto) > tetoDoCorpo Then
                 Return Recusar(ContentRefusal.CampoLongoDemais)
             End If
 

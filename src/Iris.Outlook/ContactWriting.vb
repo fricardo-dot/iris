@@ -136,8 +136,26 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function Create(ns As OL.NameSpace, pasta As FolderKey,
                                rascunho As ContactDraft,
-                                                                            Optional marcar As Action = Nothing) _
-                                                                            As OperationResult(Of ContactInfo)
+                               Optional marcar As Action = Nothing) _
+                               As OperationResult(Of ContactInfo)
+            ' A CERCA PASSA A SABER SE O EFEITO COMECOU.
+            '
+            ' Este Catch dizia mutationAttemptStarted:=True sempre. Uma falha em
+            ' GetFolderFromID, em Items, na abertura do item ou numa atribuicao de
+            ' propriedade -- tudo ANTES do Save -- era apresentada como possivel
+            ' mutacao consumida, e a tela dizia que algo podia ter acontecido sobre
+            ' o que nao aconteceu.
+            '
+            ' E o mesmo defeito que o despacho do broker tinha, um nivel abaixo: a
+            ' captura local impedia a fase de verdade de chegar ao classificador.
+            ' Achado por revisao externa em 02/09/2026.
+            Dim comecou = False
+            Dim aoComecar As Action =
+                Sub()
+                    comecou = True
+                    If marcar IsNot Nothing Then marcar()
+                End Sub
+
             Dim recusa = RecusarRascunho(rascunho)
             If recusa IsNot Nothing Then
                 Return OperationResult(Of ContactInfo).Fail(ErrorKind.Denied, recusa)
@@ -165,7 +183,7 @@ Namespace Global.Iris.Outlook
                 ' NADA MAIS. Sem Body, sem nota, sem endereco: o que entra e o
                 ' que a mensagem ja dizia. E nao ha Forward em lugar nenhum
                 ' deste modulo, que e o unico caminho de envio deste objeto.
-                If marcar IsNot Nothing Then marcar()
+                aoComecar()
                 c.Save()
 
                 ' O SAVE ACONTECEU. Se a releitura falhar daqui para a frente, o
@@ -185,7 +203,7 @@ Namespace Global.Iris.Outlook
             Catch ex As COMException
                 Return OperationResult(Of ContactInfo).Fail(
                     OutlookFailurePolicy.ClassifyFailure(
-                        ex.HResult, isMutation:=True, mutationAttemptStarted:=True),
+                        ex.HResult, isMutation:=True, mutationAttemptStarted:=comecou),
                     "falha ao criar contato: " & ex.GetType().Name)
             Finally
                 ComHelpers.Release(c)

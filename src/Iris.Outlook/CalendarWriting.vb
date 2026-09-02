@@ -65,8 +65,26 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function Create(ns As OL.NameSpace, pasta As FolderKey,
                                rascunho As AppointmentDraft,
-                                                                                Optional marcar As Action = Nothing) _
-                                                                                As OperationResult(Of AppointmentInfo)
+                               Optional marcar As Action = Nothing) _
+                               As OperationResult(Of AppointmentInfo)
+            ' A CERCA PASSA A SABER SE O EFEITO COMECOU.
+            '
+            ' Este Catch dizia mutationAttemptStarted:=True sempre. Uma falha em
+            ' GetFolderFromID, em Items, na abertura do item ou numa atribuicao de
+            ' propriedade -- tudo ANTES do Save -- era apresentada como possivel
+            ' mutacao consumida, e a tela dizia que algo podia ter acontecido sobre
+            ' o que nao aconteceu.
+            '
+            ' E o mesmo defeito que o despacho do broker tinha, um nivel abaixo: a
+            ' captura local impedia a fase de verdade de chegar ao classificador.
+            ' Achado por revisao externa em 02/09/2026.
+            Dim comecou = False
+            Dim aoComecar As Action =
+                Sub()
+                    comecou = True
+                    If marcar IsNot Nothing Then marcar()
+                End Sub
+
             If rascunho Is Nothing Then
                 Return OperationResult(Of AppointmentInfo).Fail(ErrorKind.Unexpected, "rascunho nulo")
             End If
@@ -95,14 +113,14 @@ Namespace Global.Iris.Outlook
 
                 ' NASCE E CONTINUA SEM PARTICIPANTE. Nao ha Recipients aqui, e
                 ' e por isso que o Save nao manda convite nenhum.
-                If marcar IsNot Nothing Then marcar()
+                aoComecar()
                 item.Save()
 
-                Return OperationResult(Of AppointmentInfo).Ok(Descrever(item))
+                Return DepoisDoSave(Descrever(item))
             Catch ex As COMException
                 Return OperationResult(Of AppointmentInfo).Fail(
                     OutlookFailurePolicy.ClassifyFailure(
-                        ex.HResult, isMutation:=True, mutationAttemptStarted:=True),
+                        ex.HResult, isMutation:=True, mutationAttemptStarted:=comecou),
                     "falha ao criar compromisso: " & ex.GetType().Name)
             Finally
                 ComHelpers.Release(item)
@@ -127,8 +145,26 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function Update(ns As OL.NameSpace, chave As AppointmentKey,
                                rascunho As AppointmentDraft,
-                                                                                Optional marcar As Action = Nothing) _
-                                                                                As OperationResult(Of AppointmentInfo)
+                               Optional marcar As Action = Nothing) _
+                               As OperationResult(Of AppointmentInfo)
+            ' A CERCA PASSA A SABER SE O EFEITO COMECOU.
+            '
+            ' Este Catch dizia mutationAttemptStarted:=True sempre. Uma falha em
+            ' GetFolderFromID, em Items, na abertura do item ou numa atribuicao de
+            ' propriedade -- tudo ANTES do Save -- era apresentada como possivel
+            ' mutacao consumida, e a tela dizia que algo podia ter acontecido sobre
+            ' o que nao aconteceu.
+            '
+            ' E o mesmo defeito que o despacho do broker tinha, um nivel abaixo: a
+            ' captura local impedia a fase de verdade de chegar ao classificador.
+            ' Achado por revisao externa em 02/09/2026.
+            Dim comecou = False
+            Dim aoComecar As Action =
+                Sub()
+                    comecou = True
+                    If marcar IsNot Nothing Then marcar()
+                End Sub
+
             If rascunho Is Nothing Then
                 Return OperationResult(Of AppointmentInfo).Fail(ErrorKind.Unexpected, "rascunho nulo")
             End If
@@ -150,14 +186,14 @@ Namespace Global.Iris.Outlook
                 End If
 
                 Aplicar(item, rascunho)
-                If marcar IsNot Nothing Then marcar()
+                aoComecar()
                 item.Save()
 
-                Return OperationResult(Of AppointmentInfo).Ok(Descrever(item))
+                Return DepoisDoSave(Descrever(item))
             Catch ex As COMException
                 Return OperationResult(Of AppointmentInfo).Fail(
                     OutlookFailurePolicy.ClassifyFailure(
-                        ex.HResult, isMutation:=True, mutationAttemptStarted:=True),
+                        ex.HResult, isMutation:=True, mutationAttemptStarted:=comecou),
                     "falha ao editar compromisso: " & ex.GetType().Name)
             Finally
                 ComHelpers.Release(item)
@@ -179,6 +215,24 @@ Namespace Global.Iris.Outlook
         Public Function Delete(ns As OL.NameSpace, chave As AppointmentKey,
                                Optional marcar As Action = Nothing) _
                                As OperationResult(Of Boolean)
+            ' A CERCA PASSA A SABER SE O EFEITO COMECOU.
+            '
+            ' Este Catch dizia mutationAttemptStarted:=True sempre. Uma falha em
+            ' GetFolderFromID, em Items, na abertura do item ou numa atribuicao de
+            ' propriedade -- tudo ANTES do Save -- era apresentada como possivel
+            ' mutacao consumida, e a tela dizia que algo podia ter acontecido sobre
+            ' o que nao aconteceu.
+            '
+            ' E o mesmo defeito que o despacho do broker tinha, um nivel abaixo: a
+            ' captura local impedia a fase de verdade de chegar ao classificador.
+            ' Achado por revisao externa em 02/09/2026.
+            Dim comecou = False
+            Dim aoComecar As Action =
+                Sub()
+                    comecou = True
+                    If marcar IsNot Nothing Then marcar()
+                End Sub
+
             Dim item As OL.AppointmentItem = Nothing
             Try
                 item = Abrir(ns, chave)
@@ -190,13 +244,13 @@ Namespace Global.Iris.Outlook
                     Return OperationResult(Of Boolean).Fail(ErrorKind.Denied, MotivoDaReuniao)
                 End If
 
-                If marcar IsNot Nothing Then marcar()
+                aoComecar()
                 item.Delete()
                 Return OperationResult(Of Boolean).Ok(True)
             Catch ex As COMException
                 Return OperationResult(Of Boolean).Fail(
                     OutlookFailurePolicy.ClassifyFailure(
-                        ex.HResult, isMutation:=True, mutationAttemptStarted:=True),
+                        ex.HResult, isMutation:=True, mutationAttemptStarted:=comecou),
                     "falha ao apagar compromisso: " & ex.GetType().Name)
             Finally
                 ComHelpers.Release(item)
@@ -282,6 +336,30 @@ Namespace Global.Iris.Outlook
         ''' Relê o item recém-gravado. <b>Depois</b> do <c>Save</c>, sempre:
         ''' o <c>EntryID</c> pode ter mudado.
         ''' </summary>
+        ''' <summary>
+        ''' <b>Depois do <c>Save</c>, chave vazia é ambiguidade — não sucesso.</b>
+        '''
+        ''' <c>Descrever</c> engole falha de leitura: <c>TextoDoItem</c> devolve vazio
+        ''' e apenas incrementa um contador de campos fabricados, que ninguém olhava.
+        ''' Um erro COM transitório ao reler o <c>EntryID</c> novo produzia um
+        ''' compromisso <b>gravado</b> com uma chave que ninguém consegue reabrir —
+        ''' devolvido como sucesso, e sem como o classificador do broker enxergar,
+        ''' porque a exceção nunca subiu.
+        '''
+        ''' É a regra fundadora do projeto: <i>toda operação que salva devolve a
+        ''' identidade nova</i>. Rascunho, contato e tarefa ganharam esta guarda em
+        ''' 01/09/2026; o calendário ficou de fora porque ninguém foi procurar os
+        ''' irmãos. Achado por revisão externa em 02/09/2026.
+        ''' </summary>
+        Private Function DepoisDoSave(info As AppointmentInfo) _
+                         As OperationResult(Of AppointmentInfo)
+            If info Is Nothing OrElse info.Key Is Nothing OrElse info.Key.IsEmpty Then
+                Return OperationResult(Of AppointmentInfo).Fail(ErrorKind.Ambiguous,
+                    "o compromisso foi gravado e a identidade nova nao pode ser lida")
+            End If
+            Return OperationResult(Of AppointmentInfo).Ok(info)
+        End Function
+
         Private Function Descrever(item As OL.AppointmentItem) As AppointmentInfo
             Dim fabricadas = 0
             Return New AppointmentInfo With {

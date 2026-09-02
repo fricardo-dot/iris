@@ -61,6 +61,20 @@ Namespace Global.Iris.Integration.Assist.Http
         ''' com a credencial dentro é um campo que vaza em dump, em log de
         ''' exceção e em serialização acidental.
         ''' </param>
+        ''' <summary>
+        ''' <b>Quanto uma chamada ao provedor pode levar.</b>
+        '''
+        ''' Público porque quem <i>espera</i> por uma chamada precisa deste número:
+        ''' o fechamento da janela tinha um teto próprio de 20 segundos contra estes
+        ''' 60, e o menor vencia — a proteção era teatro. Um número só, num lugar só.
+        ''' Achado por revisão externa em 02/09/2026.
+        ''' </summary>
+        Public Shared ReadOnly Property TempoLimitePadrao As TimeSpan
+            Get
+                Return TimeSpan.FromSeconds(60)
+            End Get
+        End Property
+
         Public Sub New(destino As AssistDestination, credencial As Func(Of String),
                        Optional cabecalho As String = "Authorization",
                        Optional tempoLimite As TimeSpan = Nothing,
@@ -95,7 +109,7 @@ Namespace Global.Iris.Integration.Assist.Http
                 .MaxAutomaticRedirections = 1}
 
             _cliente = New HttpClient(h) With {
-                .Timeout = If(tempoLimite = Nothing, TimeSpan.FromSeconds(60), tempoLimite),
+                .Timeout = If(tempoLimite = Nothing, TempoLimitePadrao, tempoLimite),
                 .MaxResponseContentBufferSize = MaxResposta}
         End Sub
 

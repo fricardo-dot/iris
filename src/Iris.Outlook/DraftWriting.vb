@@ -88,8 +88,8 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function CreateReply(ns As OL.NameSpace, origem As ItemKey,
                                     replyAll As Boolean,
-                                                                            Optional marcar As Action = Nothing) _
-                                                                            As OperationResult(Of DraftInfo)
+                                    Optional marcar As Action = Nothing) _
+                                    As OperationResult(Of DraftInfo)
             Dim original As OL.MailItem = Nothing
             Try
                 Try
@@ -178,8 +178,8 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function Update(ns As OL.NameSpace, chave As DraftKey,
                                conteudo As DraftContent,
-                                                                            Optional marcar As Action = Nothing) _
-                                                                            As OperationResult(Of DraftInfo)
+                               Optional marcar As Action = Nothing) _
+                               As OperationResult(Of DraftInfo)
             Dim item As OL.MailItem = Nothing
             Try
                 Try
@@ -325,8 +325,8 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function AddAttachment(ns As OL.NameSpace, chave As DraftKey,
                                       caminho As String,
-                                                                            Optional marcar As Action = Nothing) _
-                                                                            As OperationResult(Of DraftInfo)
+                                      Optional marcar As Action = Nothing) _
+                                      As OperationResult(Of DraftInfo)
             If String.IsNullOrWhiteSpace(caminho) OrElse Not File.Exists(caminho) Then
                 Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "arquivo")
             End If
@@ -385,8 +385,8 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function RemoveAttachment(ns As OL.NameSpace, chave As DraftKey,
                                          anexo As AttachmentKey,
-                                                                                    Optional marcar As Action = Nothing) _
-                                                                                    As OperationResult(Of DraftInfo)
+                                         Optional marcar As Action = Nothing) _
+                                         As OperationResult(Of DraftInfo)
             If anexo Is Nothing Then
                 Return OperationResult(Of DraftInfo).Fail(ErrorKind.NotFound, "anexo")
             End If
@@ -860,8 +860,8 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function Send(ns As OL.NameSpace, chave As DraftKey,
                              versaoEsperada As String,
-                                                                          Optional marcar As Action = Nothing) _
-                                                                          As OperationResult(Of Boolean)
+                             Optional marcar As Action = Nothing) _
+                             As OperationResult(Of Boolean)
             Dim item As OL.MailItem = Nothing
             Try
                 Try

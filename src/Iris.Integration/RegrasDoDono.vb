@@ -93,14 +93,15 @@ Namespace Global.Iris.Integration
         ''' classificaria a caixa com dez das onze regras dele sem dizer qual
         ''' ficou de fora. Quem monta o lote recusa e diz o número.
         ''' </summary>
+        '''
+        ''' <b>Arquivo grande demais devolve NADA</b>, e não o que deu para ler. Ver
+        ''' <see cref="ArquivoDoPerfil"/>: meia lista classificaria a caixa com parte
+        ''' das regras do dono sem dizer qual ficou de fora.
         Public Function Ler() As IReadOnlyList(Of String)
             Try
-                If Not File.Exists(_caminho) Then Return Array.Empty(Of String)()
-
-                Return File.ReadAllLines(_caminho, Encoding.UTF8).
-                       Select(Function(l) l.Trim()).
-                       Where(Function(l) l.Length > 0 AndAlso Not l.StartsWith("#")).
-                       ToList()
+                Dim lidas = ArquivoDoPerfil.Linhas(_caminho)
+                If lidas Is Nothing Then Return Array.Empty(Of String)()
+                Return lidas
             Catch
                 Return Array.Empty(Of String)()
             End Try

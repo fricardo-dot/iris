@@ -71,12 +71,15 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Public Function Ler() As MinhasIdentidades
             Try
-                If Not File.Exists(_caminho) Then Return New MinhasIdentidades({})
-
-                Dim uteis = File.ReadAllLines(_caminho, Encoding.UTF8).
-                            Select(Function(l) l.Trim()).
-                            Where(Function(l) l.Length > 0 AndAlso Not l.StartsWith("#"))
-                Return New MinhasIdentidades(uteis)
+                ' ARQUIVO GRANDE DEMAIS DEVOLVE VAZIO, e nao meia lista.
+                '
+                ' Vazio ja tem significado aqui, e e o seguro: "nao sei quem sou",
+                ' e o Iris nao afirma de quem e a vez. Meia lista e o contrario --
+                ' uma identidade que ficou de fora faz as mensagens do proprio dono
+                ' virarem "do outro", com toda a confianca. Ver ArquivoDoPerfil.
+                Dim lidas = ArquivoDoPerfil.Linhas(_caminho)
+                If lidas Is Nothing Then Return New MinhasIdentidades({})
+                Return New MinhasIdentidades(lidas)
             Catch
                 Return New MinhasIdentidades({})
             End Try

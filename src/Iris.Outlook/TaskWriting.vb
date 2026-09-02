@@ -133,8 +133,26 @@ Namespace Global.Iris.Outlook
         ''' </param>
         Public Function Create(ns As OL.NameSpace, pasta As FolderKey,
                                rascunho As TaskDraft,
-                                                                         Optional marcar As Action = Nothing) _
-                                                                         As OperationResult(Of TaskInfo)
+                               Optional marcar As Action = Nothing) _
+                               As OperationResult(Of TaskInfo)
+            ' A CERCA PASSA A SABER SE O EFEITO COMECOU.
+            '
+            ' Este Catch dizia mutationAttemptStarted:=True sempre. Uma falha em
+            ' GetFolderFromID, em Items, na abertura do item ou numa atribuicao de
+            ' propriedade -- tudo ANTES do Save -- era apresentada como possivel
+            ' mutacao consumida, e a tela dizia que algo podia ter acontecido sobre
+            ' o que nao aconteceu.
+            '
+            ' E o mesmo defeito que o despacho do broker tinha, um nivel abaixo: a
+            ' captura local impedia a fase de verdade de chegar ao classificador.
+            ' Achado por revisao externa em 02/09/2026.
+            Dim comecou = False
+            Dim aoComecar As Action =
+                Sub()
+                    comecou = True
+                    If marcar IsNot Nothing Then marcar()
+                End Sub
+
             Dim recusa = RecusarRascunho(rascunho)
             If recusa IsNot Nothing Then
                 Return OperationResult(Of TaskInfo).Fail(ErrorKind.Denied, recusa)
@@ -165,7 +183,7 @@ Namespace Global.Iris.Outlook
 
                 ' NASCE E CONTINUA SEM RESPONSAVEL. Nao ha Assign aqui, e e por
                 ' isso que o Save nao manda pedido nenhum.
-                If marcar IsNot Nothing Then marcar()
+                aoComecar()
                 t.Save()
 
                 ' O SAVE ACONTECEU. Ver o comentario gemeo em Concluir.
@@ -173,7 +191,7 @@ Namespace Global.Iris.Outlook
             Catch ex As COMException
                 Return OperationResult(Of TaskInfo).Fail(
                     OutlookFailurePolicy.ClassifyFailure(
-                        ex.HResult, isMutation:=True, mutationAttemptStarted:=True),
+                        ex.HResult, isMutation:=True, mutationAttemptStarted:=comecou),
                     "falha ao criar tarefa: " & ex.GetType().Name)
             Finally
                 ComHelpers.Release(t)
@@ -195,6 +213,24 @@ Namespace Global.Iris.Outlook
         Public Function Concluir(ns As OL.NameSpace, chave As TaskKey,
                                  Optional marcar As Action = Nothing) _
                                  As OperationResult(Of TaskInfo)
+            ' A CERCA PASSA A SABER SE O EFEITO COMECOU.
+            '
+            ' Este Catch dizia mutationAttemptStarted:=True sempre. Uma falha em
+            ' GetFolderFromID, em Items, na abertura do item ou numa atribuicao de
+            ' propriedade -- tudo ANTES do Save -- era apresentada como possivel
+            ' mutacao consumida, e a tela dizia que algo podia ter acontecido sobre
+            ' o que nao aconteceu.
+            '
+            ' E o mesmo defeito que o despacho do broker tinha, um nivel abaixo: a
+            ' captura local impedia a fase de verdade de chegar ao classificador.
+            ' Achado por revisao externa em 02/09/2026.
+            Dim comecou = False
+            Dim aoComecar As Action =
+                Sub()
+                    comecou = True
+                    If marcar IsNot Nothing Then marcar()
+                End Sub
+
             Dim t As OL.TaskItem = Nothing
             Try
                 t = Abrir(ns, chave)
@@ -207,7 +243,7 @@ Namespace Global.Iris.Outlook
                 End If
 
                 t.Complete = True
-                If marcar IsNot Nothing Then marcar()
+                aoComecar()
                 t.Save()
 
                 ' O SAVE ACONTECEU. Se a releitura falhar daqui para a frente, a
@@ -219,7 +255,7 @@ Namespace Global.Iris.Outlook
             Catch ex As COMException
                 Return OperationResult(Of TaskInfo).Fail(
                     OutlookFailurePolicy.ClassifyFailure(
-                        ex.HResult, isMutation:=True, mutationAttemptStarted:=True),
+                        ex.HResult, isMutation:=True, mutationAttemptStarted:=comecou),
                     "falha ao concluir tarefa: " & ex.GetType().Name)
             Finally
                 ComHelpers.Release(t)

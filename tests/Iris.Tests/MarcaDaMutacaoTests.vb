@@ -62,8 +62,26 @@ Public Class MarcaDaMutacaoTests
 
         For Each nome In Escritores
             Dim linhas = File.ReadAllLines(Caminho(nome))
+            Dim dentroDoEnvolucro = False
+
             For i = 0 To linhas.Length - 1
-                If Not linhas(i).Contains("Then marcar()") Then Continue For
+                ' DENTRO DO ENVOLUCRO NAO SE COBRA POSICAO.
+                '
+                ' A chamada ao marcador que mora dentro do "Dim aoComecar As
+                ' Action" e a DEFINICAO dele, e nao um acionamento: a linha
+                ' seguinte e o End Sub, e cobra-la ali seria cobrar o efeito
+                ' dentro da definicao. Quem tem posicao e o "aoComecar()", que e
+                ' onde o efeito de fato acontece.
+                If linhas(i).Trim().StartsWith("Dim aoComecar As Action") Then
+                    dentroDoEnvolucro = True
+                    Continue For
+                End If
+                If dentroDoEnvolucro Then
+                    If linhas(i).Trim() = "End Sub" Then dentroDoEnvolucro = False
+                    Continue For
+                End If
+
+                If Not EhAMarca(linhas(i)) Then Continue For
                 conferidas += 1
 
                 Dim seguinte = If(i + 1 < linhas.Length, linhas(i + 1).ToLowerInvariant(), "")
@@ -106,6 +124,7 @@ Public Class MarcaDaMutacaoTests
                 ' comeca a existir. Exigir o acionamento aqui obrigaria a marcar
                 ' cedo demais -- o oposto do que este arquivo cobra.
                 Dim usa = f.Corpo.Contains("Then marcar()") OrElse
+                          f.Corpo.Contains("aoComecar()") OrElse
                           f.Corpo.Contains("(marcar,")
                 If Not usa Then mudas.Add($"{nome}:{f.Nome}")
             Next
@@ -140,6 +159,57 @@ Public Class MarcaDaMutacaoTests
 
     ' ==================================================================
     ' O ANDAIME
+
+    ''' <summary>
+    ''' <b>Esta linha aciona a marca?</b> Há duas formas, e a segunda apareceu
+    ''' quando os escritores passaram a precisar saber <i>se</i> o efeito começou.
+    '''
+    ''' <c>aoComecar()</c> é um envolucro local que liga um sinalizador e chama o
+    ''' marcador. Aceitá-lo aqui só vale porque o teste abaixo cobra que o
+    ''' envolucro chame mesmo o marcador — senão bastaria batizar qualquer coisa
+    ''' de <c>aoComecar</c> para calar este arquivo.
+    ''' </summary>
+    Private Shared Function EhAMarca(linha As String) As Boolean
+        Dim t = linha.Trim()
+        Return t = "aoComecar()" OrElse linha.Contains("Then marcar()")
+    End Function
+
+    ''' <summary>
+    ''' <b>Todo envolucro <c>aoComecar</c> chama o marcador de verdade.</b>
+    '''
+    ''' Sem isto, a forma nova seria uma porta: um <c>Sub aoComecar</c> que só
+    ''' ligasse o sinalizador local satisfaria os dois testes acima e a mutação
+    ''' nunca seria marcada — e uma falha depois do efeito viraria "nada
+    ''' aconteceu", que é o pior dos dois erros.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Todo_envolucro_chama_o_MARCADOR()
+        Dim mudos As New List(Of String)()
+        Dim conferidos = 0
+
+        For Each nome In Escritores
+            Dim linhas = File.ReadAllLines(Caminho(nome))
+            For i = 0 To linhas.Length - 1
+                If Not linhas(i).Trim().StartsWith("Dim aoComecar As Action") Then Continue For
+                conferidos += 1
+
+                ' O corpo do envolucro vai ate o End Sub que o fecha.
+                Dim fim = i
+                While fim < linhas.Length AndAlso linhas(fim).Trim() <> "End Sub"
+                    fim += 1
+                End While
+
+                Dim corpo = String.Join(" ", linhas.Skip(i).Take(fim - i + 1))
+                If Not corpo.Contains("marcar()") Then mudos.Add($"{nome}:{i + 1}")
+            Next
+        Next
+
+        Assert.IsTrue(conferidos >= 4,
+            $"controle: esperava ao menos 4 envolucros, achei {conferidos}")
+        Assert.AreEqual(0, mudos.Count,
+            "envolucro que liga o sinalizador e NAO marca a mutação: uma falha " &
+            "depois do efeito viraria «nada aconteceu» — " & String.Join(", ", mudos))
+    End Sub
 
     Private Shared Function Caminho(nome As String) As String
         Dim raiz = Path.GetFullPath(Path.Combine(PastaDaSuite(), "..", ".."))

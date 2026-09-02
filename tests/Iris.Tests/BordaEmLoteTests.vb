@@ -325,6 +325,52 @@ Public Class BordaEmLoteTests
                        "a grande tinha de aparecer na conta, e sozinha")
                End Sub)
     End Sub
+    ''' <summary>
+    ''' <b>O teto é de BYTES, e o teste tem de usar bytes.</b>
+    '''
+    ''' O par de testes acima usava só <c>"x"</c> — ASCII, em que caractere e byte
+    ''' coincidem. Ele passava com a produção contando <c>texto.Length</c> contra um
+    ''' orçamento de bytes UTF-8, que é exatamente o defeito que existia. Um teste
+    ''' cuja fixture apaga a distinção que ele deveria medir não mede nada.
+    '''
+    ''' Aqui o corpo tem <b>menos caracteres</b> que o teto e <b>mais bytes</b>. Um
+    ''' emoji pesa quatro. Achado por revisão externa em 02/09/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Corpo_curto_em_CARACTERES_e_longo_em_BYTES_e_recusado()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a", "b"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a", "b"})
+
+                   ' Metade dos caracteres do teto, e o dobro dos bytes dele.
+                   Dim quantos = BordaEmLote.TetoDoCorpoNoLote \ 2
+                   Dim pesado = String.Concat(Enumerable.Repeat("😀", quantos))
+                   Assert.IsTrue(pesado.Length < BordaEmLote.TetoDoCorpoNoLote,
+                       "controle: em CARACTERES o corpo tem de caber")
+                   Assert.IsTrue(Text.Encoding.UTF8.GetByteCount(pesado) >
+                                 BordaEmLote.TetoDoCorpoNoLote,
+                       "controle: em BYTES o corpo tem de estourar")
+
+                   broker.Instantaneos =
+                       Function(k) OperationResult(Of MessageSnapshot).Ok(
+                           New MessageSnapshot(k, "CK-" & k.EntryId, "assunto",
+                                               "de@x.invalido", {"para@x.invalido"},
+                                               If(SufixoDe(k) = "b", pesado,
+                                                  "corpo de " & SufixoDe(k)), False,
+                                               corpoCompleto:=True, temAnexo:=False,
+                                               pasta:=Pasta))
+
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao(),
+                                       broker:=broker)
+
+                   Assert.AreEqual(1, r.RecusadasPeloConteudo,
+                       "O TETO CONTOU CARACTERES: o corpo pesado passou")
+                   Assert.AreEqual(1, r.Classificados,
+                       "a outra tinha de seguir")
+               End Sub)
+    End Sub
+
 
     ''' <summary>
     ''' O controle negativo: um corpo <b>logo abaixo</b> do teto atravessa. Sem

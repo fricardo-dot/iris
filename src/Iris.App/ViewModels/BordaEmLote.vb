@@ -73,22 +73,25 @@ Namespace Global.Iris.App.ViewModels
         Private _fichas As Dictionary(Of ItemKey, String)
 
         ''' <summary>
-        ''' <b>Quanto de corpo cabe numa mensagem quando vinte dividem o envelope.</b>
+        ''' <b>Quantos BYTES de corpo cabem numa mensagem quando vinte dividem o
+        ''' envelope.</b>
         '''
         ''' O envelope inteiro tem <c>EnvelopeBuilder.TetoPadrao</c>; a divisão é por
-        ''' <c>ClassificarUmaPasta.PorLote</c>, com uma margem para a instrução, o
+        ''' <c>ClassificarUmaPasta.PorLote</c>, com 20% de margem para a instrução, o
         ''' esqueleto JSON e o controle. Uma mensagem acima disto é recusada sozinha
         ''' — sem ela, o lote inteiro seria truncado, o cofre recusaria, e o mesmo
         ''' grupo voltaria a falhar em toda passagem.
         '''
-        ''' É um teto de <b>caracteres</b> contra um orçamento de <b>bytes</b>: em
-        ''' UTF-8 um caractere acentuado pesa dois, então a divisão por dois é a
-        ''' folga que torna a conta conservadora em português.
+        ''' <b>Bytes, e não caracteres.</b> A primeira versão contava caracteres e
+        ''' dividia por dois, com um comentário chamando a conta de "conservadora em
+        ''' português" — só que um emoji pesa quatro bytes, e português tem emoji
+        ''' como qualquer outra língua. Vinte corpos "dentro do teto" somavam o dobro
+        ''' do orçamento, o envelope saía truncado, e aquele grupo nunca era
+        ''' classificado. Achado por revisão externa em 02/09/2026.
         ''' </summary>
         Friend Shared ReadOnly Property TetoDoCorpoNoLote As Integer
             Get
-                Return CInt(EnvelopeBuilder.TetoPadrao * 0.8) \
-                       (ClassificarUmaPasta.PorLote * 2)
+                Return CInt(EnvelopeBuilder.TetoPadrao * 0.8) \ ClassificarUmaPasta.PorLote
             End Get
         End Property
 

@@ -1501,6 +1501,69 @@ Namespace Global.Iris.App.ViewModels
             End Try
         End Function
 
+        ''' <summary>
+        ''' <b>Espera o lote que já está na rede — pelo tempo que ele pode levar.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>O TETO ERA MENOR QUE A OPERAÇÃO QUE ELE PROTEGE</b>
+        '''
+        ''' Eram 20 segundos, e o provedor tem 60 de <i>timeout</i>. Uma chamada que
+        ''' leve 30 vencia a espera: o cache era descartado, a resposta chegava
+        ''' depois, a gravação falhava, e as mesmas mensagens voltavam a ser
+        ''' mandadas na abertura seguinte. Um teto abaixo do da operação protegida
+        ''' não protege — só faz o defeito parecer consertado. Achado por revisão
+        ''' externa em 02/09/2026.
+        '''
+        ''' Agora o teto sai de <see cref="TempoDeUmLote"/>, que é o do provedor com
+        ''' folga, e mora num lugar só para os dois não divergirem de novo.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>E A JANELA SOME ANTES DE ESPERAR</b>
+        '''
+        ''' Isto roda na thread da tela, e uma janela congelada por um minuto é
+        ''' indistinguível de um travamento — o dono mata o processo, que é
+        ''' exatamente o que a espera existe para evitar. Escondê-la primeiro faz o
+        ''' programa <i>parecer</i> fechado enquanto termina de guardar o que já
+        ''' custou rede.
+        '''
+        ''' Não é elegante, e a alternativa honesta seria um encerramento
+        ''' assíncrono de verdade — que é outro desenho, e mexe no
+        ''' <c>Application_Exit</c>, no descarte do broker e na ordem inteira.
+        ''' Fica declarado em vez de fingido.
+        ''' </summary>
+        Private Sub EsperarOLoteEmVoo()
+            Dim emVoo = _classificacaoEmVoo
+            If emVoo Is Nothing OrElse emVoo.IsCompleted Then Return
+
+            Try
+                ' A JANELA SOME ANTES DA ESPERA. Ver o paragrafo acima.
+                Dim janela = System.Windows.Application.Current?.MainWindow
+                If janela IsNot Nothing AndAlso janela.IsVisible Then janela.Hide()
+            Catch
+                ' Esconder e conforto: se falhar, a espera continua valendo.
+            End Try
+
+            Try
+                emVoo.Wait(TempoDeUmLote)
+            Catch
+                ' A tarefa pode terminar com excecao -- isso e desfecho dela, e
+                ' nao do fechamento.
+            End Try
+        End Sub
+
+        ''' <summary>
+        ''' <b>Quanto um lote pode levar</b>, no pior caso: o <i>timeout</i> do
+        ''' provedor mais folga para a gravação no cache.
+        '''
+        ''' Um número só, num lugar só. Quando eram dois — 20 aqui e 60 lá —, o
+        ''' menor vencia e a proteção era teatro.
+        ''' </summary>
+        Friend Shared ReadOnly Property TempoDeUmLote As TimeSpan
+            Get
+                Return HttpAssistantProvider.TempoLimitePadrao + TimeSpan.FromSeconds(10)
+            End Get
+        End Property
+
         Friend Sub OAlvoMudou()
             If Classificando Then Return
             Classificacao = ""
@@ -1711,16 +1774,7 @@ Namespace Global.Iris.App.ViewModels
             ' lotes, e o que ja voou vai ate o fim. Descartar o cache agora faria
             ' a gravacao falhar num banco morto, e as mesmas mensagens seriam
             ' mandadas outra vez na proxima abertura.
-            '
-            ' O teto e curto de proposito: uma chamada ao provedor, e nao a
-            ' passagem inteira. Fechar uma janela nao pode virar espera de
-            ' minutos, e se estourar o pior caso e o que ja acontecia.
-            Try
-                _classificacaoEmVoo?.Wait(TimeSpan.FromSeconds(20))
-            Catch
-                ' A tarefa pode terminar com excecao -- isso e desfecho dela, e
-                ' nao do fechamento.
-            End Try
+            EsperarOLoteEmVoo()
 
             Busca?.Dispose()
             _watcher.Dispose()
