@@ -159,6 +159,7 @@ Public Class BordaEmLoteTests
                    ' não corresponde a mensagem nenhuma.
                    Assert.AreEqual(4, vistos.Count)
                    Assert.AreEqual(3, pedidos.Count, "controle: três pedidos")
+                   Assert.AreEqual(1, provedor.Chamadas, "controle: o lote saiu")
 
                    For Each p In pedidos
                        Dim esperado = "corpo de " & SufixoDe(p.Chave)
@@ -284,6 +285,75 @@ Public Class BordaEmLoteTests
             "fora de lote não há ficha, e isso é legítimo")
     End Sub
 
+    ''' <summary>
+    ''' <b>A mensagem grande demais é recusada sozinha, e o lote segue.</b>
+    '''
+    ''' O pipeline aceita 200 mil caracteres de corpo e o envelope inteiro cabe em
+    ''' 256 KiB. Uma mensagem grande sozinha estoura o envelope de um lote de
+    ''' vinte: ele sai truncado, o cofre recusa — corretamente — e nada é mandado.
+    '''
+    ''' E como os lotes se formam sempre na mesma ordem, ela volta ao mesmo lote em
+    ''' toda passagem: <b>aquelas vinte nunca seriam classificadas</b>. Mesma
+    ''' família do defeito do anexo, por outra rota.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Mensagem_GRANDE_DEMAIS_nao_envenena_o_lote()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a", "b", "c"})
+
+                   ' A "b" tem um corpo que sozinho nao cabe num lote de vinte.
+                   Dim enorme = New String("x"c, BordaEmLote.TetoDoCorpoNoLote + 1)
+                   broker.Instantaneos =
+                       Function(k) OperationResult(Of MessageSnapshot).Ok(
+                           New MessageSnapshot(k, "CK-" & k.EntryId, "assunto",
+                                               "de@x.invalido", {"para@x.invalido"},
+                                               If(SufixoDe(k) = "b", enorme,
+                                                  "corpo de " & SufixoDe(k)), False,
+                                               corpoCompleto:=True, temAnexo:=False,
+                                               pasta:=Pasta))
+
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao(),
+                                       broker:=broker)
+
+                   Assert.AreEqual(1, provedor.Chamadas,
+                       "A MENSAGEM GRANDE DERRUBOU O LOTE INTEIRO")
+                   Assert.AreEqual(2, r.Classificados,
+                       "as outras duas tinham de ser classificadas")
+                   Assert.AreEqual(1, r.RecusadasPeloConteudo,
+                       "a grande tinha de aparecer na conta, e sozinha")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' O controle negativo: um corpo <b>logo abaixo</b> do teto atravessa. Sem
+    ''' ele, um teto de zero passaria no teste acima e recusaria tudo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Corpo_logo_ABAIXO_do_teto_atravessa()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a"})
+                   Dim quaseLa = New String("x"c, BordaEmLote.TetoDoCorpoNoLote - 1)
+                   broker.Instantaneos =
+                       Function(k) OperationResult(Of MessageSnapshot).Ok(
+                           New MessageSnapshot(k, "CK-" & k.EntryId, "assunto",
+                                               "de@x.invalido", {"para@x.invalido"},
+                                               quaseLa, False,
+                                               corpoCompleto:=True, temAnexo:=False,
+                                               pasta:=Pasta))
+
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao(),
+                                       broker:=broker)
+
+                   Assert.AreEqual(0, r.RecusadasPeloConteudo,
+                       "o teto ficou apertado demais e recusa o que caberia")
+                   Assert.AreEqual(1, r.Classificados)
+               End Sub)
+    End Sub
+
     ' ==================================================================
     ' O LOTE QUE PODE TER SAIDO
 
@@ -390,25 +460,32 @@ Public Class BordaEmLoteTests
                    Dim noCache = Semear(db, {"a", "b"})
                    Dim provedor As New ProvedorQueClassifica()
 
-                   ' Tudo "fyi", INCLUSIVE o controle -- que pediu outro rotulo
-                   ' quase sempre. Quando o sorteio calhar de ser fyi, o lote
-                   ' passa: por isso o teste afirma a IMPLICACAO, e nao o desfecho.
+                   ' O CONTROLE VOLTA COM UM ROTULO QUE NAO E O PEDIDO -- SEMPRE.
+                   '
+                   ' A versao anterior respondia "fyi" para tudo, e o rotulo do
+                   ' controle e SORTEADO: uma vez em seis ele calhava de ser fyi, o
+                   ' lote passava, e o teste caia num ramo "Else" que afirmava o
+                   ' caminho feliz. Esse ramo aceitava exatamente a sabotagem que o
+                   ' teste anuncia combater -- apagar a conferencia do controle o
+                   ' deixava verde. Achado por revisao externa em 01/09/2026.
                    provedor.Responder =
                        Function(fichas)
+                           Dim pedido = provedor.RotuloPedidoAoControle()
+                           Dim outro = LoteDeClassificacao.NomesDosRotulos().
+                                       First(Function(n) n <> pedido)
                            Return "[" & String.Join(",", fichas.Keys.Select(
-                               Function(f) "{""item_key"":""" & f & """,""label"":""fyi""}")) & "]"
+                               Function(f) "{""item_key"":""" & f & """,""label"":""" &
+                                           outro & """}")) & "]"
                        End Function
 
                    Dim r = Classificar(db, noCache, provedor, ComAtivacao())
 
-                   Dim guardados = New RotulosNoCache(db).Publicados(noCache).Count
-                   If r.LotesRecusados = 1 Then
-                       Assert.AreEqual(0, guardados,
-                           "o lote foi recusado e mesmo assim gravou")
-                   Else
-                       Assert.AreEqual(2, guardados,
-                           "o lote passou -- o sorteio calhou de pedir fyi -- e devia gravar")
-                   End If
+                   Assert.AreEqual(1, provedor.Chamadas, "controle: o lote saiu")
+                   Assert.AreEqual(1, r.LotesRecusados,
+                       "O CONTROLE VOLTOU ERRADO E O LOTE PASSOU")
+                   Assert.AreEqual(0, r.Classificados)
+                   Assert.AreEqual(0, New RotulosNoCache(db).Publicados(noCache).Count,
+                       "o lote foi recusado e mesmo assim gravou")
                End Sub)
     End Sub
 
@@ -492,11 +569,21 @@ Public Class BordaEmLoteTests
                                        anotar:=pedidos, broker:=broker)
 
                    Dim vistos = provedor.PorFicha()
+
+                   ' O LACO ABAIXO PODE NAO RODAR NENHUMA VEZ, e um teste cujas
+                   ' asserções moram todas dentro dele fica verde sem afirmar
+                   ' nada. Estas quatro linhas provam que ha o que percorrer.
+                   ' Achado por revisao externa em 01/09/2026.
+                   Assert.AreEqual(3, pedidos.Count, "controle: tres pedidos")
+                   Assert.AreEqual(1, provedor.Chamadas, "controle: o lote saiu")
+                   Dim outras = pedidos.Where(Function(x) SufixoDe(x.Chave) <> "b").ToList()
+                   Assert.AreEqual(2, outras.Count, "controle: duas sobreviventes")
+
                    Dim daB = pedidos.First(Function(p) SufixoDe(p.Chave) = "b")
                    Assert.IsFalse(vistos.ContainsKey(daB.Ficha),
                        "A MENSAGEM COM ANEXO FOI DIVULGADA")
 
-                   For Each p In pedidos.Where(Function(x) SufixoDe(x.Chave) <> "b")
+                   For Each p In outras
                        Dim chegou As String = Nothing
                        Assert.IsTrue(vistos.TryGetValue(p.Ficha, chegou),
                            $"a ficha de {SufixoDe(p.Chave)} nao chegou")
@@ -545,7 +632,14 @@ Public Class BordaEmLoteTests
                                anotar:=pedidos, broker:=broker)
 
                    Dim vistos = provedor.PorFicha()
-                   For Each p In pedidos.Where(Function(x) SufixoDe(x.Chave) <> "b")
+
+                   ' Prova de que ha o que percorrer -- ver o teste acima.
+                   Assert.AreEqual(3, pedidos.Count, "controle: tres pedidos")
+                   Assert.AreEqual(1, provedor.Chamadas, "controle: o lote saiu")
+                   Dim outras = pedidos.Where(Function(x) SufixoDe(x.Chave) <> "b").ToList()
+                   Assert.AreEqual(2, outras.Count, "controle: dois vizinhos")
+
+                   For Each p In outras
                        Dim chegou As String = Nothing
                        Assert.IsTrue(vistos.TryGetValue(p.Ficha, chegou),
                            $"a ficha de {SufixoDe(p.Chave)} nao chegou")
@@ -601,6 +695,33 @@ Public Class BordaEmLoteTests
     ''' está nunca vira prova de que ela está onde deveria — é a mesma regra do
     ''' anexo que não deu para contar.
     ''' </summary>
+    ''' <summary>
+    ''' <b>A leitura das pastas FALHANDO também para.</b>
+    '''
+    ''' O teste vizinho finge "não sei onde está" com uma chave vazia — que ainda
+    ''' é uma leitura <i>bem-sucedida</i> carregando um valor sentinela. Uma
+    ''' implementação que tratasse a falha de verdade como "a pasta pedida" e só
+    ''' recusasse a sentinela passaria nele. Achado por revisão externa em
+    ''' 01/09/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Leitura_das_pastas_que_FALHA_tambem_para()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a"})
+                   broker.PastaDeTodos = Nothing
+                   broker.Pastas = Function(chaves) _
+                       OperationResult(Of IReadOnlyList(Of Iris.Model.PastaDoItem)).
+                       Fail(ErrorKind.Busy, "o Outlook nao respondeu")
+
+                   Classificar(db, noCache, provedor, ComAtivacao(), broker:=broker)
+
+                   Assert.AreEqual(0, provedor.Chamadas,
+                       "falha ao ler a pasta virou prova de que a pasta esta certa")
+               End Sub)
+    End Sub
+
     <TestMethod>
     Public Sub Pasta_que_nao_deu_para_ler_tambem_para()
         Comigo(Sub(db)
@@ -938,6 +1059,16 @@ Public Class BordaEmLoteTests
         End Function
 
         ''' <summary>Ficha → corpo, do último envelope que chegou.</summary>
+        ''' <summary>
+        ''' O rótulo que a instrução mandou pôr no controle, do último envelope.
+        ''' Permite responder <b>deterministicamente diferente</b> — sem isto, um
+        ''' teste que quisesse errar o controle acertava uma vez em seis.
+        ''' </summary>
+        Friend Function RotuloPedidoAoControle() As String
+            If Recebidos.Count = 0 Then Return ""
+            Return RotuloDoControle(Recebidos(Recebidos.Count - 1))
+        End Function
+
         Friend Function PorFicha() As Dictionary(Of String, String)
             If Recebidos.Count = 0 Then Return New Dictionary(Of String, String)()
             Return PorFicha(Recebidos(Recebidos.Count - 1))

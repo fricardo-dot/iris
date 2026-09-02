@@ -109,6 +109,14 @@ Namespace Global.Iris.Assist
         Public Const MaxCorpo As Integer = 200_000
 
         ''' <summary>
+        ''' <b>O maior endereço que passa.</b> <see cref="MaxDestinatarios"/> limita
+        ''' a <i>quantidade</i>, e um único endereço absurdamente longo passava
+        ''' inteiro — bastando ele para estourar o envelope de um lote. Achado por
+        ''' revisão externa em 01/09/2026.
+        ''' </summary>
+        Public Const MaxUmDestinatario As Integer = 320
+
+        ''' <summary>
         ''' Referência embutida — <c>cid:</c> e <c>data:</c> — que a invariante
         ''' proíbe de sair.
         '''
@@ -178,8 +186,34 @@ Namespace Global.Iris.Assist
         ''' ele é conferido aqui como qualquer outro campo — ver
         ''' <see cref="LoteDeClassificacao.EhFichaValida"/>.
         ''' </param>
+        ''' <param name="tetoDoCorpo">
+        ''' O corpo mais longo que <b>este chamador</b> consegue transportar.
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>UMA MENSAGEM GRANDE ENVENENAVA O LOTE INTEIRO, E PARA SEMPRE</b>
+        '''
+        ''' <see cref="MaxCorpo"/> aceita 200 mil caracteres, e o envelope inteiro
+        ''' cabe em 256 KiB. Uma única mensagem legítima pode ocupar mais que isso
+        ''' sozinha; duas grandes, com folga. O envelope então sai truncado, o cofre
+        ''' recusa — corretamente —, e nada é mandado.
+        '''
+        ''' E como os lotes se formam sempre na mesma ordem a partir de "presentes e
+        ''' sem rótulo", a mesma mensagem grande volta ao mesmo lote em toda
+        ''' passagem. Aquelas vinte nunca seriam classificadas. É a mesma família do
+        ''' defeito do anexo, por outra rota. Achado por revisão externa em
+        ''' 01/09/2026.
+        '''
+        ''' Com um teto por chamador, a mensagem grande é recusada <b>sozinha</b>,
+        ''' entra na conta como recusada pelo conteúdo, e as outras dezenove seguem.
+        ''' Ela não fica sem classificação por castigo: fica porque não cabe num
+        ''' lote, e classificá-la exigiria um pedido só dela — que é outro desenho.
+        '''
+        ''' O caminho por mensagem não passa nada e continua com
+        ''' <see cref="MaxCorpo"/>: lá o envelope inteiro é dela.
+        ''' </param>
         Public Shared Function Preparar(m As Model.MessageSnapshot,
-                                        Optional ficha As String = Nothing) As ContentResult
+                                        Optional ficha As String = Nothing,
+                                        Optional tetoDoCorpo As Integer = MaxCorpo) As ContentResult
             If m Is Nothing Then Return Recusar(ContentRefusal.SemTexto)
 
             ' ANEXO PARA AQUI, e antes de tudo. O portao ja nega mensagem com
@@ -205,7 +239,7 @@ Namespace Global.Iris.Assist
             ' que esta base passou a serie inteira corrigindo.
             Dim preparado = Preparar(m.Item, m.ChangeKey, m.Assunto, m.Remetente,
                                      m.Destinatarios, m.Corpo, m.EhHtml, m.CorpoCompleto,
-                                     ficha)
+                                     ficha, tetoDoCorpo)
             If Not preparado.Ok Then Return preparado
             Return New ContentResult(True, ContentRefusal.Nenhuma, preparado.Parte,
                                      m.Embutidas)
@@ -221,7 +255,8 @@ Namespace Global.Iris.Assist
                                         destinatarios As IEnumerable(Of String),
                                         corpo As String, ehHtml As Boolean,
                                         corpoCompleto As Boolean,
-                                        Optional ficha As String = Nothing) As ContentResult
+                                        Optional ficha As String = Nothing,
+                                        Optional tetoDoCorpo As Integer = MaxCorpo) As ContentResult
 
             ' A FICHA E CONFERIDA COMO OS OUTROS CAMPOS, e antes deles.
             '
@@ -282,7 +317,9 @@ Namespace Global.Iris.Assist
             If texto.Length = 0 Then Return Recusar(ContentRefusal.SemTexto)
 
             If tema.Length > MaxAssunto OrElse de.Length > MaxRemetente OrElse
-               quem.Count > MaxDestinatarios OrElse texto.Length > MaxCorpo Then
+               quem.Count > MaxDestinatarios OrElse
+               texto.Length > Math.Min(MaxCorpo, tetoDoCorpo) OrElse
+               quem.Sum(Function(d) d.Length) > MaxDestinatarios * MaxUmDestinatario Then
                 Return Recusar(ContentRefusal.CampoLongoDemais)
             End If
 

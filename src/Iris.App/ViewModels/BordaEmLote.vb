@@ -72,6 +72,26 @@ Namespace Global.Iris.App.ViewModels
         ''' <summary>As fichas do lote corrente, por chave.</summary>
         Private _fichas As Dictionary(Of ItemKey, String)
 
+        ''' <summary>
+        ''' <b>Quanto de corpo cabe numa mensagem quando vinte dividem o envelope.</b>
+        '''
+        ''' O envelope inteiro tem <c>EnvelopeBuilder.TetoPadrao</c>; a divisão é por
+        ''' <c>ClassificarUmaPasta.PorLote</c>, com uma margem para a instrução, o
+        ''' esqueleto JSON e o controle. Uma mensagem acima disto é recusada sozinha
+        ''' — sem ela, o lote inteiro seria truncado, o cofre recusaria, e o mesmo
+        ''' grupo voltaria a falhar em toda passagem.
+        '''
+        ''' É um teto de <b>caracteres</b> contra um orçamento de <b>bytes</b>: em
+        ''' UTF-8 um caractere acentuado pesa dois, então a divisão por dois é a
+        ''' folga que torna a conta conservadora em português.
+        ''' </summary>
+        Friend Shared ReadOnly Property TetoDoCorpoNoLote As Integer
+            Get
+                Return CInt(EnvelopeBuilder.TetoPadrao * 0.8) \
+                       (ClassificarUmaPasta.PorLote * 2)
+            End Get
+        End Property
+
         Friend Sub New(broker As IOutlookBroker, transmissor As AssistTransmitter,
                        destino As AssistDestination, pasta As FolderKey)
             If broker Is Nothing Then Throw New ArgumentNullException(NameOf(broker))
@@ -278,7 +298,8 @@ Namespace Global.Iris.App.ViewModels
             Return New ContextoDoOutlook(
                 _broker, _destino,
                 Function() (Pasta:=_pasta, Itens:=itens),
-                Function(chave) FichaDe(fichas, chave))
+                Function(chave) FichaDe(fichas, chave),
+                TetoDoCorpoNoLote)
         End Function
 
         ''' <summary>

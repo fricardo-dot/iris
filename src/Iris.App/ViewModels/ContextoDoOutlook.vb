@@ -63,13 +63,25 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Private ReadOnly _ficha As Func(Of ItemKey, String)
 
+        ''' <summary>
+        ''' O corpo mais longo que cabe numa parte <b>desta</b> seleção.
+        '''
+        ''' No caminho por mensagem o envelope inteiro é da mensagem, então o teto é
+        ''' o do pipeline. Num lote de vinte, uma mensagem grande sozinha estoura o
+        ''' envelope e derruba as outras dezenove — ver
+        ''' <c>ContentPipeline.Preparar</c>, que tem o caso por extenso.
+        ''' </summary>
+        Private ReadOnly _tetoDoCorpo As Integer
+
         Friend Sub New(broker As IOutlookBroker, destino As AssistDestination,
                        selecao As Func(Of (Pasta As FolderKey, Itens As IReadOnlyList(Of ItemKey))),
-                       Optional ficha As Func(Of ItemKey, String) = Nothing)
+                       Optional ficha As Func(Of ItemKey, String) = Nothing,
+                       Optional tetoDoCorpo As Integer = ContentPipeline.MaxCorpo)
             _broker = broker
             _destino = destino
             _selecao = selecao
             _ficha = ficha
+            _tetoDoCorpo = tetoDoCorpo
         End Sub
 
         Public Function Pedido(operacao As AssistOperation) As PreflightRequest _
@@ -275,7 +287,8 @@ Namespace Global.Iris.App.ViewModels
                     Continue For
                 End If
 
-                Dim pronto = ContentPipeline.Preparar(retrato, FichaDe(itens(i)))
+                Dim pronto = ContentPipeline.Preparar(retrato, FichaDe(itens(i)),
+                                                      _tetoDoCorpo)
                 If Not pronto.Ok Then Continue For
 
                 saida.Add(pronto.Parte)
