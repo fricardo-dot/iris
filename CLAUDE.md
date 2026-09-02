@@ -73,9 +73,9 @@ essa continuação, e o erro sai **nas linhas seguintes**, longe da causa.
 | `"SELECT …" & <br> "  WHERE …"` | `&` | `Expression expected` |
 | `lista. <br> OrderBy(…). <br> ThenBy(…)` | `.` | `Identifier expected` |
 
-Sete ocorrências até 01/09/2026 — três num dia só, nos três arquivos onde o
-esquema do cache é declarado; depois no SQL da herança de rótulos e nas duas
-cadeias de ordenação. O conserto é sempre o mesmo: **o comentário vai para
+Oito ocorrências até 01/09/2026 — três num dia só, nos três arquivos onde o
+esquema do cache é declarado; depois no SQL da herança de rótulos, nas duas
+cadeias de ordenação, e na lista de marcas do meta-teste do paralelismo. O conserto é sempre o mesmo: **o comentário vai para
 antes da instrução inteira**, nunca para dentro dela. Quando ele explica um
 trecho do meio, diga qual — *"as duas últimas condições…"* — em vez de
 colá-lo lá.
