@@ -141,6 +141,116 @@ Public Class PontaAPontaAssistTests
     End Function
 
     ' ==================================================================
+    ' A CERCA EXTERNA — E DE QUE LADO ELA ERRA
+
+    ''' <summary>
+    ''' <b>Provedor que devolve <c>Nothing</c>: ambíguo, e não recusado.</b>
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>O DESFECHO QUE A CERCA INVENTAVA</b>
+    '''
+    ''' A cerca externa do <c>Executar</c> convertia <b>qualquer</b> exceção em
+    ''' <c>Recusado</c> com <c>ErroAntesDaRede</c>. Só que ela cobre o voo inteiro:
+    ''' um provedor que manda os bytes e devolve <c>Nothing</c> faz a leitura de
+    ''' <c>Status</c> estourar <i>uma linha depois do envio</i>, e o desfecho saía
+    ''' dizendo que a recusa foi anterior à rede.
+    '''
+    ''' Conteúdo saiu, o diário fica em voo, e quem pediu ouve que nada aconteceu.
+    ''' É o pecado central deste projeto, e ele estava dentro da correção escrita
+    ''' para evitá-lo. Achado por revisão externa em 01/09/2026, e a cerca não
+    ''' tinha teste nenhum — foi assim que nasceu errada.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Provedor_que_devolve_NOTHING_e_AMBIGUO()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco)) With {.Desfecho = Nothing}
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            Dim r = Executar(m.T, Endereco)
+
+                   Assert.AreNotEqual(AssistOutcomeKind.Recusado, r.Kind,
+                       "DISSE QUE NADA SAIU, E OS BYTES JA TINHAM IDO")
+                   Assert.AreNotEqual(DisclosureReason.ErroAntesDaRede, r.MotivoDoPortao,
+                       "a rede ja tinha acontecido")
+                   Assert.IsTrue(r.Kind = AssistOutcomeKind.Ambiguo OrElse
+                                 r.Kind = AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
+                       $"depois do voo, todo insucesso e ambiguo — veio {r.Kind}")
+                   Assert.AreNotEqual(Guid.Empty, r.RequestId,
+                       "sem RequestId a tela e o diario falam de linhas diferentes")
+            Assert.AreEqual(1, p.Recebidos.Count,
+                "controle: os bytes tinham mesmo de ter saido")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>O controle negativo da cerca, e ele é o par indispensável:</b> uma
+    ''' falha <i>anterior</i> ao voo continua sendo recusa anterior à rede.
+    '''
+    ''' Sem ele, uma cerca que chamasse tudo de ambíguo passaria no teste acima e
+    ''' encheria o diário de incertezas sobre coisas que sabidamente não saíram —
+    ''' que é o erro simétrico, e igualmente caro: o dono iria procurar em Itens
+    ''' Enviados uma mensagem que nunca existiu.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Estouro_ANTES_do_voo_continua_sendo_recusa()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco))
+            Dim m = Montar(db, Ativacao(Endereco), p)
+
+            ' Montar o envelope estoura: isto acontece antes do portao
+            ' aprovar qualquer byte, e antes de haver capability.
+            Dim r = m.T.Executar(
+                Voo(Endereco),
+                Function() CType({Classificada(1)},
+                                 IReadOnlyList(Of MessageClassification)),
+                Function()
+                    Throw New InvalidOperationException("estourei antes")
+                End Function,
+                CancellationToken.None)
+
+            Assert.AreEqual(AssistOutcomeKind.Recusado, r.Kind)
+            Assert.AreEqual(DisclosureReason.ErroAntesDaRede, r.MotivoDoPortao)
+            Assert.AreEqual(0, p.Recebidos.Count, "nada podia ter saido")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' <b>A cerca em si, pelos dois lados.</b>
+    '''
+    ''' O teste acima cobre o caso <i>reachable</i> — o provedor que devolve
+    ''' <c>Nothing</c> —, e ele passa mesmo com a cerca sabotada, porque a guarda
+    ''' nova o resolve antes. Descobri isso desfazendo a correção e vendo o teste
+    ''' continuar verde: a cerca seguia sem prova nenhuma.
+    '''
+    ''' Então ela é exercida direto. Depois do voo, exceção é <b>ambígua</b>;
+    ''' antes dele, é recusa anterior à rede. Errar qualquer um dos dois lados
+    ''' custa caro, e em direções opostas.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_CERCA_erra_para_o_lado_certo_dos_dois_lados()
+        Using db = Abrir()
+            Dim p As New ProvedorFalso(Destino(Endereco))
+            Dim m = Montar(db, Ativacao(Endereco), p)
+            Dim id = Guid.NewGuid()
+
+            Dim depois = m.T.Desabar(New AssistTransmitter.OndeParou With {
+                .RequestId = id, .VooComecou = True})
+            Assert.IsTrue(depois.Kind = AssistOutcomeKind.Ambiguo OrElse
+                          depois.Kind = AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
+                $"depois do voo tem de ser ambiguo — veio {depois.Kind}")
+            Assert.AreEqual(id, depois.RequestId)
+            Assert.AreNotEqual(DisclosureReason.ErroAntesDaRede, depois.MotivoDoPortao)
+
+            Dim antes = m.T.Desabar(New AssistTransmitter.OndeParou With {
+                .RequestId = id, .VooComecou = False})
+            Assert.AreEqual(AssistOutcomeKind.Recusado, antes.Kind)
+            Assert.AreEqual(DisclosureReason.ErroAntesDaRede, antes.MotivoDoPortao)
+            Assert.AreEqual(id, antes.RequestId,
+                "sem RequestId a tela e o diario falam de linhas diferentes")
+        End Using
+    End Sub
+
+    ' ==================================================================
     ' O provedor que trai depois de ter sido conferido
 
     ''' <summary>

@@ -167,18 +167,100 @@ Namespace Global.Iris.Assist
             ' A cerca de fora devolve Recusado, e nao Ambiguo: ela so alcanca os
             ' passos ANTERIORES a rede. O que acontece depois do primeiro byte
             ' continua tendo o tratamento conservador de sempre, la dentro.
+            Dim onde As New OndeParou()
             Try
-                Return Voar(pedido, classificar, montar, ct)
+                Return Voar(pedido, classificar, montar, ct, onde)
             Catch ex As Exception
-                Return Parar(AssistOutcomeKind.Recusado, DisclosureNote.Nenhuma,
-                             DisclosureReason.ErroAntesDaRede)
+                Return Desabar(onde)
             End Try
+        End Function
+
+        ''' <summary>
+        ''' <b>Até onde a transmissão chegou antes de estourar.</b>
+        '''
+        ''' A cerca externa precisa disto porque "recusado antes da rede" e "pode
+        ''' ter saído" são desfechos <b>opostos</b>, e a exceção não diz qual dos
+        ''' dois é. Sem esta marca, qualquer coisa que estourasse virava
+        ''' <c>Recusado</c>, inclusive o que estourasse depois do primeiro byte.
+        ''' </summary>
+        Friend NotInheritable Class OndeParou
+            ''' <summary>A capability emitida, quando já houver uma.</summary>
+            Friend Property RequestId As Guid = Guid.Empty
+            ''' <summary>O diário já registrou <i>Iniciando</i>.</summary>
+            Friend Property VooComecou As Boolean
+        End Class
+
+        ''' <summary>
+        ''' <b>A cerca externa, e ela não pode mentir para o lado errado.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>ELA DIZIA "NADA SAIU" SOBRE UM VOO QUE JÁ TINHA DECOLADO</b>
+        '''
+        ''' A versão anterior devolvia <c>Recusado</c> com
+        ''' <see cref="DisclosureReason.ErroAntesDaRede"/> para <b>qualquer</b>
+        ''' exceção, e o <c>Try</c> cobre o voo inteiro. Exemplos reais: um provedor
+        ''' que devolve <c>Nothing</c> e faz a leitura de <c>Status</c> estourar; o
+        ''' relógio falhando ao preparar o <c>Concluir</c> depois de o HTTP ter
+        ''' respondido. Nos dois, conteúdo saiu, o diário fica <i>EmVoo</i>, e quem
+        ''' chamou ouve que a recusa foi anterior à rede.
+        '''
+        ''' É o pecado central deste projeto — dizer que nada aconteceu quando algo
+        ''' pode ter acontecido — e ele estava dentro da correção que existia para
+        ''' evitá-lo. Achado por revisão externa em 01/09/2026.
+        '''
+        ''' Depois do <c>Iniciando</c>, a exceção vira <b>ambíguo</b>, e o diário é
+        ''' avisado com <c>podeTerChegado</c>. Antes dele, continua sendo recusa
+        ''' anterior à rede — agora com o <c>RequestId</c> de verdade, para a linha
+        ''' do diário e a tela falarem da mesma coisa.
+        ''' </summary>
+        ''' <summary>
+        ''' <b>Friend, e não Private, para poder ser testada.</b>
+        '''
+        ''' Hoje o ramo "estourou depois do voo" é <b>defensivo</b>: com a leitura de
+        ''' <c>Nothing</c> tratada logo depois do <c>Enviar</c>, e com todos os
+        ''' passos do diário sob <c>Duravel</c>, não sobrou caminho público que
+        ''' consiga lançar ali. Testá-lo pelo <c>Executar</c> exigiria um defeito
+        ''' que o código atual não comete.
+        '''
+        ''' Deixá-lo sem teste por isso seria o pior dos dois mundos: o ramo existe
+        ''' justamente para o dia em que um passo novo lançar, e nesse dia ele
+        ''' precisa estar certo. A costura é estreita — dois campos e um desfecho —
+        ''' e é o preço de uma cerca conferível.
+        ''' </summary>
+        Friend Function Desabar(onde As OndeParou) As AssistOutcome
+            If Not onde.VooComecou Then
+                Return New AssistOutcome(AssistOutcomeKind.Recusado, "", onde.RequestId,
+                                         DisclosureNote.Nenhuma,
+                                         DisclosureReason.ErroAntesDaRede)
+            End If
+
+            ' O RELOGIO TAMBEM PODE SER O QUE ESTOUROU. Le-lo aqui sem cerca
+            ' faria a propria cerca lancar, e a excecao original sumiria.
+            Dim quando As DateTimeOffset
+            Try
+                quando = _relogio()
+            Catch
+                quando = DateTimeOffset.MinValue
+            End Try
+
+            If Not Duravel(Function() _diario.Falhar(onde.RequestId, quando,
+                                                     DisclosureNote.ConexaoCaiu,
+                                                     podeTerChegado:=True, Nothing)) Then
+                Return New AssistOutcome(AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
+                                         "", onde.RequestId, DisclosureNote.ConexaoCaiu,
+                                         DisclosureReason.NaoDecidido)
+            End If
+
+            Return New AssistOutcome(AssistOutcomeKind.Ambiguo, "", onde.RequestId,
+                                     DisclosureNote.ConexaoCaiu,
+                                     DisclosureReason.NaoDecidido)
         End Function
 
         Private Function Voar(pedido As PreflightRequest,
                               classificar As Func(Of IReadOnlyList(Of MessageClassification)),
                               montar As Func(Of EnvelopeResult),
-                              ct As CancellationToken) As AssistOutcome
+                              ct As CancellationToken,
+                              onde As OndeParou) As AssistOutcome
 
             ' 1. o portao. O classificador so e INVOCADO se o preflight passar
             '    — quem garante isso e o DisclosureGate, e o motivo esta la.
@@ -223,6 +305,10 @@ Namespace Global.Iris.Assist
             ' 3. a capability, sobre AQUELES bytes — o envelope e o corpo.
             Dim agora = _relogio()
             Dim cap = _cofre.Emitir(decisao, env.Envelope, corpo, agora)
+            ' A MARCA E POSTA ASSIM QUE HA IDENTIDADE, e nao so quando o voo
+            ' comeca: uma excecao entre aqui e o Iniciando continua sendo recusa
+            ' anterior a rede, mas passa a ter o RequestId da linha do diario.
+            If cap IsNot Nothing Then onde.RequestId = cap.RequestId
             If cap Is Nothing Then
                 Return Parar(AssistOutcomeKind.Recusado, DisclosureNote.CapabilityRecusada)
             End If
@@ -288,6 +374,9 @@ Namespace Global.Iris.Assist
                 Return SemDiario(cap.RequestId, DisclosureNote.Nenhuma)
             End If
 
+            ' DAQUI PARA A FRENTE, TUDO QUE ESTOURAR E AMBIGUO. Ver Desabar.
+            onde.VooComecou = True
+
             ' 6. a rede.
             '
             '    Excecao do provedor DEPOIS do voo nao pode escapar: escapando,
@@ -300,6 +389,12 @@ Namespace Global.Iris.Assist
             Catch
                 r = New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
             End Try
+
+            ' PROVEDOR QUE DEVOLVE Nothing. A leitura de r.Status estouraria uma
+            ' linha adiante, DEPOIS de o corpo ter ido para a rede -- e a cerca
+            ' externa transformava isso em "recusado antes da rede". Aqui o caso
+            ' vira o que ele e: nada se sabe sobre o que chegou.
+            If r Is Nothing Then r = New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
 
             ' 7. o desfecho.
             '
