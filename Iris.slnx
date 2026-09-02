@@ -10,6 +10,7 @@
     <Project Path="src/Iris.Integration.Assist.Http/Iris.Integration.Assist.Http.vbproj" />
     <Project Path="src/Iris.Integration/Iris.Integration.vbproj" />
     <Project Path="src/Iris.Integration.Outlook/Iris.Integration.Outlook.vbproj" />
+    <Project Path="src/Iris.Update/Iris.Update.vbproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/Iris.CrashHarness/Iris.CrashHarness.vbproj" />

@@ -238,6 +238,31 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property AlternarFilaCommand As IRelayCommand
         Public ReadOnly Property FecharFilaCommand As IRelayCommand
 
+        ''' <summary>
+        ''' <b>A verificação de versões.</b> <c>Nothing</c> nunca — mas ela mesma
+        ''' sabe dizer quando não foi configurada, e o botão fica desabilitado.
+        ''' </summary>
+        Public ReadOnly Property Atualizacao As AtualizacaoViewModel
+
+        Public Property AtualizacaoAberta As Boolean
+            Get
+                Return _atualizacaoAberta
+            End Get
+            Set(value As Boolean)
+                SetProperty(_atualizacaoAberta, value)
+            End Set
+        End Property
+        Private _atualizacaoAberta As Boolean
+
+        ''' <summary>
+        ''' Abre o painel — e <b>só abre</b>. As outras três releem ao abrir; esta
+        ''' não pode, porque reler aqui é falar com um servidor, e o desenho é que
+        ''' isso só aconteça a pedido explícito. Ver
+        ''' <see cref="AtualizacaoViewModel"/>.
+        ''' </summary>
+        Public ReadOnly Property AlternarAtualizacaoCommand As IRelayCommand
+        Public ReadOnly Property FecharAtualizacaoCommand As IRelayCommand
+
         ''' <summary>A fila de respostas pendentes. <c>Nothing</c> sem cache.</summary>
         Public Property Fila As FilaViewModel
 
@@ -382,10 +407,17 @@ Namespace Global.Iris.App.ViewModels
         Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher,
                        saveFile As ISaveFileService, pickFile As IPickFileService,
                        Optional caminhoDoCache As String = Nothing,
-                       Optional log As ILog = Nothing)
+                       Optional log As ILog = Nothing,
+                       Optional atualizacao As AtualizacaoViewModel = Nothing)
             _broker = broker
             _ui = ui
             _epocaVista = broker.SessionEpoch
+
+            ' NUNCA Nothing: sem uma, a tela teria de ter dois caminhos para o
+            ' mesmo painel. A que se monta aqui e a que diz "nao configurada"
+            ' -- que e o estado certo para um teste, onde nao ha rede.
+            Me.Atualizacao = If(atualizacao,
+                                New AtualizacaoViewModel(Nothing, ""))
 
             Connection = New ConnectionViewModel(broker, ui, log)
             Folders = New FolderTreeViewModel(broker, ui, AddressOf Connection.Observe)
@@ -528,6 +560,10 @@ Namespace Global.Iris.App.ViewModels
                 End Sub,
                 Function() Fila IsNot Nothing)
             FecharFilaCommand = New RelayCommand(Sub() FilaAberta = False)
+
+            AlternarAtualizacaoCommand = New RelayCommand(
+                Sub() AtualizacaoAberta = Not AtualizacaoAberta)
+            FecharAtualizacaoCommand = New RelayCommand(Sub() AtualizacaoAberta = False)
 
             ' A CAIXA DIVIDIDA RELE AO ABRIR, pelo mesmo motivo da fila: ela e um
             ' retrato de quando o dono perguntou.

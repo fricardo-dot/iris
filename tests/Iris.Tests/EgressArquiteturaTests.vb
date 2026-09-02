@@ -74,25 +74,48 @@ Public Class EgressArquiteturaTests
     ' ==================================================================
 
     ''' <summary>
-    ''' <b>Exatamente UM assembly de produção fala HTTP.</b>
+    ''' <b>Exatamente DOIS assemblies de produção falam HTTP, e são estes.</b>
     '''
-    ''' Não "nenhum além do esperado": <b>um</b>. Zero significaria que a busca
-    ''' está procurando a coisa errada — nome trocado, biblioteca que o .NET
-    ''' moderno não usa mais — e passaria em qualquer base.
+    ''' Não "nenhum além do esperado": a lista, pelo nome. Zero significaria que
+    ''' a busca está procurando a coisa errada — nome trocado, biblioteca que o
+    ''' .NET moderno não usa mais — e passaria em qualquer base.
     '''
     ''' Inclui o <c>Iris.Assist</c> entre os que não podem: definir o contrato de
     ''' "chamar o modelo" não pode dar a ele a capacidade de chamar.
+    '''
+    ''' ------------------------------------------------------------------
+    ''' <b>ERA UM. POR QUE PASSOU A SER DOIS</b>
+    '''
+    ''' Verificar atualizações é rede. Havia três saídas, e duas eram piores:
+    '''
+    ''' <list type="number">
+    ''' <item>pôr o <c>HttpClient</c> da atualização dentro do assembly de egress
+    '''       de IA — que juntaria numa caixa só o canal que <i>manda</i>
+    '''       conteúdo do dono e o que só <i>busca</i> arquivo público, e
+    '''       apagaria a distinção que faz o portão de divulgação existir;</item>
+    ''' <item>escondê-lo em qualquer outro projeto — o que faria este teste
+    '''       reprovar, e a tentação seguinte seria afrouxar o teste;</item>
+    ''' <item>declarar o segundo, aqui, com o motivo. É o que está feito.</item>
+    ''' </list>
+    '''
+    ''' A diferença entre os dois, que é o que autoriza a exceção: o de IA
+    ''' <b>manda</b> conteúdo da caixa e por isso tem portão, cofre e diário; o
+    ''' de atualização não carrega nada de dentro — ele só busca, e o que ele
+    ''' tem no lugar é <b>assinatura</b>, porque o risco dele é o que chega.
+    '''
+    ''' Se um terceiro aparecer, é aqui que se decide se ele entra.
     ''' </summary>
     <TestMethod>
-    Public Sub EXATAMENTE_UM_assembly_de_producao_fala_HTTP()
+    Public Sub EXATAMENTE_DOIS_assemblies_de_producao_falam_HTTP()
         Dim comRede = Producao().
             Where(Function(a) ReferenciasDeRede(a).Any()).
             Select(Function(a) a.GetName().Name).
             OrderBy(Function(n) n).
             ToList()
 
-        CollectionAssert.AreEqual({"Iris.Integration.Assist.Http"}, comRede,
-            "egress de IA mora num assembly SO — achei: " & String.Join(", ", comRede))
+        CollectionAssert.AreEqual({"Iris.Integration.Assist.Http", "Iris.Update"}, comRede,
+            "quem abre socket na producao e lista fechada — achei: " &
+            String.Join(", ", comRede))
     End Sub
 
     ''' <summary>
@@ -107,7 +130,7 @@ Public Class EgressArquiteturaTests
         ' 'Iris' e o assembly do Iris.App — o nome do assembly nao e o nome do
         ' projeto, e foi por isso que ele ficou de fora da primeira varredura.
         For Each esperado In {"Iris.Model", "Iris.Core", "Iris.Assist",
-                              "Iris.Integration.Assist.Http", "Iris"}
+                              "Iris.Integration.Assist.Http", "Iris.Update", "Iris"}
             CollectionAssert.Contains(nomes, esperado)
         Next
     End Sub
@@ -158,30 +181,52 @@ Public Class EgressArquiteturaTests
     ''' </summary>
     <TestMethod>
     Public Sub SO_o_composition_root_depende_do_assembly_de_egress()
-        Const egress = "Iris.Integration.Assist.Http"
+        SoOCompositionRootDepende("Iris.Integration.Assist.Http",
+                                  "nao ha provedor de IA a montar")
+    End Sub
+
+    ''' <summary>
+    ''' <b>E a mesma regra para o assembly de atualização.</b>
+    '''
+    ''' Não é a mesma capacidade — ele busca em vez de mandar — mas é a mesma
+    ''' razão para prendê-lo no composition root: quem o referencia ganha um
+    ''' <c>HttpClient</c> de segunda mão, e a lista de quem pode abrir socket
+    ''' deixa de ser lista.
+    ''' </summary>
+    <TestMethod>
+    Public Sub SO_o_composition_root_depende_do_assembly_de_atualizacao()
+        SoOCompositionRootDepende("Iris.Update",
+                                  "nao ha verificacao de versao a montar")
+    End Sub
+
+    ''' <summary>
+    ''' As duas metades da regra: <b>ninguém além do root depende</b>, e <b>o
+    ''' root depende mesmo</b>.
+    '''
+    ''' A segunda metade não é zelo: sem ela, apagar a referência do
+    ''' <c>Iris.App</c> deixaria o teste verde e o recurso desmontado — a
+    ''' permissão viraria uma lista de nomes que não descreve nada.
+    ''' </summary>
+    Private Shared Sub SoOCompositionRootDepende(assembly As String,
+                                                 seFaltar As String)
         ' "Iris", e nao "Iris.App": o projeto Iris.App produz um assembly
         ' chamado Iris. Essa diferenca ja quebrou um teste desta suite antes,
         ' que dizia cobrir o Iris.App e nao cobria nada.
         Dim permitido = New HashSet(Of String)(StringComparer.Ordinal) From {"Iris"}
 
         Dim dependentes = Producao().
-            Where(Function(a) a.GetName().Name <> egress).
+            Where(Function(a) a.GetName().Name <> assembly).
             Where(Function(a) a.GetReferencedAssemblies().
-                                Any(Function(r) r.Name = egress)).
+                                Any(Function(r) r.Name = assembly)).
             Select(Function(a) a.GetName().Name).ToList()
 
         Dim culpados = dependentes.Where(Function(n) Not permitido.Contains(n)).ToList()
         Assert.AreEqual(0, culpados.Count,
-            "so o composition root pode adquirir egress de segunda mao: " &
+            $"so o composition root pode adquirir {assembly} de segunda mao: " &
             String.Join(", ", culpados))
 
-        ' E O COMPOSITION ROOT DEPENDE MESMO.
-        '
-        ' Sem isto, apagar a referencia do Iris.App deixaria o teste verde e a
-        ' IA sem provedor — a permissao viraria uma lista de nomes que nao
-        ' descreve nada.
         CollectionAssert.Contains(dependentes, "Iris",
-            "se o composition root nao referencia o egress, nao ha provedor a montar")
+            $"se o composition root nao referencia {assembly}, {seFaltar}")
     End Sub
 
     ''' <summary>

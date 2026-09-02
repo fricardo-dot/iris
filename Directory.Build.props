@@ -1,0 +1,29 @@
+<Project>
+
+  <!-- A VERSÃO DO IRIS, NUM LUGAR SÓ.
+
+       Todo projeto da solução herda daqui. Antes disto não havia versão
+       nenhuma declarada: o build gerava 1.0.0.0 para tudo, e "qual versão é
+       esta?" não tinha resposta — o que é aceitável enquanto o programa roda
+       numa máquina só, e deixa de ser no dia em que ele roda em duas.
+
+       O verificador de atualizações compara ESTE número com o do manifesto
+       assinado. Dois lugares divergiriam, e a divergência apareceria como o
+       Iris oferecendo para baixar a versão que ele já é. -->
+  <PropertyGroup>
+    <Version>0.1.0</Version>
+
+    <!-- InformationalVersion é a que a tela mostra e a que o verificador lê.
+         AssemblyVersion fica em 0.1.0.0 e serve ao carregador do .NET; as duas
+         são coisas diferentes e confundi-las já custou tempo a muita gente. -->
+    <InformationalVersion>$(Version)</InformationalVersion>
+
+    <Company>Ricardo</Company>
+    <Product>Iris</Product>
+
+    <!-- Sem marca d'água de build: a data de compilação entra no manifesto
+         assinado, que é onde ela pode ser conferida. -->
+    <Deterministic>true</Deterministic>
+  </PropertyGroup>
+
+</Project>

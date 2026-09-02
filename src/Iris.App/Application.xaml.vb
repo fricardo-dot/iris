@@ -15,6 +15,14 @@ Class Application
     Private _broker As Iris.Outlook.OutlookBroker
     Private _viewModel As MainViewModel
     Private _log As ILog
+    ' A verificacao de versoes. Nasce so quando ha chave publica configurada,
+    ' e morre no Exit junto com o resto.
+    '
+    ' O HttpClient e DELA, e nao daqui: monta-lo neste arquivo faria o
+    ' assembly do Iris.App referenciar System.Net.Http, e a lista de quem
+    ' pode abrir socket passaria de dois para tres. Quem contou foi o
+    ' EgressArquiteturaTests, na primeira tentativa.
+    Private _procuraDeVersoes As Update.ProcuraDeVersao
 
     Private Sub Application_Startup(sender As Object, e As StartupEventArgs) Handles Me.Startup
         ' O LOG NAO PODE SER O QUE IMPEDE O PROGRAMA DE ABRIR.
@@ -72,7 +80,8 @@ Class Application
             _viewModel = New MainViewModel(broker, Dispatcher,
                                            New WindowsSaveFileService(),
                                            New WindowsPickFileService(),
-                                           log:=_log)
+                                           log:=_log,
+                                           atualizacao:=MontarAtualizacao())
 
             Dim janela As New MainWindow With {.DataContext = _viewModel}
             janela.Show()
@@ -106,6 +115,43 @@ Class Application
         _viewModel.Connection.Observe(_viewModel.InitializeAsync(), "app.initialize")
     End Sub
 
+    ''' <summary>
+    ''' <b>Monta a verificação de versões — ou não monta nenhuma.</b>
+    '''
+    ''' Sem chave pública e sem endereço não há o que verificar, e a tela diz
+    ''' isso. A alternativa seria montar assim mesmo e deixar toda resposta virar
+    ''' "a assinatura não confere" — a frase de <i>alguém trocou o arquivo</i>
+    ''' dita quando o que houve foi <i>ninguém configurou ainda</i>.
+    '''
+    ''' <b>Aqui, e não no ViewModel</b>: construir um <c>HttpClient</c> é adquirir
+    ''' a capacidade de rede, e a regra da base é que isso aconteça no composition
+    ''' root, onde está visível. Ver <c>EgressArquiteturaTests</c>.
+    ''' </summary>
+    Private Function MontarAtualizacao() As ViewModels.AtualizacaoViewModel
+        Dim pasta = ViewModels.AtualizacaoViewModel.PastaPadrao()
+
+        If Not ChaveDeAtualizacao.Configurada Then
+            _log.Write(LogLevel.Info, "app.startup",
+                       "verificacao de versoes desligada: falta a chave publica")
+            Return New ViewModels.AtualizacaoViewModel(Nothing, pasta)
+        End If
+
+        Dim chave = ChaveDeAtualizacao.Bytes()
+        If chave.Length = 0 Then
+            ' CHAVE PREENCHIDA E ILEGIVEL E PIOR QUE VAZIA, porque alguem
+            ' acreditou ter configurado. Vai para o log como erro, e nao como
+            ' informacao.
+            _log.Write(LogLevel.Error, "app.startup",
+                       "a chave publica de atualizacao esta preenchida e nao e legivel")
+            Return New ViewModels.AtualizacaoViewModel(Nothing, pasta)
+        End If
+
+        _procuraDeVersoes = New Update.ProcuraDeVersao(
+            ChaveDeAtualizacao.Endereco, chave)
+
+        Return New ViewModels.AtualizacaoViewModel(_procuraDeVersoes, pasta)
+    End Function
+
     Private Sub Application_Exit(sender As Object, e As ExitEventArgs) Handles Me.Exit
         ' Encerramento ordenado: o broker libera os objetos COM na própria
         ' thread STA, com o message pump ainda vivo. Pular isto é o caminho
@@ -119,6 +165,12 @@ Class Application
             _viewModel?.Dispose()
         Catch ex As Exception
             _log?.Write(LogLevel.Error, "app.exit", "descarte da janela falhou: " & ex.GetType().Name)
+        End Try
+        Try
+            _procuraDeVersoes?.Dispose()
+        Catch ex As Exception
+            _log?.Write(LogLevel.Error, "app.exit",
+                        "descarte da procura de versoes falhou: " & ex.GetType().Name)
         End Try
         Try
             _broker?.Dispose()

@@ -30,3 +30,7 @@ __pycache__/
 # As consultas por sentido tem assunto REAL de mensagem real.
 # O exemplo (consultas-por-sentido.exemplo.json) e versionado; este nao.
 tools/consultas-por-sentido.json
+
+# Os pacotes que tools/publicar-versao.ps1 monta: um .exe autocontido de mais
+# de 100 MB por versao, reproduzivel a qualquer momento a partir do commit.
+artefatos/

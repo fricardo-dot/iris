@@ -809,7 +809,8 @@ Public Class BindingsDaJanelaTests
                          ("Tarefas", "as tarefas"),
                          ("Contatos", "os contatos"),
                          ("Fila", "a fila de respostas"),
-                         ("Caixas", "a caixa dividida por rótulo")}
+                         ("Caixas", "a caixa dividida por rótulo"),
+                         ("Atualizacao", "a verificação de versões")}
             StringAssert.Contains(xaml, "{Binding Alternar" & par.Item1 & "Command}",
                 "nao ha botao para abrir " & par.Item2 & ": o painel existe e " &
                 "ninguem alcanca")
@@ -832,13 +833,15 @@ Public Class BindingsDaJanelaTests
     Public Sub O_clique_fora_fecha_os_paineis()
         Dim xaml = LerXaml()
 
-        ' CINCO DESDE 01/09: a caixa dividida entrou pelo mesmo padrao, depois
-        ' de passar dias montada em memoria e sem tela nenhuma.
+        ' CINCO DESDE 01/09, quando a caixa dividida entrou pelo mesmo padrao
+        ' depois de passar dias montada em memoria e sem tela nenhuma. SEIS desde
+        ' 02/09, com a verificacao de versoes.
+        Const PAINEIS = 6
         Dim quantos = Regex.Matches(xaml, "<MouseBinding MouseAction=""LeftClick""").Count
-        Assert.AreEqual(5, quantos,
+        Assert.AreEqual(PAINEIS, quantos,
             "achei " & quantos & " retangulo(s) que fecham por clique fora, e " &
-            "ha cinco paineis. Um painel que so fecha pelo botao ensina a " &
-            "desconfiar do clique fora nos outros.")
+            "ha " & PAINEIS & " paineis. Um painel que so fecha pelo botao ensina " &
+            "a desconfiar do clique fora nos outros.")
     End Sub
 
     Private Shared Function LerXaml() As String

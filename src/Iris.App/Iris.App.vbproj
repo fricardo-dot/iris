@@ -56,6 +56,10 @@
          provedor e feita. Qualquer outra referencia a este projeto seria
          egress de segunda mao, e o EgressArquiteturaTests acusa. -->
     <ProjectReference Include="..\Iris.Integration.Assist.Http\Iris.Integration.Assist.Http.vbproj" />
+    <!-- O SEGUNDO com rede, e a mesma regra: so o composition root o
+         referencia. Ele busca o manifesto de versoes e o pacote; a chave
+         publica que ele confere esta em ChaveDeAtualizacao.vb, aqui ao lado. -->
+    <ProjectReference Include="..\Iris.Update\Iris.Update.vbproj" />
   </ItemGroup>
 
   <ItemGroup>

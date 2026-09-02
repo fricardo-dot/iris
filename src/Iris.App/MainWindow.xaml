@@ -365,6 +365,20 @@
                                 ToolTip="Contatos"
                                 Margin="0,0,10,0"
                                 AutomationProperties.Name="Abrir ou fechar os contatos" />
+                        <!-- A VERSÃO. E777 é o UpdateRestore do Segoe MDL2: a
+                             seta que volta sobre si mesma, que é o símbolo de
+                             atualização no próprio Windows.
+
+                             Fica ao lado do ponto de conexão, e não junto das
+                             quatro telas de trabalho: as outras respondem
+                             perguntas sobre a caixa; esta responde uma sobre o
+                             programa. -->
+                        <Button Style="{StaticResource CaptionButton}"
+                                Content="&#xE777;"
+                                Command="{Binding AlternarAtualizacaoCommand}"
+                                ToolTip="{Binding Atualizacao.Instalada}"
+                                Margin="0,0,10,0"
+                                AutomationProperties.Name="Abrir ou fechar a verificação de versões" />
                         <Ellipse Style="{StaticResource StatusDotState}" />
                         <TextBlock Margin="8,0,0,0" Text="{Binding Connection.StatusLabel}"
                                    Style="{StaticResource Text.Muted}"
@@ -926,6 +940,98 @@
                 aberto. Prender o usuario dentro do compositor seria trocar
                 um problema de foco por um de saida.
             -->
+            <!-- A VERIFICAÇÃO DE VERSÕES.
+
+                 Mesmo padrão dos outros painéis: botão na barra, painel por
+                 cima, clique fora fecha.
+
+                 A DIFERENÇA É QUE ABRIR NÃO PERGUNTA NADA. Fila e caixa releem
+                 ao abrir, porque reler ali é ler o cache local. Aqui, reler é
+                 falar com um servidor — e um programa que faz isso sem ninguém
+                 pedir anuncia, a cada abertura de painel, que esta máquina
+                 existe. A rede só é tocada no botão "Verificar agora". -->
+            <Grid Grid.Row="1" Panel.ZIndex="11"
+                  Visibility="{Binding AtualizacaoAberta, Converter={StaticResource BoolToVis},
+                                     FallbackValue=Collapsed}">
+
+                <Rectangle Fill="#99000000">
+                    <Rectangle.InputBindings>
+                        <MouseBinding MouseAction="LeftClick"
+                                      Command="{Binding FecharAtualizacaoCommand}" />
+                    </Rectangle.InputBindings>
+                </Rectangle>
+
+                <Border Background="{DynamicResource Brush.Surface.1}"
+                        BorderBrush="{DynamicResource Brush.Border}"
+                        BorderThickness="1"
+                        CornerRadius="{StaticResource Radius.Card}"
+                        MaxWidth="620" Margin="28"
+                        VerticalAlignment="Top"
+                        Padding="20,16,20,18">
+                    <StackPanel>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                            <TextBlock Text="{Binding Atualizacao.Instalada}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       VerticalAlignment="Center" />
+                            <Button Content="Verificar agora"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Atualizacao.VerificarCommand}"
+                                    Margin="16,0,0,0"
+                                    AutomationProperties.Name="Verificar se há versão nova" />
+                            <Button Content="Fechar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding FecharAtualizacaoCommand}"
+                                    Margin="6,0,0,0"
+                                    AutomationProperties.Name="Fechar a verificação de versões" />
+                        </StackPanel>
+
+                        <!-- SEM AutomationProperties.Name: um nome fixo SUBSTITUI o
+                             nome acessivel derivado do Text, e o leitor de tela
+                             ouviria o rotulo em vez do desfecho. LiveSetting porque
+                             esta frase muda sozinha quando a procura termina. -->
+                        <TextBlock Text="{Binding Atualizacao.Frase}"
+                                   Style="{DynamicResource Text.Body}"
+                                   TextWrapping="Wrap"
+                                   AutomationProperties.LiveSetting="Polite" />
+
+                        <TextBlock Text="{Binding Atualizacao.Notas}"
+                                   Style="{DynamicResource Text.Muted}"
+                                   TextWrapping="Wrap" Margin="0,10,0,0"
+                                   Visibility="{Binding Atualizacao.TemNotas,
+                                                        Converter={StaticResource BoolToVis},
+                                                        FallbackValue=Collapsed}" />
+
+                        <StackPanel Orientation="Horizontal" Margin="0,14,0,0"
+                                    Visibility="{Binding Atualizacao.HaVersaoNova,
+                                                         Converter={StaticResource BoolToVis},
+                                                         FallbackValue=Collapsed}">
+                            <Button Content="Baixar"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Atualizacao.BaixarCommand}"
+                                    AutomationProperties.Name="Baixar a versão nova" />
+                        </StackPanel>
+
+                        <!-- O CAMINHO, E UM BOTAO QUE ABRE A PASTA, e nao um que
+                             executa o arquivo. O Iris nao se instala sozinho, e o
+                             painel nao pode ter um botao que sugira o contrario.
+                             Ver AtualizacaoViewModel. -->
+                        <StackPanel Margin="0,14,0,0"
+                                    Visibility="{Binding Atualizacao.TemBaixado,
+                                                         Converter={StaticResource BoolToVis},
+                                                         FallbackValue=Collapsed}">
+                            <TextBlock Text="{Binding Atualizacao.Baixado}"
+                                       Style="{DynamicResource Text.Muted}"
+                                       TextWrapping="Wrap" />
+                            <Button Content="Mostrar na pasta"
+                                    Style="{DynamicResource Toolbar.Button}"
+                                    Command="{Binding Atualizacao.MostrarNaPastaCommand}"
+                                    HorizontalAlignment="Left" Margin="0,8,0,0"
+                                    AutomationProperties.Name="Mostrar o arquivo baixado na pasta" />
+                        </StackPanel>
+                    </StackPanel>
+                </Border>
+            </Grid>
+
             <!-- A FILA DE RESPOSTAS PENDENTES.
 
                  Mesmo padrao das outras tres: botao na barra, painel por cima,
