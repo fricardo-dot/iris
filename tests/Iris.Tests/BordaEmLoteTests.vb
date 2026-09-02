@@ -79,9 +79,19 @@ Public Class BordaEmLoteTests
 
                    Assert.AreEqual(1, provedor.Chamadas,
                        "três mensagens cabem num lote só")
-                   Dim corpos = provedor.Corpos()
-                   Assert.IsTrue(corpos.Any(Function(c) c.Contains("corpo de a")),
-                       "O CORPO NAO CHEGOU AO PROVEDOR")
+
+                   ' O CONJUNTO INTEIRO, e nao "algum corpo contem 'a'".
+                   '
+                   ' A versao anterior sobreviveria a uma sabotagem que mandasse
+                   ' "a" certo e esvaziasse ou duplicasse "b" e "c": o provedor
+                   ' responde por ficha, entao a contagem de tres rotulos ainda
+                   ' fecharia. Achado por revisao externa em 01/09/2026.
+                   Dim corpos = provedor.PorFicha().Values.
+                                Where(Function(c) c.StartsWith("corpo de ")).
+                                OrderBy(Function(c) c, StringComparer.Ordinal).ToList()
+                   CollectionAssert.AreEqual(
+                       {"corpo de a", "corpo de b", "corpo de c"}, corpos.ToArray(),
+                       "os tres corpos tinham de chegar, cada um uma vez")
 
                    Dim guardados = New RotulosNoCache(db).Publicados(pasta)
                    Assert.AreEqual(3, guardados.Count,
@@ -271,6 +281,175 @@ Public Class BordaEmLoteTests
 
         Assert.IsTrue(ContentPipeline.Preparar(retrato, Nothing).Ok,
             "fora de lote não há ficha, e isso é legítimo")
+    End Sub
+
+    ' ==================================================================
+    ' O PROVEDOR ADVERSARIAL — PELA CADEIA DE VERDADE
+
+    ''' <summary>
+    ''' <b>Resposta malformada não vira rótulo, e não derruba a passagem.</b>
+    '''
+    ''' Cada uma destas respostas já era recusada contra delegates de mentira. O
+    ''' que faltava era vê-las atravessarem a cadeia real — transmissor, borda,
+    ''' passagem — porque é aí que uma recusa pode virar exceção, gravação parcial
+    ''' ou lote contado errado.
+    ''' </summary>
+    <DataTestMethod>
+    <DataRow("nao e json nenhum", "texto solto")>
+    <DataRow("[{""item_key"":""ideadbeef"",""label"":""fyi""}]", "ficha que nao e do lote")>
+    <DataRow("[]", "vetor vazio: nem o controle voltou")>
+    <DataRow("[{""label"":""fyi""}]", "item sem item_key")>
+    Public Sub Resposta_MALFORMADA_recusa_o_lote_e_nao_grava(resposta As String,
+                                                             oQue As String)
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a", "b"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   provedor.Responder = Function(fichas) resposta
+
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao())
+
+                   Assert.AreEqual(1, provedor.Chamadas, "controle: o lote saiu")
+                   Assert.AreEqual(0, r.Classificados, oQue & ": virou rotulo")
+                   Assert.AreEqual(1, r.LotesRecusados, oQue & ": nao foi contado como recusa")
+                   Assert.AreEqual(0, New RotulosNoCache(db).Publicados(noCache).Count,
+                       oQue & ": gravou no cache")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>O controle com o rótulo errado derruba o lote inteiro</b> — pela cadeia
+    ''' real, com as outras respostas perfeitas.
+    '''
+    ''' É o cenário do ataque em bloco ingênuo: todas as mensagens voltam com um
+    ''' rótulo plausível, e só o controle denuncia. Sem ele, nada na forma da
+    ''' resposta distingue "o modelo classificou" de "o modelo obedeceu".
+    ''' </summary>
+    <TestMethod>
+    Public Sub Controle_com_o_rotulo_ERRADO_derruba_o_lote()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a", "b"})
+                   Dim provedor As New ProvedorQueClassifica()
+
+                   ' Tudo "fyi", INCLUSIVE o controle -- que pediu outro rotulo
+                   ' quase sempre. Quando o sorteio calhar de ser fyi, o lote
+                   ' passa: por isso o teste afirma a IMPLICACAO, e nao o desfecho.
+                   provedor.Responder =
+                       Function(fichas)
+                           Return "[" & String.Join(",", fichas.Keys.Select(
+                               Function(f) "{""item_key"":""" & f & """,""label"":""fyi""}")) & "]"
+                       End Function
+
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao())
+
+                   Dim guardados = New RotulosNoCache(db).Publicados(noCache).Count
+                   If r.LotesRecusados = 1 Then
+                       Assert.AreEqual(0, guardados,
+                           "o lote foi recusado e mesmo assim gravou")
+                   Else
+                       Assert.AreEqual(2, guardados,
+                           "o lote passou -- o sorteio calhou de pedir fyi -- e devia gravar")
+                   End If
+               End Sub)
+    End Sub
+
+    ' ==================================================================
+    ' O LOTE QUE VAI PELA METADE
+
+    ''' <summary>
+    ''' <b>Uma mensagem com anexo não vai, e as outras vão — com as fichas
+    ''' certas.</b>
+    '''
+    ''' O pipeline recusa item a item, então a lista de partes encolhe <i>depois</i>
+    ''' do alinhamento posicional. Este é o caso em que uma ficha trocada não
+    ''' quebra nada visível: o modelo responde, a conferência passa, e os rótulos
+    ''' entram nas mensagens erradas.
+    '''
+    ''' Não havia teste nenhum de lote parcialmente recusado pela borda real.
+    ''' Achado por revisão externa em 01/09/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Lote_com_uma_mensagem_RECUSADA_manda_as_outras_com_as_fichas_certas()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a", "b", "c"})
+
+                   ' A "b" tem anexo: o pipeline a recusa, e ela nao entra.
+                   broker.Instantaneos =
+                       Function(k) OperationResult(Of MessageSnapshot).Ok(
+                           New MessageSnapshot(k, "CK-" & k.EntryId, "assunto",
+                                               "de@x.invalido", {"para@x.invalido"},
+                                               "corpo de " & SufixoDe(k), False,
+                                               corpoCompleto:=True,
+                                               temAnexo:=(SufixoDe(k) = "b"),
+                                               pasta:=Pasta))
+
+                   Dim pedidos As New List(Of PedidoDeParte)()
+                   Dim r = Classificar(db, noCache, provedor, ComAtivacao(),
+                                       anotar:=pedidos, broker:=broker)
+
+                   Dim vistos = provedor.PorFicha()
+                   Dim daB = pedidos.First(Function(p) SufixoDe(p.Chave) = "b")
+                   Assert.IsFalse(vistos.ContainsKey(daB.Ficha),
+                       "A MENSAGEM COM ANEXO FOI DIVULGADA")
+
+                   For Each p In pedidos.Where(Function(x) SufixoDe(x.Chave) <> "b")
+                       Dim chegou As String = Nothing
+                       Assert.IsTrue(vistos.TryGetValue(p.Ficha, chegou),
+                           $"a ficha de {SufixoDe(p.Chave)} nao chegou")
+                       Assert.AreEqual("corpo de " & SufixoDe(p.Chave), chegou,
+                           "A FICHA ANDOU UMA CASA depois de a recusa encolher a lista")
+                   Next
+
+                   Assert.AreEqual(2, r.Classificados,
+                       "as duas que sobraram tinham de ser classificadas")
+                   Assert.AreEqual(1, r.NaoClassificados,
+                       "a recusada tinha de aparecer na conta")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>Um item que não deu para ler não desloca os vizinhos.</b>
+    '''
+    ''' A leitura em lote devolve <c>Nothing</c> na posição do item que falhou, e o
+    ''' contrato existe exatamente para isto. Não havia teste da falha
+    ''' <i>individual</i> pela borda real — só do caso em que a lista inteira
+    ''' encolhe.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Item_que_FALHA_na_leitura_nao_desloca_os_vizinhos()
+        Comigo(Sub(db)
+                   Dim noCache = Semear(db, {"a", "b", "c"})
+                   Dim provedor As New ProvedorQueClassifica()
+                   Dim broker = BrokerBom({"a", "b", "c"})
+
+                   broker.Instantaneos =
+                       Function(k)
+                           If SufixoDe(k) = "b" Then
+                               Return OperationResult(Of MessageSnapshot).Fail(
+                                   ErrorKind.NotFound, "sumiu")
+                           End If
+                           Return OperationResult(Of MessageSnapshot).Ok(
+                               New MessageSnapshot(k, "CK-" & k.EntryId, "assunto",
+                                                   "de@x.invalido", {"para@x.invalido"},
+                                                   "corpo de " & SufixoDe(k), False,
+                                                   corpoCompleto:=True, temAnexo:=False,
+                                                   pasta:=Pasta))
+                       End Function
+
+                   Dim pedidos As New List(Of PedidoDeParte)()
+                   Classificar(db, noCache, provedor, ComAtivacao(),
+                               anotar:=pedidos, broker:=broker)
+
+                   Dim vistos = provedor.PorFicha()
+                   For Each p In pedidos.Where(Function(x) SufixoDe(x.Chave) <> "b")
+                       Dim chegou As String = Nothing
+                       Assert.IsTrue(vistos.TryGetValue(p.Ficha, chegou),
+                           $"a ficha de {SufixoDe(p.Chave)} nao chegou")
+                       Assert.AreEqual("corpo de " & SufixoDe(p.Chave), chegou,
+                           "A FICHA ANDOU UMA CASA por causa do item que falhou")
+                   Next
+               End Sub)
     End Sub
 
     ' ==================================================================
@@ -598,9 +777,29 @@ Public Class BordaEmLoteTests
             Return True
         End Function
 
+        ''' <summary>
+        ''' <b>A resposta, quando o teste quiser uma diferente da obediente.</b>
+        '''
+        ''' Sem isto o duplo lia o envelope e devolvia JSON perfeito para todas as
+        ''' fichas — e então nenhum teste da borda exercia resposta truncada, ficha
+        ''' omitida, rótulo inventado ou controle ausente <i>pela cadeia real</i>.
+        ''' Isso estava coberto contra delegates de mentira, que é outra coisa:
+        ''' prova o miolo e não prova o caminho. Achado por revisão externa em
+        ''' 01/09/2026.
+        '''
+        ''' Recebe o mapa ficha→corpo do envelope que chegou, para poder responder
+        ''' <i>quase</i> certo — que é o caso interessante.
+        ''' </summary>
+        Friend Property Responder As Func(Of Dictionary(Of String, String), String)
+
         Public Function Enviar(bytes As Byte(), ct As CancellationToken) As ProviderOutcome _
                                Implements IAssistantProvider.Enviar
             Recebidos.Add(bytes)
+
+            If Responder IsNot Nothing Then
+                Return New ProviderOutcome(ProviderStatus.Respondeu,
+                                           Responder(PorFicha(bytes)), 200)
+            End If
 
 
             ' RESPONDE SOBRE O QUE CHEGOU, e o controle recebe o rótulo que a

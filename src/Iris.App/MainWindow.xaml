@@ -615,7 +615,8 @@
                                                      Visibility="{Binding Classificando,
                                                                   Converter={StaticResource BoolToVis},
                                                                   FallbackValue=Collapsed}"
-                                                     AutomationProperties.Name="Classificando" />
+                                                     IsTabStop="False"
+                                                     AutomationProperties.Name="Classificando esta pasta" />
                                     </StackPanel>
 
                                     <TextBlock Text="carregando…" Style="{StaticResource Text.Muted}"
@@ -644,13 +645,25 @@
                                  inventado e mensagem que saiu da pasta sao problemas
                                  diferentes. Somados num "faltaram 30", nenhum deles seria
                                  acionavel. -->
+<!-- SEM AutomationProperties.Name AQUI, e isso e o conserto.
+
+                                 Havia um nome fixo, e nome fixo SUBSTITUI o nome
+                                 acessivel que o WPF deriva do Text: o leitor de tela
+                                 ouvia "Resultado da classificacao" e nunca "20 de 37
+                                 classificadas; 1 lote recusado". O rotulo apagava o
+                                 dado que ele rotulava.
+
+                                 LiveSetting porque a frase muda sozinha, minutos
+                                 depois do clique: sem regiao viva, quem usa leitor de
+                                 tela teria de ir procurar o elemento para saber que a
+                                 passagem terminou. -->
                             <TextBlock Text="{Binding Classificacao}"
                                        Style="{StaticResource Text.Muted}"
                                        TextWrapping="Wrap" Margin="12,4,12,0"
                                        Visibility="{Binding TemClassificacao,
                                                             Converter={StaticResource BoolToVis},
                                                             FallbackValue=Collapsed}"
-                                       AutomationProperties.Name="Resultado da classificacao" />
+                                       AutomationProperties.LiveSetting="Polite" />
 
                             <TextBlock Text="{Binding Acervo.Travado}"
                                        TextWrapping="Wrap"

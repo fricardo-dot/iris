@@ -1480,6 +1480,13 @@ Namespace Global.Iris.App.ViewModels
                                 " (" & r.PrimeiraRecusa & ")", "")
                 porques.Add($"{r.LotesRecusados} lote(s) recusado(s){porque}")
             End If
+            ' ANEXO PRIMEIRO: e o unico motivo que o dono pode agir sobre, e o
+            ' mais comum numa caixa de verdade.
+            If r.RecusadasPeloConteudo > 0 Then
+                porques.Add($"{r.RecusadasPeloConteudo} não puderam ser lidas " &
+                            "(anexo, corpo incompleto ou imagem embutida) e " &
+                            "não saíram daqui")
+            End If
             If r.SemRotulo > 0 Then porques.Add($"{r.SemRotulo} sem rótulo válido")
             If r.ForaDaPasta > 0 Then porques.Add($"{r.ForaDaPasta} já não estão na pasta")
             If r.SemRegras > 0 Then porques.Add($"{r.SemRegras} sem as regras casadas")

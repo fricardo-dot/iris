@@ -161,11 +161,37 @@ Namespace Global.Iris.App.ViewModels
             If ct.IsCancellationRequested Then Return Nothing
             If partes Is Nothing OrElse partes.Count = 0 Then Return Nothing
 
-            ' O CONTEXTO E MONTADO COM AS CHAVES DO LOTE, e nao com as das
-            ' partes: parte sem item -- o controle -- nao tem chave para
-            ' classificar, e o portao nao pode receber um item nulo.
-            Dim itens = lote.Where(Function(p) p IsNot Nothing AndAlso p.Chave IsNot Nothing).
-                             Select(Function(p) p.Chave).ToList()
+            ' O CONTEXTO E MONTADO COM AS CHAVES DAS PARTES QUE VAO SAIR, e
+            ' nao com as do lote pedido.
+            '
+            ' ------------------------------------------------------------------
+            ' UMA MENSAGEM COM ANEXO MATAVA O LOTE INTEIRO, E PARA SEMPRE
+            '
+            ' O portao aprovava as vinte chaves do lote; o pipeline recusava a que
+            ' tem anexo -- corretamente -- e o envelope saía com dezenove. A
+            ' capability exige o conjunto EXATO que aprovou, entao ela recusava, e
+            ' nada era mandado.
+            '
+            ' Isso e certo para um resumo de conversa: uma thread com um membro
+            ' faltando nao e a thread. Para um lote de classificacao e fatal, e de
+            ' um jeito que nao se percebe: os lotes se formam sempre na mesma
+            ' ordem a partir de "presentes e sem rotulo", entao a mesma mensagem
+            ' com anexo cai no mesmo lote em toda passagem. Aquelas vinte nunca
+            ' seriam classificadas -- e uma caixa de verdade tem anexo em toda
+            ' parte. Achado pelo teste do lote parcialmente recusado, em
+            ' 01/09/2026.
+            '
+            ' A correcao e de camada, e nao de politica: quem decide o que sai e o
+            ' pipeline, e o portao tem de ser perguntado sobre EXATAMENTE isso. A
+            ' mensagem recusada nao e divulgada nem classificada -- ela some do
+            ' pedido inteiro, que e o que "recusada" quer dizer.
+            '
+            ' A parte sem item -- o controle -- fica de fora: ela nao tem chave
+            ' para o portao classificar, e a isencao dela vive no envelope.
+            Dim itens = partes.Where(Function(p) p IsNot Nothing AndAlso p.Item IsNot Nothing).
+                               Select(Function(p) p.Item).ToList()
+            If itens.Count = 0 Then Return Nothing
+
             Dim contexto = ContextoDo(itens, fichas)
 
             Dim desfecho = _transmissor.Executar(

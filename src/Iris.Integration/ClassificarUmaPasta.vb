@@ -265,7 +265,20 @@ Namespace Global.Iris.Integration
                     Exit For
                 End If
 
-                Dim conferido = montado.Conferir(envio(montado.Instrucao(), partes, ct))
+                ' QUAIS SAIRAM DE VERDADE. O pipeline da borda recusa item a
+                ' item -- anexo, corpo pela metade, referencia embutida --, e
+                ' cobrar resposta sobre uma mensagem que o provedor nunca viu
+                ' derrubava o lote inteiro, sempre no mesmo lote.
+                Dim enviadas = lidas.Where(Function(p) p IsNot Nothing AndAlso
+                                                       p.Item IsNot Nothing).
+                                     Select(Function(p) p.Ficha).ToList()
+
+                ' O QUE NAO SAIU ENTRA NA CONTA AQUI. Sem isto, Pedidos e
+                ' Classificados divergiam e nada explicava a diferenca.
+                r.RecusadasPeloConteudo(chavesDoLote.Count - enviadas.Count)
+
+                Dim conferido = montado.Conferir(envio(montado.Instrucao(), partes, ct),
+                                                 enviadas)
                 If Not conferido.IdentidadesConferem Then
                     r.LoteRecusado(chavesDoLote.Count, conferido.Motivo)
                     Continue For
@@ -379,6 +392,7 @@ Namespace Global.Iris.Integration
             Private _lotesRecusados As Integer
             Private _naoClassificados As Integer
             Private _primeiraRecusa As String = ""
+            Private _recusadasPeloConteudo As Integer
             Private _geracaoErrada As Boolean
 
             Public Sub New(pedidos As Integer)
@@ -393,6 +407,20 @@ Namespace Global.Iris.Integration
 
             Public Sub LoteSemConteudo(quantos As Integer)
                 _naoClassificados += quantos
+            End Sub
+
+            ''' <summary>
+            ''' Mensagens que a borda leu e o <b>pipeline recusou</b> — anexo, corpo
+            ''' pela metade, referência embutida, HTML ilegível.
+            '''
+            ''' Conta separada porque é a única das quatro que o dono pode
+            ''' <i>entender</i>: "três têm anexo" é uma frase acionável, e some-la a
+            ''' "o lote foi recusado" produziria um número que não sugere nada.
+            ''' </summary>
+            Public Sub RecusadasPeloConteudo(quantas As Integer)
+                If quantas <= 0 Then Return
+                _recusadasPeloConteudo += quantas
+                _naoClassificados += quantas
             End Sub
 
             ''' <summary>
@@ -452,7 +480,8 @@ Namespace Global.Iris.Integration
                 Return New ResultadoDaClassificacao(
                     qual, _pedidos, _classificados,
                     _semRotulo, _semRegras, _foraDaPasta,
-                    _lotesRecusados, _naoClassificados, _primeiraRecusa)
+                    _lotesRecusados, _naoClassificados, _primeiraRecusa,
+                    _recusadasPeloConteudo)
             End Function
         End Class
 
@@ -529,12 +558,20 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Public ReadOnly Property PrimeiraRecusa As String
 
+        ''' <summary>
+        ''' Mensagens que a borda leu e o pipeline recusou — anexo, corpo pela
+        ''' metade, referência embutida. Elas <b>não saíram da máquina</b>.
+        ''' </summary>
+        Public ReadOnly Property RecusadasPeloConteudo As Integer
+
         Friend Sub New(motivo As MotivoDaClassificacao, pedidos As Integer,
                        classificados As Integer, semRotulo As Integer,
                        semRegras As Integer, foraDaPasta As Integer,
                        lotesRecusados As Integer, naoClassificados As Integer,
-                       primeiraRecusa As String)
+                       primeiraRecusa As String,
+                       Optional recusadasPeloConteudo As Integer = 0)
             Me.Motivo = motivo
+            Me.RecusadasPeloConteudo = recusadasPeloConteudo
             Me.Pedidos = pedidos
             Me.Classificados = classificados
             Me.SemRotulo = semRotulo
