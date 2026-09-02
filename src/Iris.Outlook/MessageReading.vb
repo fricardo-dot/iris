@@ -325,6 +325,36 @@ Namespace Global.Iris.Outlook
                 mail.UnRead = Not isRead
                 If marcar IsNot Nothing Then marcar()
                 mail.Save()
+
+                ' A IDENTIDADE E RELIDA DEPOIS DO SAVE.
+                '
+                ' E a regra fundadora do projeto -- "toda operacao que salva
+                ' devolve a identidade nova" --, e esta era a ultima mutacao que a
+                ' violava: ela salvava e devolvia Boolean. O EntryID PODE mudar num
+                ' Save, e o codigo nao pode apostar em nenhuma das duas hipoteses.
+                '
+                ' Falha na releitura DEPOIS do Save e Ambiguous, e nao sucesso: o
+                ' item foi gravado e a chave que o reabre e desconhecida. Devolver
+                ' True aqui seria dizer que deu certo sobre uma linha que ninguem
+                ' consegue mais abrir -- e o sintoma apareceria longe, como
+                ' NotFound ao anexar ou responder. Achado por revisao externa em
+                ' 01/09/2026.
+                Dim nova = Texto(Function() mail.EntryID)
+                If nova.Length = 0 Then
+                    Return OperationResult(Of Boolean).Fail(ErrorKind.Ambiguous,
+                        "a marcacao foi gravada e a identidade nova nao pode ser lida")
+                End If
+
+                ' MUDOU DE IDENTIDADE: a marcacao valeu, e a linha na tela aponta
+                ' para uma chave que nao existe mais. Ambiguous e o desfecho
+                ' honesto -- o efeito aconteceu e o estado seguinte e incerto --, e
+                ' quem chama ja sabe nao reverter a tela num ambiguo. O ItemChange
+                ' do Outlook traz a linha de volta pela reconciliacao.
+                If Not String.Equals(nova, item.EntryId, StringComparison.Ordinal) Then
+                    Return OperationResult(Of Boolean).Fail(ErrorKind.Ambiguous,
+                        "a marcacao foi gravada e o item mudou de identidade")
+                End If
+
                 Return OperationResult(Of Boolean).Ok(True)
             Finally
                 ComHelpers.Release(mail)

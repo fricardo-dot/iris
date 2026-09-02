@@ -233,16 +233,36 @@ Public Class PontaAPontaAssistTests
             Dim m = Montar(db, Ativacao(Endereco), p)
             Dim id = Guid.NewGuid()
 
-            Dim depois = m.T.Desabar(New AssistTransmitter.OndeParou With {
+            Dim espiao As New DiarioTeimoso(m.J)
+            Dim comEspiao As New AssistTransmitter(
+                New DisclosurePolicy(Ativacao(Endereco)), New CapabilityLedger(),
+                espiao, p, Function() Agora)
+
+            Dim depois = comEspiao.Desabar(New AssistTransmitter.OndeParou With {
                 .RequestId = id, .VooComecou = True})
+
+            ' O DIARIO TEM DE TER SIDO AVISADO, e com podeTerChegado.
+            '
+            ' Sem esta assercao, uma cerca que nunca falasse com o diario e
+            ' sempre devolvesse AmbiguoSemFechamentoDoDiario passava -- a linha
+            ' ficaria EmVoo para sempre e a tela diria a mesma coisa. Achado
+            ' por revisao externa em 01/09/2026.
+            Assert.AreEqual(1, espiao.Falhas.Count,
+                "a cerca nao avisou o diario de que o voo podia ter chegado")
+            Assert.AreEqual(id, espiao.Falhas(0).RequestId)
+            Assert.IsTrue(espiao.Falhas(0).PodeTerChegado,
+                "avisou o diario dizendo que NADA chegou")
             Assert.IsTrue(depois.Kind = AssistOutcomeKind.Ambiguo OrElse
                           depois.Kind = AssistOutcomeKind.AmbiguoSemFechamentoDoDiario,
                 $"depois do voo tem de ser ambiguo — veio {depois.Kind}")
             Assert.AreEqual(id, depois.RequestId)
             Assert.AreNotEqual(DisclosureReason.ErroAntesDaRede, depois.MotivoDoPortao)
 
-            Dim antes = m.T.Desabar(New AssistTransmitter.OndeParou With {
+            espiao.Falhas.Clear()
+            Dim antes = comEspiao.Desabar(New AssistTransmitter.OndeParou With {
                 .RequestId = id, .VooComecou = False})
+            Assert.AreEqual(0, espiao.Falhas.Count,
+                "antes do voo nao ha o que registrar como possivelmente chegado")
             Assert.AreEqual(AssistOutcomeKind.Recusado, antes.Kind)
             Assert.AreEqual(DisclosureReason.ErroAntesDaRede, antes.MotivoDoPortao)
             Assert.AreEqual(id, antes.RequestId,
@@ -705,6 +725,14 @@ Public Class PontaAPontaAssistTests
         Friend Property ExplodirNoIniciando As Boolean
         Friend Property ExplodirNoConcluir As Boolean
 
+        ''' <summary>
+        ''' Cada <c>Falhar</c> que chegou, com o que ela afirmou sobre a chegada.
+        ''' Sem isto, uma cerca que <b>nunca falasse com o diário</b> e devolvesse
+        ''' um desfecho ambíguo passaria em todos os testes dela: eles olhavam só o
+        ''' desfecho, e o desfecho é o que a cerca escolhe.
+        ''' </summary>
+        Friend ReadOnly Falhas As New List(Of (RequestId As Guid, PodeTerChegado As Boolean))()
+
         Friend Sub New(dentro As IDisclosureJournal)
             _dentro = dentro
         End Sub
@@ -740,6 +768,7 @@ Public Class PontaAPontaAssistTests
                                codigoHttp As Integer?) As Boolean _
                                Implements IDisclosureJournal.Falhar
             UltimoCodigo = codigoHttp
+            Falhas.Add((requestId, podeTerChegado))
             If RecusarFalhar Then Return False
             ' REPASSA o codigo. Um espiao que o engolisse faria o teste de
             ' ponta a ponta passar sobre um caminho que perde justamente o
