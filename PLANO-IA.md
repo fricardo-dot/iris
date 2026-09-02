@@ -1,8 +1,8 @@
 # Plano da IA do Iris
 
 > Estado em 01/09/2026: os **núcleos das dez etapas** estão construídos e
-> testados, e passaram por **trinta revisões externas** — uma por etapa, e
-> depois cinco rodadas de cinco sobre o conjunto. Suíte em **1466 verdes, nada
+> testados, e passaram por **trinta e cinco revisões externas** — uma por etapa,
+> e depois seis rodadas de cinco sobre o conjunto. Suíte em **1475 verdes, nada
 > pulado**.
 >
 > **A borda em lote existe desde 01/09/2026**, e com ela a *classificação de uma
@@ -480,6 +480,67 @@ bloco *ingênua* — a que não sabe do controle. É pouco, e é a diferença en
 ataque que qualquer um escreve e um que precisa conhecer este desenho. Chamá-lo
 de prova de integridade semântica seria mentira, e a mentira custa mais que a
 fraqueza.
+
+## A sétima rodada — os dois erros de sinal trocado
+
+A sexta rodada consertou; a sétima revisou os consertos, o produto inteiro, os
+testes escritos no dia anterior, e os documentos. Ela também **refutou um achado
+da própria série**: a passada anterior disse que o controle do lote podia ser
+descartado pelo teto do envelope, com os corpos saindo sem o alarme. Fui
+conferir — envelope truncado não recebe capability, então **nada sai**. É a
+primeira vez nesta série que uma passada corrige outra, e vale mais registrado
+que escondido.
+
+### Os dois erros de sinal trocado
+
+Eles são o mesmo defeito em direções opostas, e apareceram na mesma rodada.
+
+**O meu, do dia anterior.** A borda em lote dobrava todo insucesso do transmissor
+num `Nothing` — e o `Nothing` incluía **ambíguo**, que quer dizer *o conteúdo
+pode ter saído*. A passagem contava "lote recusado", que quer dizer **nada
+saiu**, e a tela dizia a coisa oposta do que aconteceu. O diário sabia a verdade;
+ninguém lê o diário.
+
+**O espelho, e é antigo.** O despacho do broker marcava a mutação como iniciada
+*antes* de chamar o trabalho. Uma queda de conexão ao abrir o item — antes de
+existir qualquer `Send` — virava `Ambiguous`, e o compositor dizia *"a mensagem
+pode ter sido enviada, confira Itens Enviados"* sobre um envio que não começou.
+
+O segundo custa diferente e custa: o dono procura uma mensagem que nunca existiu,
+e aprende a não acreditar no aviso — o que o torna inútil no dia em que ele for
+verdadeiro. Agora cada escritor recebe um marcador e o aciona **imediatamente
+antes** do primeiro efeito que fica no mundo, em dezessete pontos.
+
+Como a invariante é *posicional*, o teste é um meta-teste: a marca tem de ter o
+efeito na linha seguinte. Ele pegou duas coisas minhas na primeira execução —
+inclusive um comentário que eu tinha escrito defendendo a marca no lugar errado.
+
+### Fechar a janela não esperava o lote em voo
+
+Cancelar não bastava: o pedido de parada é olhado *entre* lotes, e o que já voou
+vai até o fim. Descartar o cache antes disso fazia a gravação falhar num banco
+morto, e **as mesmas mensagens seriam mandadas outra vez** na abertura seguinte.
+Divulgação duplicada, paga duas vezes.
+
+### E uma mensagem grande envenenava o lote
+
+Mesma família do defeito do anexo, por outra rota: o pipeline aceita 200 mil
+caracteres e o envelope inteiro cabe em 256 KiB. Uma mensagem grande estoura o
+envelope sozinha, o cofre recusa — corretamente —, e como os lotes se formam
+sempre na mesma ordem, aquelas vinte nunca seriam classificadas.
+
+### Dois testes meus mentiam
+
+O do controle com rótulo errado respondia `fyi` para tudo, e o rótulo do controle
+é *sorteado*: uma vez em seis o lote passava e o teste caía num ramo que afirmava
+o caminho feliz — **o mesmo ramo aceitava a sabotagem que o teste anuncia
+combater**. O do lote parcialmente recusado tinha todas as asserções dentro de um
+laço que podia não rodar nenhuma vez.
+
+É a terceira e a quarta vez nesta série. O padrão já tem nome no `CLAUDE.md`, e
+o que ele ensina é operacional: **quando o controle negativo for barato, desfaça
+a correção e veja o teste falhar**. Todos os testes desta rodada passaram por
+isso — sete sabotagens, sete vermelhos.
 
 ---
 

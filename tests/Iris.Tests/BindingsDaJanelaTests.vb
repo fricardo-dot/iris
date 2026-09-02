@@ -426,6 +426,21 @@ Public Class BindingsDaJanelaTests
             "<TextBlock Text=""{Binding Acervo.RessalvaQueNaoExiste}"" />").ToList()
         CollectionAssert.Contains(achados, "Acervo.RessalvaQueNaoExiste",
             "o extrator nao encontra nem um caminho plantado — ele nao extrai nada")
+
+        ' E O RESOLVEDOR TEM DE RECUSAR, e nao so o extrator achar.
+        '
+        ' Este controle provava metade: que o caminho inventado e EXTRAIDO. Uma
+        ' sabotagem em Resolve -- devolver sempre "" -- deixava o teste principal
+        ' verde com todos os membros finais inexistentes, e este controle nao
+        ' notava. Achado por revisao externa em 01/09/2026.
+        Dim erro = Resolve(GetType(AcervoViewModel), "RessalvaQueNaoExiste")
+        StringAssert.Contains(erro, "RessalvaQueNaoExiste",
+            "o RESOLVEDOR aceita um membro que nao existe: o teste principal " &
+            "passaria com a janela inteira quebrada")
+
+        ' O par: um membro que EXISTE nao pode ser acusado.
+        Assert.AreEqual("", Resolve(GetType(AcervoViewModel), "Ressalva"),
+            "o resolvedor acusa um membro que existe")
     End Sub
 
     ' ==================================================================
