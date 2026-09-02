@@ -49,11 +49,44 @@ $raiz = Split-Path -Parent $PSScriptRoot
 $pasta = Split-Path -Parent $Destino
 if (-not $pasta) { $pasta = (Get-Location).Path }
 if (-not (Test-Path $pasta)) { New-Item -ItemType Directory -Force $pasta | Out-Null }
-$absoluto = Join-Path ((Resolve-Path $pasta).Path) (Split-Path -Leaf $Destino)
+$pastaAbsoluta = (Resolve-Path $pasta).Path
+$absoluto = Join-Path $pastaAbsoluta (Split-Path -Leaf $Destino)
 
-$raizAbsoluta = (Resolve-Path $raiz).Path
-if ($absoluto.StartsWith($raizAbsoluta, [StringComparison]::OrdinalIgnoreCase)) {
+# DUAS BARREIRAS, porque a primeira e lexical e a lexical tem furo.
+#
+# (1) Comparacao de prefixo COM O SEPARADOR. Sem ele, "Iris2" era recusado por
+#     comecar igual a "Iris" -- e um irmao de nome parecido nao tem nada a ver
+#     com o repositorio.
+$raizAbsoluta = (Resolve-Path $raiz).Path.TrimEnd('\')
+if ($pastaAbsoluta.TrimEnd('\') -eq $raizAbsoluta -or
+    $pastaAbsoluta.StartsWith($raizAbsoluta + '\', [StringComparison]::OrdinalIgnoreCase)) {
     throw "RECUSADO: $absoluto esta dentro do repositorio. A chave privada nao entra no git."
+}
+
+# (2) PERGUNTA AO GIT. Comparar texto nao enxerga junction, link simbolico,
+#     nome curto 8.3 nem unidade mapeada -- todos deixam o mesmo diretorio
+#     acessivel por outro caminho. O git resolve o caminho de verdade, e se ele
+#     disser que aquela pasta pertence a uma arvore de trabalho, pertence.
+#
+#     E O ERRO DO GIT TEM DE SER ENGOLIDO COM CUIDADO. No Windows PowerShell
+#     5.1, stderr de executavel nativo vira ErrorRecord, e com
+#     $ErrorActionPreference = 'Stop' isso ABORTA o script -- mesmo com 2>$null,
+#     e mesmo quando o "erro" e o git dizendo, corretamente, que aquela pasta
+#     nao e um repositorio. Foi exatamente o que aconteceu na primeira vez que
+#     rodei isto. E a mesma doenca que montar-assinador.ps1 ja tinha.
+$deQuemEAPasta = $null
+try {
+    $ErrorActionPreference = 'SilentlyContinue'
+    $deQuemEAPasta = & git -C $pastaAbsoluta rev-parse --show-toplevel 2>$null
+    if ($LASTEXITCODE -ne 0) { $deQuemEAPasta = $null }
+}
+finally {
+    $ErrorActionPreference = 'Stop'
+}
+
+if ($deQuemEAPasta) {
+    throw ("RECUSADO: $absoluto esta dentro do repositorio git em " +
+           "$deQuemEAPasta. A chave privada nao entra no git.")
 }
 
 if ((Test-Path $absoluto) -and (Get-Item $absoluto).Length -gt 0) {
@@ -76,7 +109,13 @@ if ((Test-Path $absoluto) -and (Get-Item $absoluto).Length -gt 0) {
 # O arquivo nasce VAZIO e ja restrito; so depois o utilitario escreve nele.
 # Gravar e restringir em seguida deixava uma janela com a chave no disco sob a
 # ACL herdada da pasta -- e, se o Set-Acl falhasse, ela ficava assim.
-if (-not (Test-Path $absoluto)) { New-Item -ItemType File $absoluto | Out-Null }
+#
+# E ELE NASCE MESMO: um arquivo vazio preexistente e APAGADO primeiro.
+# SetAccessRuleProtection remove a heranca, mas nao remove ACEs EXPLICITAS que
+# ja estivessem la -- entao um arquivo vazio preparado de antemao com uma regra
+# permissiva receberia a chave e a manteria legivel para terceiros.
+if (Test-Path $absoluto) { Remove-Item $absoluto -Force }
+New-Item -ItemType File $absoluto | Out-Null
 
 try {
     # O SID DA IDENTIDADE CORRENTE, e nao $env:USERNAME. Um nome sem dominio
@@ -90,8 +129,9 @@ try {
     Set-Acl -Path $absoluto -AclObject $acl
 }
 catch {
-    Remove-Item $absoluto -Force -ErrorAction SilentlyContinue
-    throw "Nao consegui restringir a ACL de $absoluto. Nada foi gravado. ($_)"
+    $oQueSobrou = 'Nada foi gravado.'
+    try { Remove-Item $absoluto -Force } catch { $oQueSobrou = "ATENCAO: sobrou um arquivo vazio em $absoluto -- apague-o." }
+    throw "Nao consegui restringir a ACL de $absoluto. $oQueSobrou ($_)"
 }
 
 # ------------------------------------------------------------------- a chave
@@ -99,8 +139,15 @@ catch {
 $ferramenta = & (Join-Path $PSScriptRoot 'montar-assinador.ps1')
 $publica = & $ferramenta gerar --destino $absoluto
 if ($LASTEXITCODE -ne 0) {
-    Remove-Item $absoluto -Force -ErrorAction SilentlyContinue
-    throw "A geracao da chave falhou com $LASTEXITCODE. Nada ficou no disco."
+    # A MENSAGEM DEPENDE DE A LIMPEZA TER FUNCIONADO. Dizer "nada ficou no
+    # disco" sem conferir e a mesma classe de erro que esta revisao inteira
+    # persegue: afirmar mais do que se sabe.
+    $oQueSobrou = 'Nada ficou no disco.'
+    try { Remove-Item $absoluto -Force } catch { }
+    if (Test-Path $absoluto) {
+        $oQueSobrou = "ATENCAO: sobrou um arquivo em $absoluto -- apague-o antes de tentar de novo."
+    }
+    throw "A geracao da chave falhou com $LASTEXITCODE. $oQueSobrou"
 }
 
 Write-Host ''

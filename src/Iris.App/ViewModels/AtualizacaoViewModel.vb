@@ -22,14 +22,18 @@ Namespace Global.Iris.App.ViewModels
     '''
     ''' Aqui ele baixa, <b>confere a assinatura e o hash</b>, e diz onde o
     ''' arquivo ficou. O clique duplo é do dono. O que se perde é conveniência; o
-    ''' que não se perde é que nada chega ao disco sem o hash bater com o
-    ''' manifesto que o dono assinou.
+    ''' que não se perde é que <b>nada recebe o nome final</b> sem o hash bater
+    ''' com o manifesto que o dono assinou. O pacote inteiro chega ao disco antes
+    ''' disso — num arquivo temporário de nome imprevisível, que é apagado em
+    ''' qualquer recusa.
     '''
-    ''' <b>Até o disco</b>, e a fronteira é essa mesma. Depois que o caminho
-    ''' aparece na tela, o arquivo é um arquivo como outro qualquer: o Iris não
-    ''' o vigia, e não haveria como. Assinatura Authenticode no executável é o
-    ''' que estenderia a garantia até o duplo clique, e é outro assunto — está
-    ''' em LANCAR.md, na seção do que a assinatura não compra.
+    ''' <b>E a garantia é pontual.</b> Ela vale no instante da última conferência.
+    ''' Depois que o caminho aparece na tela, o arquivo é um arquivo como outro
+    ''' qualquer, e o Iris não o vigia — <i>escolhe</i> não vigiar; daria para
+    ''' reconferir antes de mostrar, ou segurar o arquivo aberto, e nenhuma das
+    ''' duas coisas alcançaria o duplo clique, que é onde importa. O que
+    ''' alcançaria é assinatura Authenticode no executável, e isso é outro
+    ''' assunto — está em LANCAR.md, na seção do que a assinatura não compra.
     '''
     ''' ------------------------------------------------------------------
     ''' <b>E ELE NÃO PERGUNTA SOZINHO</b>
@@ -79,14 +83,20 @@ Namespace Global.Iris.App.ViewModels
             ' download. Esquecer() limpava a oferta enquanto o download dela
             ' continuava, e a tela terminava mostrando a frase de uma procura ao
             ' lado do arquivo da outra.
+            ' "E NAO ESTA DESCARTADA" nos tres: os comandos sao objetos publicos,
+            ' e uma referencia guardada por um binding do WPF sobrevive ao
+            ' Dispose. Sem isto, ExecuteAsync depois do descarte tocava
+            ' _ateFechar.Token -- que LANCA ObjectDisposedException -- e antes
+            ' disso ja tinha escrito Ocupado e Frase num objeto de ninguem.
             VerificarCommand = New AsyncRelayCommand(
                 AddressOf VerificarAsync,
-                Function() _procura IsNot Nothing AndAlso Not Ocupado)
+                Function() _procura IsNot Nothing AndAlso Not Ocupado AndAlso Not _descartado)
             BaixarCommand = New AsyncRelayCommand(
                 AddressOf BaixarAsync,
-                Function() _oferta IsNot Nothing AndAlso Not Ocupado)
-            MostrarNaPastaCommand = New RelayCommand(AddressOf MostrarNaPasta,
-                                                     Function() Baixado.Length > 0)
+                Function() _oferta IsNot Nothing AndAlso Not Ocupado AndAlso Not _descartado)
+            MostrarNaPastaCommand = New RelayCommand(
+                AddressOf MostrarNaPasta,
+                Function() Baixado.Length > 0 AndAlso Not _descartado)
 
             _frase = If(_procura Is Nothing,
                         "A verificação de versões ainda não foi configurada nesta " &
@@ -189,7 +199,7 @@ Namespace Global.Iris.App.ViewModels
         ''' descrever <i>uma</i> procura, e é sempre a última.
         ''' </summary>
         Private Async Function VerificarAsync() As Task
-            If _procura Is Nothing Then Return
+            If _procura Is Nothing OrElse _descartado Then Return
 
             Esquecer()
             Ocupado = True
@@ -206,14 +216,20 @@ Namespace Global.Iris.App.ViewModels
                     HaVersaoNova = True
                 End If
             Finally
-                Ocupado = False
-                BaixarCommand.NotifyCanExecuteChanged()
+                ' O Finally RODA MESMO DEPOIS DO Return la em cima -- e por isso
+                ' ele tambem precisa da guarda. Sem ela, Ocupado = False disparava
+                ' PropertyChanged e NotifyCanExecuteChanged num ViewModel ja
+                ' descartado, que e exatamente o que o Dispose diz impedir.
+                If Not _descartado Then
+                    Ocupado = False
+                    BaixarCommand.NotifyCanExecuteChanged()
+                End If
             End Try
         End Function
 
         Private Async Function BaixarAsync() As Task
             Dim oQue = _oferta
-            If oQue Is Nothing Then Return
+            If oQue Is Nothing OrElse _descartado Then Return
 
             Ocupado = True
             Frase = "Baixando a versão " & oQue.Versao.ToString(3) & "…"
@@ -232,7 +248,7 @@ Namespace Global.Iris.App.ViewModels
                     Frase = "Não deu para baixar: " & pacote.Motivo
                 End If
             Finally
-                Ocupado = False
+                If Not _descartado Then Ocupado = False
             End Try
         End Function
 

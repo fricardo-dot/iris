@@ -66,10 +66,39 @@ Namespace Global.Iris.Assinatura
             Return 0
         End Function
 
+        ''' <summary>
+        ''' <b>O .sig nasce com outro nome e só depois recebe o dele.</b>
+        '''
+        ''' <c>WriteAllBytes</c> direto no nome final cria ou trunca o arquivo
+        ''' antes de terminar de escrever: falta de espaço, erro de I/O ou um
+        ''' Ctrl+C deixariam um <c>iris.json.sig</c> vazio ou parcial com cara de
+        ''' assinatura pronta. É o mesmo desenho do download do lado do cliente,
+        ''' e pelo mesmo motivo.
+        '''
+        ''' <b>Sem controle negativo, e vale dizer.</b> Gravar direto no nome
+        ''' final deixa a suíte verde: a diferença só aparece quando a escrita
+        ''' falha no meio, e provocar isso exigiria um disco cheio de mentira ou
+        ''' um sistema de arquivos falso — máquina demais para uma linha. O que
+        ''' os testes cobrem é o resultado (64 bytes, nenhum <c>.parcial</c>
+        ''' sobrando); a atomicidade fica declarada.
+        ''' </summary>
         Private Function AssinarArquivo(chave As String, arquivo As String) As Integer
             Dim assinatura = Assinador.Assinar(File.ReadAllText(chave),
                                                File.ReadAllBytes(arquivo))
-            File.WriteAllBytes(arquivo & ".sig", assinatura)
+
+            Dim destino = arquivo & ".sig"
+            Dim temporario = destino & "." & Guid.NewGuid().ToString("N") & ".parcial"
+            Try
+                File.WriteAllBytes(temporario, assinatura)
+                File.Move(temporario, destino, overwrite:=True)
+            Catch
+                Try
+                    If File.Exists(temporario) Then File.Delete(temporario)
+                Catch
+                End Try
+                Throw
+            End Try
+
             Console.WriteLine(assinatura.Length)
             Return 0
         End Function

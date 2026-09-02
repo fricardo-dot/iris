@@ -82,7 +82,18 @@ Namespace Global.Iris.App
                     ' coisas passariam calado aqui e reapareceriam como "a assinatura
                     ' nao confere" na tela -- mandando procurar no lugar errado.
                     If consumidos <> lidos.Length Then Return Array.Empty(Of Byte)()
-                    If verificador.KeySize <> 256 Then Return Array.Empty(Of Byte)()
+
+                    ' P-256 PELO OID. KeySize = 256 aceitaria brainpoolP256r1 e
+                    ' secp256k1, que o Windows conhece -- e nenhuma delas serve,
+                    ' porque a ferramenta de publicacao so assina em P-256. Uma
+                    ' chave assim embutida faria toda versao ser recusada com "a
+                    ' assinatura nao confere", mandando procurar no lugar errado.
+                    Dim qual = verificador.ExportParameters(False).Curve
+                    If Not qual.IsNamed OrElse
+                       Not String.Equals(qual.Oid?.Value, "1.2.840.10045.3.1.7",
+                                         StringComparison.Ordinal) Then
+                        Return Array.Empty(Of Byte)()
+                    End If
                 End Using
 
                 Return lidos

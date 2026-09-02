@@ -1,4 +1,5 @@
 Imports System.Collections.Generic
+Imports System.Diagnostics
 Imports System.IO
 Imports System.Net
 Imports System.Net.Http
@@ -119,20 +120,39 @@ Public Class AtualizacaoTests
 
             Dim fluxo As Stream = Nothing
             If Fluxos.TryGetValue(onde, fluxo) Then
-                Return Task.FromResult(New HttpResponseMessage(HttpStatusCode.OK) With {
-                    .Content = New StreamContent(fluxo)
-                })
+                Return Task.FromResult(Responder(pedido, HttpStatusCode.OK,
+                                                 New StreamContent(fluxo)))
             End If
 
             Dim corpo As Byte() = Nothing
             If Not Corpos.TryGetValue(onde, corpo) Then
-                Return Task.FromResult(New HttpResponseMessage(HttpStatusCode.NotFound))
+                Return Task.FromResult(Responder(pedido, HttpStatusCode.NotFound, Nothing))
             End If
 
-            Dim r As New HttpResponseMessage(HttpStatusCode.OK) With {
-                .Content = New ByteArrayContent(corpo)
-            }
-            Return Task.FromResult(r)
+            Return Task.FromResult(Responder(pedido, HttpStatusCode.OK,
+                                             New ByteArrayContent(corpo)))
+        End Function
+
+        ''' <summary>
+        ''' <b>Toda resposta carrega o pedido que a originou.</b>
+        '''
+        ''' Um handler de verdade preenche <c>RequestMessage</c> — é de lá que
+        ''' sai o endereço FINAL, depois de redirecionamentos, e é o que
+        ''' <c>ExigirHttpsAteOFim</c> confere. O dublê não preenchia, e a
+        ''' produção tratava isso como "não sei o endereço final" e deixava
+        ''' passar.
+        '''
+        ''' Quando a produção passou a recusar o que não sabe, sete testes caíram
+        ''' de uma vez — e a causa era o dublê, não a produção. Um dublê infiel
+        ''' num ponto vira, mais cedo ou mais tarde, uma conferência que ninguém
+        ''' pode apertar.
+        ''' </summary>
+        Private Shared Function Responder(pedido As HttpRequestMessage,
+                                          codigo As HttpStatusCode,
+                                          corpo As HttpContent) As HttpResponseMessage
+            Dim r As New HttpResponseMessage(codigo) With {.RequestMessage = pedido}
+            If corpo IsNot Nothing Then r.Content = corpo
+            Return r
         End Function
     End Class
 
@@ -785,20 +805,6 @@ Public Class AtualizacaoTests
         End Try
     End Function
 
-    ''' <summary>
-    ''' Descartar a tela cancela o que estiver em voo, e a continuação não
-    ''' escreve em nada depois disso.
-    ''' </summary>
-    <TestMethod>
-    Public Sub Descartar_a_tela_nao_deixa_nada_em_voo()
-        Dim tela As New AtualizacaoViewModel(Nothing, "")
-        tela.Dispose()
-        ' Duas vezes, porque o Application_Exit e o Dispose do MainViewModel
-        ' podem alcancar o mesmo objeto e um ObjectDisposedException aqui
-        ' interromperia o descarte de tudo que vem depois.
-        tela.Dispose()
-    End Sub
-
     ' ==================================================================
     ' As duas pontas se encontram
     ' ==================================================================
@@ -912,60 +918,6 @@ Public Class AtualizacaoTests
         End Using
     End Sub
 
-    ''' <summary>
-    ''' <b>A forma exata que o ConvertTo-Json do PowerShell 5.1 escreve.</b>
-    '''
-    ''' Este texto não foi inventado: é o <c>iris.json</c> que
-    ''' <c>tools/publicar-versao.ps1</c> produziu ao ser rodado de verdade em
-    ''' 02/09/2026, copiado byte a byte — dois espaços depois dos dois pontos,
-    ''' <c>CRLF</c>, <c>bytes</c> como número e não string, aspas escapadas
-    ''' dentro das notas, e sem BOM.
-    '''
-    ''' <b>Era o último elo sem teste.</b> O teste de ida e volta prova que a
-    ''' assinatura combina; este prova que o <i>documento</i> combina. São
-    ''' coisas diferentes: uma assinatura perfeita sobre um JSON que o cliente
-    ''' não sabe ler produz "o manifesto não é JSON legível" — depois de a
-    ''' assinatura conferir, que é o pior lugar para procurar.
-    '''
-    ''' Se o script mudar a forma, este teste cai. É para cair.
-    ''' </summary>
-    <TestMethod>
-    Public Sub O_JSON_QUE_O_SCRIPT_ESCREVE_e_lido_pelo_cliente()
-        ' CRLF explicito: ele faz parte dos bytes assinados, e um vbLf aqui
-        ' provaria outra coisa.
-        Dim comoOScriptEscreve = String.Join(vbCrLf, {
-            "{",
-            "    ""versao"":  ""0.2.0"",",
-            "    ""publicada"":  ""2026-09-02T13:55:33.8968678Z"",",
-            "    ""notas"":  ""Verificacao de versoes, com aspas \"" e acento: coracao."",",
-            "    ""endereco"":  ""https://github.com/ricardo/iris/releases/download/" &
-            "v0.2.0/Iris-0.2.0.exe"",",
-            "    ""sha256"":  ""ed5fd4ca3ba32dd2f8602eb32055a6a2c545679e2f84ed5facf4af00b7ac0f1a"",",
-            "    ""bytes"":  66422058",
-            "}"})
-
-        ' SEM BOM, como o script grava. Tres bytes invisiveis na frente ainda
-        ' fariam a assinatura conferir -- eles seriam assinados junto -- e
-        ' JsonDocument.Parse tropecaria neles logo depois.
-        Dim corpo = New UTF8Encoding(False).GetBytes(comoOScriptEscreve)
-
-        Dim publicaBase64 As String = Nothing
-        Dim privadaEmPem = Assinatura.Assinador.GerarPar(publicaBase64)
-
-        Dim motivo As String = Nothing
-        Dim lido = ManifestoDeVersao.Ler(
-            corpo, Assinatura.Assinador.Assinar(privadaEmPem, corpo),
-            Convert.FromBase64String(publicaBase64), motivo)
-
-        Assert.IsNotNull(lido, "o cliente nao le o que o script publica: " & motivo)
-        Assert.AreEqual(New Version(0, 2, 0), lido.Versao)
-        Assert.AreEqual(66_422_058L, lido.Bytes, "o campo bytes veio como numero")
-        Assert.AreEqual("ed5fd4ca3ba32dd2f8602eb32055a6a2c545679e2f84ed5facf4af00b7ac0f1a",
-                        lido.Sha256)
-        StringAssert.Contains(lido.Notas, "aspas """, "as aspas escapadas nao voltaram")
-        Assert.AreEqual(2026, lido.Publicada.Year)
-    End Sub
-
     ' ==================================================================
     ' A versão do manifesto
     ' ==================================================================
@@ -1038,6 +990,468 @@ Public Class AtualizacaoTests
         ' lancar numa frase de tela.
         Assert.AreEqual(New Version(1, 2, 0), ProcuraDeVersao.Interpretar("1.2"))
         Assert.AreEqual("1.2.0", ProcuraDeVersao.Interpretar("1.2").ToString(3))
+    End Sub
+
+    ' ==================================================================
+    ' O que o script realmente escreve
+    ' ==================================================================
+
+    ''' <summary>
+    ''' <b>Roda o <c>montar-manifesto.ps1</c> e lê o que ele gravou.</b>
+    '''
+    ''' A primeira versão deste teste era uma cópia literal, feita à mão, de um
+    ''' <c>iris.json</c> de 02/09/2026 — e o comentário dela dizia "se o script
+    ''' mudar a forma, este teste cai. É para cair." <b>Era falso</b>: o teste
+    ''' construía a própria string e nunca tocava no script. Trocar
+    ''' <c>ConvertTo-Json</c> por outra coisa, gravar com BOM, ou serializar
+    ''' <c>bytes</c> como texto não derrubava nada.
+    '''
+    ''' Agora ele executa o script de verdade, no <c>powershell.exe</c> desta
+    ''' máquina, e entrega os bytes gravados ao mesmo
+    ''' <c>ManifestoDeVersao.Ler</c> que roda na máquina do usuário.
+    '''
+    ''' <b>É lento e depende do PowerShell</b>, e vale: é o único ponto em que a
+    ''' forma produzida e a forma esperada se encontram. Se o PowerShell não
+    ''' estiver disponível, o teste <b>falha</b> em vez de ser pulado — pular
+    ''' seria voltar a não cobrir nada, só que em silêncio.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_QUE_O_SCRIPT_ESCREVE_e_lido_pelo_cliente()
+        Dim onde = PastaNova()
+        Try
+            Dim arquivo = Path.Combine(onde, "iris.json")
+            Dim oQueMudou = "Notas com aspas "" e acento: coração, ümlaut, 日本."
+
+            Rodar(Path.Combine(RaizDoRepositorio(), "tools", "montar-manifesto.ps1"),
+                  "-Versao", "0.2.0",
+                  "-Notas", oQueMudou,
+                  "-Endereco", "https://exemplo.invalido/Iris-0.2.0.exe",
+                  "-Sha256", New String("c"c, 64),
+                  "-Bytes", "66422058",
+                  "-Publicada", "2026-09-02T13:55:33.8968678Z",
+                  "-Destino", arquivo)
+
+            Dim corpo = File.ReadAllBytes(arquivo)
+
+            ' SEM BOM, e conferido nos bytes crus. Com BOM a assinatura ainda
+            ' bateria -- os tres bytes seriam assinados junto -- e o
+            ' JsonDocument.Parse tropecaria neles logo depois, produzindo "o
+            ' manifesto nao e JSON legivel" DEPOIS de a assinatura conferir.
+            Assert.IsFalse(corpo.Length >= 3 AndAlso
+                           corpo(0) = &HEF AndAlso corpo(1) = &HBB AndAlso corpo(2) = &HBF,
+                           "o script gravou BOM")
+
+            Dim publicaBase64 As String = Nothing
+            Dim privadaEmPem = Assinatura.Assinador.GerarPar(publicaBase64)
+
+            Dim motivo As String = Nothing
+            Dim lido = ManifestoDeVersao.Ler(
+                corpo, Assinatura.Assinador.Assinar(privadaEmPem, corpo),
+                Convert.FromBase64String(publicaBase64), motivo)
+
+            Assert.IsNotNull(lido, "o cliente nao le o que o script escreve: " & motivo &
+                                   vbLf & Encoding.UTF8.GetString(corpo))
+            Assert.AreEqual(New Version(0, 2, 0), lido.Versao)
+            ' bytes COMO NUMERO: se o script passar a escrever "66422058" entre
+            ' aspas, TryGetInt64 estoura e o manifesto inteiro e recusado.
+            Assert.AreEqual(66_422_058L, lido.Bytes)
+            Assert.AreEqual(New String("c"c, 64), lido.Sha256)
+            Assert.AreEqual(oQueMudou, lido.Notas, "acentos ou aspas nao sobreviveram")
+            Assert.AreEqual(2026, lido.Publicada.Year)
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
+    End Sub
+
+    ''' <summary>A raiz do repositório, subindo a partir do diretório do teste.</summary>
+    Private Shared Function RaizDoRepositorio() As String
+        Dim onde As String = AppContext.BaseDirectory
+        While onde IsNot Nothing
+            If Directory.Exists(Path.Combine(onde, "tools")) AndAlso
+               File.Exists(Path.Combine(onde, "Iris.slnx")) Then
+                Return onde
+            End If
+            onde = Path.GetDirectoryName(onde)
+        End While
+        Throw New InvalidOperationException("nao achei a raiz do repositorio")
+    End Function
+
+    ''' <summary>
+    ''' Executa um script do <c>tools/</c> e estoura com a saída se ele falhar.
+    ''' <c>-NoProfile</c> porque o perfil do usuário não pode influir no que o
+    ''' teste mede.
+    ''' </summary>
+    Private Shared Sub Rodar(script As String, ParamArray argumentos As String())
+        Dim linha As New List(Of String) From {
+            "-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass",
+            "-File", script}
+        linha.AddRange(argumentos)
+
+        Dim como As New ProcessStartInfo("powershell.exe") With {
+            .RedirectStandardOutput = True,
+            .RedirectStandardError = True,
+            .UseShellExecute = False,
+            .CreateNoWindow = True
+        }
+        For Each a In linha
+            como.ArgumentList.Add(a)
+        Next
+
+        Using quem = Process.Start(como)
+            Dim saiu = quem.StandardOutput.ReadToEnd()
+            Dim erro = quem.StandardError.ReadToEnd()
+            Assert.IsTrue(quem.WaitForExit(120_000), "o script nao terminou em 2 minutos")
+            Assert.AreEqual(0, quem.ExitCode,
+                            Path.GetFileName(script) & " falhou:" & vbLf & erro & vbLf & saiu)
+        End Using
+    End Sub
+
+    ' ==================================================================
+    ' O que a reconferência pós-Move faz
+    ' ==================================================================
+
+    ''' <summary>
+    ''' <b>Controle negativo da segunda conferência.</b>
+    '''
+    ''' Sabotar o <c>If Not Confere(...)</c> para <c>If True</c> deixava um teste
+    ''' vermelho, e isso provava só que a linha é <i>alcançada</i>. Apagá-la
+    ''' inteira deixava a suíte verde — ninguém provava que ela <i>pega</i>
+    ''' alguma coisa.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_reconferencia_pega_arquivo_trocado()
+        Dim onde = PastaNova()
+        Try
+            Dim arquivo = Path.Combine(onde, "pacote.bin")
+            Dim conteudo = Encoding.UTF8.GetBytes("o que foi assinado")
+            File.WriteAllBytes(arquivo, conteudo)
+            Dim certo = Convert.ToHexString(SHA256.HashData(conteudo)).ToLowerInvariant()
+
+            Assert.IsTrue(ProcuraDeVersao.Confere(arquivo, certo),
+                          "recusou o arquivo que confere")
+
+            ' O ARQUIVO TROCADO NO CAMINHO -- que e o que a segunda leitura
+            ' existe para pegar.
+            File.WriteAllBytes(arquivo, Encoding.UTF8.GetBytes("o que alguem pos no lugar"))
+            Assert.IsFalse(ProcuraDeVersao.Confere(arquivo, certo),
+                           "aceitou um arquivo trocado depois da primeira conferencia")
+
+            File.Delete(arquivo)
+            Assert.IsFalse(ProcuraDeVersao.Confere(arquivo, certo),
+                           "um arquivo que nao da para ler nao e um arquivo conferido")
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
+    End Sub
+
+    ' ==================================================================
+    ' O que o descarte da tela realmente faz
+    ' ==================================================================
+
+    ''' <summary>
+    ''' Um fluxo que só termina quando o <c>CancellationToken</c> é cancelado.
+    ''' Serve para haver algo <i>em voo</i> para observar.
+    ''' </summary>
+    Private NotInheritable Class FluxoQueEspera
+        Inherits Stream
+
+        Friend ReadOnly Comecou As New TaskCompletionSource(
+            TaskCreationOptions.RunContinuationsAsynchronously)
+
+        Public Overrides ReadOnly Property CanRead As Boolean
+            Get
+                Return True
+            End Get
+        End Property
+        Public Overrides ReadOnly Property CanSeek As Boolean
+            Get
+                Return False
+            End Get
+        End Property
+        Public Overrides ReadOnly Property CanWrite As Boolean
+            Get
+                Return False
+            End Get
+        End Property
+        Public Overrides ReadOnly Property Length As Long
+            Get
+                Throw New NotSupportedException()
+            End Get
+        End Property
+        Public Overrides Property Position As Long
+            Get
+                Throw New NotSupportedException()
+            End Get
+            Set
+                Throw New NotSupportedException()
+            End Set
+        End Property
+        Public Overrides Sub Flush()
+        End Sub
+        Public Overrides Function Seek(o As Long, r As SeekOrigin) As Long
+            Throw New NotSupportedException()
+        End Function
+        Public Overrides Sub SetLength(v As Long)
+            Throw New NotSupportedException()
+        End Sub
+        Public Overrides Sub Write(b As Byte(), o As Integer, c As Integer)
+            Throw New NotSupportedException()
+        End Sub
+        Public Overrides Function Read(b As Byte(), o As Integer, c As Integer) As Integer
+            Throw New NotSupportedException()
+        End Function
+
+        Public Overrides Function ReadAsync(
+                destino As Memory(Of Byte),
+                Optional ct As CancellationToken = Nothing) As ValueTask(Of Integer)
+            Comecou.TrySetResult()
+            ' Nunca completa por conta propria: so o cancelamento tira daqui.
+            Return New ValueTask(Of Integer)(
+                Task.Delay(Timeout.Infinite, ct).ContinueWith(
+                    Function(t) 0, TaskContinuationOptions.ExecuteSynchronously))
+        End Function
+    End Class
+
+    ''' <summary>
+    ''' <b>Descartar a tela cancela o download que está em voo.</b>
+    '''
+    ''' A primeira versão deste teste chamava <c>Dispose</c> duas vezes numa tela
+    ''' ociosa e verificava que não estourava. Esvaziar o <c>Dispose</c> inteiro
+    ''' o deixava verde — ele não observava nada em voo, que é literalmente o que
+    ''' o nome dele promete.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Descartar_a_tela_cancela_o_que_esta_em_voo() As Task
+        Dim onde = PastaNova()
+        Try
+            Using dono = ParNovo()
+                Dim corpo = MontarJson("2.0.0", quantos:=1_000_000)
+                Dim servidor As RespostasDeVersao = Nothing
+                Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                     New Version(1, 0, 0), servidor)
+
+                Dim travado As New FluxoQueEspera()
+                servidor.Fluxos(Base & "/Iris.exe") = travado
+
+                Dim tela As New AtualizacaoViewModel(procura, onde)
+                Await tela.VerificarCommand.ExecuteAsync(Nothing)
+                Assert.IsTrue(tela.HaVersaoNova, tela.Frase)
+
+                Dim baixando = tela.BaixarCommand.ExecuteAsync(Nothing)
+                Await travado.Comecou.Task
+
+                ' EM VOO: e agora da para observar o que so existe durante.
+                Assert.IsTrue(tela.Ocupado, "nao ficou ocupado durante o download")
+                Assert.IsFalse(tela.VerificarCommand.CanExecute(Nothing),
+                               "da para verificar no meio de um download")
+
+                Dim aFraseDoMomento = tela.Frase
+
+                ' CONTA O QUE A TELA AVISAR DEPOIS DO DESCARTE.
+                '
+                ' Sem isto, o Finally que escreve "Ocupado = False" podia rodar
+                ' num ViewModel ja descartado sem que nada reclamasse: a Frase
+                ' nao muda, e os CanExecute ja sao False por outro motivo. O
+                ' contrato do Dispose e que NADA seja publicado depois dele.
+                Dim avisosDepois = 0
+                Dim contar As ComponentModel.PropertyChangedEventHandler =
+                    Sub(quem, oQue) Threading.Interlocked.Increment(avisosDepois)
+
+                tela.Dispose()
+                AddHandler tela.PropertyChanged, contar
+                ' COM PRAZO. Se o Dispose nao cancelar, este Await nao volta
+                ' nunca -- o fluxo so termina por cancelamento. Um teste que
+                ' pendura nao e um teste vermelho: e uma suite parada, e a
+                ' primeira vez que sabotei o Dispose foi exatamente isso que
+                ' aconteceu.
+                Dim naPaciencia = Await Task.WhenAny(baixando, Task.Delay(TimeSpan.FromSeconds(20)))
+                RemoveHandler tela.PropertyChanged, contar
+                Assert.AreSame(baixando, naPaciencia,
+                               "o descarte nao cancelou o download: ele seguiu em voo")
+
+                Assert.AreEqual(0, avisosDepois,
+                                "a tela publicou mudanca de propriedade depois de descartada")
+
+                Assert.AreEqual(aFraseDoMomento, tela.Frase,
+                                "a continuacao escreveu na tela depois do descarte")
+                Assert.IsFalse(tela.TemBaixado, "deu por baixado um download cancelado")
+                CollectionAssert.AreEqual(Array.Empty(Of String)(), Directory.GetFiles(onde),
+                                          "sobrou arquivo de um download cancelado")
+                Assert.IsFalse(tela.VerificarCommand.CanExecute(Nothing),
+                               "os comandos continuam ligados depois do descarte")
+
+                ' E DESCARTAR DE NOVO NAO ESTOURA: o Application_Exit e o Dispose
+                ' do MainViewModel podem alcancar o mesmo objeto, e uma excecao
+                ' aqui interromperia o descarte de tudo que vem depois.
+                tela.Dispose()
+            End Using
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' <b>Uma curva de 256 bits que NÃO é a P-256.</b>
+    '''
+    ''' Este é o controle negativo que faltava. Enquanto o único teste de curva
+    ''' errada usava P-384, ele era recusado pelo <c>KeySize</c> — e apagar a
+    ''' conferência da curva deixava a suíte verde. A <c>brainpoolP256r1</c> tem
+    ''' exatamente 256 bits, passa pelo <c>KeySize</c>, e só o OID a distingue.
+    '''
+    ''' Depende de o CNG desta máquina conhecer a curva; o Windows 10 em diante
+    ''' conhece. Se um dia não conhecer, este teste falha em vez de mentir.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Curva_de_256_bits_que_nao_e_P256_e_recusada()
+        Using outra = ECDsa.Create(ECCurve.CreateFromFriendlyName("brainpoolP256r1"))
+            Assert.AreEqual(256, outra.KeySize,
+                            "esta curva precisa ter 256 bits, senao o teste nao prova nada")
+
+            Assert.ThrowsException(Of CryptographicException)(
+                Sub() Assinatura.Assinador.Assinar(outra.ExportPkcs8PrivateKeyPem(), {1, 2, 3}),
+                "a ferramenta assinou com uma curva que nao e a P-256")
+
+            ' E o cliente tambem, mesmo com a assinatura coerente com a chave.
+            Dim corpo = MontarJson("2.0.0")
+            Dim motivo As String = Nothing
+            Assert.IsNull(ManifestoDeVersao.Ler(
+                corpo, outra.SignData(corpo, HashAlgorithmName.SHA256),
+                outra.ExportSubjectPublicKeyInfo(), motivo),
+                "o cliente aceitou uma curva que nao e a P-256")
+        End Using
+    End Sub
+
+    ''' <summary>
+    ''' Descartada e <b>ociosa</b>, ela continua sem comandos.
+    '''
+    ''' O teste do descarte com download em voo não cobria isto: lá o
+    ''' <c>Ocupado</c> fica <c>True</c> para sempre, então o <c>CanExecute</c>
+    ''' seria <c>False</c> mesmo sem a guarda de descarte. Aqui não há nada
+    ''' ocupado, e só a guarda segura.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Tela_descartada_e_ociosa_nao_tem_comando_ligado() As Task
+        Dim onde = PastaNova()
+        Try
+          Using dono = ParNovo()
+            Dim corpo = MontarJson("2.0.0")
+            Dim servidor As RespostasDeVersao = Nothing
+            Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                 New Version(1, 0, 0), servidor)
+
+            Dim tela As New AtualizacaoViewModel(procura, onde)
+            Await tela.VerificarCommand.ExecuteAsync(Nothing)
+            Assert.IsTrue(tela.BaixarCommand.CanExecute(Nothing), "nao chegou a ter oferta")
+            Assert.IsFalse(tela.Ocupado, "deveria estar ociosa aqui")
+
+            tela.Dispose()
+
+            Assert.IsFalse(tela.BaixarCommand.CanExecute(Nothing),
+                           "da para baixar depois de a tela ser descartada")
+            Assert.IsFalse(tela.VerificarCommand.CanExecute(Nothing),
+                           "da para verificar depois de a tela ser descartada")
+            Assert.IsFalse(tela.MostrarNaPastaCommand.CanExecute(Nothing))
+          End Using
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
+    End Function
+
+    ' ==================================================================
+    ' A casca de linha de comando do assinador
+    ' ==================================================================
+
+    ''' <summary>
+    ''' Roda o utilitário como os scripts o rodam. <b>"RodarAssinador", e não
+    ''' "Assinador"</b>: o segundo eclipsaria a classe <c>Assinatura.Assinador</c>,
+    ''' porque VB é insensível a maiúsculas. CLAUDE.md, primeira seção. Devolve saída padrão, saída de
+    ''' erro e código de saída.
+    ''' </summary>
+    Private Shared Function RodarAssinador(<Runtime.InteropServices.Out> ByRef saiu As String,
+                                      <Runtime.InteropServices.Out> ByRef errou As String,
+                                      ParamArray argumentos As String()) As Integer
+        Dim como As New ProcessStartInfo("dotnet") With {
+            .RedirectStandardOutput = True,
+            .RedirectStandardError = True,
+            .UseShellExecute = False,
+            .CreateNoWindow = True
+        }
+        como.ArgumentList.Add("exec")
+        como.ArgumentList.Add(Path.Combine(AppContext.BaseDirectory, "Iris.Assinatura.dll"))
+        For Each a In argumentos
+            como.ArgumentList.Add(a)
+        Next
+
+        Using quem = Process.Start(como)
+            saiu = quem.StandardOutput.ReadToEnd().Trim()
+            errou = quem.StandardError.ReadToEnd().Trim()
+            Assert.IsTrue(quem.WaitForExit(60_000), "o assinador nao terminou")
+            Return quem.ExitCode
+        End Using
+    End Function
+
+    ''' <summary>
+    ''' <b>O caminho que o dono percorre, pela linha de comando.</b>
+    '''
+    ''' Os testes de ida e volta chamam a biblioteca; os scripts chamam o
+    ''' executável. Entre os dois há a leitura de argumentos, os códigos de saída
+    ''' e a gravação dos arquivos — que não tinham teste nenhum.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_linha_de_comando_do_assinador_faz_o_ciclo_inteiro()
+        Dim onde = PastaNova()
+        Try
+            Dim chave = Path.Combine(onde, "chave.pem")
+            Dim saiu As String = Nothing, errou As String = Nothing
+
+            Assert.AreEqual(0, RodarAssinador(saiu, errou, "gerar", "--destino", chave), errou)
+            Dim publicaBase64 = saiu
+            Assert.IsTrue(publicaBase64.Length > 40, "nao imprimiu a chave publica")
+
+            ' A PRIVADA FICA NO ARQUIVO, e so la.
+            StringAssert.Contains(File.ReadAllText(chave), "BEGIN PRIVATE KEY")
+            Assert.IsFalse(publicaBase64.Contains("PRIVATE"),
+                           "a chave privada saiu pela saida padrao")
+
+            ' RECUSA GERAR POR CIMA: uma chave nova invalida tudo o que ja foi
+            ' publicado, e isso nao pode acontecer por um comando repetido.
+            Assert.AreNotEqual(0, RodarAssinador(saiu, errou, "gerar", "--destino", chave))
+            StringAssert.Contains(errou, "já existe")
+            StringAssert.Contains(File.ReadAllText(chave), "BEGIN PRIVATE KEY")
+
+            ' A publica e recuperavel sem gerar par novo, e e a MESMA.
+            Assert.AreEqual(0, RodarAssinador(saiu, errou, "publica", "--chave", chave), errou)
+            Assert.AreEqual(publicaBase64, saiu, "a chave publica mudou entre duas leituras")
+
+            ' Assinar produz o .sig ao lado, com 64 bytes.
+            Dim manifesto = Path.Combine(onde, "iris.json")
+            Dim corpo = MontarJson("2.0.0")
+            File.WriteAllBytes(manifesto, corpo)
+            Assert.AreEqual(0, RodarAssinador(saiu, errou, "assinar",
+                                         "--chave", chave, "--arquivo", manifesto), errou)
+
+            Dim aAssinatura = File.ReadAllBytes(manifesto & ".sig")
+            Assert.AreEqual(64, aAssinatura.Length,
+                            "uma assinatura P-256 em IeeeP1363 tem 64 bytes")
+            ' E NAO SOBROU PARCIAL: o .sig e gravado com outro nome e promovido.
+            Assert.AreEqual(0, Directory.GetFiles(onde, "*.parcial").Length,
+                            "sobrou um arquivo parcial da assinatura")
+
+            ' E o cliente le o que a linha de comando produziu.
+            Dim motivo As String = Nothing
+            Assert.IsNotNull(ManifestoDeVersao.Ler(corpo, aAssinatura,
+                                                   Convert.FromBase64String(publicaBase64),
+                                                   motivo),
+                             "o cliente recusou o que o executavel assinou: " & motivo)
+
+            ' Verbo desconhecido e falta de opcao saem com codigo proprio.
+            Assert.AreEqual(2, RodarAssinador(saiu, errou, "voar"))
+            StringAssert.Contains(errou, "uso:")
+            Assert.AreEqual(1, RodarAssinador(saiu, errou, "publica"))
+            StringAssert.Contains(errou, "--chave")
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
     End Sub
 
 End Class

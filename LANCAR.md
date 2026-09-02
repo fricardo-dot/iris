@@ -78,8 +78,9 @@ Essa ordem é o conserto de um defeito real: a versão era gravada primeiro, e
 uma falha em qualquer etapa seguinte a deixava gravada. A reexecução com o
 mesmo número era então recusada pela própria conferência de "a versão tem de
 subir", e sair daquilo exigia editar o arquivo à mão. Agora a versão vai para
-o build por `-p:Version=`, e o arquivo só muda quando há um pacote assinado
-para acompanhá-lo.
+o build por `-p:Version=`, e o arquivo só muda **no fim de tudo** — depois do
+`gh release create`, quando ele acontece, porque o ponto de não-retorno é a
+release existir. Sem `-Publicar`, o script diz como desfazer.
 
 Ele **não publica**. Deixa os arquivos em `artefatos/<versao>/` e imprime o
 comando `gh release create`. Subir a release é um ato seu, e um ato público.
@@ -152,6 +153,10 @@ para decidir antes de o repositório existir:
 
 | O quê | Onde |
 |---|---|
+| Gerar a chave (você roda) | [`gerar-chave-de-assinatura.ps1`](tools/gerar-chave-de-assinatura.ps1) |
+| Publicar uma versão (você roda) | [`publicar-versao.ps1`](tools/publicar-versao.ps1) |
+| Escrever o `iris.json` | [`montar-manifesto.ps1`](tools/montar-manifesto.ps1) |
+| Compilar o assinador | [`montar-assinador.ps1`](tools/montar-assinador.ps1) |
 | O número da versão | [`Directory.Build.props`](Directory.Build.props) |
 | A chave pública e o endereço | [`ChaveDeAtualizacao.vb`](src/Iris.App/ChaveDeAtualizacao.vb) |
 | Ler e conferir o manifesto | [`ManifestoDeVersao.vb`](src/Iris.Update/ManifestoDeVersao.vb) |
@@ -159,6 +164,7 @@ para decidir antes de o repositório existir:
 | A tela | [`AtualizacaoViewModel.vb`](src/Iris.App/ViewModels/AtualizacaoViewModel.vb) |
 | Os testes, com as sabotagens | [`AtualizacaoTests.vb`](tests/Iris.Tests/AtualizacaoTests.vb) |
 | Assinar (o que os scripts chamam) | [`Assinador.vb`](tools/Iris.Assinatura/Assinador.vb) |
+| A linha de comando do assinador | [`Program.vb`](tools/Iris.Assinatura/Program.vb) |
 
 O `Iris.Update` é o **segundo** assembly de produção com rede, e o
 `EgressArquiteturaTests` cobra os dois pelo nome. A diferença entre eles está

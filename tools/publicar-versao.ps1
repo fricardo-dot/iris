@@ -10,13 +10,16 @@
       2. calcula o SHA-256 DO ARQUIVO QUE ACABOU DE SAIR;
       3. escreve iris.json com esse hash e o endereço de download;
       4. assina o iris.json inteiro, byte a byte, com a sua chave privada;
-      5. só então grava a versão em Directory.Build.props.
+      5. só então — e, com -Publicar, só depois de a release existir —
+         grava a versão em Directory.Build.props.
 
     A ORDEM DO PASSO 5 IMPORTA. Ele era o primeiro, e uma falha em qualquer
     etapa seguinte deixava a versão gravada — a reexecução com o mesmo número
     era então recusada pela própria conferência de "a versão tem de subir", e o
-    conserto exigia editar o arquivo à mão. Agora a versão só é gravada quando
-    há um pacote assinado para acompanhá-la.
+    conserto exigia editar o arquivo à mão.
+
+    Passou para depois da assinatura, e depois ainda para DEPOIS DO gh: uma
+    falha ao subir a release deixava o mesmo rastro, pelo mesmo motivo.
 
     AUTOCONTIDO, e é o que faz a segunda máquina funcionar: o .NET 10 vai dentro
     do executável. O arquivo passa dos 60 MB e essa é a troca — instalar runtime
@@ -167,28 +170,15 @@ if ($tamanho -gt 300MB) {
 $sha = (Get-FileHash $pacote -Algorithm SHA256).Hash.ToLowerInvariant()
 $endereco = "https://github.com/$Repositorio/releases/download/v$Versao/Iris-$Versao.exe"
 
-$manifesto = [ordered] @{
-    versao    = $Versao
-    publicada = (Get-Date).ToUniversalTime().ToString('o')
-    notas     = $Notas
-    endereco  = $endereco
-    sha256    = $sha
-    bytes     = $tamanho
-}
-
-# SEM BOM. Tres bytes invisiveis na frente fariam parte do que foi assinado e do
-# que sera conferido, entao a assinatura ainda bateria -- mas JsonDocument.Parse
-# tropeca neles, e o erro sairia como "o manifesto nao e JSON legivel" DEPOIS de
-# a assinatura conferir, que e o pior lugar para procurar.
-$json = $manifesto | ConvertTo-Json -Depth 3
-$bytesDoManifesto = [System.Text.UTF8Encoding]::new($false).GetBytes($json)
-
+# A GERACAO DO JSON MORA EM OUTRO SCRIPT, e nao por organizacao: e para a
+# suite poder CHAMA-LA. Enquanto ela estava aqui dentro, o teste que afirmava
+# cobrir "a forma que o ConvertTo-Json escreve" era uma copia literal feita a
+# mao -- mudar este arquivo nao derrubava teste nenhum.
 $arquivoDoManifesto = Join-Path $saida 'iris.json'
-[System.IO.File]::WriteAllBytes($arquivoDoManifesto, $bytesDoManifesto)
-
-if ($bytesDoManifesto.Length -gt 65536) {
-    throw "O manifesto tem $($bytesDoManifesto.Length) bytes; o Iris recusa acima de 64 KiB."
-}
+& (Join-Path $PSScriptRoot 'montar-manifesto.ps1') `
+    -Versao $Versao -Notas $Notas -Endereco $endereco -Sha256 $sha `
+    -Bytes $tamanho -Destino $arquivoDoManifesto
+if (-not (Test-Path $arquivoDoManifesto)) { throw "Nao consegui montar $arquivoDoManifesto" }
 
 # ------------------------------------------------------------------- assinatura
 
@@ -198,12 +188,14 @@ if ($LASTEXITCODE -ne 0) { throw "A assinatura falhou com $LASTEXITCODE" }
 $arquivoDaAssinatura = "$arquivoDoManifesto.sig"
 if (-not (Test-Path $arquivoDaAssinatura)) { throw "O assinador nao produziu $arquivoDaAssinatura" }
 
-# --------------------------------------------------- e SO AGORA a versao entra
-
-[System.IO.File]::WriteAllText(
-    $props,
-    ($textoDosProps -replace '<Version>[\d.]+</Version>', "<Version>$Versao</Version>"),
-    [System.Text.UTF8Encoding]::new($false))
+# 64 BYTES, E NAO "EXISTE". Uma assinatura ECDSA P-256 em IeeeP1363 tem
+# exatamente isso; qualquer outro tamanho e um arquivo truncado com nome de
+# arquivo inteiro, e o Iris o recusaria na maquina do dono com "este arquivo
+# nao foi publicado por voce" -- dito sobre um arquivo que foi.
+$bytesDaAssinatura = (Get-Item $arquivoDaAssinatura).Length
+if ($bytesDaAssinatura -ne 64) {
+    throw "A assinatura tem $bytesDaAssinatura bytes; uma P-256 tem 64."
+}
 
 # ----------------------------------------------------------------------- fim
 
@@ -245,5 +237,20 @@ else {
     Write-Host 'Ou rode este script de novo com -Publicar.'
 }
 
+# --------------------------------------------------- e SO AGORA a versao entra
+#
+# DEPOIS DO gh, e nao antes. Gravar antes de publicar deixava o numero no
+# repositorio quando o `gh release create` falhava -- e a reexecucao com o mesmo
+# numero era entao recusada pela propria conferencia de "a versao tem de subir",
+# obrigando a editar o arquivo a mao. O ponto de nao-retorno e a release existir.
+[System.IO.File]::WriteAllText(
+    $props,
+    ($textoDosProps -replace '<Version>[\d.]+</Version>', "<Version>$Versao</Version>"),
+    [System.Text.UTF8Encoding]::new($false))
+
 Write-Host ''
 Write-Host 'E nao esqueca o commit: Directory.Build.props mudou.'
+if (-not $Publicar) {
+    Write-Host 'A versao ja foi gravada. Se voce NAO for publicar esta release,'
+    Write-Host 'desfaca com: git checkout -- Directory.Build.props'
+}

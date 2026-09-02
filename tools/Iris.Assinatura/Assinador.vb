@@ -20,8 +20,11 @@ Namespace Global.Iris.Assinatura
     ''' </summary>
     Public NotInheritable Class Assinador
 
-        ''' <summary>Quantos bytes tem uma chave pública P-256 em SPKI.</summary>
-        Private Const TamanhoDaPublicaP256 As Integer = 91
+        ''' <summary>
+        ''' O OID da curva P-256 — também chamada <c>prime256v1</c> e
+        ''' <c>secp256r1</c>. É o nome dela, e não uma pista sobre ela.
+        ''' </summary>
+        Private Const OidDaP256 As String = "1.2.840.10045.3.1.7"
 
         ''' <summary>
         ''' Gera o par. Devolve a chave privada em PEM (PKCS#8) e a pública em
@@ -77,23 +80,22 @@ Namespace Global.Iris.Assinatura
                     $"a chave tem {quem.KeySize} bits; o Iris só confere P-256")
             End If
 
-            ' O TAMANHO DA SPKI, e nao so o KeySize: ha outras curvas de 256
-            ' bits, e o cliente traz uma chave P-256 embutida. Uma curva
-            ' diferente produziria assinatura que nenhuma copia do Iris confere,
-            ' e o erro apareceria como "nao foi publicado por voce".
+            ' O OID DA CURVA, e nao o tamanho da SPKI.
             '
-            ' ESTA LINHA NAO TEM CONTROLE NEGATIVO, e vale dize-lo. Apaga-la
-            ' deixa a suite verde: o unico teste de curva errada usa P-384, que
-            ' o KeySize acima ja recusa. Provar esta aqui exigiria uma curva de
-            ' 256 bits que nao a P-256 -- brainpool, por exemplo -- e a
-            ' disponibilidade dela depende do CNG da maquina, o que faria o
-            ' teste passar aqui e falhar noutro lugar por motivo nenhum.
+            ' A primeira versao comparava o comprimento da chave exportada com 91
+            ' bytes. Aquilo era heuristica: comprimento de codificacao ASN.1 nao
+            ' identifica curva, e outra curva de 256 bits pode produzir o mesmo
+            ' total. O comentario chegou a admitir que a linha nao tinha controle
+            ' negativo -- o que estava honesto sobre o teste e nao sobre o poder
+            ' da condicao, que era o defeito de verdade.
             '
-            ' Fica como defesa em profundidade DECLARADA. A alternativa era
-            ' apaga-la por nao ser testavel, e ela custa uma comparacao no
-            ' caminho que decide de quem o Iris aceita codigo.
-            If quem.ExportSubjectPublicKeyInfo().Length <> TamanhoDaPublicaP256 Then
-                Throw New CryptographicException("a chave não é da curva P-256")
+            ' O OID e o nome da curva. Compara-lo nao e defesa em profundidade: e
+            ' a conferencia.
+            Dim oQualCurva = quem.ExportParameters(False).Curve
+            If Not oQualCurva.IsNamed OrElse
+               Not String.Equals(oQualCurva.Oid?.Value, OidDaP256, StringComparison.Ordinal) Then
+                Throw New CryptographicException(
+                    "a chave não é da curva P-256 (nistP256 / prime256v1)")
             End If
         End Sub
 

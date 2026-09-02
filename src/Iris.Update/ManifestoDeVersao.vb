@@ -141,6 +141,13 @@ Namespace Global.Iris.Update
         ''' delas é motivo para o Iris parar, e todas são o mesmo desfecho para
         ''' quem pergunta.
         ''' </summary>
+        ''' <summary>
+        ''' O OID da curva P-256 — <c>prime256v1</c>, <c>secp256r1</c>. É o nome
+        ''' dela, e não uma pista sobre ela: <c>KeySize = 256</c> sozinho aceita
+        ''' brainpoolP256r1 e secp256k1, que o Windows conhece.
+        ''' </summary>
+        Private Const OidDaP256 As String = "1.2.840.10045.3.1.7"
+
         Private Shared Function Confere(dados As Byte(), assinatura As Byte(),
                                         chavePublica As Byte()) As Boolean
             If chavePublica Is Nothing OrElse chavePublica.Length = 0 Then Return False
@@ -160,10 +167,15 @@ Namespace Global.Iris.Update
                     ' ninguem olhou dentro do executavel.
                     If lidos <> chavePublica.Length Then Return False
 
-                    ' E TEM DE SER P-256. Ha outras curvas, e o desenho escrito diz
-                    ' P-256 -- um desenho que o codigo nao faz cumprir e intencao,
-                    ' nao desenho. Iris.Assinatura exige o mesmo na outra ponta.
-                    If verificador.KeySize <> 256 Then Return False
+                    ' E TEM DE SER P-256, PELO OID.
+                    '
+                    ' KeySize = 256 sozinho nao basta: brainpoolP256r1 e
+                    ' secp256k1 tambem tem 256 bits, e o Windows conhece as duas.
+                    ' A ferramenta de publicacao ja conferia o OID; o cliente,
+                    ' nao -- entao o Iris aceitava uma chave que o dono nunca
+                    ' conseguiria usar para assinar. Achado pelo teste que usa
+                    ' brainpoolP256r1, na segunda rodada de revisoes.
+                    If Not EhP256(verificador) Then Return False
 
                     Return verificador.VerifyData(dados, assinatura, HashAlgorithmName.SHA256)
                 End Using
@@ -175,6 +187,21 @@ Namespace Global.Iris.Update
         ' "conteudo", e nao "bytes": o parametro eclipsaria a propriedade
         ' Bytes -- VB e insensivel a maiusculas -- e uma leitura nao qualificada
         ' de Bytes acrescentada aqui pegaria o vetor em vez do tamanho.
+        ''' <summary>
+        ''' A curva pelo nome, e não pelo tamanho. <c>False</c> para curva
+        ''' explícita — uma chave que não diga qual curva é não é uma chave que
+        ''' se possa afirmar ser P-256.
+        ''' </summary>
+        Private Shared Function EhP256(quem As ECDsa) As Boolean
+            Try
+                Dim qual = quem.ExportParameters(False).Curve
+                Return qual.IsNamed AndAlso
+                       String.Equals(qual.Oid?.Value, OidDaP256, StringComparison.Ordinal)
+            Catch
+                Return False
+            End Try
+        End Function
+
         Private Shared Function Interpretar(conteudo As Byte(),
                                             ByRef motivo As String) As ManifestoDeVersao
             Try

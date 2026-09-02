@@ -375,12 +375,24 @@ Namespace Global.Iris.Update
                 ' O hash de cima e dos bytes que passaram pelo nosso handle. Entre
                 ' fechar esse handle e o Move ha um instante -- pequeno, e nao
                 ' zero -- em que o arquivo temporario e apenas um nome no disco.
-                ' Sem esta segunda leitura, "o pacote conferido e exatamente o que
-                ' foi assinado" seria uma frase mais forte que o codigo.
+                ' Esta segunda leitura fecha esse intervalo.
                 '
-                ' Custa uma releitura de 60 MB, uns dois decimos de segundo, uma
-                ' vez por atualizacao. E o que compra a frase.
+                ' O QUE ELA NAO FECHA, e vale escrever: depois que este handle se
+                ' fecha e o caminho e devolvido, o arquivo volta a ser um arquivo
+                ' como outro qualquer. A garantia e PONTUAL -- "conferia no
+                ' instante desta leitura" --, e nao uma propriedade duravel do
+                ' caminho devolvido. Fecha-la exigiria assinar o executavel
+                ' (Authenticode) ou nunca soltar o handle, e as duas coisas sao
+                ' outro desenho. Ver LANCAR.md.
+                '
+                ' Custa uma releitura do arquivo, uma vez por atualizacao.
                 If Not Confere(destino, manifesto.Sha256) Then
+                    ' APAGA PELO NOME, e sim, isso pode apagar o arquivo que uma
+                    ' segunda instancia do Iris acabou de promover. E a escolha
+                    ' certa mesmo assim: um arquivo NESTE caminho cujo hash nao
+                    ' bate com o manifesto nao pode sobreviver, tenha sido escrito
+                    ' por quem for. O custo do engano e baixar de novo; o custo do
+                    ' contrario e um .exe nao conferido com nome de pacote pronto.
                     Limpar(destino)
                     Return PacoteBaixado.Nao(
                         "o pacote mudou entre a conferência e a gravação")
@@ -397,12 +409,19 @@ Namespace Global.Iris.Update
         End Function
 
         ''' <summary>
-        ''' Lê no máximo <paramref name="teto"/> bytes. O teto é conferido
-        ''' <b>durante</b> a leitura, e não depois: um servidor que ignore o
+        ''' <b>Aceita</b> no máximo <paramref name="teto"/> bytes, e <b>lê</b> no
+        ''' máximo <c>teto + 1</c> — o byte a mais existe para o excesso ser
+        ''' detectado, e nunca é devolvido. A conferência é <b>durante</b> a
+        ''' leitura, e não depois: um servidor que ignore o
         ''' <c>Content-Length</c> pode mandar para sempre.
         ''' </summary>
         Private Async Function Baixar(endereco As String, teto As Long,
                                       ct As CancellationToken) As Task(Of Byte())
+            If teto < 0 OrElse teto = Long.MaxValue Then
+                ' teto + 1 transbordaria, e um teto negativo nao e teto.
+                ' Inalcancavel pelos chamadores de hoje; barato de fechar.
+                Throw New ArgumentOutOfRangeException(NameOf(teto))
+            End If
             Using resposta = Await _cliente.GetAsync(
                     endereco, HttpCompletionOption.ResponseHeadersRead, ct)
                 resposta.EnsureSuccessStatusCode()
@@ -450,6 +469,9 @@ Namespace Global.Iris.Update
         Private Async Function BaixarPara(destino As String, endereco As String,
                                           teto As Long,
                                           ct As CancellationToken) As Task(Of String)
+            If teto < 0 OrElse teto = Long.MaxValue Then
+                Throw New ArgumentOutOfRangeException(NameOf(teto))
+            End If
             Using resposta = Await _cliente.GetAsync(
                     endereco, HttpCompletionOption.ResponseHeadersRead, ct)
                 resposta.EnsureSuccessStatusCode()
@@ -490,7 +512,7 @@ Namespace Global.Iris.Update
         ''' leitura é <c>False</c>: um arquivo que não dá para conferir não é um
         ''' arquivo conferido.
         ''' </summary>
-        Private Shared Function Confere(caminho As String, esperado As String) As Boolean
+        Friend Shared Function Confere(caminho As String, esperado As String) As Boolean
             Try
                 Using lendo As New FileStream(caminho, FileMode.Open, FileAccess.Read,
                                               FileShare.Read)
@@ -516,16 +538,29 @@ Namespace Global.Iris.Update
         ''' conferência é para o caso de ele deixar de recusar, e custa uma
         ''' comparação.
         '''
-        ''' <b>Não se exige o host</b>, e é deliberado: o endereço do pacote vem
-        ''' assinado pelo dono e pode legitimamente apontar para outro lugar. O
-        ''' que protege o conteúdo é o SHA-256 de dentro do manifesto assinado,
-        ''' não o nome do servidor.
+        ''' <b>Não se exige o host</b>, e os dois casos têm razões diferentes:
+        '''
+        ''' <list type="bullet">
+        ''' <item><b>o pacote</b>: o endereço vem assinado pelo dono e pode
+        ''' legitimamente apontar para outro lugar; o que protege o conteúdo é o
+        ''' SHA-256 de dentro do manifesto assinado, e não o nome do
+        ''' servidor;</item>
+        ''' <item><b>o manifesto e a assinatura</b>: o destino final <i>não</i>
+        ''' vem assinado — é para onde o <c>releases/latest/download/</c>
+        ''' redirecionar. Aqui o que protege não é o host, é a assinatura: um
+        ''' manifesto servido por qualquer host é recusado se não for do dono.
+        ''' O que se perde ao aceitar qualquer host é privacidade, não
+        ''' integridade.</item>
+        ''' </list>
         ''' </summary>
         Private Shared Sub ExigirHttpsAteOFim(resposta As HttpResponseMessage)
+            ' SEM ENDERECO FINAL E RECUSA, e nao "deixa passar". A pos-condicao
+            ' declarada e "o endereco final tambem e https"; nao conseguir dizer
+            ' qual foi o endereco final nao satisfaz isso.
             Dim onde = resposta.RequestMessage?.RequestUri
-            If onde Is Nothing Then Return
-            If Not String.Equals(onde.Scheme, "https", StringComparison.OrdinalIgnoreCase) Then
-                Throw New InvalidDataException("o redirecionamento saiu do https")
+            If onde Is Nothing OrElse
+               Not String.Equals(onde.Scheme, "https", StringComparison.OrdinalIgnoreCase) Then
+                Throw New InvalidDataException("o pedido não terminou em https")
             End If
         End Sub
 
