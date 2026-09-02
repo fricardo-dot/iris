@@ -170,12 +170,30 @@ Namespace Global.Iris.Integration
             ' CONSTRUTOR lancar -- e ai o diario derrubaria a aplicacao no
             ' arranque, que e o oposto do que ele promete. Os testes usam
             ' caminho temporario curto e nunca teriam pego.
-            Using sha = Security.Cryptography.SHA256.Create()
-                Dim bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(_caminho.ToLowerInvariant()))
-                _entreProcessos = New Mutex(initiallyOwned:=False,
-                                            name:="Iris.buscas." &
-                                                  Convert.ToHexString(bytes, 0, 12))
-            End Using
+            ' O MUTEX PODE NAO NASCER, E ISSO NAO DERRUBA O PROGRAMA.
+            '
+            ' O nome curto resolveu o limite do kernel; nao resolve ACL. Num
+            ' perfil corporativo, o namespace de objetos do Windows pode recusar
+            ' a criacao com UnauthorizedAccessException -- e o construtor
+            ' lancando aqui derruba a composicao da janela inteira, que e o
+            ' oposto do que este diario promete. Achado por revisao externa em
+            ' 02/09/2026.
+            '
+            ' Sem ele, a trava entre PROCESSOS some e sobra a de dentro do
+            ' processo. Duas instancias do Iris podem entao intercalar escritas
+            ' no arquivo de buscas -- que e degradacao, e nao perda: o pior caso
+            ' e uma linha malformada, que a leitura ja descarta. Nao abrir seria
+            ' pior que isso.
+            Try
+                Using sha = Security.Cryptography.SHA256.Create()
+                    Dim bytes = sha.ComputeHash(Encoding.UTF8.GetBytes(_caminho.ToLowerInvariant()))
+                    _entreProcessos = New Mutex(initiallyOwned:=False,
+                                                name:="Iris.buscas." &
+                                                      Convert.ToHexString(bytes, 0, 12))
+                End Using
+            Catch
+                _entreProcessos = Nothing
+            End Try
         End Sub
 
         ''' <summary>
@@ -286,6 +304,12 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Private Function Segurar(ByRef motivo As String) As Boolean
             motivo = Nothing
+
+            ' SEM MUTEX, SEGUE SEM ELE. Ver o construtor: num perfil que recusa
+            ' criar o objeto, a trava entre processos nao existe e resta a de
+            ' dentro do processo. Degradacao declarada, e nao silencio.
+            If _entreProcessos Is Nothing Then Return True
+
             Try
                 If _entreProcessos.WaitOne(TimeSpan.FromMilliseconds(250)) Then Return True
                 motivo = "outra janela do Iris estava escrevendo"
@@ -309,6 +333,7 @@ Namespace Global.Iris.Integration
 
         Private Sub Soltar(segurou As Boolean)
             If Not segurou Then Return
+            If _entreProcessos Is Nothing Then Return
             Try
                 _entreProcessos.ReleaseMutex()
             Catch
@@ -476,7 +501,7 @@ Namespace Global.Iris.Integration
         ''' sujeira que ninguém vê até ver.
         ''' </summary>
         Public Sub Dispose() Implements IDisposable.Dispose
-            _entreProcessos.Dispose()
+            _entreProcessos?.Dispose()
         End Sub
     End Class
 

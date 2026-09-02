@@ -473,6 +473,49 @@ Public Class ClassificarUmaPastaTests
     ' PARAR NO MEIO
 
     ''' <summary>
+    ''' <summary>
+    ''' <b>Token já cancelado antes de começar: nada é lido, nada sai.</b>
+    '''
+    ''' O teste vizinho cancela <i>dentro</i> do primeiro envio, e por isso não
+    ''' cobre a guarda que roda antes do primeiro lote. Mover a conferência para
+    ''' depois do <c>envio</c> o deixaria verde — e um lote sairia de uma passagem
+    ''' que já nascia cancelada. Achado por revisão externa em 02/09/2026.
+    '''
+    ''' O caso é real: fechar a janela e reabrir depressa, ou trocar de pasta
+    ''' entre o clique e o começo.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Token_JA_CANCELADO_nao_le_nem_manda_nada()
+        Comigo(Sub(db)
+                   Dim pasta = Varrer(db, "f-1", {"a", "b"})
+
+                   Dim cts As New CancellationTokenSource()
+                   cts.Cancel()
+
+                   Dim leu = 0
+                   Dim mandou = 0
+                   Dim conteudo As ClassificarUmaPasta.Conteudo =
+                       Function(pedidos, ct)
+                           leu += 1
+                           Return Entrega()(pedidos, ct)
+                       End Function
+                   Dim envio As ClassificarUmaPasta.Envio =
+                       Function(instrucao, partes, ct)
+                           mandou += 1
+                           Return Responde("fyi")(instrucao, partes, ct)
+                       End Function
+
+                   Dim r = New ClassificarUmaPasta(Acervo(db), New RotulosNoCache(db)).
+                           Passar(pasta, Nothing, "ativacao-1", Quando,
+                                  conteudo, envio, cts.Token)
+
+                   Assert.AreEqual(0, leu, "LEU O CORPO de uma passagem ja cancelada")
+                   Assert.AreEqual(0, mandou, "MANDOU de uma passagem ja cancelada")
+                   Assert.AreEqual(MotivoDaClassificacao.Parada, r.Motivo)
+                   Assert.AreEqual(0, r.Classificados)
+               End Sub)
+    End Sub
+
     ''' <b>O pedido de parada é olhado entre lotes.</b>
     '''
     ''' Uma passagem sobre uma pasta grande são vinte idas à rede, e nenhuma

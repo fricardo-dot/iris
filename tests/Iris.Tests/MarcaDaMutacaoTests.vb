@@ -138,6 +138,44 @@ Public Class MarcaDaMutacaoTests
     End Sub
 
     ''' <summary>
+    ''' <b>Marca e efeito juntos dentro de um ramo morto não valem nada.</b>
+    '''
+    ''' A conferência de posição é textual, e proximidade não é alcançabilidade:
+    ''' um <c>If False Then</c> em volta da marca e do <c>Save</c> passa nos dois
+    ''' testes acima enquanto a mutação acontece noutro lugar, sem marca.
+    '''
+    ''' Provar alcançabilidade de verdade exigiria análise de fluxo. O que dá para
+    ''' fazer aqui, e é honesto chamar pelo nome, é <b>proibir a condição
+    ''' constante</b> nesses arquivos: ela não tem uso legítimo, e é exatamente a
+    ''' forma que a sabotagem toma. Achado por revisão externa em 02/09/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Escritor_nao_tem_condicao_CONSTANTE()
+        Dim mortos As New List(Of String)()
+
+        For Each nome In Escritores
+            Dim linhas = File.ReadAllLines(Caminho(nome))
+            For i = 0 To linhas.Length - 1
+                Dim t = SemComentarioDeLinha(linhas(i)).Trim()
+                If Regex.IsMatch(t, "^(If|ElseIf)\s+(True|False)\s+Then",
+                                 RegexOptions.IgnoreCase) Then
+                    mortos.Add($"{nome}:{i + 1} — «{t}»")
+                End If
+            Next
+        Next
+
+        Assert.AreEqual(0, mortos.Count,
+            "condição constante num escritor: a marca e o efeito podem estar " &
+            "juntos num ramo que nunca roda, e a conferência de posição não vê " &
+            "diferença — " & String.Join(", ", mortos))
+    End Sub
+
+    Private Shared Function SemComentarioDeLinha(linha As String) As String
+        Dim corte = linha.IndexOf("'"c)
+        Return If(corte >= 0, linha.Substring(0, corte), linha)
+    End Function
+
+    ''' <summary>
     ''' <b>O despacho não marca mais.</b>
     '''
     ''' É a metade que dava o defeito, e ela é conferida por nome: se voltar um

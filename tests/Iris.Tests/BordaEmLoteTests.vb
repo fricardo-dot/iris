@@ -418,8 +418,15 @@ Public Class BordaEmLoteTests
     <TestMethod>
     Public Sub Lote_AMBIGUO_nao_e_contado_como_recusado_e_a_passagem_para()
         Comigo(Sub(db)
-                   ' Tres lotes de uma mensagem cada.
-                   Dim noCache = Semear(db, {"a", "b", "c"})
+                   ' MAIS DE UM LOTE, e e o ponto do teste.
+                   '
+                   ' A primeira versao semeava tres mensagens -- que cabem num lote
+                   ' so, porque PorLote e 20. Nao havia lote seguinte para bloquear,
+                   ' e a asseracao "a passagem para" nao testava nada: trocar o
+                   ' Return por um Continue For deixava o teste verde e uma pasta
+                   ' grande continuava divulgando depois de uma ambiguidade. Achado
+                   ' por revisao externa em 02/09/2026.
+                   Dim noCache = Semear(db, Sufixos(ClassificarUmaPasta.PorLote + 1))
                    Dim provedor As New ProvedorQueClassifica()
                    provedor.Desfecho = New ProviderOutcome(ProviderStatus.ConexaoCaiu, "")
 
@@ -431,7 +438,7 @@ Public Class BordaEmLoteTests
                    Assert.AreEqual(0, r.LotesRecusados,
                        "incerto NAO pode ser somado a recusado: sao afirmacoes opostas")
                    Assert.AreEqual(1, provedor.Chamadas,
-                       "a passagem tinha de PARAR no primeiro lote incerto")
+                       "A PASSAGEM SEGUIU depois de um lote que pode ter saido")
                End Sub)
     End Sub
 
@@ -446,14 +453,17 @@ Public Class BordaEmLoteTests
     <TestMethod>
     Public Sub Recusa_CONHECIDA_nao_vira_incerteza()
         Comigo(Sub(db)
-                   Dim noCache = Semear(db, {"a", "b", "c"})
+                   ' DOIS LOTES, pelo mesmo motivo do teste acima: com um so, "a
+                   ' passagem segue" nao afirma nada.
+                   Dim noCache = Semear(db, Sufixos(ClassificarUmaPasta.PorLote + 1))
                    Dim provedor As New ProvedorQueClassifica()
 
                    Dim r = Classificar(db, noCache, provedor, ativacao:=Nothing)
 
                    Assert.AreEqual(0, r.LotesIncertos,
                        "o portao negou ANTES da rede: nada saiu, e isso se sabe")
-                   Assert.AreEqual(1, r.LotesRecusados)
+                   Assert.AreEqual(2, r.LotesRecusados,
+                       "A PASSAGEM PAROU numa recusa que se sabe conhecida")
                    Assert.AreEqual(MotivoDaClassificacao.Passou, r.Motivo,
                        "recusa conhecida nao para a passagem")
                End Sub)
@@ -924,6 +934,15 @@ Public Class BordaEmLoteTests
                                     {LabelReadingKind.Absent}, {0},
                                     ate:=Quando.AddDays(30),
                                     provedoresPermitidos:={"provedor-subjacente"})
+    End Function
+
+    ''' <summary>
+    ''' <c>quantos</c> sufixos distintos — para semear mais de um lote sem
+    ''' escrever vinte e uma letras à mão.
+    ''' </summary>
+    Private Shared Function Sufixos(quantos As Integer) As String()
+        Return Enumerable.Range(1, quantos).
+               Select(Function(i) "m" & i.ToString()).ToArray()
     End Function
 
     Private Shared Function Chave(sufixo As String) As ItemKey

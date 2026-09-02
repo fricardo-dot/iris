@@ -55,13 +55,49 @@ Class Application
             Return
         End Try
 
-        ' A partir daqui só o contrato circula.
-        Dim broker As IOutlookBroker = _broker
-        _viewModel = New MainViewModel(broker, Dispatcher,
-                                       New WindowsSaveFileService(), New WindowsPickFileService())
+        ' A COMPOSICAO TAMBEM PRECISA DE CERCA, e ela nao tinha.
+        '
+        ' O Try acima terminava no Start() do broker. Montar o MainViewModel, a
+        ' janela e mostra-la ficava fora, e ali ha coisa que falha em maquina de
+        ' verdade: o diario de buscas cria um MUTEX NOMEADO no construtor, e
+        ' perfil corporativo com ACL restritiva no namespace de objetos do Windows
+        ' recusa. Sem cerca, o Iris morria com excecao nao tratada -- sem a caixa
+        ' de erro que este bloco inteiro existe para dar, e com o broker JA
+        ' INICIADO, deixando a STA e os RCW vivos: OUTLOOK.EXE orfao (R7).
+        '
+        ' Achado por revisao externa em 02/09/2026.
+        Try
+            ' A partir daqui só o contrato circula.
+            Dim broker As IOutlookBroker = _broker
+            _viewModel = New MainViewModel(broker, Dispatcher,
+                                           New WindowsSaveFileService(),
+                                           New WindowsPickFileService())
 
-        Dim janela As New MainWindow With {.DataContext = _viewModel}
-        janela.Show()
+            Dim janela As New MainWindow With {.DataContext = _viewModel}
+            janela.Show()
+        Catch ex As Exception
+            _log.Write(LogLevel.Error, "app.startup",
+                       "a janela nao pode ser montada: " & ex.GetType().Name)
+
+            ' O QUE JA FOI CRIADO SAI ANTES DA CAIXA DE ERRO. Descartar depois
+            ' seria descartar depois de o dono clicar em OK -- e ele pode demorar,
+            ' ou fechar a caixa pelo X.
+            Try
+                _viewModel?.Dispose()
+            Catch
+            End Try
+            _viewModel = Nothing
+
+            MessageBox.Show(
+                "Não foi possível abrir a janela do Iris." & Environment.NewLine &
+                "Detalhes no log do aplicativo.",
+                "Iris", MessageBoxButton.OK, MessageBoxImage.Error)
+
+            ' O broker sai pelo Application_Exit, que roda depois do Shutdown:
+            ' ele libera os COM na propria STA, e e la que isso tem de acontecer.
+            Shutdown(1)
+            Return
+        End Try
 
         ' Primeira conexão sem bloquear a abertura da janela: se o Outlook
         ' estiver ocupado, o usuário vê a tela e o estado, não uma janela

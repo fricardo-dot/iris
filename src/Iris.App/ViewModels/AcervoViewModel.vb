@@ -156,7 +156,21 @@ Namespace Global.Iris.App.ViewModels
                 Dim falha As OpenFailure = Nothing
                 Dim db = CacheDatabase.Open(caminho, CacheSchema.Intended(), falha)
                 If db Is Nothing Then
-                    motivoDaFalha = $"o cache não abriu ({falha})"
+                    ' O AVISO DIZ QUE O DIARIO MORA AI DENTRO.
+                    '
+                    ' O cache e descartavel -- apagar e recriar e a saida obvia para
+                    ' quem ve "nao abriu". So que o DIARIO DO EGRESSO mora no mesmo
+                    ' arquivo, e ele e a unica prova do que saiu desta maquina: nao se
+                    ' reconstroi de lugar nenhum.
+                    '
+                    ' Separar os dois arquivos e o conserto de verdade, e e outro
+                    ' desenho -- ciclo de vida, migracao e recuperacao proprios. Ate la,
+                    ' o minimo honesto e a frase nao convidar ao apagamento. Achado por
+                    ' revisao externa em 02/09/2026.
+                    motivoDaFalha =
+                        $"o cache não abriu ({falha}). NÃO apague o arquivo: o " &
+                        "registro do que já saiu desta máquina mora dentro dele, e " &
+                        "não se reconstrói. Guarde uma cópia antes de qualquer coisa."
                     Return Nothing
                 End If
                 Return New AcervoViewModel(ui, db, folderKey, broker, caminho)
