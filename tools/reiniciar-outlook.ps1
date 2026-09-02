@@ -102,9 +102,13 @@ if (-not $vivo) {
     exit 1
 }
 
-$ost = "C:\Users\Ricardo\AppData\Local\Microsoft\Outlook\conta.do.dono@empresa.com.ost"
-if (Test-Path $ost) {
-    Write-Host ("OST agora: {0:N0} MB" -f ((Get-Item $ost).Length / 1MB))
+# O .ost e PROCURADO, e nao fixado. O nome do arquivo E o endereco da conta,
+# e um caminho fixo aqui punha o e-mail de trabalho do dono num arquivo
+# versionado -- o tipo de coisa que so incomoda no dia em que o repositorio
+# fica publico, e nesse dia ja esta no historico.
+$ondeFicaOOst = Join-Path $env:LOCALAPPDATA "Microsoft\Outlook"
+foreach ($arquivo in Get-ChildItem -Path $ondeFicaOOst -Filter *.ost -ErrorAction SilentlyContinue) {
+    Write-Host ("OST agora: {0:N0} MB  ({1})" -f ($arquivo.Length / 1MB), $arquivo.Name)
 }
 Write-Host ""
 Write-Host "A sincronizacao da janela nova comeca agora e leva o tempo que levar."
