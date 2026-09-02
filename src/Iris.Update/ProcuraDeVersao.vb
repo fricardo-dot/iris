@@ -123,20 +123,37 @@ Namespace Global.Iris.Update
         ''' </summary>
         Public Shared Function VersaoInstalada() As Version
             Try
-                Dim bruta = Assembly.GetEntryAssembly()?.
+                Return Interpretar(Assembly.GetEntryAssembly()?.
                     GetCustomAttribute(Of AssemblyInformationalVersionAttribute)()?.
-                    InformationalVersion
-
-                If String.IsNullOrWhiteSpace(bruta) Then Return New Version(0, 0, 0)
-
-                Dim corte = bruta.IndexOfAny({"+"c, "-"c})
-                If corte > 0 Then bruta = bruta.Substring(0, corte)
-
-                Dim v As Version = Nothing
-                Return If(Version.TryParse(bruta, v), v, New Version(0, 0, 0))
+                    InformationalVersion)
             Catch
                 Return New Version(0, 0, 0)
             End Try
+        End Function
+
+        ''' <summary>
+        ''' <b>Separada porque só ela é testável.</b>
+        '''
+        ''' <c>GetEntryAssembly</c> devolve o host de teste quando quem roda é o
+        ''' host de teste, e não o Iris — então um teste sobre
+        ''' <see cref="VersaoInstalada"/> mediria a versão do VSTest. O que dá
+        ''' para provar é o corte, e é o corte que erra: o SDK escreve
+        ''' <c>0.1.0+f29b9b8…</c>, com o commit colado, e um
+        ''' <c>Version.TryParse</c> nisso falha calado — devolvendo 0.0.0, que
+        ''' faria o Iris se achar mais velho que qualquer coisa e oferecer
+        ''' atualização para sempre.
+        '''
+        ''' <c>0.0.0</c> em qualquer coisa ilegível: um número que não dá para
+        ''' ler não pode virar um número que dá.
+        ''' </summary>
+        Friend Shared Function Interpretar(bruta As String) As Version
+            If String.IsNullOrWhiteSpace(bruta) Then Return New Version(0, 0, 0)
+
+            Dim corte = bruta.IndexOfAny({"+"c, "-"c})
+            If corte > 0 Then bruta = bruta.Substring(0, corte)
+
+            Dim v As Version = Nothing
+            Return If(Version.TryParse(bruta, v), v, New Version(0, 0, 0))
         End Function
 
         ''' <summary>

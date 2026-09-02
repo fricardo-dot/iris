@@ -494,6 +494,44 @@ Public Class AtualizacaoTests
     ' A tela
     ' ==================================================================
 
+    ' ==================================================================
+    ' A versão que este executável diz ser
+    ' ==================================================================
+
+    ''' <summary>
+    ''' <b>O sufixo de commit é cortado — e a string do teste é a de verdade.</b>
+    '''
+    ''' <c>0.1.0+f29b9b8a…</c> foi lido do <c>Iris.exe</c> autocontido que o
+    ''' <c>dotnet publish</c> produziu em 02/09/2026, e não inventado: o SDK cola
+    ''' o commit no <c>InformationalVersion</c> por padrão.
+    '''
+    ''' Sem o corte, <c>Version.TryParse</c> falha calado e devolve 0.0.0 — o
+    ''' Iris se acharia mais velho que qualquer coisa e ofereceria atualização
+    ''' para sempre, inclusive para a versão que ele já é.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_versao_instalada_ignora_o_sufixo_de_commit()
+        Assert.AreEqual(New Version(0, 1, 0),
+                        ProcuraDeVersao.Interpretar("0.1.0+f29b9b8a21079379dc057573f0984fae14c806e2"),
+                        "nao cortou o commit que o SDK cola no InformationalVersion")
+        Assert.AreEqual(New Version(1, 2, 3), ProcuraDeVersao.Interpretar("1.2.3"))
+        Assert.AreEqual(New Version(1, 2, 3), ProcuraDeVersao.Interpretar("1.2.3-beta.1"))
+        Assert.AreEqual(New Version(1, 2, 3, 4), ProcuraDeVersao.Interpretar("1.2.3.4"))
+    End Sub
+
+    ''' <summary>
+    ''' Ilegível vira 0.0.0 e não exceção — esta função roda na montagem da tela,
+    ''' e uma exceção aqui derrubaria o Iris no arranque por causa de um atributo
+    ''' de compilação.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Versao_ilegivel_vira_zero_e_nao_excecao()
+        For Each ruim In {Nothing, "", "   ", "abc", "1", "1.", "versao 2"}
+            Assert.AreEqual(New Version(0, 0, 0), ProcuraDeVersao.Interpretar(ruim),
+                            "aceitou '" & If(ruim, "<Nothing>") & "' como versao")
+        Next
+    End Sub
+
     <TestMethod>
     Public Sub Sem_chave_configurada_o_botao_de_verificar_nao_liga()
         Dim tela As New AtualizacaoViewModel(Nothing, "")
