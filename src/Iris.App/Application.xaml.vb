@@ -71,7 +71,8 @@ Class Application
             Dim broker As IOutlookBroker = _broker
             _viewModel = New MainViewModel(broker, Dispatcher,
                                            New WindowsSaveFileService(),
-                                           New WindowsPickFileService())
+                                           New WindowsPickFileService(),
+                                           log:=_log)
 
             Dim janela As New MainWindow With {.DataContext = _viewModel}
             janela.Show()

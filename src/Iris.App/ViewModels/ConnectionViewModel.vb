@@ -52,9 +52,19 @@ Namespace Global.Iris.App.ViewModels
         ' entao a ultima vence sem que nenhuma se perca no meio.
         Private ReadOnly _applyGate As New SemaphoreSlim(1, 1)
 
-        Public Sub New(broker As IOutlookBroker, uiDispatcher As Global.System.Windows.Threading.Dispatcher)
+        ''' <summary>
+        ''' O log, para as tarefas soltas terem onde deixar rastro. <c>Nothing</c> é
+        ''' legítimo — nos testes não há log, e a ausência dele não pode derrubar
+        ''' nada.
+        ''' </summary>
+        Private ReadOnly _log As ILog
+
+        Public Sub New(broker As IOutlookBroker,
+                       uiDispatcher As Global.System.Windows.Threading.Dispatcher,
+                       Optional log As ILog = Nothing)
             _broker = broker
             _ui = uiDispatcher
+            _log = log
 
             RetryCommand = New AsyncRelayCommand(AddressOf RetryAsync)
             OpenOutlookCommand = New RelayCommand(AddressOf OpenOutlook)
@@ -266,9 +276,37 @@ Namespace Global.Iris.App.ViewModels
             work.ContinueWith(
                 Sub(t)
                     If t.Exception Is Nothing Then Return
-                    Global.System.Diagnostics.Debug.WriteLine(
-                        $"[{operation}] {t.Exception.GetBaseException().GetType().Name}")
+                    Registrar(operation, t.Exception.GetBaseException())
                 End Sub, TaskContinuationOptions.OnlyOnFaulted)
+        End Sub
+
+        ''' <summary>
+        ''' <b>A falha de uma tarefa solta vai para o LOG</b>, e não só para o
+        ''' depurador.
+        '''
+        ''' O comentário acima dizia "aqui ela pelo menos aparece no log", e o
+        ''' código escrevia num <c>Debug.WriteLine</c> — que não existe em compilação
+        ''' de produção. Falha de <c>app.initialize</c>, do descarte do watcher, de
+        ''' uma recarga ou de um tratador de evento sumia por completo, e sobrava
+        ''' para o dono uma tela que não atualizou sem causa registrável. Achado por
+        ''' revisão externa em 02/09/2026.
+        '''
+        ''' <b>Só o tipo, e nunca a mensagem.</b> Texto de exceção do Outlook pode
+        ''' carregar assunto, caminho ou endereço, e o log é arquivo em texto puro
+        ''' na pasta do perfil. O tipo e o HRESULT bastam para diagnosticar e não
+        ''' levam conteúdo junto.
+        ''' </summary>
+        Friend Sub Registrar(operacao As String, erro As Exception)
+            Global.System.Diagnostics.Debug.WriteLine(
+                $"[{operacao}] {erro.GetType().Name}")
+
+            If _log Is Nothing Then Return
+            Dim comCodigo = TryCast(erro, Runtime.InteropServices.COMException)
+            Dim hr = If(comCodigo Is Nothing, "", $" hr=0x{comCodigo.HResult:X8}")
+            Try
+                _log.Write(LogLevel.Error, operacao, erro.GetType().Name & hr)
+            Catch
+            End Try
         End Sub
 
         ''' <summary>

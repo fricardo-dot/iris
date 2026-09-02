@@ -381,12 +381,13 @@ Namespace Global.Iris.App.ViewModels
         ''' </summary>
         Public Sub New(broker As IOutlookBroker, ui As Global.System.Windows.Threading.Dispatcher,
                        saveFile As ISaveFileService, pickFile As IPickFileService,
-                       Optional caminhoDoCache As String = Nothing)
+                       Optional caminhoDoCache As String = Nothing,
+                       Optional log As ILog = Nothing)
             _broker = broker
             _ui = ui
             _epocaVista = broker.SessionEpoch
 
-            Connection = New ConnectionViewModel(broker, ui)
+            Connection = New ConnectionViewModel(broker, ui, log)
             Folders = New FolderTreeViewModel(broker, ui, AddressOf Connection.Observe)
             Messages = New MessageListViewModel(broker, ui, AddressOf Connection.Observe)
             Detail = New MessageDetailViewModel(broker, ui, AddressOf Connection.Observe, saveFile)
@@ -1746,10 +1747,24 @@ Namespace Global.Iris.App.ViewModels
             Folders.Clear()
             Messages.Clear()
 
-            Agenda.Dispose()
-            Tarefas.Dispose()
-            RemoveHandler Contatos.PropertyChanged, AddressOf OnContatosChanged
-            Contatos.Dispose()
+            ' CADA DESCARTE NA SUA CERCA.
+            '
+            ' Era uma sequencia nua: um Dispose que lancasse levava junto todos os
+            ' seguintes. O Application_Exit engole a excecao do Dispose inteiro e
+            ' segue para o broker, entao o processo nao morre -- mas tarefas,
+            ' mutexes, assinaturas e o cache ficam vivos ate o processo cair.
+            '
+            ' O "?" da Busca ja tinha sido posto por este motivo em 01/09, um
+            ' descarte de cada vez. A cerca generaliza: nenhum descarte pode
+            ' depender de o anterior ter corrido bem. Achado por revisao externa em
+            ' 02/09/2026.
+            Descartar("agenda", Sub() Agenda.Dispose())
+            Descartar("tarefas", Sub() Tarefas.Dispose())
+            Descartar("contatos",
+                      Sub()
+                          RemoveHandler Contatos.PropertyChanged, AddressOf OnContatosChanged
+                          Contatos.Dispose()
+                      End Sub)
             ' O "?" NAO E ZELO: a Busca so nasce quando o acervo abre, e fechar a
             ' janela com o cache indisponivel estourava aqui -- interrompendo o
             ' descarte de tudo que vem depois (watcher, compositor, detalhe,
@@ -1776,17 +1791,35 @@ Namespace Global.Iris.App.ViewModels
             ' mandadas outra vez na proxima abertura.
             EsperarOLoteEmVoo()
 
-            Busca?.Dispose()
-            _watcher.Dispose()
-            Composer.Dispose()
-            Detail.Dispose()
-            Connection.Dispose()
+            Descartar("busca", Sub() Busca?.Dispose())
+            Descartar("watcher", Sub() _watcher.Dispose())
+            Descartar("compositor", Sub() Composer.Dispose())
+            Descartar("detalhe", Sub() Detail.Dispose())
+            Descartar("conexao", Sub() Connection.Dispose())
             ' O ASSISTENTE TAMBEM. O que ele tem em voo e egress: cancelar nao
             ' desfaz requisicao enviada, e quem registra o desfecho e o diario,
             ' pela reconciliacao da proxima abertura. O que o descarte impede e
             ' a tela morta ser escrita.
-            Assistente?.Dispose()
-            Acervo?.Dispose()
+            Descartar("assistente", Sub() Assistente?.Dispose())
+
+            ' O ACERVO POR ULTIMO, e de proposito: ele fecha o banco, e o banco e
+            ' de quem quase todos os outros dependem.
+            Descartar("acervo", Sub() Acervo?.Dispose())
+        End Sub
+
+        ''' <summary>
+        ''' Um descarte, com cerca e com nome. O nome vai para o log: um descarte
+        ''' que falha em silêncio deixa recurso vivo e não deixa rastro de qual.
+        ''' </summary>
+        Private Sub Descartar(oQue As String, passo As Action)
+            Try
+                passo()
+            Catch ex As Exception
+                Try
+                    Connection.Registrar($"descarte.{oQue}", ex)
+                Catch
+                End Try
+            End Try
         End Sub
 
     End Class
