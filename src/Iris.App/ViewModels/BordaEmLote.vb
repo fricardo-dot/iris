@@ -94,8 +94,12 @@ Namespace Global.Iris.App.ViewModels
         ''' envelope com o controle e nenhuma mensagem gastaria uma chamada para
         ''' perguntar sobre ninguém.
         ''' </summary>
-        Friend Function Conteudo(pedidos As IReadOnlyList(Of PedidoDeParte)) _
+        Friend Function Conteudo(pedidos As IReadOnlyList(Of PedidoDeParte),
+                                 ct As CancellationToken) _
                                  As IReadOnlyList(Of MessagePart)
+            ' PARAR ANTES DE LER e melhor que parar antes de mandar: o corpo nem
+            ' chega a sair do Outlook.
+            If ct.IsCancellationRequested Then Return Nothing
             _lote = Nothing
             _fichas = Nothing
             If pedidos Is Nothing OrElse pedidos.Count = 0 Then Return Nothing
@@ -118,7 +122,7 @@ Namespace Global.Iris.App.ViewModels
             _lote = pedidos
             _fichas = mapa
 
-            Return ContextoDo(itens).Partes()
+            Return ContextoDo(itens, mapa).Partes()
         End Function
 
         ''' <summary>
@@ -138,23 +142,38 @@ Namespace Global.Iris.App.ViewModels
         ''' e-mail hostil que estava no lote.
         ''' </summary>
         Friend Function Envio(instrucao As String,
-                              partes As IReadOnlyList(Of MessagePart)) As String
-            If _lote Is Nothing Then Return Nothing
+                              partes As IReadOnlyList(Of MessagePart),
+                              ct As CancellationToken) As String
+            ' O LOTE E CONSUMIDO, e nao so lido.
+            '
+            ' Ele ficava guardado depois do envio, e um segundo Envio sem um
+            ' Conteudo novo -- por refatoracao, por retry, por uso direto --
+            ' reusaria em silencio as fichas e a autorizacao do lote anterior.
+            ' A porta da passagem impede isso hoje; depender de uma invariante
+            ' de outra classe para nao divulgar errado e depender de alguem nao
+            ' mudar de ideia. Achado por revisao externa em 01/09/2026.
+            Dim lote = _lote
+            Dim fichas = _fichas
+            _lote = Nothing
+            _fichas = Nothing
+
+            If lote Is Nothing Then Return Nothing
+            If ct.IsCancellationRequested Then Return Nothing
             If partes Is Nothing OrElse partes.Count = 0 Then Return Nothing
 
             ' O CONTEXTO E MONTADO COM AS CHAVES DO LOTE, e nao com as das
             ' partes: parte sem item -- o controle -- nao tem chave para
             ' classificar, e o portao nao pode receber um item nulo.
-            Dim itens = _lote.Where(Function(p) p IsNot Nothing AndAlso p.Chave IsNot Nothing).
-                              Select(Function(p) p.Chave).ToList()
-            Dim contexto = ContextoDo(itens)
+            Dim itens = lote.Where(Function(p) p IsNot Nothing AndAlso p.Chave IsNot Nothing).
+                             Select(Function(p) p.Chave).ToList()
+            Dim contexto = ContextoDo(itens, fichas)
 
             Dim desfecho = _transmissor.Executar(
                 contexto.Pedido(AssistOperation.Classificar),
                 AddressOf contexto.Classificar,
                 Function() New EnvelopeBuilder().Montar(
                     AssistOperation.Classificar, instrucao, partes),
-                CancellationToken.None)
+                ct)
 
             If desfecho Is Nothing Then Return Nothing
             If desfecho.Kind <> AssistOutcomeKind.Respondeu Then Return Nothing
@@ -166,17 +185,24 @@ Namespace Global.Iris.App.ViewModels
         ''' apanhado de funções sobre uma seleção, e guardar um entre lotes seria
         ''' guardar a seleção junto.
         ''' </summary>
-        Private Function ContextoDo(itens As IReadOnlyList(Of ItemKey)) As ContextoDoOutlook
+        Private Function ContextoDo(itens As IReadOnlyList(Of ItemKey),
+                                    fichas As Dictionary(Of ItemKey, String)) _
+                                    As ContextoDoOutlook
             Return New ContextoDoOutlook(
                 _broker, _destino,
                 Function() (Pasta:=_pasta, Itens:=itens),
-                AddressOf FichaDe)
+                Function(chave) FichaDe(fichas, chave))
         End Function
 
-        Private Function FichaDe(chave As ItemKey) As String
-            If _fichas Is Nothing OrElse chave Is Nothing Then Return Nothing
+        ''' <summary>
+        ''' O mapa vem por parâmetro, e não do campo: o campo é consumido em
+        ''' <see cref="Envio"/>, e o contexto pode perguntar depois disso.
+        ''' </summary>
+        Private Shared Function FichaDe(fichas As Dictionary(Of ItemKey, String),
+                                        chave As ItemKey) As String
+            If fichas Is Nothing OrElse chave Is Nothing Then Return Nothing
             Dim ficha As String = Nothing
-            If _fichas.TryGetValue(chave, ficha) Then Return ficha
+            If fichas.TryGetValue(chave, ficha) Then Return ficha
             Return Nothing
         End Function
 

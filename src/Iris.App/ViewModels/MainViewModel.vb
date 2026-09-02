@@ -331,6 +331,18 @@ Namespace Global.Iris.App.ViewModels
         ' A cadeia da IA, guardada para a classificacao em lote usar A MESMA.
         Private _transmissor As AssistTransmitter
         Private _rotulos As RotulosNaMao
+
+        ''' <summary>
+        ''' <b>O pedido de parada da classificação em curso.</b>
+        '''
+        ''' Uma passagem sobre uma pasta grande são vinte idas à rede, e o
+        ''' <c>Task.Run</c> segurava o acervo, o broker e o transmissor enquanto
+        ''' isso. Fechar a janela descartava o cache <b>debaixo</b> dela: o lote
+        ''' seguinte podia gravar sobre uma conexão morta, e a continuação escrevia
+        ''' em ViewModels que já não existem. Achado por revisão externa em
+        ''' 01/09/2026.
+        ''' </summary>
+        Private _pararClassificacao As Threading.CancellationTokenSource
         Private _destinoDaIa As AssistDestination
         Private _ativacaoDaIa As String = ""
 
@@ -1253,12 +1265,32 @@ Namespace Global.Iris.App.ViewModels
         Public ReadOnly Property PodeClassificarPasta As Boolean
             Get
                 Return Acervo IsNot Nothing AndAlso _transmissor IsNot Nothing AndAlso
-                       Not Classificando
+                       Not Classificando AndAlso Not Acervo.Varrendo
             End Get
         End Property
 
+        ''' <summary>
+        ''' <b>Quantas mensagens um clique manda, no máximo, sem perguntar.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>UM CLIQUE MANDAVA A PASTA INTEIRA</b>
+        '''
+        ''' Sem contagem, sem confirmação, sem teto e sem estimativa. Numa pasta
+        ''' varrida com milhares de itens, um clique produziria centenas de lotes —
+        ''' corpo de e-mail saindo da máquina e dinheiro sendo gasto, sem o dono ter
+        ''' visto um número antes. O único texto sobre isso morava num <i>tooltip</i>
+        ''' que não dizia quantas. Achado por revisão externa em 01/09/2026.
+        '''
+        ''' O número é escolhido, não medido: é o que cabe numa conferência que uma
+        ''' pessoa faz de cabeça — "são cinquenta, vai" — e é pequeno o bastante
+        ''' para o primeiro uso não custar caro. Acima dele, o dono <b>confirma</b>,
+        ''' vendo pasta, quantidade e número de lotes.
+        ''' </summary>
+        Public Const SemPerguntar As Integer = 50
+
         Private Async Function ClassificarPastaAsync() As Task
             If Not PodeClassificarPasta Then Return
+            If _disposed Then Return
 
             Dim alvo As (Chave As Long, Pasta As FolderKey, Nome As String)
             Try
@@ -1291,31 +1323,93 @@ Namespace Global.Iris.App.ViewModels
                 Return
             End Try
 
+            ' QUANTAS VAO SAIR -- contado ANTES de qualquer divulgacao.
+            Dim quantas = Acervo.QuantasSemRotulo(alvo.Chave)
+            If quantas = 0 Then
+                Classificacao = "Nada a classificar em " & alvo.Nome & ": tudo o que " &
+                                "está presente já tem rótulo nesta varredura."
+                Return
+            End If
+
+            If quantas > SemPerguntar AndAlso Not Confirmar(alvo.Nome, quantas) Then
+                Classificacao = "Nada foi mandado."
+                Return
+            End If
+
             Dim borda As New BordaEmLote(_broker, _transmissor, _destinoDaIa, alvo.Pasta)
             Dim quando = DateTimeOffset.Now
             Dim ativacao = _ativacaoDaIa
             Dim chave = alvo.Chave
 
+            Dim cts As New Threading.CancellationTokenSource()
+            _pararClassificacao = cts
+            Dim ct = cts.Token
+
             Classificando = True
-            Classificacao = "Classificando " & alvo.Nome & "…"
+            Acervo.AvisarQueMudou()
+            Classificacao = "Classificando " & quantas.ToString() &
+                            " mensagem(ns) em " & alvo.Nome & "…"
             Try
                 Dim r = Await Task.Run(
                     Function() Acervo.Classificar(chave, regras, ativacao, quando,
                                                   AddressOf borda.Conteudo,
-                                                  AddressOf borda.Envio))
+                                                  AddressOf borda.Envio, ct))
+
+                ' A JANELA PODE TER FECHADO ENQUANTO ISTO CORRIA. Escrever aqui
+                ' seria escrever em ViewModel descartado, e o desfecho nao tem
+                ' para quem ser dito.
+                If _disposed Then Return
                 Classificacao = EmPortugues(r, alvo.Nome)
             Catch ex As Exception
+                If _disposed Then Return
                 Classificacao = "A classificação falhou (" & ex.GetType().Name & ")."
             Finally
-                Classificando = False
+                If Not _disposed Then Classificando = False
+                If ReferenceEquals(_pararClassificacao, cts) Then _pararClassificacao = Nothing
+                cts.Dispose()
             End Try
+
+            If _disposed Then Return
+            Acervo.AvisarQueMudou()
 
             ' A FILA E A CAIXA RELEEM. Os rotulos que acabaram de ser gravados sao
             ' exatamente o que as duas telas mostram, e sem isto o dono via a
             ' contagem subir e a tela nao mudar.
+            '
+            ' CADA UMA COM CERCA PROPRIA: uma releitura que estoure nao pode
+            ' apagar o desfecho da passagem, que e a informacao que custou a rede.
             _rotulos?.Esquecer()
-            Fila?.Atualizar()
-            Caixas?.Atualizar()
+            Try
+                If Fila IsNot Nothing Then Await Fila.Atualizar()
+            Catch
+            End Try
+            Try
+                Caixas?.Atualizar()
+            Catch
+            End Try
+        End Function
+
+        ''' <summary>
+        ''' <b>A pergunta antes de mandar muita coisa.</b> Diz a pasta, quantas
+        ''' mensagens e quantos lotes — os três números que o dono precisa para
+        ''' decidir, e nenhum deles estava na tela.
+        ''' </summary>
+        Private Function Confirmar(nome As String, quantas As Integer) As Boolean
+            Dim lotes = CInt(Math.Ceiling(quantas / ClassificarUmaPasta.PorLote))
+            Dim texto =
+                $"Classificar {nome} vai mandar o corpo de {quantas} mensagem(ns) ao " &
+                $"provedor de IA, em {lotes} lote(s)." & Environment.NewLine &
+                Environment.NewLine &
+                "Isso sai desta máquina e é cobrado por quem fornece o modelo. " &
+                "Nada é enviado por e-mail." & Environment.NewLine &
+                Environment.NewLine &
+                "Continuar?"
+
+            Return System.Windows.MessageBox.Show(
+                texto, "Classificar " & nome,
+                System.Windows.MessageBoxButton.OKCancel,
+                System.Windows.MessageBoxImage.Warning,
+                System.Windows.MessageBoxResult.Cancel) = System.Windows.MessageBoxResult.OK
         End Function
 
         ''' <summary>
@@ -1326,6 +1420,24 @@ Namespace Global.Iris.App.ViewModels
         ''' da pasta são problemas diferentes, e somá-los num "faltaram 30"
         ''' esconderia qual deles está acontecendo.
         ''' </summary>
+        ''' <summary>
+        ''' <b>A frase é de UMA pasta, e some quando o alvo muda.</b>
+        '''
+        ''' Ela fica na faixa do acervo, que descreve a pasta corrente. Depois de
+        ''' classificar A e selecionar B, o desfecho de A continuava ali — e a
+        ''' posição diz que ele fala de B. O nome de A está no texto, e ninguém lê
+        ''' o nome quando a posição já respondeu. Achado por revisão externa em
+        ''' 01/09/2026.
+        '''
+        ''' <b>Durante a passagem não apaga</b>: o dono trocou de pasta e a
+        ''' classificação de A continua correndo, e sumir com o aviso esconderia que
+        ''' há conteúdo saindo agora.
+        ''' </summary>
+        Friend Sub OAlvoMudou()
+            If Classificando Then Return
+            Classificacao = ""
+        End Sub
+
         Friend Shared Function EmPortugues(r As ResultadoDaClassificacao,
                                            nome As String) As String
             If r Is Nothing Then Return "A classificação não devolveu resultado."
@@ -1348,6 +1460,10 @@ Namespace Global.Iris.App.ViewModels
                     Return "A classificação não foi montada corretamente."
                 Case MotivoDaClassificacao.JaEstaRodando
                     Return "Já há uma classificação em andamento neste acervo."
+                Case MotivoDaClassificacao.Parada
+                    ' PARADA NAO E "NADA ACONTECEU": os lotes que rodaram valem, e
+                    ' as contagens dizem quantos. Cai na composicao de baixo.
+                    Exit Select
             End Select
 
             Dim frase = $"{r.Classificados} de {r.Pedidos} classificadas em {nome}."
@@ -1486,6 +1602,18 @@ Namespace Global.Iris.App.ViewModels
             ' conexao, assistente, acervo). O Application_Exit engolia a excecao, e
             ' o resto simplesmente nao acontecia. Achado por revisao externa em
             ' 01/09/2026.
+            ' A CLASSIFICACAO E AVISADA ANTES DE TUDO SER DESCARTADO.
+            '
+            ' Ela roda em Task.Run e segura o acervo, o broker e o transmissor; sem
+            ' este pedido, o lote seguinte sairia depois de a janela fechar e
+            ' tentaria gravar num cache ja descartado. Cancelar nao espera -- a
+            ' passagem para entre lotes --, e a continuacao confere _disposed antes
+            ' de escrever em qualquer ViewModel.
+            Try
+                _pararClassificacao?.Cancel()
+            Catch
+            End Try
+
             Busca?.Dispose()
             _watcher.Dispose()
             Composer.Dispose()

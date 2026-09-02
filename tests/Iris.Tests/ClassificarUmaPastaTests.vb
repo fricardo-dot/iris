@@ -51,7 +51,7 @@ Public Class ClassificarUmaPastaTests
     ''' </summary>
     Private Shared Function Entrega(Optional guardar As List(Of PedidoDeParte) = Nothing) _
                             As ClassificarUmaPasta.Conteudo
-        Return Function(pedidos)
+        Return Function(pedidos, ct)
                    If guardar IsNot Nothing Then guardar.AddRange(pedidos)
                    Return pedidos.Select(
                        Function(p) New MessagePart(p.Chave, "CK", "assunto", "de",
@@ -75,7 +75,7 @@ Public Class ClassificarUmaPastaTests
     Private Shared Function Responde(rotulo As String,
                                      Optional regras As Func(Of Integer, String) = Nothing) _
                                      As ClassificarUmaPasta.Envio
-        Return Function(instrucao, partes)
+        Return Function(instrucao, partes, ct)
                    Dim doControle = OControle(instrucao)
                    Assert.IsTrue(partes.Any(Function(p) p.Ficha = doControle.Ficha),
                        "o controle foi anunciado na instrução e NÃO foi enviado")
@@ -200,10 +200,10 @@ Public Class ClassificarUmaPastaTests
 
                    Dim lotes = 0
                    Dim caotico As ClassificarUmaPasta.Envio =
-                       Function(instrucao, partes)
+                       Function(instrucao, partes, ct)
                            lotes += 1
                            If lotes = 1 Then Return "isto nao e json"
-                           Return Responde("fyi")(instrucao, partes)
+                           Return Responde("fyi")(instrucao, partes, ct)
                        End Function
 
                    Dim r = New ClassificarUmaPasta(Acervo(db), New RotulosNoCache(db)).
@@ -230,7 +230,7 @@ Public Class ClassificarUmaPastaTests
 
                    Dim r = New ClassificarUmaPasta(Acervo(db), cache).
                            Passar(pasta, Nothing, "ativacao-1", Quando, Entrega(),
-                                  Function(instrucao, partes) "[]")
+                                  Function(instrucao, partes, ct) "[]")
 
                    Assert.AreEqual(1, r.LotesRecusados)
                    Assert.AreEqual(0, cache.Publicados(pasta).Count)
@@ -266,7 +266,7 @@ Public Class ClassificarUmaPastaTests
                        Dim pasta = Varrer(db, "f" & tentativa, {"a", "b"})
 
                        Dim obediente As ClassificarUmaPasta.Envio =
-                           Function(instrucao, partes) "[" & String.Join(",",
+                           Function(instrucao, partes, ct) "[" & String.Join(",",
                                partes.Select(Function(p) "{""item_key"":""" & p.Ficha &
                                                          """,""label"":""fyi""}")) & "]"
 
@@ -297,9 +297,9 @@ Public Class ClassificarUmaPastaTests
                    Dim recebidas As IReadOnlyList(Of MessagePart) = Nothing
 
                    Dim espiao As ClassificarUmaPasta.Envio =
-                       Function(instrucao, partes)
+                       Function(instrucao, partes, ct)
                            recebidas = partes
-                           Return Responde("fyi")(instrucao, partes)
+                           Return Responde("fyi")(instrucao, partes, ct)
                        End Function
 
                    Dim passagem = New ClassificarUmaPasta(Acervo(db), New RotulosNoCache(db))
@@ -320,7 +320,7 @@ Public Class ClassificarUmaPastaTests
 
                    Dim r = New ClassificarUmaPasta(Acervo(db), New RotulosNoCache(db)).
                            Passar(pasta, Nothing, "ativacao-1", Quando,
-                                  Function(pedidos) Nothing, Responde("fyi"))
+                                  Function(pedidos, ct) Nothing, Responde("fyi"))
 
                    Assert.AreEqual(MotivoDaClassificacao.Passou, r.Motivo)
                    Assert.AreEqual(0, r.Classificados)
@@ -355,7 +355,7 @@ Public Class ClassificarUmaPastaTests
                                   Enumerable.Range(1, LoteDeClassificacao.MaximoDeRegras + 1).
                                   Select(Function(i) "regra " & i).ToList(),
                                   "ativacao-1", Quando, Entrega(),
-                                  Function(instrucao, partes)
+                                  Function(instrucao, partes, ct)
                                       mandou += 1
                                       Return "[]"
                                   End Function)
@@ -383,13 +383,13 @@ Public Class ClassificarUmaPastaTests
 
                    Dim mandou = 0
                    Dim sabotador As ClassificarUmaPasta.Envio =
-                       Function(instrucao, partes)
+                       Function(instrucao, partes, ct)
                            mandou += 1
                            ' Enquanto o primeiro lote esta em voo, alguem varre de novo.
                            If mandou = 1 Then
                                Varrer(db, "f-1", {"a"}, rodada:=2, existente:=pasta)
                            End If
-                           Return Responde("fyi")(instrucao, partes)
+                           Return Responde("fyi")(instrucao, partes, ct)
                        End Function
 
                    Dim r = New ClassificarUmaPasta(Acervo(db), New RotulosNoCache(db)).
@@ -399,6 +399,143 @@ Public Class ClassificarUmaPastaTests
                    Assert.AreEqual(MotivoDaClassificacao.PastaRevarrida, r.Motivo)
                    Assert.AreEqual(1, mandou,
                        "mandou os lotes seguintes depois de saber que nada mais valia")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' <b>A revarredura é vista ANTES de divulgar, e não depois.</b>
+    '''
+    ''' O teste acima prova que o laço para. Ele não prova <i>quando</i>: a
+    ''' passagem só sabia da corrida no <c>Gravar</c>, isto é, <b>depois</b> de os
+    ''' corpos do lote terem ido ao provedor. A gravação era recusada
+    ''' corretamente, e o conteúdo já tinha saído — o retrato em que a passagem
+    ''' se baseou fora substituído, e ninguém soube antes de pagar por ele.
+    '''
+    ''' Aqui a republicação acontece <b>durante a leitura</b> do segundo lote, e o
+    ''' que se cobra é que o segundo lote nunca seja enviado. Achado por revisão
+    ''' externa em 01/09/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Revarredura_percebida_ANTES_de_o_lote_sair()
+        Comigo(Sub(db)
+                   Dim quantas = ClassificarUmaPasta.PorLote * 3
+                   Dim pasta = Varrer(db, "f-1",
+                       Enumerable.Range(1, quantas).Select(Function(i) "m" & i).ToArray())
+
+                   ' "todas", e nao "acervo": o local eclipsaria a funcao Acervo() e
+                   ' o erro sai como "tipo nao pode ser inferido a partir de expressao
+                   ' contendo acervo". CLAUDE.md, secao 1 -- quarta vez hoje.
+                   Dim todas = Acervo(db)
+                   Dim lidos = 0
+                   Dim conteudo As ClassificarUmaPasta.Conteudo =
+                       Function(pedidos, ct)
+                           lidos += 1
+                           ' Durante a leitura do SEGUNDO lote, a pasta e
+                           ' republicada -- e o acervo passa a saber disso.
+                           If lidos = 2 Then
+                               Varrer(db, "f-1", {"a"}, rodada:=2, existente:=pasta)
+                               Dim dreno As New PublicationDrain(db)
+                               dreno.Drenar(todas)
+                               todas.Recarregar()
+                           End If
+                           Return Entrega()(pedidos, ct)
+                       End Function
+
+                   Dim mandou = 0
+                   Dim envio As ClassificarUmaPasta.Envio =
+                       Function(instrucao, partes, ct)
+                           mandou += 1
+                           Return Responde("fyi")(instrucao, partes, ct)
+                       End Function
+
+                   Dim r = New ClassificarUmaPasta(todas, New RotulosNoCache(db)).
+                           Passar(pasta, Nothing, "ativacao-1", Quando, conteudo, envio)
+
+                   Assert.AreEqual(MotivoDaClassificacao.PastaRevarrida, r.Motivo)
+                   Assert.AreEqual(1, mandou,
+                       "O SEGUNDO LOTE SAIU depois de a pasta ja ter sido republicada")
+
+                   ' E AS CONTAGENS DO QUE JA FOI FEITO CONTINUAM LA.
+                   '
+                   ' O ramo da geracao errada devolvia Parou(PastaRevarrida), que e
+                   ' Pedidos=0 e Classificados=0 -- sobre uma passagem que gravou o
+                   ' primeiro lote inteiro. Dizer que nada aconteceu quando algo
+                   ' aconteceu e o defeito que este projeto persegue.
+                   Assert.AreEqual(quantas, r.Pedidos,
+                       "a revarredura apagou quantas mensagens a passagem pediu")
+                   Assert.AreEqual(ClassificarUmaPasta.PorLote, r.Classificados,
+                       "A REVARREDURA APAGOU O QUE JA TINHA SIDO GRAVADO")
+               End Sub)
+    End Sub
+
+    ' ==================================================================
+    ' PARAR NO MEIO
+
+    ''' <summary>
+    ''' <b>O pedido de parada é olhado entre lotes.</b>
+    '''
+    ''' Uma passagem sobre uma pasta grande são vinte idas à rede, e nenhuma
+    ''' delas era interrompível: fechar a janela, trocar de pasta ou perder o
+    ''' Outlook não impedia os lotes seguintes de saírem — conteúdo continuava a
+    ''' sair e a ser cobrado depois de o dono ter ido embora.
+    '''
+    ''' Entre lotes, e não no meio de um: parar no meio deixaria dúvida sobre o
+    ''' que saiu, e dúvida sobre divulgação é o que este projeto não pode
+    ''' produzir.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Parada_no_meio_nao_manda_os_lotes_seguintes()
+        Comigo(Sub(db)
+                   Dim quantas = ClassificarUmaPasta.PorLote * 3
+                   Dim pasta = Varrer(db, "f-1",
+                       Enumerable.Range(1, quantas).Select(Function(i) "m" & i).ToArray())
+
+                   Dim cts As New CancellationTokenSource()
+                   Dim mandou = 0
+                   Dim envio As ClassificarUmaPasta.Envio =
+                       Function(instrucao, partes, ct)
+                           mandou += 1
+                           If mandou = 1 Then cts.Cancel()
+                           Return Responde("fyi")(instrucao, partes, ct)
+                       End Function
+
+                   Dim r = New ClassificarUmaPasta(Acervo(db), New RotulosNoCache(db)).
+                           Passar(pasta, Nothing, "ativacao-1", Quando,
+                                  Entrega(), envio, cts.Token)
+
+                   Assert.AreEqual(1, mandou,
+                       "MANDOU LOTE DEPOIS DE ALGUEM TER PEDIDO PARA PARAR")
+                   Assert.AreEqual(MotivoDaClassificacao.Parada, r.Motivo)
+                   Assert.AreEqual(ClassificarUmaPasta.PorLote, r.Classificados,
+                       "parar apagou o que o primeiro lote gravou")
+               End Sub)
+    End Sub
+
+    ''' <summary>
+    ''' O controle negativo da parada: <b>sem pedido, a passagem vai até o
+    ''' fim</b>. Sem ele, uma passagem que parasse sempre no primeiro lote
+    ''' passaria no teste acima.
+    ''' </summary>
+    <TestMethod>
+    Public Sub SEM_pedido_de_parada_a_passagem_vai_ate_o_fim()
+        Comigo(Sub(db)
+                   Dim quantas = ClassificarUmaPasta.PorLote * 3
+                   Dim pasta = Varrer(db, "f-1",
+                       Enumerable.Range(1, quantas).Select(Function(i) "m" & i).ToArray())
+
+                   Dim mandou = 0
+                   Dim envio As ClassificarUmaPasta.Envio =
+                       Function(instrucao, partes, ct)
+                           mandou += 1
+                           Return Responde("fyi")(instrucao, partes, ct)
+                       End Function
+
+                   Dim r = New ClassificarUmaPasta(Acervo(db), New RotulosNoCache(db)).
+                           Passar(pasta, Nothing, "ativacao-1", Quando, Entrega(), envio)
+
+                   Assert.AreEqual(3, mandou)
+                   Assert.AreEqual(MotivoDaClassificacao.Passou, r.Motivo)
+                   Assert.AreEqual(quantas, r.Classificados)
                End Sub)
     End Sub
 
@@ -453,10 +590,10 @@ Public Class ClassificarUmaPastaTests
 
                    ' A ficha da regra sai da instrucao, como o modelo a veria.
                    Dim comRegra As ClassificarUmaPasta.Envio =
-                       Function(instrucao, partes)
+                       Function(instrucao, partes, ct)
                            Dim daRegra = FichaDaRegra(instrucao)
                            Return Responde("fyi",
-                               Function(i) ",""rules"":[""" & daRegra & """]")(instrucao, partes)
+                               Function(i) ",""rules"":[""" & daRegra & """]")(instrucao, partes, ct)
                        End Function
 
                    passagem.Passar(pasta, {"clientes reclamando"}, "ativacao-1", Quando,

@@ -201,7 +201,7 @@ Public Class BordaEmLoteTests
         Dim borda As New BordaEmLote(broker, Transmissor(provedor, ComAtivacao()),
                                      provedor.Destino, Pasta)
 
-        Dim saiu = borda.Envio("instrução", {ParteQualquer()})
+        Dim saiu = borda.Envio("instrução", {ParteQualquer()}, CancellationToken.None)
 
         Assert.IsNull(saiu, "mandou um lote que ninguem leu")
         Assert.AreEqual(0, provedor.Chamadas)
@@ -440,9 +440,9 @@ Public Class BordaEmLoteTests
         ' O ESPIAO ENVOLVE a borda, e nao a substitui: o que roda continua
         ' sendo o delegate de producao.
         Dim conteudo As ClassificarUmaPasta.Conteudo =
-            Function(pedidos)
+            Function(pedidos, ct)
                 If anotar IsNot Nothing Then anotar.AddRange(pedidos)
-                Return borda.Conteudo(pedidos)
+                Return borda.Conteudo(pedidos, ct)
             End Function
 
         Dim passagem As New ClassificarUmaPasta(Acervo(db), cache)

@@ -659,14 +659,69 @@ Namespace Global.Iris.App.ViewModels
                                     regras As Collections.Generic.IReadOnlyList(Of String),
                                     ativacao As String, quando As DateTimeOffset,
                                     conteudo As Iris.Integration.ClassificarUmaPasta.Conteudo,
-                                    envio As Iris.Integration.ClassificarUmaPasta.Envio) _
+                                    envio As Iris.Integration.ClassificarUmaPasta.Envio,
+                                    ct As Threading.CancellationToken) _
                                     As Iris.Integration.ResultadoDaClassificacao
             If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
 
             Dim passagem As New Iris.Integration.ClassificarUmaPasta(
                 _todasAsPastas, New Iris.Cache.RotulosNoCache(_db))
-            Return passagem.Passar(pasta, regras, ativacao, quando, conteudo, envio)
+            Return passagem.Passar(pasta, regras, ativacao, quando, conteudo, envio, ct)
         End Function
+
+        ''' <summary>
+        ''' <b>Quantas mensagens desta pasta sairiam numa classificação.</b>
+        '''
+        ''' Contadas <b>antes</b> de qualquer divulgação, porque é este número que a
+        ''' tela mostra ao dono para ele decidir. Sem ele, um clique mandava a pasta
+        ''' inteira e o dono descobria o tamanho pela conta.
+        '''
+        ''' É a mesma pergunta que a passagem faz — presentes, sem rótulo nesta
+        ''' geração — e por isso sai do mesmo lugar: manifesto publicado e rótulos
+        ''' publicados. Duas contas escritas em dois lugares divergem, e a
+        ''' divergência aqui seria a tela prometendo um número e a passagem mandando
+        ''' outro.
+        ''' </summary>
+        Public Function QuantasSemRotulo(pasta As Long) As Integer
+            If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))
+
+            Dim daPasta = _todasAsPastas.Pastas.FirstOrDefault(Function(p) p.Chave = pasta)
+            If daPasta Is Nothing OrElse Not daPasta.Manifesto.GenerationKey.HasValue Then
+                Return 0
+            End If
+
+            Dim jaTem As Collections.Generic.IReadOnlyDictionary(Of String, Iris.Cache.RotuloObservado)
+            Try
+                jaTem = New Iris.Cache.RotulosNoCache(_db).Publicados(pasta)
+            Catch
+                ' Falha de leitura conta como "nenhum rotulado", que SUPERESTIMA o
+                ' quanto sairia. Errar para cima faz o dono ver um numero maior e
+                ' confirmar com mais cuidado; errar para baixo o faria autorizar
+                ' menos do que sai.
+                ' ".Where(...).Count()", e nao ".Count(predicado)": a propriedade
+                ' Count da lista eclipsa a extensao Count(Of T) do LINQ, e o erro
+                ' sai como "Integer nao pode ser indexado". CLAUDE.md, secao 1.
+                Return daPasta.Manifesto.Items.
+                       Where(Function(i) i.Presence = Iris.Sync.PresenceState.Presente).
+                       Count()
+            End Try
+
+            Return daPasta.Manifesto.Items.
+                   Where(Function(i) i.Presence = Iris.Sync.PresenceState.Presente).
+                   Where(Function(i) Not jaTem.ContainsKey(i.ProviderEntryId)).
+                   Count()
+        End Function
+
+        ''' <summary>
+        ''' Reavalia o que depende de operações de fora — hoje, o botão de varrer,
+        ''' que não pode ficar disponível durante uma classificação: as duas mexem
+        ''' na mesma pasta, e a varredura republica o retrato em que a classificação
+        ''' se baseia.
+        ''' </summary>
+        Friend Sub AvisarQueMudou()
+            OnPropertyChanged(NameOf(PodeVarrer))
+            VarrerCommand.NotifyCanExecuteChanged()
+        End Sub
 
         Public Function MensagensDoAcervo() As Collections.Generic.IReadOnlyList(Of Iris.Model.MensagemNaFila)
             If _disposed Then Throw New ObjectDisposedException(NameOf(AcervoViewModel))

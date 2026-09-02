@@ -237,10 +237,10 @@ Public Class CosturaDosRotulosTests
 
         Dim r = passagem.Passar(
             pasta, Nothing, "ativacao-1", Quando,
-            Function(pedidos) pedidos.Select(
+            Function(pedidos, ct) pedidos.Select(
                 Function(p) New MessagePart(p.Chave, "CK", "assunto", "de",
                                             {"para"}, "corpo", True, p.Ficha)).ToList(),
-            Function(instrucao, partes)
+            Function(instrucao, partes, ct)
                 Dim doControle = OControle(instrucao)
                 Dim itens = partes.Select(
                     Function(p) "{""item_key"":""" & p.Ficha & """,""label"":""" &

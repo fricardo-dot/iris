@@ -1,5 +1,6 @@
 Imports System.Collections.Generic
 Imports System.Linq
+Imports System.Threading
 Imports Iris.Assist
 Imports Iris.Cache
 Imports Iris.Model
@@ -67,14 +68,16 @@ Namespace Global.Iris.Integration
         ''' corpo. <c>Nothing</c> ou lista vazia fazem o lote ser pulado.
         ''' </summary>
         Public Delegate Function Conteudo(
-            pedidos As IReadOnlyList(Of PedidoDeParte)) As IReadOnlyList(Of MessagePart)
+            pedidos As IReadOnlyList(Of PedidoDeParte),
+            ct As CancellationToken) As IReadOnlyList(Of MessagePart)
 
         ''' <summary>
         ''' O que a borda do transporte tem de devolver: o texto cru da resposta.
         ''' <c>Nothing</c> vale como lote recusado.
         ''' </summary>
         Public Delegate Function Envio(instrucao As String,
-                                       partes As IReadOnlyList(Of MessagePart)) As String
+                                       partes As IReadOnlyList(Of MessagePart),
+                                       ct As CancellationToken) As String
 
         ''' <summary>
         ''' <b>Uma passagem por vez, no programa inteiro.</b>
@@ -145,7 +148,9 @@ Namespace Global.Iris.Integration
                                ativacao As String,
                                quando As DateTimeOffset,
                                conteudo As Conteudo,
-                               envio As Envio) As ResultadoDaClassificacao
+                               envio As Envio,
+                               Optional ct As CancellationToken = Nothing) _
+                               As ResultadoDaClassificacao
 
             If conteudo Is Nothing OrElse envio Is Nothing Then
                 Return ResultadoDaClassificacao.Parou(MotivoDaClassificacao.SemAsBordas)
@@ -161,7 +166,7 @@ Namespace Global.Iris.Integration
             End SyncLock
 
             Try
-                Return Correr(pasta, regras, ativacao, quando, conteudo, envio)
+                Return Correr(pasta, regras, ativacao, quando, conteudo, envio, ct)
             Finally
                 SyncLock _porta
                     _rodandoEm.Remove(dono)
@@ -174,7 +179,8 @@ Namespace Global.Iris.Integration
                                 ativacao As String,
                                 quando As DateTimeOffset,
                                 conteudo As Conteudo,
-                                envio As Envio) As ResultadoDaClassificacao
+                                envio As Envio,
+                                ct As CancellationToken) As ResultadoDaClassificacao
 
             Dim daPasta = _acervo.Pastas.FirstOrDefault(
                 Function(p) p.Chave = pasta)
@@ -199,6 +205,18 @@ Namespace Global.Iris.Integration
             Dim r As New Acumulador(aFazer.Count)
 
             For inicio = 0 To aFazer.Count - 1 Step PorLote
+                ' O PEDIDO DE PARADA E OLHADO ENTRE LOTES.
+                '
+                ' Uma passagem sobre uma pasta grande e vinte idas a rede, e
+                ' nenhuma delas era interrompivel: fechar a janela, trocar de
+                ' pasta ou perder o Outlook nao impedia os lotes seguintes de
+                ' saírem. Parar entre lotes -- e nao no meio de um -- e o unico
+                ' lugar onde parar nao deixa duvida sobre o que saiu.
+                '
+                ' O que ja foi gravado CONTINUA valendo, e as contagens vao
+                ' junto no desfecho. Achado por revisao externa em 01/09/2026.
+                If ct.IsCancellationRequested Then Return r.Fechar(MotivoDaClassificacao.Parada)
+
                 Dim chavesDoLote = aFazer.Skip(inicio).Take(PorLote).ToList()
                 Dim montado = LoteDeClassificacao.Preparar(chavesDoLote, regras)
 
@@ -211,7 +229,7 @@ Namespace Global.Iris.Integration
                     Return ResultadoDaClassificacao.Parou(MotivoDaClassificacao.RegrasDemais)
                 End If
 
-                Dim lidas = conteudo(Pedidos(montado, chavesDoLote))
+                Dim lidas = conteudo(Pedidos(montado, chavesDoLote), ct)
                 If lidas Is Nothing OrElse lidas.Count = 0 Then
                     r.LoteSemConteudo(chavesDoLote.Count)
                     Continue For
@@ -231,7 +249,23 @@ Namespace Global.Iris.Integration
                 Dim partes As New List(Of MessagePart)(lidas)
                 partes.Add(montado.ParteDoControle())
 
-                Dim conferido = montado.Conferir(envio(montado.Instrucao(), partes))
+                ' A GERACAO E RECONFERIDA AQUI, ANTES DE DIVULGAR.
+                '
+                ' A corrida com a varredura so era percebida no Gravar -- isto e,
+                ' depois de os corpos terem ido para o provedor. A gravacao era
+                ' recusada corretamente, e o conteudo ja tinha saido: o retrato em
+                ' que a passagem se baseou fora substituido, e ninguem soube antes
+                ' de pagar. Achado por revisao externa em 01/09/2026.
+                '
+                ' Entre esta conferencia e o envio ainda ha uma fresta, e ela nao
+                ' se fecha sem parar a varredura -- mas ela e de milissegundos, e
+                ' nao dos minutos que os lotes anteriores levaram.
+                If Not GeracaoAindaVale(daPasta.Chave, geracao) Then
+                    r.Revarrida(chavesDoLote.Count)
+                    Exit For
+                End If
+
+                Dim conferido = montado.Conferir(envio(montado.Instrucao(), partes, ct))
                 If Not conferido.IdentidadesConferem Then
                     r.LoteRecusado(chavesDoLote.Count, conferido.Motivo)
                     Continue For
@@ -261,6 +295,21 @@ Namespace Global.Iris.Integration
         ''' ter de inventá-la — se ela inventasse, a resposta seria conferida
         ''' contra fichas que este lote não conhece, e o lote inteiro cairia.
         ''' </summary>
+        ''' <summary>
+        ''' A geração em que esta passagem se baseou ainda é a publicada?
+        '''
+        ''' Lida do acervo já recarregado, e não do banco: quem recarrega é o
+        ''' dreno, e ir ao SQLite a cada lote acrescentaria uma leitura por lote
+        ''' para responder o que o retrato em memória já sabe.
+        ''' </summary>
+        Private Function GeracaoAindaVale(pasta As Long, geracao As Long) As Boolean
+            Dim agora = _acervo.Pastas.FirstOrDefault(Function(p) p.Chave = pasta)
+            If agora Is Nothing OrElse Not agora.Manifesto.GenerationKey.HasValue Then
+                Return False
+            End If
+            Return agora.Manifesto.GenerationKey.Value = geracao
+        End Function
+
         Private Shared Function Pedidos(montado As LoteDeClassificacao,
                                         chaves As IReadOnlyList(Of ItemKey)) _
                                         As IReadOnlyList(Of PedidoDeParte)
@@ -347,6 +396,16 @@ Namespace Global.Iris.Integration
             End Sub
 
             ''' <summary>
+            ''' A pasta foi republicada, e este lote não chegou a sair. As mensagens
+            ''' dele entram como não classificadas — elas não foram, e some-las ao
+            ''' que ficou de fora por outro motivo seria misturar duas coisas.
+            ''' </summary>
+            Public Sub Revarrida(quantos As Integer)
+                _geracaoErrada = True
+                _naoClassificados += quantos
+            End Sub
+
+            ''' <summary>
             ''' A pasta foi revarrida no meio: nada mais vale, e o laço para.
             ''' </summary>
             Public ReadOnly Property Obsoleta As Boolean
@@ -366,18 +425,32 @@ Namespace Global.Iris.Integration
                 _semRegras += conferido.SemRegras.Count
             End Sub
 
-            Public Function Fechar() As ResultadoDaClassificacao
-                ' GERACAO ERRADA NO MEIO DA PASSAGEM quer dizer que a pasta foi
-                ' revarrida enquanto isto rodava. O que ja entrou entrou na
-                ' geracao certa; o resto nao vale, e a passagem inteira e
-                ' declarada obsoleta em vez de devolver contas de duas geracoes
-                ' misturadas.
-                If _geracaoErrada Then
-                    Return ResultadoDaClassificacao.Parou(MotivoDaClassificacao.PastaRevarrida)
-                End If
+            ''' <summary>
+            ''' <b>O desfecho, e ele nunca apaga o que já aconteceu.</b>
+            '''
+            ''' ------------------------------------------------------------------
+            ''' <b>A REVARREDURA ZERAVA AS CONTAGENS</b>
+            '''
+            ''' O ramo da geração errada devolvia <c>Parou(PastaRevarrida)</c>, que é
+            ''' <c>Pedidos=0, Classificados=0</c>. Cenário real: o primeiro lote grava
+            ''' vinte rótulos, a pasta é republicada, e a passagem reporta que não fez
+            ''' nada — sobre uma passagem que gravou vinte linhas no cache.
+            '''
+            ''' É a mesma família de defeito da cerca do transmissor: dizer que nada
+            ''' aconteceu quando algo aconteceu. Aqui o custo é menor — ninguém
+            ''' reenvia por causa disto —, mas a frase na tela mentia, e a próxima
+            ''' passagem não repetiria o trabalho que a frase disse não ter sido
+            ''' feito. Achado por revisão externa em 01/09/2026.
+            '''
+            ''' O motivo muda; as contagens vão junto sempre.
+            ''' </summary>
+            Public Function Fechar(Optional motivo As MotivoDaClassificacao =
+                                       MotivoDaClassificacao.Passou) _
+                                   As ResultadoDaClassificacao
+                Dim qual = If(_geracaoErrada, MotivoDaClassificacao.PastaRevarrida, motivo)
 
                 Return New ResultadoDaClassificacao(
-                    MotivoDaClassificacao.Passou, _pedidos, _classificados,
+                    qual, _pedidos, _classificados,
                     _semRotulo, _semRegras, _foraDaPasta,
                     _lotesRecusados, _naoClassificados, _primeiraRecusa)
             End Function
@@ -414,6 +487,13 @@ Namespace Global.Iris.Integration
         ''' impede duas passagens de mandarem os mesmos corpos ao provedor.
         ''' </summary>
         JaEstaRodando
+
+        ''' <summary>
+        ''' <b>Alguém pediu para parar</b> — a janela fechou, a pasta mudou, a
+        ''' sessão caiu. Os lotes que já rodaram valem, e as contagens dizem
+        ''' quantos foram. <b>Não é erro</b>, e não é "nada aconteceu".
+        ''' </summary>
+        Parada
     End Enum
 
     ''' <summary>
