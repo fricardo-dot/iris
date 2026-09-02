@@ -54,88 +54,96 @@ Namespace Global.Iris.Integration
         Public Function Intencao(c As DisclosureCapability,
                                  quando As DateTimeOffset) As Boolean _
                                  Implements IDisclosureJournal.Intencao
-            If c Is Nothing Then Throw New ArgumentNullException(NameOf(c))
-            ' A contagem vem da propria capability. Enquanto vinha de fora, o
-            ' diario podia registrar quantidade diferente da autorizada.
-            Dim mensagens = c.Itens.Count
+            SyncLock _db.Trava
+                If c Is Nothing Then Throw New ArgumentNullException(NameOf(c))
+                ' A contagem vem da propria capability. Enquanto vinha de fora, o
+                ' diario podia registrar quantidade diferente da autorizada.
+                Dim mensagens = c.Itens.Count
 
-            Return Executar(
-                "INSERT OR IGNORE INTO disclosure_log (" &
-                "  seq, request_id, capability_id, stage, activation_id, " &
-                "  activation_version, operation, provider, endpoint, model, " &
-                "  payload_hash, payload_bytes, message_count, " &
-                "  intended_at, started_at, finished_at, note, gate_reason) " &
-                "SELECT COALESCE(MAX(seq), 0) + 1, $r, $c, $s, $ai, $av, $op, $p, $e, $m, " &
-                "       $h, $b, $n, $t, NULL, NULL, $nota, $gr FROM disclosure_log",
-                ("$r", CObj(c.RequestId.ToString("D"))),
-                ("$c", CObj(c.Id.ToString("D"))),
-                ("$s", CObj(DisclosureStage.Intencionada.ToString())),
-                ("$ai", CObj(c.AtivacaoId)),
-                ("$av", CObj(c.AtivacaoVersao)),
-                ("$op", CObj(c.Operacao.ToString())),
-                ("$p", CObj(c.Destino.Provedor)),
-                ("$e", CObj(c.Destino.Endpoint)),
-                ("$m", CObj(c.Destino.Modelo)),
-                ("$h", CObj(c.Hash)),
-                ("$b", CObj(c.Comprimento)),
-                ("$n", CObj(mensagens)),
-                ("$t", CObj(Instante(quando))),
-                ("$nota", CObj(DisclosureNote.Nenhuma.ToString())),
-                ("$gr", CObj(DisclosureReason.NaoDecidido.ToString()))) = 1
+                Return Executar(
+                    "INSERT OR IGNORE INTO disclosure_log (" &
+                    "  seq, request_id, capability_id, stage, activation_id, " &
+                    "  activation_version, operation, provider, endpoint, model, " &
+                    "  payload_hash, payload_bytes, message_count, " &
+                    "  intended_at, started_at, finished_at, note, gate_reason) " &
+                    "SELECT COALESCE(MAX(seq), 0) + 1, $r, $c, $s, $ai, $av, $op, $p, $e, $m, " &
+                    "       $h, $b, $n, $t, NULL, NULL, $nota, $gr FROM disclosure_log",
+                    ("$r", CObj(c.RequestId.ToString("D"))),
+                    ("$c", CObj(c.Id.ToString("D"))),
+                    ("$s", CObj(DisclosureStage.Intencionada.ToString())),
+                    ("$ai", CObj(c.AtivacaoId)),
+                    ("$av", CObj(c.AtivacaoVersao)),
+                    ("$op", CObj(c.Operacao.ToString())),
+                    ("$p", CObj(c.Destino.Provedor)),
+                    ("$e", CObj(c.Destino.Endpoint)),
+                    ("$m", CObj(c.Destino.Modelo)),
+                    ("$h", CObj(c.Hash)),
+                    ("$b", CObj(c.Comprimento)),
+                    ("$n", CObj(mensagens)),
+                    ("$t", CObj(Instante(quando))),
+                    ("$nota", CObj(DisclosureNote.Nenhuma.ToString())),
+                    ("$gr", CObj(DisclosureReason.NaoDecidido.ToString()))) = 1
+            End SyncLock
         End Function
 
         Public Function Iniciando(requestId As Guid, quando As DateTimeOffset) As Boolean _
                                   Implements IDisclosureJournal.Iniciando
-            ' So sai de Intencionada. Reiniciar um envio ja em voo, ou ja
-            ' concluido, seria reabrir uma janela que ja fechou.
-            Return Executar(
-                "UPDATE disclosure_log SET stage = $s, started_at = $t " &
-                "WHERE request_id = $r AND stage = $de",
-                ("$s", CObj(DisclosureStage.EmVoo.ToString())),
-                ("$t", CObj(Instante(quando))),
-                ("$r", CObj(requestId.ToString("D"))),
-                ("$de", CObj(DisclosureStage.Intencionada.ToString()))) = 1
+            SyncLock _db.Trava
+                ' So sai de Intencionada. Reiniciar um envio ja em voo, ou ja
+                ' concluido, seria reabrir uma janela que ja fechou.
+                Return Executar(
+                    "UPDATE disclosure_log SET stage = $s, started_at = $t " &
+                    "WHERE request_id = $r AND stage = $de",
+                    ("$s", CObj(DisclosureStage.EmVoo.ToString())),
+                    ("$t", CObj(Instante(quando))),
+                    ("$r", CObj(requestId.ToString("D"))),
+                    ("$de", CObj(DisclosureStage.Intencionada.ToString()))) = 1
+            End SyncLock
         End Function
 
         Public Function Concluir(requestId As Guid, quando As DateTimeOffset,
                                  codigoHttp As Integer?) As Boolean _
                                  Implements IDisclosureJournal.Concluir
-            Return Terminar(requestId, DisclosureStage.Concluida, quando,
-                            DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido,
-                            {DisclosureStage.EmVoo}, codigoHttp)
+            SyncLock _db.Trava
+                Return Terminar(requestId, DisclosureStage.Concluida, quando,
+                                DisclosureNote.Nenhuma, DisclosureReason.NaoDecidido,
+                                {DisclosureStage.EmVoo}, codigoHttp)
+            End SyncLock
         End Function
 
         Public Function Falhar(requestId As Guid, quando As DateTimeOffset,
                                nota As DisclosureNote, podeTerChegado As Boolean,
                                codigoHttp As Integer?) As Boolean _
                                Implements IDisclosureJournal.Falhar
-            ' Uma vez EM VOO, falhar e SEMPRE ambiguo — mesmo que o chamador
-            ' jure que nao chegou. Ele nao pode saber: entre "a conexao caiu" e
-            ' "a conexao caiu depois de o servidor ler o corpo" nao ha
-            ' diferenca observavel deste lado.
-            ' Nota que nao descreve transporte nao entra: "o portao negou" nao
-            ' e um jeito de a transmissao falhar, porque ela nem comecaria.
-            If Not DisclosureNotes.DeTransporte(nota) Then Return False
+            SyncLock _db.Trava
+                ' Uma vez EM VOO, falhar e SEMPRE ambiguo — mesmo que o chamador
+                ' jure que nao chegou. Ele nao pode saber: entre "a conexao caiu" e
+                ' "a conexao caiu depois de o servidor ler o corpo" nao ha
+                ' diferenca observavel deste lado.
+                ' Nota que nao descreve transporte nao entra: "o portao negou" nao
+                ' e um jeito de a transmissao falhar, porque ela nem comecaria.
+                If Not DisclosureNotes.DeTransporte(nota) Then Return False
 
-            If podeTerChegado Then
+                If podeTerChegado Then
+                    Return Terminar(requestId, DisclosureStage.Ambigua, quando, nota,
+                                    DisclosureReason.NaoDecidido,
+                                    {DisclosureStage.Intencionada, DisclosureStage.EmVoo},
+                                    codigoHttp)
+                End If
+
+                ' NaoEnviada so vale a partir de Intencionada, onde a transmissao
+                ' comprovadamente nao tinha comecado.
+                If Terminar(requestId, DisclosureStage.NaoEnviada, quando, nota,
+                            DisclosureReason.NaoDecidido, {DisclosureStage.Intencionada},
+                            codigoHttp) Then
+                    Return True
+                End If
+
+                ' Estava EM VOO: o desfecho honesto e ambiguo, nao "nao enviou".
                 Return Terminar(requestId, DisclosureStage.Ambigua, quando, nota,
-                                DisclosureReason.NaoDecidido,
-                                {DisclosureStage.Intencionada, DisclosureStage.EmVoo},
+                                DisclosureReason.NaoDecidido, {DisclosureStage.EmVoo},
                                 codigoHttp)
-            End If
-
-            ' NaoEnviada so vale a partir de Intencionada, onde a transmissao
-            ' comprovadamente nao tinha comecado.
-            If Terminar(requestId, DisclosureStage.NaoEnviada, quando, nota,
-                        DisclosureReason.NaoDecidido, {DisclosureStage.Intencionada},
-                        codigoHttp) Then
-                Return True
-            End If
-
-            ' Estava EM VOO: o desfecho honesto e ambiguo, nao "nao enviou".
-            Return Terminar(requestId, DisclosureStage.Ambigua, quando, nota,
-                            DisclosureReason.NaoDecidido, {DisclosureStage.EmVoo},
-                            codigoHttp)
+            End SyncLock
         End Function
 
         Public Function NaoEnviou(requestId As Guid, quando As DateTimeOffset,
@@ -143,11 +151,13 @@ Namespace Global.Iris.Integration
                                   Optional motivoDoPortao As DisclosureReason =
                                       DisclosureReason.NaoDecidido) As Boolean _
                                   Implements IDisclosureJournal.NaoEnviou
-            If Not DisclosureNotes.AnteriorAoEnvio(nota) Then Return False
-            If Not DisclosureNotes.Coerente(nota, motivoDoPortao) Then Return False
+            SyncLock _db.Trava
+                If Not DisclosureNotes.AnteriorAoEnvio(nota) Then Return False
+                If Not DisclosureNotes.Coerente(nota, motivoDoPortao) Then Return False
 
-            Return Terminar(requestId, DisclosureStage.NaoEnviada, quando, nota,
-                            motivoDoPortao, {DisclosureStage.Intencionada})
+                Return Terminar(requestId, DisclosureStage.NaoEnviada, quando, nota,
+                                motivoDoPortao, {DisclosureStage.Intencionada})
+            End SyncLock
         End Function
 
         ' ==============================================================
@@ -183,30 +193,32 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Public Function Reconciliar(quando As DateTimeOffset) As Integer _
                                     Implements IDisclosureJournal.Reconciliar
-            Using tx = _db.Connection.BeginTransaction()
-                Executar(tx,
-                    "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
-                    "WHERE stage = $velho",
-                    ("$novo", CObj(DisclosureStage.Ambigua.ToString())),
-                    ("$velho", CObj(DisclosureStage.EmVoo.ToString())),
-                    ("$t", CObj(Instante(quando))),
-                    ("$nota", CObj(DisclosureNote.ProcessoMorreuEmVoo.ToString())))
+            SyncLock _db.Trava
+                Using tx = _db.Connection.BeginTransaction()
+                    Executar(tx,
+                        "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
+                        "WHERE stage = $velho",
+                        ("$novo", CObj(DisclosureStage.Ambigua.ToString())),
+                        ("$velho", CObj(DisclosureStage.EmVoo.ToString())),
+                        ("$t", CObj(Instante(quando))),
+                        ("$nota", CObj(DisclosureNote.ProcessoMorreuEmVoo.ToString())))
 
-                CrashInjection.Talvez(CrashInjection.EntreAsDuasReconciliacoes)
+                    CrashInjection.Talvez(CrashInjection.EntreAsDuasReconciliacoes)
 
-                Executar(tx,
-                    "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
-                    "WHERE stage = $velho",
-                    ("$novo", CObj(DisclosureStage.NaoEnviada.ToString())),
-                    ("$velho", CObj(DisclosureStage.Intencionada.ToString())),
-                    ("$t", CObj(Instante(quando))),
-                    ("$nota", CObj(DisclosureNote.ProcessoMorreuAntesDeTransmitir.ToString())))
+                    Executar(tx,
+                        "UPDATE disclosure_log SET stage = $novo, finished_at = $t, note = $nota " &
+                        "WHERE stage = $velho",
+                        ("$novo", CObj(DisclosureStage.NaoEnviada.ToString())),
+                        ("$velho", CObj(DisclosureStage.Intencionada.ToString())),
+                        ("$t", CObj(Instante(quando))),
+                        ("$nota", CObj(DisclosureNote.ProcessoMorreuAntesDeTransmitir.ToString())))
 
-                ' O ESTADO, e nao a transicao.
-                Dim pendentes = ContarAmbiguas(tx)
-                tx.Commit()
-                Return pendentes
-            End Using
+                    ' O ESTADO, e nao a transicao.
+                    Dim pendentes = ContarAmbiguas(tx)
+                    tx.Commit()
+                    Return pendentes
+                End Using
+            End SyncLock
         End Function
 
         ''' <summary>
@@ -233,36 +245,38 @@ Namespace Global.Iris.Integration
         ''' </summary>
         Public Function Ler(quantas As Integer) As IReadOnlyList(Of DisclosureEntry) _
                             Implements IDisclosureJournal.Ler
-            Dim saida As New List(Of DisclosureEntry)()
-            Using cmd = _db.Connection.CreateCommand()
-                cmd.CommandText =
-                    "SELECT seq, request_id, capability_id, stage, activation_id, " &
-                    "       activation_version, operation, provider, endpoint, model, " &
-                    "       payload_hash, payload_bytes, message_count, " &
-                    "       intended_at, started_at, finished_at, note, gate_reason, " &
-                    "       http_status " &
-                    "FROM disclosure_log ORDER BY intended_at DESC, seq DESC LIMIT $n"
-                cmd.Parameters.AddWithValue("$n", quantas)
-                Using r = cmd.ExecuteReader()
-                    While r.Read()
-                        saida.Add(New DisclosureEntry(
-                            r.GetInt64(0), Guid.Parse(r.GetString(1)), Guid.Parse(r.GetString(2)),
-                            Ler(Of DisclosureStage)(r.GetString(3)),
-                            r.GetString(4), r.GetInt32(5),
-                            Ler(Of AssistOperation)(r.GetString(6)),
-                            r.GetString(7), r.GetString(8), r.GetString(9),
-                            If(r.IsDBNull(10), Nothing, r.GetString(10)),
-                            r.GetInt32(11), r.GetInt32(12),
-                            Momento(r.GetString(13)),
-                            If(r.IsDBNull(14), CType(Nothing, DateTimeOffset?), Momento(r.GetString(14))),
-                            If(r.IsDBNull(15), CType(Nothing, DateTimeOffset?), Momento(r.GetString(15))),
-                            Ler(Of DisclosureNote)(r.GetString(16)),
-                            Ler(Of DisclosureReason)(r.GetString(17)),
-                            If(r.IsDBNull(18), CType(Nothing, Integer?), r.GetInt32(18))))
-                    End While
+            SyncLock _db.Trava
+                Dim saida As New List(Of DisclosureEntry)()
+                Using cmd = _db.Connection.CreateCommand()
+                    cmd.CommandText =
+                        "SELECT seq, request_id, capability_id, stage, activation_id, " &
+                        "       activation_version, operation, provider, endpoint, model, " &
+                        "       payload_hash, payload_bytes, message_count, " &
+                        "       intended_at, started_at, finished_at, note, gate_reason, " &
+                        "       http_status " &
+                        "FROM disclosure_log ORDER BY intended_at DESC, seq DESC LIMIT $n"
+                    cmd.Parameters.AddWithValue("$n", quantas)
+                    Using r = cmd.ExecuteReader()
+                        While r.Read()
+                            saida.Add(New DisclosureEntry(
+                                r.GetInt64(0), Guid.Parse(r.GetString(1)), Guid.Parse(r.GetString(2)),
+                                Ler(Of DisclosureStage)(r.GetString(3)),
+                                r.GetString(4), r.GetInt32(5),
+                                Ler(Of AssistOperation)(r.GetString(6)),
+                                r.GetString(7), r.GetString(8), r.GetString(9),
+                                If(r.IsDBNull(10), Nothing, r.GetString(10)),
+                                r.GetInt32(11), r.GetInt32(12),
+                                Momento(r.GetString(13)),
+                                If(r.IsDBNull(14), CType(Nothing, DateTimeOffset?), Momento(r.GetString(14))),
+                                If(r.IsDBNull(15), CType(Nothing, DateTimeOffset?), Momento(r.GetString(15))),
+                                Ler(Of DisclosureNote)(r.GetString(16)),
+                                Ler(Of DisclosureReason)(r.GetString(17)),
+                                If(r.IsDBNull(18), CType(Nothing, Integer?), r.GetInt32(18))))
+                        End While
+                    End Using
                 End Using
-            End Using
-            Return saida
+                Return saida
+            End SyncLock
         End Function
 
         ' ==============================================================

@@ -123,13 +123,14 @@ Namespace Global.Iris.Integration
         ''' acumular.
         ''' </summary>
         Public Sub Recarregar()
-            ' A chave e lida SOB A TRAVA e usada fora: ler direto no argumento
-            ' deixaria a leitura do manifesto correr com uma chave que pode
-            ' mudar no meio, e o manifesto resultante seria atribuido como se
-            ' fosse da pasta nova.
-            Dim qual As Long
-            SyncLock _trava
-                qual = _folderKey
+            SyncLock _db.Trava
+                ' A chave e lida SOB A TRAVA e usada fora: ler direto no argumento
+                ' deixaria a leitura do manifesto correr com uma chave que pode
+                ' mudar no meio, e o manifesto resultante seria atribuido como se
+                ' fosse da pasta nova.
+                Dim qual As Long
+                SyncLock _trava
+                    qual = _folderKey
             End SyncLock
 
             Dim novo = New ManifestReader(_db).Ler(qual)
@@ -140,6 +141,7 @@ Namespace Global.Iris.Integration
                 ' chamou Recarregar de novo.
                 If qual <> _folderKey Then Return
                 _atual = novo
+            End SyncLock
             End SyncLock
         End Sub
 

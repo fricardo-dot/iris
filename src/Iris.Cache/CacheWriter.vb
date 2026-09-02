@@ -69,12 +69,42 @@ Namespace Global.Iris.Cache
 
         Private ReadOnly _conn As SqliteConnection
 
+        ''' <summary>
+        ''' <b>A trava do arquivo, quando a conexão é compartilhada.</b>
+        '''
+        ''' ------------------------------------------------------------------
+        ''' <b>UMA TRAVA QUE SÓ METADE DOS DONOS TOMAVA NÃO É UMA TRAVA</b>
+        '''
+        ''' <c>CacheDatabase.Trava</c> existe porque uma <c>SqliteConnection</c> não
+        ''' tem contrato de uso simultâneo — o WAL coordena <i>conexões</i>, e não
+        ''' torna uma conexão reentrante. Só que apenas <c>RotulosNoCache</c> a
+        ''' tomava. Este escritor, o dreno, o sink da varredura, o serviço do acervo
+        ''' e o <b>diário do egresso</b> usavam a mesma conexão sem ela.
+        '''
+        ''' O cenário é comum: a varredura está dentro de um <c>BEGIN IMMEDIATE</c>
+        ''' quando o dreno de 30 segundos acorda, ou quando a tela recarrega o
+        ''' painel, ou quando a IA registra uma intenção. O resultado é
+        ''' <i>transaction already active</i>, um leitor invalidado, ou o registro do
+        ''' egresso falhando — e esse último é a única prova do que saiu da máquina.
+        '''
+        ''' É a terceira vez que esta base descobre o mesmo defeito com outros nomes:
+        ''' "três travas diferentes sobre o mesmo recurso é o mesmo que nenhuma",
+        ''' escrito em 31/08. Achado por revisão externa em 02/09/2026.
+        '''
+        ''' <b>Conexão própria não compartilha nada</b>, e recebe uma trava só dela:
+        ''' o custo é zero e o código de baixo não precisa saber de qual caso veio.
+        ''' </summary>
+        Private ReadOnly _trava As Object
+
         Public Sub New(db As CacheDatabase)
             _conn = db.Connection
+            _trava = db.Trava
         End Sub
 
         Public Sub New(conn As SqliteConnection)
             _conn = conn
+            ' Conexao propria: nada a coordenar, e uma trava so dela.
+            _trava = New Object()
         End Sub
 
         ' ==============================================================
@@ -84,17 +114,19 @@ Namespace Global.Iris.Cache
                                        numero As Integer,
                                        Optional versaoAlgoritmo As Integer = 1,
                                        Optional corteRetencao As String = Nothing) As Long
-            Using tx = Imediata()
-                Dim k = Escalar(tx, "INSERT INTO scan_attempt (folder_key, environment_key, " &
-                    "universe_fingerprint, retention_cutoff, algorithm_version, reconcile_epoch, " &
-                    "attempt_number, stage, rows_read, started_at) " &
-                    "VALUES ($f,$e,$u,$c,$v,$p,$n,'aberta',0,$t); SELECT last_insert_rowid()",
-                    ("$f", CObj(folderKey)), ("$e", CObj(environmentKey)), ("$u", CObj(universo)),
-                    ("$c", CObj(corteRetencao)), ("$v", CObj(versaoAlgoritmo)),
-                    ("$p", CObj(epoca)), ("$n", CObj(numero)), ("$t", CObj(Agora())))
-                tx.Commit()
-                Return Convert.ToInt64(k)
-            End Using
+            SyncLock _trava
+                Using tx = Imediata()
+                    Dim k = Escalar(tx, "INSERT INTO scan_attempt (folder_key, environment_key, " &
+                        "universe_fingerprint, retention_cutoff, algorithm_version, reconcile_epoch, " &
+                        "attempt_number, stage, rows_read, started_at) " &
+                        "VALUES ($f,$e,$u,$c,$v,$p,$n,'aberta',0,$t); SELECT last_insert_rowid()",
+                        ("$f", CObj(folderKey)), ("$e", CObj(environmentKey)), ("$u", CObj(universo)),
+                        ("$c", CObj(corteRetencao)), ("$v", CObj(versaoAlgoritmo)),
+                        ("$p", CObj(epoca)), ("$n", CObj(numero)), ("$t", CObj(Agora())))
+                    tx.Commit()
+                    Return Convert.ToInt64(k)
+                End Using
+            End SyncLock
         End Function
 
         ''' <summary>
@@ -103,68 +135,70 @@ Namespace Global.Iris.Cache
         ''' </summary>
         Public Sub GravarPagina(attemptKey As Long, folderKey As Long, pagina As Integer,
                                 linhas As IReadOnlyList(Of StagedRow), cursorDepois As String)
-            CrashInjection.Talvez(CrashInjection.AntesDeGravarPagina)
+            SyncLock _trava
+                CrashInjection.Talvez(CrashInjection.AntesDeGravarPagina)
 
-            If CacheWriterDefects.CheckpointAntesDasLinhas Then
-                ' DEFEITO deliberado. Ver CacheWriterDefects.
-                Using tx0 = Imediata()
-                    Executar(tx0, "UPDATE scan_attempt SET cursor = $c, stage = 'varrendo' " &
-                        "WHERE attempt_key = $a", ("$a", CObj(attemptKey)), ("$c", CObj(cursorDepois)))
-                    tx0.Commit()
+                If CacheWriterDefects.CheckpointAntesDasLinhas Then
+                    ' DEFEITO deliberado. Ver CacheWriterDefects.
+                    Using tx0 = Imediata()
+                        Executar(tx0, "UPDATE scan_attempt SET cursor = $c, stage = 'varrendo' " &
+                            "WHERE attempt_key = $a", ("$a", CObj(attemptKey)), ("$c", CObj(cursorDepois)))
+                        tx0.Commit()
+                    End Using
+                End If
+
+                Using tx = Imediata()
+                    For Each l In linhas
+                        ' A pagina SO ENCENA. Nada do acervo — encarnacao,
+                        ' metadado, associacao — e tocado aqui.
+                        '
+                        ' Antes era o contrario, e o defeito era grave: numa
+                        ' encarnacao que ja existia, gravar a pagina substituia o
+                        ' metadado PUBLICADO e devolvia a associacao para
+                        ' 'presente'. Se a tentativa fosse rejeitada depois, nada
+                        ' disso era desfeito — uma varredura RECUSADA alterava o
+                        ' manifesto que a UI mostra. O teste nao pegava porque so
+                        ' usava itens NOVOS, cujas associacoes ainda nao pertencem
+                        ' a geracao nenhuma.
+                        '
+                        ' O unico (attempt_key, provider_entry_id) e o que torna a
+                        ' releitura apos crash inofensiva: a mesma mensagem
+                        ' encenada duas vezes conta uma vez so.
+                        Executar(tx, "INSERT INTO scan_stage (attempt_key, provider_entry_id, " &
+                            "page_number, cursor_after, search_key, internet_message_id, subject, " &
+                            "sender_name, received_at, last_modified_at, size_bytes, has_attachments, " &
+                            "is_unread, message_class, conversation_id, conversation_index, " &
+                            "sender_address) " &
+                            "VALUES ($a,$p,$n,$c,$sk,$mid,$s,$sn,$r,$lm,$sz,$ha,$iu,$mc,$ci,$cx,$sa) " &
+                            "ON CONFLICT (attempt_key, provider_entry_id) DO NOTHING",
+                            ("$a", CObj(attemptKey)), ("$p", CObj(l.ProviderEntryId)),
+                            ("$n", CObj(pagina)), ("$c", CObj(cursorDepois)),
+                            ("$sk", CObj(l.SearchKey)), ("$mid", CObj(l.InternetMessageId)),
+                            ("$s", CObj(l.Subject)), ("$sn", CObj(l.SenderName)),
+                            ("$r", CObj(l.ReceivedAt)), ("$lm", CObj(l.LastModifiedAt)),
+                            ("$sz", If(l.SizeBytes.HasValue, CObj(l.SizeBytes.Value), Nothing)),
+                            ("$ha", If(l.HasAttachments.HasValue, CObj(If(l.HasAttachments.Value, 1, 0)), Nothing)),
+                            ("$iu", If(l.IsUnread.HasValue, CObj(If(l.IsUnread.Value, 1, 0)), Nothing)),
+                            ("$mc", CObj(l.MessageClass)),
+                            ("$ci", CObj(l.ConversationId)), ("$cx", CObj(l.ConversationIndex)),
+                            ("$sa", CObj(l.SenderAddress)))
+                    Next
+
+                    ' rows_read e DERIVADO, nao incrementado. Incrementar conta
+                    ' duas vezes quando a pagina e reexecutada apos crash, e a
+                    ' contagem inflada faria o S6 rejeitar a varredura inteira por
+                    ' um sintoma sem relacao nenhuma com a causa.
+                    Executar(tx, "UPDATE scan_attempt SET cursor = $c, stage = 'varrendo', " &
+                        "rows_read = (SELECT COUNT(*) FROM scan_stage WHERE attempt_key = $a) " &
+                        "WHERE attempt_key = $a",
+                        ("$a", CObj(attemptKey)), ("$c", CObj(cursorDepois)))
+
+                    CrashInjection.Talvez(CrashInjection.DentroDaPaginaAntesDoCommit)
+                    tx.Commit()
                 End Using
-            End If
 
-            Using tx = Imediata()
-                For Each l In linhas
-                    ' A pagina SO ENCENA. Nada do acervo — encarnacao,
-                    ' metadado, associacao — e tocado aqui.
-                    '
-                    ' Antes era o contrario, e o defeito era grave: numa
-                    ' encarnacao que ja existia, gravar a pagina substituia o
-                    ' metadado PUBLICADO e devolvia a associacao para
-                    ' 'presente'. Se a tentativa fosse rejeitada depois, nada
-                    ' disso era desfeito — uma varredura RECUSADA alterava o
-                    ' manifesto que a UI mostra. O teste nao pegava porque so
-                    ' usava itens NOVOS, cujas associacoes ainda nao pertencem
-                    ' a geracao nenhuma.
-                    '
-                    ' O unico (attempt_key, provider_entry_id) e o que torna a
-                    ' releitura apos crash inofensiva: a mesma mensagem
-                    ' encenada duas vezes conta uma vez so.
-                    Executar(tx, "INSERT INTO scan_stage (attempt_key, provider_entry_id, " &
-                        "page_number, cursor_after, search_key, internet_message_id, subject, " &
-                        "sender_name, received_at, last_modified_at, size_bytes, has_attachments, " &
-                        "is_unread, message_class, conversation_id, conversation_index, " &
-                        "sender_address) " &
-                        "VALUES ($a,$p,$n,$c,$sk,$mid,$s,$sn,$r,$lm,$sz,$ha,$iu,$mc,$ci,$cx,$sa) " &
-                        "ON CONFLICT (attempt_key, provider_entry_id) DO NOTHING",
-                        ("$a", CObj(attemptKey)), ("$p", CObj(l.ProviderEntryId)),
-                        ("$n", CObj(pagina)), ("$c", CObj(cursorDepois)),
-                        ("$sk", CObj(l.SearchKey)), ("$mid", CObj(l.InternetMessageId)),
-                        ("$s", CObj(l.Subject)), ("$sn", CObj(l.SenderName)),
-                        ("$r", CObj(l.ReceivedAt)), ("$lm", CObj(l.LastModifiedAt)),
-                        ("$sz", If(l.SizeBytes.HasValue, CObj(l.SizeBytes.Value), Nothing)),
-                        ("$ha", If(l.HasAttachments.HasValue, CObj(If(l.HasAttachments.Value, 1, 0)), Nothing)),
-                        ("$iu", If(l.IsUnread.HasValue, CObj(If(l.IsUnread.Value, 1, 0)), Nothing)),
-                        ("$mc", CObj(l.MessageClass)),
-                        ("$ci", CObj(l.ConversationId)), ("$cx", CObj(l.ConversationIndex)),
-                        ("$sa", CObj(l.SenderAddress)))
-                Next
-
-                ' rows_read e DERIVADO, nao incrementado. Incrementar conta
-                ' duas vezes quando a pagina e reexecutada apos crash, e a
-                ' contagem inflada faria o S6 rejeitar a varredura inteira por
-                ' um sintoma sem relacao nenhuma com a causa.
-                Executar(tx, "UPDATE scan_attempt SET cursor = $c, stage = 'varrendo', " &
-                    "rows_read = (SELECT COUNT(*) FROM scan_stage WHERE attempt_key = $a) " &
-                    "WHERE attempt_key = $a",
-                    ("$a", CObj(attemptKey)), ("$c", CObj(cursorDepois)))
-
-                CrashInjection.Talvez(CrashInjection.DentroDaPaginaAntesDoCommit)
-                tx.Commit()
-            End Using
-
-            CrashInjection.Talvez(CrashInjection.DepoisDoCommitDaPagina)
+                CrashInjection.Talvez(CrashInjection.DepoisDoCommitDaPagina)
+            End SyncLock
         End Sub
 
         ''' <summary>
@@ -195,186 +229,190 @@ Namespace Global.Iris.Cache
                                  Optional ByRef geracao As Long = 0,
                                  Optional alcance As String = "desconhecida",
                                  Optional environmentKey As Long = 1) As PublishOutcome
-            Using tx = Imediata()
-                Dim epocaTentativa = Ler(tx, "SELECT reconcile_epoch FROM scan_attempt WHERE attempt_key=$a",
-                                         ("$a", CObj(attemptKey)))
-                If epocaTentativa Is Nothing Then Return PublishOutcome.RecusadaPorEstado
+            SyncLock _trava
+                Using tx = Imediata()
+                    Dim epocaTentativa = Ler(tx, "SELECT reconcile_epoch FROM scan_attempt WHERE attempt_key=$a",
+                                             ("$a", CObj(attemptKey)))
+                    If epocaTentativa Is Nothing Then Return PublishOutcome.RecusadaPorEstado
 
-                Dim estagio = Convert.ToString(Ler(tx,
-                    "SELECT stage FROM scan_attempt WHERE attempt_key=$a", ("$a", CObj(attemptKey))))
-                If estagio = "publicada" OrElse estagio = "descartada" Then
-                    Return PublishOutcome.RecusadaPorEstado
-                End If
+                    Dim estagio = Convert.ToString(Ler(tx,
+                        "SELECT stage FROM scan_attempt WHERE attempt_key=$a", ("$a", CObj(attemptKey))))
+                    If estagio = "publicada" OrElse estagio = "descartada" Then
+                        Return PublishOutcome.RecusadaPorEstado
+                    End If
 
-                Dim epocaPasta = Convert.ToInt64(Ler(tx,
-                    "SELECT reconcile_epoch FROM folder WHERE folder_key=$f", ("$f", CObj(folderKey))))
+                    Dim epocaPasta = Convert.ToInt64(Ler(tx,
+                        "SELECT reconcile_epoch FROM folder WHERE folder_key=$f", ("$f", CObj(folderKey))))
 
-                ' CAS: a epoca e lida DENTRO da mesma transacao que escreve.
-                If Convert.ToInt64(epocaTentativa) <> epocaPasta Then
-                    Executar(tx, "UPDATE scan_attempt SET stage='descartada', ended_at=$t, " &
-                        "rejection='epoca' WHERE attempt_key=$a",
-                        ("$a", CObj(attemptKey)), ("$t", CObj(Agora())))
+                    ' CAS: a epoca e lida DENTRO da mesma transacao que escreve.
+                    If Convert.ToInt64(epocaTentativa) <> epocaPasta Then
+                        Executar(tx, "UPDATE scan_attempt SET stage='descartada', ended_at=$t, " &
+                            "rejection='epoca' WHERE attempt_key=$a",
+                            ("$a", CObj(attemptKey)), ("$t", CObj(Agora())))
+                        tx.Commit()
+                        Return PublishOutcome.RecusadaPorEpoca
+                    End If
+
+                    ' ORDEM: a cabeca avanca por ordem de ABERTURA da tentativa,
+                    ' nao por ordem de publicacao.
+                    '
+                    ' A distincao e o criterio 10 inteiro. generation_key e
+                    ' atribuido no INSERT, que acontece ao PUBLICAR — entao uma
+                    ' varredura velha que termina tarde recebe a chave MAIOR, e um
+                    ' teste de monotonicidade sobre generation_key aprovaria
+                    ' exatamente o caso que ele deveria barrar.
+                    '
+                    ' A politica e "a tentativa aberta por ultimo vence", e ela NAO
+                    ' e o mesmo que "os dados mais frescos vencem". Tentativas
+                    ' sobrepostas intercalam leituras: a mais velha pode, em tese,
+                    ' ter lido parte dos dados depois da mais nova. Ordem de
+                    ' abertura e aproximacao conservadora — erra para o lado de
+                    ' descartar trabalho bom, nunca para o lado de deixar a cabeca
+                    ' recuar.
+                    '
+                    ' E nao trava o sistema: a guarda compara so com a cabeca
+                    ' PUBLICADA, entao uma tentativa nova abandonada nao bloqueia
+                    ' ninguem. O custo maximo e perder o frescor de uma varredura,
+                    ' e a proxima recupera. Afirmar frescor de verdade exigiria
+                    ' serializar as varreduras por pasta ou ter leitura com
+                    ' snapshot, e nenhuma das duas existe aqui.
+                    Dim cabeca = Ler(tx, "SELECT g.attempt_key FROM folder f " &
+                        "JOIN generation g ON g.generation_key = f.published_generation_key " &
+                        "WHERE f.folder_key = $f", ("$f", CObj(folderKey)))
+                    If cabeca IsNot Nothing AndAlso Convert.ToInt64(cabeca) > attemptKey Then
+                        Executar(tx, "UPDATE scan_attempt SET stage='descartada', ended_at=$t, " &
+                            "rejection='ordem' WHERE attempt_key=$a",
+                            ("$a", CObj(attemptKey)), ("$t", CObj(Agora())))
+                        tx.Commit()
+                        Return PublishOutcome.RecusadaPorOrdem
+                    End If
+
+                    Dim lidas = Convert.ToInt64(Ler(tx,
+                        "SELECT COUNT(*) FROM scan_stage WHERE attempt_key=$a", ("$a", CObj(attemptKey))))
+                    Dim distintas = Convert.ToInt64(Ler(tx,
+                        "SELECT COUNT(DISTINCT provider_entry_id) FROM scan_stage WHERE attempt_key=$a",
+                        ("$a", CObj(attemptKey))))
+                    Dim universo = Convert.ToString(Ler(tx,
+                        "SELECT universe_fingerprint FROM scan_attempt WHERE attempt_key=$a",
+                        ("$a", CObj(attemptKey))))
+
+                    ' A observacao de ALCANCE, na mesma transacao.
+                    Dim cov = Convert.ToInt64(Escalar(tx,
+                        "INSERT INTO coverage_observation (folder_key, environment_key, " &
+                        "universe_fingerprint, coverage, source, observed_at) " &
+                        "VALUES ($f,$e,$u,$c,'varredura',$t); SELECT last_insert_rowid()",
+                        ("$f", CObj(folderKey)), ("$e", CObj(environmentKey)),
+                        ("$u", CObj(universo)), ("$c", CObj(alcance)), ("$t", CObj(Agora()))))
+
+                    Dim g = Convert.ToInt64(Escalar(tx,
+                        "INSERT INTO generation (folder_key, attempt_key, coverage_kind, " &
+                        "coverage_key, universe_fingerprint, rows_read, count_before, count_after, " &
+                        "discarded, distinct_keys, reconcile_epoch, published_at) " &
+                        "VALUES ($f,$a,$k,$cov,$u,$r,$b,$d,$desc,$q,$p,$t); SELECT last_insert_rowid()",
+                        ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)), ("$k", CObj(tipoDeVarredura)),
+                        ("$cov", CObj(cov)),
+                        ("$u", CObj(universo)), ("$r", CObj(lidas)), ("$b", CObj(contagemAntes)),
+                        ("$d", CObj(contagemDepois)),
+                        ("$desc", If(descartadas.HasValue,
+                                     CObj(descartadas.Value), CObj(DBNull.Value))),
+                        ("$q", CObj(distintas)),
+                        ("$p", CObj(epocaPasta)), ("$t", CObj(Agora()))))
+
+                    ' A GERACAO QUE ESTAVA PUBLICADA, antes de trocar. E dela que os
+                    ' rotulos sao herdados.
+                    Dim anterior = Ler(tx,
+                        "SELECT published_generation_key FROM folder WHERE folder_key = $f",
+                        ("$f", CObj(folderKey)))
+
+                    Executar(tx, "UPDATE folder SET published_generation_key = $g WHERE folder_key = $f",
+                        ("$g", CObj(g)), ("$f", CObj(folderKey)))
+
+                    ' ===== MATERIALIZACAO =====
+                    '
+                    ' O acervo so recebe as linhas AQUI, a partir da encenacao, e
+                    ' dentro desta transacao. Enquanto a tentativa nao publica,
+                    ' nada do que ela leu e visivel — e uma tentativa rejeitada nao
+                    ' deixa marca nenhuma no que a UI mostra.
+                    ' ===== OS ROTULOS QUE SOBREVIVEM =====
+                    '
+                    ' ANTES da materializacao, porque ela APAGA o metadado da encarnacao
+                    ' para inserir o novo -- e a heranca precisa do lado "antes" para
+                    ' comparar. Ela compara o publicado com o ENCENADO, que e o que vai
+                    ' virar o metadado novo daqui a duas linhas.
+                    '
+                    ' Uma varredura que nao mudou nada apagava a classificacao inteira da
+                    ' pasta -- todo o dinheiro gasto, jogado fora por uma varredura de
+                    ' manutencao. O criterio de "nao mudou" mora no RotulosNoCache, com o
+                    ' motivo. Achado por revisao externa em 01/09/2026.
+                    If anterior IsNot Nothing AndAlso anterior IsNot DBNull.Value Then
+                        RotulosNoCache.Herdar(_conn, tx, folderKey, attemptKey,
+                                              Convert.ToInt64(anterior), g)
+                    End If
+
+                    Materializar(tx, attemptKey, folderKey, g)
+
+                    ' ===== NAO VISTOS -> SUSPEITOS =====
+                    '
+                    ' O comando MarcarNaoVistosComoSuspeitos era EMITIDO pelo
+                    ' modelo e nunca EXECUTADO por ninguem: o sink nem tinha a
+                    ' operacao. Efeito: depois de uma geracao com A e B e outra so
+                    ' com A, o B continuava 'presente' — e o manifesto o devolvia
+                    ' como se estivesse la.
+                    '
+                    ' So 'presente' vira 'suspeito'. NaoVerificado continua
+                    ' NaoVerificado (suspeita pressupoe presenca anterior), e
+                    ' suspeito continua suspeito — geracao que passa NAO promove
+                    ' suspeita a ausencia, nem por contagem nem por tempo. E o
+                    ' AplicarGeracao da PresencePolicy, em SQL.
+                    Executar(tx,
+                        "UPDATE association SET presence='suspeito', version = version + 1, " &
+                        "       generation_key = $g " &
+                        "WHERE folder_key = $f AND presence = 'presente' " &
+                        "  AND item_key NOT IN (" &
+                        "    SELECT i.item_key FROM incarnation i JOIN scan_stage s " &
+                        "    ON s.provider_entry_id = i.provider_entry_id " &
+                        "    WHERE i.folder_key = $f AND s.attempt_key = $a)",
+                        ("$g", CObj(g)), ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)))
+
+                    Executar(tx, "UPDATE association SET generation_key = $g " &
+                        "WHERE folder_key = $f AND item_key IN (" &
+                        "  SELECT i.item_key FROM incarnation i JOIN scan_stage s " &
+                        "  ON s.provider_entry_id = i.provider_entry_id " &
+                        "  WHERE i.folder_key = $f AND s.attempt_key = $a)",
+                        ("$g", CObj(g)), ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)))
+
+                    Executar(tx, "UPDATE scan_attempt SET stage='publicada', ended_at=$t " &
+                        "WHERE attempt_key=$a", ("$a", CObj(attemptKey)), ("$t", CObj(Agora())))
+
+                    ' A DIVIDA para a UI, na MESMA transacao.
+                    Executar(tx, "INSERT INTO publication_log (generation_key, emitted_at, " &
+                        "delivery_attempts) VALUES ($g,$t,0)", ("$g", CObj(g)), ("$t", CObj(Agora())))
+
+                    CrashInjection.Talvez(CrashInjection.DentroDaPublicacaoAntesDoCommit)
                     tx.Commit()
-                    Return PublishOutcome.RecusadaPorEpoca
-                End If
+                    geracao = g
+                End Using
 
-                ' ORDEM: a cabeca avanca por ordem de ABERTURA da tentativa,
-                ' nao por ordem de publicacao.
-                '
-                ' A distincao e o criterio 10 inteiro. generation_key e
-                ' atribuido no INSERT, que acontece ao PUBLICAR — entao uma
-                ' varredura velha que termina tarde recebe a chave MAIOR, e um
-                ' teste de monotonicidade sobre generation_key aprovaria
-                ' exatamente o caso que ele deveria barrar.
-                '
-                ' A politica e "a tentativa aberta por ultimo vence", e ela NAO
-                ' e o mesmo que "os dados mais frescos vencem". Tentativas
-                ' sobrepostas intercalam leituras: a mais velha pode, em tese,
-                ' ter lido parte dos dados depois da mais nova. Ordem de
-                ' abertura e aproximacao conservadora — erra para o lado de
-                ' descartar trabalho bom, nunca para o lado de deixar a cabeca
-                ' recuar.
-                '
-                ' E nao trava o sistema: a guarda compara so com a cabeca
-                ' PUBLICADA, entao uma tentativa nova abandonada nao bloqueia
-                ' ninguem. O custo maximo e perder o frescor de uma varredura,
-                ' e a proxima recupera. Afirmar frescor de verdade exigiria
-                ' serializar as varreduras por pasta ou ter leitura com
-                ' snapshot, e nenhuma das duas existe aqui.
-                Dim cabeca = Ler(tx, "SELECT g.attempt_key FROM folder f " &
-                    "JOIN generation g ON g.generation_key = f.published_generation_key " &
-                    "WHERE f.folder_key = $f", ("$f", CObj(folderKey)))
-                If cabeca IsNot Nothing AndAlso Convert.ToInt64(cabeca) > attemptKey Then
-                    Executar(tx, "UPDATE scan_attempt SET stage='descartada', ended_at=$t, " &
-                        "rejection='ordem' WHERE attempt_key=$a",
-                        ("$a", CObj(attemptKey)), ("$t", CObj(Agora())))
-                    tx.Commit()
-                    Return PublishOutcome.RecusadaPorOrdem
-                End If
-
-                Dim lidas = Convert.ToInt64(Ler(tx,
-                    "SELECT COUNT(*) FROM scan_stage WHERE attempt_key=$a", ("$a", CObj(attemptKey))))
-                Dim distintas = Convert.ToInt64(Ler(tx,
-                    "SELECT COUNT(DISTINCT provider_entry_id) FROM scan_stage WHERE attempt_key=$a",
-                    ("$a", CObj(attemptKey))))
-                Dim universo = Convert.ToString(Ler(tx,
-                    "SELECT universe_fingerprint FROM scan_attempt WHERE attempt_key=$a",
-                    ("$a", CObj(attemptKey))))
-
-                ' A observacao de ALCANCE, na mesma transacao.
-                Dim cov = Convert.ToInt64(Escalar(tx,
-                    "INSERT INTO coverage_observation (folder_key, environment_key, " &
-                    "universe_fingerprint, coverage, source, observed_at) " &
-                    "VALUES ($f,$e,$u,$c,'varredura',$t); SELECT last_insert_rowid()",
-                    ("$f", CObj(folderKey)), ("$e", CObj(environmentKey)),
-                    ("$u", CObj(universo)), ("$c", CObj(alcance)), ("$t", CObj(Agora()))))
-
-                Dim g = Convert.ToInt64(Escalar(tx,
-                    "INSERT INTO generation (folder_key, attempt_key, coverage_kind, " &
-                    "coverage_key, universe_fingerprint, rows_read, count_before, count_after, " &
-                    "discarded, distinct_keys, reconcile_epoch, published_at) " &
-                    "VALUES ($f,$a,$k,$cov,$u,$r,$b,$d,$desc,$q,$p,$t); SELECT last_insert_rowid()",
-                    ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)), ("$k", CObj(tipoDeVarredura)),
-                    ("$cov", CObj(cov)),
-                    ("$u", CObj(universo)), ("$r", CObj(lidas)), ("$b", CObj(contagemAntes)),
-                    ("$d", CObj(contagemDepois)),
-                    ("$desc", If(descartadas.HasValue,
-                                 CObj(descartadas.Value), CObj(DBNull.Value))),
-                    ("$q", CObj(distintas)),
-                    ("$p", CObj(epocaPasta)), ("$t", CObj(Agora()))))
-
-                ' A GERACAO QUE ESTAVA PUBLICADA, antes de trocar. E dela que os
-                ' rotulos sao herdados.
-                Dim anterior = Ler(tx,
-                    "SELECT published_generation_key FROM folder WHERE folder_key = $f",
-                    ("$f", CObj(folderKey)))
-
-                Executar(tx, "UPDATE folder SET published_generation_key = $g WHERE folder_key = $f",
-                    ("$g", CObj(g)), ("$f", CObj(folderKey)))
-
-                ' ===== MATERIALIZACAO =====
-                '
-                ' O acervo so recebe as linhas AQUI, a partir da encenacao, e
-                ' dentro desta transacao. Enquanto a tentativa nao publica,
-                ' nada do que ela leu e visivel — e uma tentativa rejeitada nao
-                ' deixa marca nenhuma no que a UI mostra.
-                ' ===== OS ROTULOS QUE SOBREVIVEM =====
-                '
-                ' ANTES da materializacao, porque ela APAGA o metadado da encarnacao
-                ' para inserir o novo -- e a heranca precisa do lado "antes" para
-                ' comparar. Ela compara o publicado com o ENCENADO, que e o que vai
-                ' virar o metadado novo daqui a duas linhas.
-                '
-                ' Uma varredura que nao mudou nada apagava a classificacao inteira da
-                ' pasta -- todo o dinheiro gasto, jogado fora por uma varredura de
-                ' manutencao. O criterio de "nao mudou" mora no RotulosNoCache, com o
-                ' motivo. Achado por revisao externa em 01/09/2026.
-                If anterior IsNot Nothing AndAlso anterior IsNot DBNull.Value Then
-                    RotulosNoCache.Herdar(_conn, tx, folderKey, attemptKey,
-                                          Convert.ToInt64(anterior), g)
-                End If
-
-                Materializar(tx, attemptKey, folderKey, g)
-
-                ' ===== NAO VISTOS -> SUSPEITOS =====
-                '
-                ' O comando MarcarNaoVistosComoSuspeitos era EMITIDO pelo
-                ' modelo e nunca EXECUTADO por ninguem: o sink nem tinha a
-                ' operacao. Efeito: depois de uma geracao com A e B e outra so
-                ' com A, o B continuava 'presente' — e o manifesto o devolvia
-                ' como se estivesse la.
-                '
-                ' So 'presente' vira 'suspeito'. NaoVerificado continua
-                ' NaoVerificado (suspeita pressupoe presenca anterior), e
-                ' suspeito continua suspeito — geracao que passa NAO promove
-                ' suspeita a ausencia, nem por contagem nem por tempo. E o
-                ' AplicarGeracao da PresencePolicy, em SQL.
-                Executar(tx,
-                    "UPDATE association SET presence='suspeito', version = version + 1, " &
-                    "       generation_key = $g " &
-                    "WHERE folder_key = $f AND presence = 'presente' " &
-                    "  AND item_key NOT IN (" &
-                    "    SELECT i.item_key FROM incarnation i JOIN scan_stage s " &
-                    "    ON s.provider_entry_id = i.provider_entry_id " &
-                    "    WHERE i.folder_key = $f AND s.attempt_key = $a)",
-                    ("$g", CObj(g)), ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)))
-
-                Executar(tx, "UPDATE association SET generation_key = $g " &
-                    "WHERE folder_key = $f AND item_key IN (" &
-                    "  SELECT i.item_key FROM incarnation i JOIN scan_stage s " &
-                    "  ON s.provider_entry_id = i.provider_entry_id " &
-                    "  WHERE i.folder_key = $f AND s.attempt_key = $a)",
-                    ("$g", CObj(g)), ("$f", CObj(folderKey)), ("$a", CObj(attemptKey)))
-
-                Executar(tx, "UPDATE scan_attempt SET stage='publicada', ended_at=$t " &
-                    "WHERE attempt_key=$a", ("$a", CObj(attemptKey)), ("$t", CObj(Agora())))
-
-                ' A DIVIDA para a UI, na MESMA transacao.
-                Executar(tx, "INSERT INTO publication_log (generation_key, emitted_at, " &
-                    "delivery_attempts) VALUES ($g,$t,0)", ("$g", CObj(g)), ("$t", CObj(Agora())))
-
-                CrashInjection.Talvez(CrashInjection.DentroDaPublicacaoAntesDoCommit)
-                tx.Commit()
-                geracao = g
-            End Using
-
-            CrashInjection.Talvez(CrashInjection.DepoisDoCommitDaPublicacao)
-            Return PublishOutcome.Publicada
+                CrashInjection.Talvez(CrashInjection.DepoisDoCommitDaPublicacao)
+                Return PublishOutcome.Publicada
+            End SyncLock
         End Function
 
         ''' <summary>Gerações publicadas que a UI ainda não consumiu.</summary>
         Public Function PublicacoesPendentes() As IReadOnlyList(Of Long)
-            Dim r As New List(Of Long)()
-            Using cmd = _conn.CreateCommand()
-                cmd.CommandText = "SELECT generation_key FROM publication_log " &
-                                  "WHERE drained_at IS NULL ORDER BY log_key"
-                Using rd = cmd.ExecuteReader()
-                    While rd.Read()
-                        r.Add(rd.GetInt64(0))
-                    End While
+            SyncLock _trava
+                Dim r As New List(Of Long)()
+                Using cmd = _conn.CreateCommand()
+                    cmd.CommandText = "SELECT generation_key FROM publication_log " &
+                                      "WHERE drained_at IS NULL ORDER BY log_key"
+                    Using rd = cmd.ExecuteReader()
+                        While rd.Read()
+                            r.Add(rd.GetInt64(0))
+                        End While
+                    End Using
                 End Using
-            End Using
-            Return r
+                Return r
+            End SyncLock
         End Function
 
         ''' <summary>
@@ -382,45 +420,57 @@ Namespace Global.Iris.Cache
         ''' que falha sempre trava a fila em silencio.
         ''' </summary>
         Public Sub RegistrarFalhaNaEntrega(geracao As Long, erro As String)
-            Using tx = Imediata()
-                Executar(tx, "UPDATE publication_log SET delivery_attempts = delivery_attempts + 1, " &
-                    "last_error = $e, last_attempt_at = $t WHERE generation_key = $g",
-                    ("$g", CObj(geracao)), ("$e", CObj(Recortar(erro))), ("$t", CObj(Agora())))
-                tx.Commit()
-            End Using
+            SyncLock _trava
+                Using tx = Imediata()
+                    Executar(tx, "UPDATE publication_log SET delivery_attempts = delivery_attempts + 1, " &
+                        "last_error = $e, last_attempt_at = $t WHERE generation_key = $g",
+                        ("$g", CObj(geracao)), ("$e", CObj(Recortar(erro))), ("$t", CObj(Agora())))
+                    tx.Commit()
+                End Using
+            End SyncLock
         End Sub
 
         Public Function TentativasDeEntrega(geracao As Long) As Integer
-            Return Convert.ToInt32(Ler(Nothing,
-                "SELECT delivery_attempts FROM publication_log WHERE generation_key=$g",
-                ("$g", CObj(geracao))))
+            SyncLock _trava
+                Return Convert.ToInt32(Ler(Nothing,
+                    "SELECT delivery_attempts FROM publication_log WHERE generation_key=$g",
+                    ("$g", CObj(geracao))))
+            End SyncLock
         End Function
 
         Public Function UltimoErroDeEntrega(geracao As Long) As String
-            Dim v = Ler(Nothing,
-                "SELECT last_error FROM publication_log WHERE generation_key=$g",
-                ("$g", CObj(geracao)))
-            Return If(v Is Nothing, Nothing, Convert.ToString(v))
+            SyncLock _trava
+                Dim v = Ler(Nothing,
+                    "SELECT last_error FROM publication_log WHERE generation_key=$g",
+                    ("$g", CObj(geracao)))
+                Return If(v Is Nothing, Nothing, Convert.ToString(v))
+            End SyncLock
         End Function
 
         Public Sub MarcarDrenada(geracao As Long)
-            Using tx = Imediata()
-                Executar(tx, "UPDATE publication_log SET drained_at = $t WHERE generation_key = $g",
-                    ("$g", CObj(geracao)), ("$t", CObj(Agora())))
-                tx.Commit()
-            End Using
+            SyncLock _trava
+                Using tx = Imediata()
+                    Executar(tx, "UPDATE publication_log SET drained_at = $t WHERE generation_key = $g",
+                        ("$g", CObj(geracao)), ("$t", CObj(Agora())))
+                    tx.Commit()
+                End Using
+            End SyncLock
         End Sub
 
         ''' <summary>Cursor de onde retomar, ou Nothing se não há o que retomar.</summary>
         Public Function CursorDaTentativa(attemptKey As Long) As String
-            Dim v = Ler(Nothing, "SELECT cursor FROM scan_attempt WHERE attempt_key=$a",
-                        ("$a", CObj(attemptKey)))
-            Return If(v Is Nothing, Nothing, Convert.ToString(v))
+            SyncLock _trava
+                Dim v = Ler(Nothing, "SELECT cursor FROM scan_attempt WHERE attempt_key=$a",
+                            ("$a", CObj(attemptKey)))
+                Return If(v Is Nothing, Nothing, Convert.ToString(v))
+            End SyncLock
         End Function
 
         Public Function LinhasEncenadas(attemptKey As Long) As Integer
-            Return Convert.ToInt32(Ler(Nothing,
-                "SELECT COUNT(*) FROM scan_stage WHERE attempt_key=$a", ("$a", CObj(attemptKey))))
+            SyncLock _trava
+                Return Convert.ToInt32(Ler(Nothing,
+                    "SELECT COUNT(*) FROM scan_stage WHERE attempt_key=$a", ("$a", CObj(attemptKey))))
+            End SyncLock
         End Function
 
         ''' <summary>
@@ -429,18 +479,22 @@ Namespace Global.Iris.Cache
         ''' e a retomada seguinte encontra lixo que parece trabalho.
         ''' </summary>
         Public Sub Descartar(attemptKey As Long, motivo As String)
-            Using tx = Imediata()
-                Executar(tx, "UPDATE scan_attempt SET stage='descartada', ended_at=$t, " &
-                    "rejection=$r WHERE attempt_key=$a AND stage NOT IN ('publicada','descartada')",
-                    ("$a", CObj(attemptKey)), ("$t", CObj(Agora())),
-                    ("$r", CObj(Recortar(motivo))))
-                tx.Commit()
-            End Using
+            SyncLock _trava
+                Using tx = Imediata()
+                    Executar(tx, "UPDATE scan_attempt SET stage='descartada', ended_at=$t, " &
+                        "rejection=$r WHERE attempt_key=$a AND stage NOT IN ('publicada','descartada')",
+                        ("$a", CObj(attemptKey)), ("$t", CObj(Agora())),
+                        ("$r", CObj(Recortar(motivo))))
+                    tx.Commit()
+                End Using
+            End SyncLock
         End Sub
 
         Public Function EpocaDaPasta(folderKey As Long) As Long
-            Return Convert.ToInt64(Ler(Nothing,
-                "SELECT reconcile_epoch FROM folder WHERE folder_key=$f", ("$f", CObj(folderKey))))
+            SyncLock _trava
+                Return Convert.ToInt64(Ler(Nothing,
+                    "SELECT reconcile_epoch FROM folder WHERE folder_key=$f", ("$f", CObj(folderKey))))
+            End SyncLock
         End Function
 
         Private Shared Function Recortar(s As String) As String
@@ -449,25 +503,31 @@ Namespace Global.Iris.Cache
         End Function
 
         Public Function EstagioDa(attemptKey As Long) As String
-            Dim v = Ler(Nothing, "SELECT stage FROM scan_attempt WHERE attempt_key=$a",
-                        ("$a", CObj(attemptKey)))
-            Return If(v Is Nothing, Nothing, Convert.ToString(v))
+            SyncLock _trava
+                Dim v = Ler(Nothing, "SELECT stage FROM scan_attempt WHERE attempt_key=$a",
+                            ("$a", CObj(attemptKey)))
+                Return If(v Is Nothing, Nothing, Convert.ToString(v))
+            End SyncLock
         End Function
 
         Public Function CabecaPublicada(folderKey As Long) As Long?
-            Dim v = Ler(Nothing, "SELECT published_generation_key FROM folder WHERE folder_key=$f",
-                        ("$f", CObj(folderKey)))
-            If v Is Nothing Then Return Nothing
-            Return Convert.ToInt64(v)
+            SyncLock _trava
+                Dim v = Ler(Nothing, "SELECT published_generation_key FROM folder WHERE folder_key=$f",
+                            ("$f", CObj(folderKey)))
+                If v Is Nothing Then Return Nothing
+                Return Convert.ToInt64(v)
+            End SyncLock
         End Function
 
         ''' <summary>Sobe a época: invalida toda varredura em curso nesta pasta.</summary>
         Public Sub InvalidarUniverso(folderKey As Long)
-            Using tx = Imediata()
-                Executar(tx, "UPDATE folder SET reconcile_epoch = reconcile_epoch + 1 " &
-                    "WHERE folder_key = $f", ("$f", CObj(folderKey)))
-                tx.Commit()
-            End Using
+            SyncLock _trava
+                Using tx = Imediata()
+                    Executar(tx, "UPDATE folder SET reconcile_epoch = reconcile_epoch + 1 " &
+                        "WHERE folder_key = $f", ("$f", CObj(folderKey)))
+                    tx.Commit()
+                End Using
+            End SyncLock
         End Sub
 
         ' ==============================================================

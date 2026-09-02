@@ -218,77 +218,99 @@ Namespace Global.Iris.Integration
     Public NotInheritable Class ManifestReader
 
         Private ReadOnly _conn As SqliteConnection
+
+        ''' <summary>
+        ''' A trava do arquivo. A conexão é compartilhada, e uma
+        ''' <c>SqliteConnection</c> não tem contrato de uso simultâneo — ver
+        ''' <c>CacheWriter._trava</c>, que tem o caso por extenso.
+        ''' </summary>
+        Private ReadOnly _trava As Object
         Private ReadOnly _detector As ContractionDetector
 
         Public Sub New(db As CacheDatabase)
             If db Is Nothing Then Throw New ArgumentNullException(NameOf(db))
             _conn = db.Connection
+            _trava = db.Trava
             _detector = New ContractionDetector(db)
         End Sub
 
+        ''' <summary>
+        ''' <b>Uma leitura só, sob a trava.</b>
+        '''
+        ''' O manifesto era montado por três consultas independentes — cabeça e
+        ''' cobertura, contração, itens. Uma publicação no meio delas produzia um
+        ''' objeto que declara a geração G1, calcula a contração contra G2 e devolve
+        ''' associações já mexidas por G2: um retrato de duas gerações misturadas,
+        ''' apresentado como um. Achado por revisão externa em 02/09/2026.
+        '''
+        ''' A trava fecha isso porque quem publica também a toma — as três leituras
+        ''' passam a ver o mesmo instante.
+        ''' </summary>
         Public Function Ler(folderKey As Long) As FolderManifest
-            Dim geracao As Long? = Nothing
-            Dim cobertura = FolderCoverage.Desconhecida
-            Dim publicadaEm As String = Nothing
-            Dim descartadas As Integer? = Nothing
+            SyncLock _trava
+                Dim geracao As Long? = Nothing
+                Dim cobertura = FolderCoverage.Desconhecida
+                Dim publicadaEm As String = Nothing
+                Dim descartadas As Integer? = Nothing
 
-            Using cmd = _conn.CreateCommand()
-                cmd.CommandText =
-                    "SELECT g.generation_key, g.published_at, c.coverage, g.discarded " &
-                    "FROM folder f " &
-                    "JOIN generation g ON g.generation_key = f.published_generation_key " &
-                    "LEFT JOIN coverage_observation c ON c.coverage_key = g.coverage_key " &
-                    "WHERE f.folder_key = $f"
-                cmd.Parameters.AddWithValue("$f", folderKey)
-                Using rd = cmd.ExecuteReader()
-                    If rd.Read() Then
-                        geracao = rd.GetInt64(0)
-                        publicadaEm = rd.GetString(1)
-                        cobertura = DaCobertura(If(rd.IsDBNull(2), Nothing, rd.GetString(2)))
-                        descartadas = If(rd.IsDBNull(3), CType(Nothing, Integer?), rd.GetInt32(3))
-                    End If
+                Using cmd = _conn.CreateCommand()
+                    cmd.CommandText =
+                        "SELECT g.generation_key, g.published_at, c.coverage, g.discarded " &
+                        "FROM folder f " &
+                        "JOIN generation g ON g.generation_key = f.published_generation_key " &
+                        "LEFT JOIN coverage_observation c ON c.coverage_key = g.coverage_key " &
+                        "WHERE f.folder_key = $f"
+                    cmd.Parameters.AddWithValue("$f", folderKey)
+                    Using rd = cmd.ExecuteReader()
+                        If rd.Read() Then
+                            geracao = rd.GetInt64(0)
+                            publicadaEm = rd.GetString(1)
+                            cobertura = DaCobertura(If(rd.IsDBNull(2), Nothing, rd.GetString(2)))
+                            descartadas = If(rd.IsDBNull(3), CType(Nothing, Integer?), rd.GetInt32(3))
+                        End If
+                    End Using
                 End Using
-            End Using
 
-            If geracao Is Nothing Then
-                Return New FolderManifest(folderKey, Nothing, FolderCoverage.Desconhecida,
-                                          Nothing, Nothing)
-            End If
+                If geracao Is Nothing Then
+                    Return New FolderManifest(folderKey, Nothing, FolderCoverage.Desconhecida,
+                                              Nothing, Nothing)
+                End If
 
-            ' O detector tem um consumidor: e este.
-            Dim contracao = _detector.Comparar(folderKey)
+                ' O detector tem um consumidor: e este.
+                Dim contracao = _detector.Comparar(folderKey)
 
-            Dim itens As New List(Of ManifestItem)()
-            Using cmd = _conn.CreateCommand()
-                ' So associacoes cuja geracao ja foi PUBLICADA. Linhas
-                ' encenadas de uma tentativa em curso tem generation_key nulo
-                ' ate a publicacao, entao nao entram aqui.
-                cmd.CommandText =
-                    "SELECT i.provider_entry_id, m.subject, m.sender_name, m.received_at, " &
-                    "       m.is_unread, a.presence, m.conversation_id, m.sender_address " &
-                    "FROM association a " &
-                    "JOIN incarnation i ON i.item_key = a.item_key AND i.folder_key = a.folder_key " &
-                    "LEFT JOIN metadata_observation m ON m.incarnation_key = i.incarnation_key " &
-                    "WHERE a.folder_key = $f AND a.generation_key IS NOT NULL " &
-                    "ORDER BY m.received_at DESC"
-                cmd.Parameters.AddWithValue("$f", folderKey)
-                Using rd = cmd.ExecuteReader()
-                    While rd.Read()
-                        itens.Add(New ManifestItem(
-                            rd.GetString(0),
-                            If(rd.IsDBNull(1), Nothing, rd.GetString(1)),
-                            If(rd.IsDBNull(2), Nothing, rd.GetString(2)),
-                            If(rd.IsDBNull(3), Nothing, rd.GetString(3)),
-                            If(rd.IsDBNull(4), CType(Nothing, Boolean?), rd.GetInt32(4) = 1),
-                            DaPresenca(If(rd.IsDBNull(5), Nothing, rd.GetString(5))),
-                            If(rd.IsDBNull(6), Nothing, rd.GetString(6)),
-                            If(rd.IsDBNull(7), Nothing, rd.GetString(7))))
-                    End While
+                Dim itens As New List(Of ManifestItem)()
+                Using cmd = _conn.CreateCommand()
+                    ' So associacoes cuja geracao ja foi PUBLICADA. Linhas
+                    ' encenadas de uma tentativa em curso tem generation_key nulo
+                    ' ate a publicacao, entao nao entram aqui.
+                    cmd.CommandText =
+                        "SELECT i.provider_entry_id, m.subject, m.sender_name, m.received_at, " &
+                        "       m.is_unread, a.presence, m.conversation_id, m.sender_address " &
+                        "FROM association a " &
+                        "JOIN incarnation i ON i.item_key = a.item_key AND i.folder_key = a.folder_key " &
+                        "LEFT JOIN metadata_observation m ON m.incarnation_key = i.incarnation_key " &
+                        "WHERE a.folder_key = $f AND a.generation_key IS NOT NULL " &
+                        "ORDER BY m.received_at DESC"
+                    cmd.Parameters.AddWithValue("$f", folderKey)
+                    Using rd = cmd.ExecuteReader()
+                        While rd.Read()
+                            itens.Add(New ManifestItem(
+                                rd.GetString(0),
+                                If(rd.IsDBNull(1), Nothing, rd.GetString(1)),
+                                If(rd.IsDBNull(2), Nothing, rd.GetString(2)),
+                                If(rd.IsDBNull(3), Nothing, rd.GetString(3)),
+                                If(rd.IsDBNull(4), CType(Nothing, Boolean?), rd.GetInt32(4) = 1),
+                                DaPresenca(If(rd.IsDBNull(5), Nothing, rd.GetString(5))),
+                                If(rd.IsDBNull(6), Nothing, rd.GetString(6)),
+                                If(rd.IsDBNull(7), Nothing, rd.GetString(7))))
+                        End While
+                    End Using
                 End Using
-            End Using
 
-            Return New FolderManifest(folderKey, geracao, cobertura, publicadaEm, itens,
-                                      contracao, descartadas)
+                Return New FolderManifest(folderKey, geracao, cobertura, publicadaEm, itens,
+                                          contracao, descartadas)
+            End SyncLock
         End Function
 
         Private Shared Function DaCobertura(s As String) As FolderCoverage

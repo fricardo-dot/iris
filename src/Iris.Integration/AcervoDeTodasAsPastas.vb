@@ -139,28 +139,30 @@ Namespace Global.Iris.Integration
         ''' idempotência do <see cref="AcervoService"/>.
         ''' </summary>
         Public Sub Recarregar()
-            ' A LEITURA INTEIRA SOB TRAVA, e nao so a troca do retrato.
-            '
-            ' Duas recargas ao mesmo tempo -- o dreno entregando enquanto alguem
-            ' recarrega a mao -- liam a MESMA SqliteConnection em paralelo, que e
-            ' o que esta classe pede a quem a usa que nao faca. E, mesmo sem
-            ' estourar, a recarga velha podia terminar depois da nova e substituir
-            ' o retrato por um mais antigo -- com _recarregado subindo, o que faz
-            ' a regressao parecer progresso.
-            '
-            ' A TRAVA E A DA CONEXAO, e nao uma so desta classe.
-            '
-            ' Uma trava propria serializava duas recargas entre si e nao servia de
-            ' nada contra os outros caminhos que tocam a MESMA conexao -- a leitura
-            ' de rotulos e a gravacao em lote. Tres travas diferentes protegendo o
-            ' mesmo recurso e o mesmo que nenhuma. Achado por revisao externa em
-            ' 01/09/2026.
-            '
-            ' Ela nao e a mesma que serve o getter de Pastas: manter a leitura do
-            ' banco dentro daquela faria a tela esperar a varredura terminar para
-            ' conseguir desenhar a lista.
             SyncLock _db.Trava
-                Reler()
+                ' A LEITURA INTEIRA SOB TRAVA, e nao so a troca do retrato.
+                '
+                ' Duas recargas ao mesmo tempo -- o dreno entregando enquanto alguem
+                ' recarrega a mao -- liam a MESMA SqliteConnection em paralelo, que e
+                ' o que esta classe pede a quem a usa que nao faca. E, mesmo sem
+                ' estourar, a recarga velha podia terminar depois da nova e substituir
+                ' o retrato por um mais antigo -- com _recarregado subindo, o que faz
+                ' a regressao parecer progresso.
+                '
+                ' A TRAVA E A DA CONEXAO, e nao uma so desta classe.
+                '
+                ' Uma trava propria serializava duas recargas entre si e nao servia de
+                ' nada contra os outros caminhos que tocam a MESMA conexao -- a leitura
+                ' de rotulos e a gravacao em lote. Tres travas diferentes protegendo o
+                ' mesmo recurso e o mesmo que nenhuma. Achado por revisao externa em
+                ' 01/09/2026.
+                '
+                ' Ela nao e a mesma que serve o getter de Pastas: manter a leitura do
+                ' banco dentro daquela faria a tela esperar a varredura terminar para
+                ' conseguir desenhar a lista.
+                SyncLock _db.Trava
+                    Reler()
+            End SyncLock
             End SyncLock
         End Sub
 

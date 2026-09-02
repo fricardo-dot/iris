@@ -90,22 +90,24 @@ Namespace Global.Iris.Integration
         ''' não o caminho da interface.
         ''' </summary>
         Public Function PastaExistente(storeId As String, entryId As String) As Long?
-            If String.IsNullOrWhiteSpace(storeId) OrElse
-               String.IsNullOrWhiteSpace(entryId) Then
-                Return Nothing
-            End If
+            SyncLock _db.Trava
+                If String.IsNullOrWhiteSpace(storeId) OrElse
+                   String.IsNullOrWhiteSpace(entryId) Then
+                    Return Nothing
+                End If
 
-            Using cmd = _db.Connection.CreateCommand()
-                cmd.CommandText =
-                    "SELECT f.folder_key FROM folder f " &
-                    "JOIN store s ON s.store_key = f.store_key " &
-                    "WHERE s.provider_store_id = $s AND f.provider_entry_id = $e"
-                cmd.Parameters.AddWithValue("$s", storeId)
-                cmd.Parameters.AddWithValue("$e", entryId)
-                Dim v = cmd.ExecuteScalar()
-                If v Is Nothing OrElse v Is DBNull.Value Then Return Nothing
-                Return Convert.ToInt64(v)
-            End Using
+                Using cmd = _db.Connection.CreateCommand()
+                    cmd.CommandText =
+                        "SELECT f.folder_key FROM folder f " &
+                        "JOIN store s ON s.store_key = f.store_key " &
+                        "WHERE s.provider_store_id = $s AND f.provider_entry_id = $e"
+                    cmd.Parameters.AddWithValue("$s", storeId)
+                    cmd.Parameters.AddWithValue("$e", entryId)
+                    Dim v = cmd.ExecuteScalar()
+                    If v Is Nothing OrElse v Is DBNull.Value Then Return Nothing
+                    Return Convert.ToInt64(v)
+                End Using
+            End SyncLock
         End Function
 
         ''' <summary>
@@ -125,46 +127,48 @@ Namespace Global.Iris.Integration
         ''' </remarks>
         Public Function Pasta(storeId As String, entryId As String,
                               nome As String) As Long
-            If String.IsNullOrWhiteSpace(storeId) Then
-                Throw New ArgumentException("store sem identificador", NameOf(storeId))
-            End If
-            If String.IsNullOrWhiteSpace(entryId) Then
-                Throw New ArgumentException("pasta sem identificador", NameOf(entryId))
-            End If
-
-            Using tx = _db.Connection.BeginTransaction(deferred:=False)
-                Dim storeKey = Achar(tx, "SELECT store_key FROM store WHERE provider_store_id = $v",
-                                     ("$v", storeId))
-                If Not storeKey.HasValue Then
-                    storeKey = Inserir(tx,
-                        "INSERT INTO store (provider_store_id, display_name) VALUES ($v, $n); " &
-                        "SELECT last_insert_rowid()",
-                        ("$v", storeId), ("$n", CObj(DBNull.Value)))
+            SyncLock _db.Trava
+                If String.IsNullOrWhiteSpace(storeId) Then
+                    Throw New ArgumentException("store sem identificador", NameOf(storeId))
+                End If
+                If String.IsNullOrWhiteSpace(entryId) Then
+                    Throw New ArgumentException("pasta sem identificador", NameOf(entryId))
                 End If
 
-                Dim folderKey = Achar(tx,
-                    "SELECT folder_key FROM folder WHERE store_key = $s AND provider_entry_id = $e",
-                    ("$s", storeKey.Value), ("$e", entryId))
+                Using tx = _db.Connection.BeginTransaction(deferred:=False)
+                    Dim storeKey = Achar(tx, "SELECT store_key FROM store WHERE provider_store_id = $v",
+                                         ("$v", storeId))
+                    If Not storeKey.HasValue Then
+                        storeKey = Inserir(tx,
+                            "INSERT INTO store (provider_store_id, display_name) VALUES ($v, $n); " &
+                            "SELECT last_insert_rowid()",
+                            ("$v", storeId), ("$n", CObj(DBNull.Value)))
+                    End If
 
-                If folderKey.HasValue Then
-                    ' SO o nome. Ver o doc da classe: epoca, geracao publicada e
-                    ' estabilidade sao estado de sincronizacao, e reescreve-los
-                    ' aqui apagaria a varredura anterior a cada clique.
-                    Executar(tx, "UPDATE folder SET name = $n WHERE folder_key = $k",
-                             ("$n", Texto(nome)), ("$k", folderKey.Value))
-                Else
-                    ' 'estavel' e o padrao ate uma varredura dizer o contrario;
-                    ' reconcile_epoch 0 e "nunca reconciliada".
-                    folderKey = Inserir(tx,
-                        "INSERT INTO folder (store_key, provider_entry_id, name, " &
-                        "  reconcile_epoch, stability) VALUES ($s, $e, $n, 0, 'estavel'); " &
-                        "SELECT last_insert_rowid()",
-                        ("$s", storeKey.Value), ("$e", entryId), ("$n", Texto(nome)))
-                End If
+                    Dim folderKey = Achar(tx,
+                        "SELECT folder_key FROM folder WHERE store_key = $s AND provider_entry_id = $e",
+                        ("$s", storeKey.Value), ("$e", entryId))
 
-                tx.Commit()
-                Return folderKey.Value
-            End Using
+                    If folderKey.HasValue Then
+                        ' SO o nome. Ver o doc da classe: epoca, geracao publicada e
+                        ' estabilidade sao estado de sincronizacao, e reescreve-los
+                        ' aqui apagaria a varredura anterior a cada clique.
+                        Executar(tx, "UPDATE folder SET name = $n WHERE folder_key = $k",
+                                 ("$n", Texto(nome)), ("$k", folderKey.Value))
+                    Else
+                        ' 'estavel' e o padrao ate uma varredura dizer o contrario;
+                        ' reconcile_epoch 0 e "nunca reconciliada".
+                        folderKey = Inserir(tx,
+                            "INSERT INTO folder (store_key, provider_entry_id, name, " &
+                            "  reconcile_epoch, stability) VALUES ($s, $e, $n, 0, 'estavel'); " &
+                            "SELECT last_insert_rowid()",
+                            ("$s", storeKey.Value), ("$e", entryId), ("$n", Texto(nome)))
+                    End If
+
+                    tx.Commit()
+                    Return folderKey.Value
+                End Using
+            End SyncLock
         End Function
 
         ' ==============================================================
@@ -193,40 +197,42 @@ Namespace Global.Iris.Integration
         ''' o próximo start do programa.
         ''' </remarks>
         Public Function Ambiente(f As EnvironmentFingerprint) As PerfilDoAmbiente
-            If f Is Nothing Then Throw New ArgumentNullException(NameOf(f))
-            Dim valor = f.Value()
+            SyncLock _db.Trava
+                If f Is Nothing Then Throw New ArgumentNullException(NameOf(f))
+                Dim valor = f.Value()
 
-            Using tx = _db.Connection.BeginTransaction(deferred:=False)
-                Using cmd = _db.Connection.CreateCommand()
-                    cmd.Transaction = tx
-                    cmd.CommandText =
-                        "SELECT environment_key, allowed FROM environment_profile " &
-                        "WHERE fingerprint = $f"
-                    cmd.Parameters.AddWithValue("$f", valor)
-                    Using r = cmd.ExecuteReader()
-                        If r.Read() Then
-                            Dim achado As New PerfilDoAmbiente(
-                                r.GetInt64(0), valor, r.GetInt32(1) = 1, False)
-                            r.Close()
-                            tx.Commit()
-                            Return achado
-                        End If
+                Using tx = _db.Connection.BeginTransaction(deferred:=False)
+                    Using cmd = _db.Connection.CreateCommand()
+                        cmd.Transaction = tx
+                        cmd.CommandText =
+                            "SELECT environment_key, allowed FROM environment_profile " &
+                            "WHERE fingerprint = $f"
+                        cmd.Parameters.AddWithValue("$f", valor)
+                        Using r = cmd.ExecuteReader()
+                            If r.Read() Then
+                                Dim achado As New PerfilDoAmbiente(
+                                    r.GetInt64(0), valor, r.GetInt32(1) = 1, False)
+                                r.Close()
+                                tx.Commit()
+                                Return achado
+                            End If
+                        End Using
                     End Using
+
+                    Dim chave = Inserir(tx,
+                        "INSERT INTO environment_profile (fingerprint, provider, cached_mode, " &
+                        "  sync_window, policy_version, allowed) " &
+                        "VALUES ($f, $p, $c, $w, $v, 0); SELECT last_insert_rowid()",
+                        ("$f", valor),
+                        ("$p", f.Provider.ToString()),
+                        ("$c", If(f.CachedMode, 1, 0)),
+                        ("$w", Texto(f.WindowToken)),
+                        ("$v", f.PolicyVersion))
+
+                    tx.Commit()
+                    Return New PerfilDoAmbiente(chave.Value, valor, False, True)
                 End Using
-
-                Dim chave = Inserir(tx,
-                    "INSERT INTO environment_profile (fingerprint, provider, cached_mode, " &
-                    "  sync_window, policy_version, allowed) " &
-                    "VALUES ($f, $p, $c, $w, $v, 0); SELECT last_insert_rowid()",
-                    ("$f", valor),
-                    ("$p", f.Provider.ToString()),
-                    ("$c", If(f.CachedMode, 1, 0)),
-                    ("$w", Texto(f.WindowToken)),
-                    ("$v", f.PolicyVersion))
-
-                tx.Commit()
-                Return New PerfilDoAmbiente(chave.Value, valor, False, True)
-            End Using
+            End SyncLock
         End Function
 
         ' ==============================================================

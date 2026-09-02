@@ -91,31 +91,41 @@ Namespace Global.Iris.Integration
 
         Private ReadOnly _conn As SqliteConnection
 
+        ''' <summary>
+        ''' A trava do arquivo. A conexão é compartilhada, e uma
+        ''' <c>SqliteConnection</c> não tem contrato de uso simultâneo — ver
+        ''' <c>CacheWriter._trava</c>, que tem o caso por extenso.
+        ''' </summary>
+        Private ReadOnly _trava As Object
+
         Public Sub New(db As CacheDatabase)
             If db Is Nothing Then Throw New ArgumentNullException(NameOf(db))
             _conn = db.Connection
+            _trava = db.Trava
         End Sub
 
         ''' <summary>
         ''' Compara as duas últimas gerações publicadas da pasta.
         ''' </summary>
         Public Function Comparar(folderKey As Long) As ContractionReport
-            Dim geracoes = UltimasDuas(folderKey)
-            If geracoes.Count < 2 Then
-                Return New ContractionReport(ContractionVerdict.SemReferencia, 0, 0, Nothing, 0)
-            End If
+            SyncLock _trava
+                Dim geracoes = UltimasDuas(folderKey)
+                If geracoes.Count < 2 Then
+                    Return New ContractionReport(ContractionVerdict.SemReferencia, 0, 0, Nothing, 0)
+                End If
 
-            Dim agora = ChavesVistas(folderKey, geracoes(0))
-            Dim antes = ChavesVistas(folderKey, geracoes(1))
+                Dim agora = ChavesVistas(folderKey, geracoes(0))
+                Dim antes = ChavesVistas(folderKey, geracoes(1))
 
-            Dim sumiram = antes.Except(agora).ToList()
-            Dim chegaram = agora.Except(antes).Count()
+                Dim sumiram = antes.Except(agora).ToList()
+                Dim chegaram = agora.Except(antes).Count()
 
-            ' Compara CONJUNTOS, e nao contagens. Encolhimento compensado por
-            ' correio novo mantem a contagem igual e passaria batido - foi o
-            ' buraco que a §22.11 listou.
-            Dim v = If(sumiram.Count > 0, ContractionVerdict.Encolheu, ContractionVerdict.Estavel)
-            Return New ContractionReport(v, antes.Count, agora.Count, sumiram, chegaram)
+                ' Compara CONJUNTOS, e nao contagens. Encolhimento compensado por
+                ' correio novo mantem a contagem igual e passaria batido - foi o
+                ' buraco que a §22.11 listou.
+                Dim v = If(sumiram.Count > 0, ContractionVerdict.Encolheu, ContractionVerdict.Estavel)
+                Return New ContractionReport(v, antes.Count, agora.Count, sumiram, chegaram)
+            End SyncLock
         End Function
 
         ' ==============================================================
