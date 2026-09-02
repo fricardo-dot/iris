@@ -171,10 +171,12 @@ Namespace Global.Iris.Update
                     '
                     ' KeySize = 256 sozinho nao basta: brainpoolP256r1 e
                     ' secp256k1 tambem tem 256 bits, e o Windows conhece as duas.
-                    ' A ferramenta de publicacao ja conferia o OID; o cliente,
-                    ' nao -- entao o Iris aceitava uma chave que o dono nunca
-                    ' conseguiria usar para assinar. Achado pelo teste que usa
-                    ' brainpoolP256r1, na segunda rodada de revisoes.
+                    '
+                    ' As duas pontas erravam, e de jeitos diferentes: a ferramenta
+                    ' de publicacao conferia o COMPRIMENTO da SPKI -- heuristica --
+                    ' e o cliente so o KeySize. As duas passaram a conferir o OID
+                    ' ao mesmo tempo, e o teste com brainpoolP256r1 e que separou
+                    ' os dois casos: ele so ficava verde depois desta linha.
                     If Not EhP256(verificador) Then Return False
 
                     Return verificador.VerifyData(dados, assinatura, HashAlgorithmName.SHA256)

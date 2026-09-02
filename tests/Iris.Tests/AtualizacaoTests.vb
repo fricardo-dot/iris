@@ -108,6 +108,16 @@ Public Class AtualizacaoTests
         ''' <summary>Quando preenchido, toda requisição estoura com isto.</summary>
         Friend Property Explodir As Exception
 
+        ''' <summary>
+        ''' Quando preenchido, a resposta diz ter terminado NESTE endereço — que
+        ''' é o que um redirecionamento faz. Serve para provar
+        ''' <c>ExigirHttpsAteOFim</c>.
+        ''' </summary>
+        Friend Property EnderecoFinal As Uri
+
+        ''' <summary>Devolve resposta sem <c>RequestMessage</c>.</summary>
+        Friend Property EsquecerODePedido As Boolean
+
         Protected Overrides Function SendAsync(pedido As HttpRequestMessage,
                                                ct As CancellationToken) _
                                                As Task(Of HttpResponseMessage)
@@ -147,10 +157,16 @@ Public Class AtualizacaoTests
         ''' num ponto vira, mais cedo ou mais tarde, uma conferência que ninguém
         ''' pode apertar.
         ''' </summary>
-        Private Shared Function Responder(pedido As HttpRequestMessage,
+        Private Function Responder(pedido As HttpRequestMessage,
                                           codigo As HttpStatusCode,
                                           corpo As HttpContent) As HttpResponseMessage
-            Dim r As New HttpResponseMessage(codigo) With {.RequestMessage = pedido}
+            Dim r As New HttpResponseMessage(codigo)
+            If Not EsquecerODePedido Then
+                r.RequestMessage = pedido
+                If EnderecoFinal IsNot Nothing Then
+                    r.RequestMessage = New HttpRequestMessage(pedido.Method, EnderecoFinal)
+                End If
+            End If
             If corpo IsNot Nothing Then r.Content = corpo
             Return r
         End Function
@@ -1205,10 +1221,22 @@ Public Class AtualizacaoTests
                 destino As Memory(Of Byte),
                 Optional ct As CancellationToken = Nothing) As ValueTask(Of Integer)
             Comecou.TrySetResult()
-            ' Nunca completa por conta propria: so o cancelamento tira daqui.
+
+            ' CANCELAMENTO CONTINUA CANCELAMENTO.
+            '
+            ' A primeira versao devolvia Task.Delay(Infinite, ct).ContinueWith(
+            ' Function(t) 0) -- e aquele ContinueWith ENGOLIA o estado cancelado
+            ' e devolvia zero, que para quem le e FIM DE ARQUIVO. A producao
+            ' terminava por tamanho errado, nao por cancelamento, e o teste dizia
+            ' provar cancelamento. Apagar o Catch OperationCanceledException da
+            ' producao o deixava verde.
+            '
+            ' Agora a tarefa termina CANCELADA, como um fluxo de rede termina.
             Return New ValueTask(Of Integer)(
-                Task.Delay(Timeout.Infinite, ct).ContinueWith(
-                    Function(t) 0, TaskContinuationOptions.ExecuteSynchronously))
+                Task.Run(Async Function() As Task(Of Integer)
+                             Await Task.Delay(Timeout.Infinite, ct)
+                             Return 0
+                         End Function, ct))
         End Function
     End Class
 
@@ -1247,27 +1275,33 @@ Public Class AtualizacaoTests
 
                 Dim aFraseDoMomento = tela.Frase
 
-                ' CONTA O QUE A TELA AVISAR DEPOIS DO DESCARTE.
+                ' CONTA O QUE A TELA AVISAR A PARTIR DO DESCARTE -- inclusive
+                ' DURANTE ele.
                 '
-                ' Sem isto, o Finally que escreve "Ocupado = False" podia rodar
-                ' num ViewModel ja descartado sem que nada reclamasse: a Frase
-                ' nao muda, e os CanExecute ja sao False por outro motivo. O
-                ' contrato do Dispose e que NADA seja publicado depois dele.
+                ' O handler entrava DEPOIS do Dispose, e assim qualquer
+                ' PropertyChanged disparado dentro do proprio Dispose escapava da
+                ' conta. O contrato e que nada seja publicado do descarte em
+                ' diante, e a contagem tem de comecar antes dele.
                 Dim avisosDepois = 0
                 Dim contar As ComponentModel.PropertyChangedEventHandler =
                     Sub(quem, oQue) Threading.Interlocked.Increment(avisosDepois)
 
-                tela.Dispose()
                 AddHandler tela.PropertyChanged, contar
-                ' COM PRAZO. Se o Dispose nao cancelar, este Await nao volta
-                ' nunca -- o fluxo so termina por cancelamento. Um teste que
-                ' pendura nao e um teste vermelho: e uma suite parada, e a
-                ' primeira vez que sabotei o Dispose foi exatamente isso que
-                ' aconteceu.
-                Dim naPaciencia = Await Task.WhenAny(baixando, Task.Delay(TimeSpan.FromSeconds(20)))
+                tela.Dispose()
+                ' COM PRAZO, e o prazo e CURTO.
+                '
+                ' Sem cancelamento, "baixando" nao termina nunca -- o fluxo so sai
+                ' por cancelamento. O WhenAny volta pelo prazo e a assercao fica
+                ' vermelha; sem ele, a suite ficaria PARADA, que foi o que
+                ' aconteceu na primeira vez que sabotei o Dispose.
+                '
+                ' Cinco segundos, e nao vinte: um prazo largo aceita como sucesso
+                ' um cancelamento patologicamente lento -- um Dispose que agendasse
+                ' o Cancel para dezenove segundos depois passaria.
+                Dim naPaciencia = Await Task.WhenAny(baixando, Task.Delay(TimeSpan.FromSeconds(5)))
                 RemoveHandler tela.PropertyChanged, contar
                 Assert.AreSame(baixando, naPaciencia,
-                               "o descarte nao cancelou o download: ele seguiu em voo")
+                               "o descarte nao cancelou o download em 5s")
 
                 Assert.AreEqual(0, avisosDepois,
                                 "a tela publicou mudanca de propriedade depois de descartada")
@@ -1343,6 +1377,7 @@ Public Class AtualizacaoTests
             Await tela.VerificarCommand.ExecuteAsync(Nothing)
             Assert.IsTrue(tela.BaixarCommand.CanExecute(Nothing), "nao chegou a ter oferta")
             Assert.IsFalse(tela.Ocupado, "deveria estar ociosa aqui")
+            Dim pedidosAteAqui = servidor.Pedidos.Count
 
             tela.Dispose()
 
@@ -1351,6 +1386,22 @@ Public Class AtualizacaoTests
             Assert.IsFalse(tela.VerificarCommand.CanExecute(Nothing),
                            "da para verificar depois de a tela ser descartada")
             Assert.IsFalse(tela.MostrarNaPastaCommand.CanExecute(Nothing))
+
+            ' E EXECUTAR MESMO ASSIM NAO PODE ESTOURAR NEM MEXER EM NADA.
+            '
+            ' CanExecute e conselho, e nao tranca: um binding do WPF guarda a
+            ' referencia do comando, e ExecuteAsync pode ser chamado. Sem a
+            ' guarda no corpo, isto tocaria _ateFechar.Token depois do Dispose --
+            ' que LANCA ObjectDisposedException -- e antes disso ja teria escrito
+            ' Ocupado e Frase.
+            Dim antes = tela.Frase
+            Await tela.VerificarCommand.ExecuteAsync(Nothing)
+            Await tela.BaixarCommand.ExecuteAsync(Nothing)
+            Assert.AreEqual(antes, tela.Frase,
+                            "executar um comando depois do descarte mexeu na tela")
+            Assert.IsFalse(tela.Ocupado)
+            Assert.AreEqual(0, servidor.Pedidos.Count - pedidosAteAqui,
+                            "foi a rede depois de a tela ser descartada")
           End Using
         Finally
             Directory.Delete(onde, recursive:=True)
@@ -1408,10 +1459,23 @@ Public Class AtualizacaoTests
             Dim publicaBase64 = saiu
             Assert.IsTrue(publicaBase64.Length > 40, "nao imprimiu a chave publica")
 
-            ' A PRIVADA FICA NO ARQUIVO, e so la.
-            StringAssert.Contains(File.ReadAllText(chave), "BEGIN PRIVATE KEY")
-            Assert.IsFalse(publicaBase64.Contains("PRIVATE"),
-                           "a chave privada saiu pela saida padrao")
+            ' A PRIVADA FICA NO ARQUIVO, e so la -- nas DUAS saidas.
+            '
+            ' A primeira versao so olhava a saida padrao, e imprimir o PEM em
+            ' stderr a deixava verde. Um console mostra as duas do mesmo jeito, e
+            ' as duas vao para o buffer de rolagem.
+            Dim oPem = File.ReadAllText(chave)
+            StringAssert.Contains(oPem, "BEGIN PRIVATE KEY")
+            Dim miolo = oPem.Replace("-----BEGIN PRIVATE KEY-----", "").
+                             Replace("-----END PRIVATE KEY-----", "").
+                             Replace(vbCr, "").Replace(vbLf, "").Trim()
+            For Each saida In {publicaBase64, errou}
+                Assert.IsFalse(saida.Contains("PRIVATE"),
+                               "saiu 'PRIVATE' por um dos canais: " & saida)
+                Assert.IsFalse(saida.Contains(miolo),
+                               "a chave privada vazou por um dos canais")
+            Next
+            Assert.AreEqual("", errou, "o caminho feliz escreveu em stderr")
 
             ' RECUSA GERAR POR CIMA: uma chave nova invalida tudo o que ja foi
             ' publicado, e isso nao pode acontecer por um comando repetido.
@@ -1453,5 +1517,221 @@ Public Class AtualizacaoTests
             Directory.Delete(onde, recursive:=True)
         End Try
     End Sub
+
+    ' ==================================================================
+    ' Os elos: cada peça é testada, e alguém tem de chamar a peça certa
+    ' ==================================================================
+
+    ''' <summary>
+    ''' <b>O publicador chama o script do manifesto, e passa tudo.</b>
+    '''
+    ''' O teste que executa <c>montar-manifesto.ps1</c> prova que <i>aquele
+    ''' script</i> produz algo que o cliente lê. Não prova que a publicação o
+    ''' usa: trocar a chamada por um <c>ConvertTo-Json</c> escrito à mão em
+    ''' <c>publicar-versao.ps1</c> deixava tudo verde.
+    '''
+    ''' Isto é uma verificação de <b>texto do script</b>, e não de execução —
+    ''' rodar a publicação inteira custa três minutos e um <c>.exe</c> de 63 MB.
+    ''' É o mesmo recurso de <c>MarcaDaMutacaoTests</c>: quando o que importa é
+    ''' que uma chamada esteja num lugar, olhar o lugar é a prova mais direta.
+    ''' </summary>
+    <TestMethod>
+    Public Sub O_publicador_chama_o_script_do_manifesto()
+        Dim script = File.ReadAllText(
+            Path.Combine(RaizDoRepositorio(), "tools", "publicar-versao.ps1"))
+
+        StringAssert.Contains(script, "montar-manifesto.ps1",
+            "a publicacao nao chama o script do manifesto: o teste que prova a " &
+            "forma do iris.json passou a cobrir codigo que ninguem usa")
+
+        ' E PASSA TODOS OS CAMPOS. Faltar um faria o manifesto sair sem ele --
+        ' e o -Bytes ausente, por exemplo, sai como zero, que o cliente recusa
+        ' por "tamanho nao plausivel" depois de a assinatura conferir.
+        For Each campo In {"-Versao", "-Notas", "-Endereco", "-Sha256", "-Bytes", "-Destino"}
+            StringAssert.Contains(script, campo & " ",
+                "a chamada de montar-manifesto.ps1 nao passa " & campo)
+        Next
+
+        ' E ASSINA O ARQUIVO QUE ELE ACABOU DE MONTAR.
+        StringAssert.Contains(script, "assinar --chave $Chave --arquivo $arquivoDoManifesto",
+            "a publicacao assina outra coisa que nao o manifesto que montou")
+    End Sub
+
+    ''' <summary>
+    ''' <b>Os dois scripts chamam o assinador pelo mesmo caminho.</b>
+    '''
+    ''' <c>montar-assinador.ps1</c> existe para haver um lugar só; um deles
+    ''' voltar a compilar por conta própria seria a cópia divergente que ele
+    ''' evita.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Os_scripts_chamam_o_assinador_pelo_mesmo_caminho()
+        For Each qual In {"gerar-chave-de-assinatura.ps1", "publicar-versao.ps1"}
+            Dim script = File.ReadAllText(
+                Path.Combine(RaizDoRepositorio(), "tools", qual))
+            StringAssert.Contains(script, "montar-assinador.ps1",
+                qual & " nao usa o montar-assinador.ps1")
+            Assert.IsFalse(script.Contains("dotnet build"),
+                qual & " compila o assinador por conta propria, em vez de usar " &
+                "o montar-assinador.ps1 -- e uma copia que vai divergir")
+        Next
+    End Sub
+
+    ''' <summary>
+    ''' <b>A reconferência está DEPOIS do <c>Move</c>, e antes do sucesso.</b>
+    '''
+    ''' O teste de <c>Confere</c> prova que a função pega arquivo trocado.
+    ''' <b>Não prova que ela é chamada no ponto certo</b>: movê-la para antes do
+    ''' <c>Move</c>, ou apagá-la, deixava a suíte verde — provocar a troca no
+    ''' meio do fluxo real exigiria um gancho no sistema de arquivos.
+    '''
+    ''' Então a posição é verificada onde ela mora: no texto.
+    ''' </summary>
+    <TestMethod>
+    Public Sub A_reconferencia_vem_depois_do_Move_e_antes_do_sucesso()
+        Dim fonte = File.ReadAllLines(Path.Combine(
+            RaizDoRepositorio(), "src", "Iris.Update", "ProcuraDeVersao.vb"))
+
+        Dim linhaDoMove = Array.FindIndex(
+            fonte, Function(l) l.Contains("File.Move(temporario, destino"))
+        Assert.IsTrue(linhaDoMove >= 0, "nao achei a promocao do arquivo temporario")
+
+        Dim linhaDaConferencia = Array.FindIndex(
+            fonte, Function(l) l.Contains("Confere(destino,"))
+        Assert.IsTrue(linhaDaConferencia >= 0,
+                      "nao ha reconferencia do arquivo promovido")
+
+        Assert.IsTrue(linhaDaConferencia > linhaDoMove,
+            "a reconferencia esta ANTES do Move: ela conferiria o temporario, e " &
+            "a janela que ela existe para fechar e justamente a da promocao")
+
+        Dim linhaDoSucesso = Array.FindIndex(
+            fonte, Function(l) l.Contains("Return PacoteBaixado.Sim(destino)"))
+        Assert.IsTrue(linhaDoSucesso > linhaDaConferencia,
+            "o sucesso e devolvido antes de o arquivo promovido ser reconferido")
+    End Sub
+
+    ' ==================================================================
+    ' O endereço final
+    ' ==================================================================
+
+    ''' <summary>
+    ''' <b>Um redirecionamento que termine fora do https é recusado.</b>
+    '''
+    ''' O dublê passou a preencher <c>RequestMessage</c>, o que o tornou fiel —
+    ''' e ainda assim ninguém testava a conferência: ele devolvia sempre o mesmo
+    ''' pedido <c>https</c> que recebeu, então apagar <c>ExigirHttpsAteOFim</c>
+    ''' não mudava nada.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Redirecionamento_que_sai_do_https_e_recusado() As Task
+        Using dono = ParNovo()
+            Dim corpo = MontarJson("2.0.0")
+            Dim servidor As RespostasDeVersao = Nothing
+            Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                 New Version(1, 0, 0), servidor)
+
+            ' O pedido saiu em https e TERMINOU em http, que e o que um
+            ' redirecionamento mal-comportado faz.
+            servidor.EnderecoFinal = New Uri("http://exemplo.invalido/iris.json")
+
+            Dim r = Await procura.Procurar(CancellationToken.None)
+            Assert.AreEqual(DesfechoDaProcura.NaoDeuParaSaber, r.Desfecho, r.Frase)
+            Assert.IsNull(r.Manifesto)
+        End Using
+    End Function
+
+    ''' <summary>
+    ''' E não saber onde o pedido terminou também é recusa: a pós-condição é "o
+    ''' endereço final é https", e não conseguir dizer qual foi não a satisfaz.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Sem_saber_o_endereco_final_tambem_e_recusa() As Task
+        Using dono = ParNovo()
+            Dim corpo = MontarJson("2.0.0")
+            Dim servidor As RespostasDeVersao = Nothing
+            Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                 New Version(1, 0, 0), servidor)
+
+            servidor.EsquecerODePedido = True
+
+            Assert.AreEqual(DesfechoDaProcura.NaoDeuParaSaber,
+                            (Await procura.Procurar(CancellationToken.None)).Desfecho)
+        End Using
+    End Function
+
+    ''' <summary>
+    ''' <b>Cancelar é cancelar, e não "falhou".</b>
+    '''
+    ''' O teste do descarte observa a tela, e a tela não escreve nada depois de
+    ''' descartada — então "cancelado" e "falhou" ficavam indistinguíveis por
+    ''' lá: transformar o <c>Catch OperationCanceledException</c> em erro comum
+    ''' o deixava verde. Aqui o desfecho é olhado direto.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Baixar_cancelado_diz_que_foi_interrompido() As Task
+        Dim onde = PastaNova()
+        Try
+            Using dono = ParNovo()
+                Dim corpo = MontarJson("2.0.0", quantos:=1_000_000)
+                Dim servidor As RespostasDeVersao = Nothing
+                Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                     New Version(1, 0, 0), servidor)
+
+                Dim travado As New FluxoQueEspera()
+                servidor.Fluxos(Base & "/Iris.exe") = travado
+
+                Dim r = Await procura.Procurar(CancellationToken.None)
+                Using parar As New CancellationTokenSource()
+                    Dim baixando = procura.Baixar(r.Manifesto, onde, parar.Token)
+                    Await travado.Comecou.Task
+                    parar.Cancel()
+
+                    Dim pacote = Await baixando
+                    Assert.IsFalse(pacote.Veio)
+                    StringAssert.Contains(pacote.Motivo, "interrompido",
+                        "um cancelamento virou erro comum: " & pacote.Motivo)
+                End Using
+                CollectionAssert.AreEqual(Array.Empty(Of String)(), Directory.GetFiles(onde),
+                                          "sobrou arquivo de um download cancelado")
+            End Using
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
+    End Function
+
+    ''' <summary>
+    ''' E o <b>pacote</b> também: <c>ExigirHttpsAteOFim</c> está nos dois
+    ''' caminhos de leitura, e o teste do manifesto só cobria um deles.
+    ''' </summary>
+    <TestMethod>
+    Public Async Function Pacote_que_termina_fora_do_https_e_recusado() As Task
+        Dim onde = PastaNova()
+        Try
+            Using dono = ParNovo()
+                Dim conteudo = Encoding.UTF8.GetBytes("um executavel de mentira")
+                Dim hash = Convert.ToHexString(SHA256.HashData(conteudo)).ToLowerInvariant()
+                Dim corpo = MontarJson("2.0.0", hash:=hash, quantos:=conteudo.LongLength)
+
+                Dim servidor As RespostasDeVersao = Nothing
+                Dim procura = Montar(corpo, Assinar(corpo, dono), Publica(dono),
+                                     New Version(1, 0, 0), servidor)
+                servidor.Corpos(Base & "/Iris.exe") = conteudo
+
+                ' A procura corre normal; o redirecionamento so estraga na hora
+                ' de buscar o PACOTE.
+                Dim r = Await procura.Procurar(CancellationToken.None)
+                Assert.AreEqual(DesfechoDaProcura.HaVersaoNova, r.Desfecho, r.Frase)
+
+                servidor.EnderecoFinal = New Uri("http://exemplo.invalido/Iris.exe")
+                Dim pacote = Await procura.Baixar(r.Manifesto, onde, CancellationToken.None)
+
+                Assert.IsFalse(pacote.Veio, "baixou o pacote por um endereco http")
+                CollectionAssert.AreEqual(Array.Empty(Of String)(), Directory.GetFiles(onde))
+            End Using
+        Finally
+            Directory.Delete(onde, recursive:=True)
+        End Try
+    End Function
 
 End Class

@@ -234,7 +234,12 @@ else {
     Write-Host "    --repo $Repositorio --title `"Iris $Versao`" ``"
     Write-Host "    --notes-file `"$arquivoDasNotas`" --latest"
     Write-Host ''
-    Write-Host 'Ou rode este script de novo com -Publicar.'
+    Write-Host 'Para publicar rodando este script de novo com -Publicar, desfaca'
+    Write-Host 'antes a versao gravada -- senao a conferencia de "a versao tem de'
+    Write-Host 'subir" vai recusar o mesmo numero:'
+    Write-Host ''
+    Write-Host '  git checkout -- Directory.Build.props'
+    Write-Host "  .\tools\publicar-versao.ps1 -Versao $Versao -Repositorio $Repositorio -Notas ... -Publicar"
 }
 
 # --------------------------------------------------- e SO AGORA a versao entra

@@ -549,8 +549,9 @@ Namespace Global.Iris.Update
         ''' vem assinado — é para onde o <c>releases/latest/download/</c>
         ''' redirecionar. Aqui o que protege não é o host, é a assinatura: um
         ''' manifesto servido por qualquer host é recusado se não for do dono.
-        ''' O que se perde ao aceitar qualquer host é privacidade, não
-        ''' integridade.</item>
+        ''' O que se perde ao aceitar qualquer host são privacidade e
+        ''' disponibilidade — quem controlar o redirecionamento pode atrasar
+        ''' ou negar o arquivo —, e não integridade.</item>
         ''' </list>
         ''' </summary>
         Private Shared Sub ExigirHttpsAteOFim(resposta As HttpResponseMessage)

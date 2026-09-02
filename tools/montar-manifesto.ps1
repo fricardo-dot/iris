@@ -26,12 +26,21 @@ param(
     [Parameter(Mandatory)] [string] $Notas,
     [Parameter(Mandatory)] [string] $Endereco,
     [Parameter(Mandatory)] [string] $Sha256,
-    [Parameter(Mandatory)] [long]   $Bytes,
+    [Parameter(Mandatory)] [string] $Bytes,
     [Parameter(Mandatory)] [string] $Destino,
     [string] $Publicada
 )
 
 $ErrorActionPreference = 'Stop'
+
+# [string] E NAO [long] NO PARAMETRO, com a conferencia a mao: no 5.1, [long]
+# converte "1.5" em 2 e "1e3" em 1000, calado. O tamanho de um arquivo nunca e
+# nenhuma dessas coisas, e um manifesto assinado com o numero errado so seria
+# descoberto pelo Iris recusando o download por tamanho.
+if ($Bytes -notmatch '^[0-9]+$') {
+    throw "Bytes tem de ser um inteiro decimal. Veio: $Bytes"
+}
+$quantosBytes = [long] $Bytes
 
 if (-not $Publicada) {
     $Publicada = (Get-Date).ToUniversalTime().ToString('o')
@@ -43,7 +52,7 @@ $manifesto = [ordered] @{
     notas     = $Notas
     endereco  = $Endereco
     sha256    = $Sha256
-    bytes     = $Bytes
+    bytes     = $quantosBytes
 }
 
 # SEM BOM. Tres bytes invisiveis na frente fariam parte do que foi assinado e do
@@ -58,4 +67,19 @@ if ($bytesDoManifesto.Length -gt 65536) {
     throw "O manifesto tem $($bytesDoManifesto.Length) bytes; o Iris recusa acima de 64 KiB."
 }
 
-[System.IO.File]::WriteAllBytes($Destino, $bytesDoManifesto)
+# COM NOME TEMPORARIO, como o .sig. WriteAllBytes direto no destino cria ou
+# trunca antes de terminar: falta de espaco ou erro de I/O deixariam um
+# iris.json vazio ou parcial com cara de manifesto pronto -- e este script
+# existe justamente para ser chamado de mais de um lugar.
+$temporario = "$Destino.$([guid]::NewGuid().ToString('N')).parcial"
+try {
+    [System.IO.File]::WriteAllBytes($temporario, $bytesDoManifesto)
+    # Move-Item -Force, e nao [File]::Move com tres argumentos: a sobrecarga
+    # com overwrite nao existe no .NET Framework, que e onde o PowerShell 5.1
+    # roda. Ela existe no .NET moderno, e foi de la que eu a copiei.
+    Move-Item -LiteralPath $temporario -Destination $Destino -Force
+}
+catch {
+    if (Test-Path $temporario) { Remove-Item $temporario -Force -ErrorAction SilentlyContinue }
+    throw
+}

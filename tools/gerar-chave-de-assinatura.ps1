@@ -68,25 +68,70 @@ if ($pastaAbsoluta.TrimEnd('\') -eq $raizAbsoluta -or
 #     acessivel por outro caminho. O git resolve o caminho de verdade, e se ele
 #     disser que aquela pasta pertence a uma arvore de trabalho, pertence.
 #
-#     E O ERRO DO GIT TEM DE SER ENGOLIDO COM CUIDADO. No Windows PowerShell
-#     5.1, stderr de executavel nativo vira ErrorRecord, e com
-#     $ErrorActionPreference = 'Stop' isso ABORTA o script -- mesmo com 2>$null,
-#     e mesmo quando o "erro" e o git dizendo, corretamente, que aquela pasta
-#     nao e um repositorio. Foi exatamente o que aconteceu na primeira vez que
-#     rodei isto. E a mesma doenca que montar-assinador.ps1 ja tinha.
-$deQuemEAPasta = $null
-try {
-    $ErrorActionPreference = 'SilentlyContinue'
-    $deQuemEAPasta = & git -C $pastaAbsoluta rev-parse --show-toplevel 2>$null
-    if ($LASTEXITCODE -ne 0) { $deQuemEAPasta = $null }
-}
-finally {
-    $ErrorActionPreference = 'Stop'
+#     E ELA FALHA FECHADA. A primeira versao tratava QUALQUER saida diferente de
+#     zero como "nao e repositorio" -- e aquilo desligava a barreira sozinho
+#     quando o git nao estava no PATH, quando GIT_CEILING_DIRECTORIES ou GIT_DIR
+#     atrapalhavam a descoberta, ou quando o git recusava por safe.directory.
+#     Uma barreira que some calada e pior que nenhuma: quem escreveu o script
+#     acha que ela esta la.
+#
+#     Agora so ha um jeito de passar: o git RODAR e dizer, com essas palavras,
+#     que aquilo nao e um repositorio.
+#
+#     --git-dir, e nao --show-toplevel: dentro da propria pasta .git o
+#     --show-toplevel FALHA com "must be run in a work tree", e aquilo tambem
+#     era lido como "nao e repositorio". Uma junction apontando para .git
+#     deixava a chave cair dentro dos metadados do repositorio.
+#
+#     E O GIT E CHAMADO PELO Process DO .NET, e nao pelo operador &. No Windows
+#     PowerShell 5.1, stderr de executavel nativo vira ErrorRecord: com
+#     $ErrorActionPreference = 'Stop' isso ABORTA o script -- foi o que
+#     aconteceu na primeira vez que rodei isto --, e com 'SilentlyContinue' o
+#     texto do erro e DESCARTADO, mesmo com 2>&1. E aqui esse texto e a decisao:
+#     "not a git repository" e a unica resposta que autoriza seguir.
+#
+#     Redirecionar pelo ProcessStartInfo nao passa por nada disso.
+$oGit = Get-Command git -ErrorAction SilentlyContinue
+if (-not $oGit) {
+    throw ("RECUSADO: nao achei o git no PATH, e sem ele nao da para saber se " +
+           "$absoluto esta dentro de um repositorio. Instale o git ou escolha " +
+           "um destino que voce tenha certeza de que esta fora.")
 }
 
-if ($deQuemEAPasta) {
-    throw ("RECUSADO: $absoluto esta dentro do repositorio git em " +
-           "$deQuemEAPasta. A chave privada nao entra no git.")
+$como = New-Object System.Diagnostics.ProcessStartInfo
+$como.FileName = $oGit.Source
+$como.Arguments = "-C `"$pastaAbsoluta`" rev-parse --git-dir"
+$como.RedirectStandardOutput = $true
+$como.RedirectStandardError = $true
+$como.UseShellExecute = $false
+$como.CreateNoWindow = $true
+
+# As variaveis de ambiente do git sao LIMPAS para esta pergunta: GIT_DIR,
+# GIT_WORK_TREE e GIT_CEILING_DIRECTORIES mudam a resposta, e quem responde tem
+# de ser o disco, e nao o ambiente de quem chamou.
+foreach ($nome in 'GIT_DIR', 'GIT_WORK_TREE', 'GIT_COMMON_DIR', 'GIT_CEILING_DIRECTORIES') {
+    if ($como.EnvironmentVariables.ContainsKey($nome)) {
+        $como.EnvironmentVariables.Remove($nome) | Out-Null
+    }
+}
+
+$quem = [System.Diagnostics.Process]::Start($como)
+$oQueOGitDisse = ($quem.StandardOutput.ReadToEnd() + ' ' +
+                  $quem.StandardError.ReadToEnd()).Trim()
+$quem.WaitForExit()
+$codigoDoGit = $quem.ExitCode
+$quem.Dispose()
+
+if ($codigoDoGit -eq 0) {
+    throw ("RECUSADO: $absoluto esta dentro de um repositorio git " +
+           "($oQueOGitDisse). A chave privada nao entra no git.")
+}
+if ($oQueOGitDisse -notmatch 'not a git repository') {
+    # NAO SEI, ENTAO NAO DEIXO. Qualquer outra falha -- permissao,
+    # safe.directory, git quebrado -- e uma pergunta sem resposta, e nao um
+    # "nao".
+    throw ("RECUSADO: nao consegui perguntar ao git se $absoluto esta dentro de " +
+           "um repositorio (saida $codigoDoGit): $oQueOGitDisse")
 }
 
 if ((Test-Path $absoluto) -and (Get-Item $absoluto).Length -gt 0) {
@@ -102,6 +147,79 @@ if ((Test-Path $absoluto) -and (Get-Item $absoluto).Length -gt 0) {
     Write-Host ''
     Write-Host 'Se e outra chave que voce quer, apague o arquivo primeiro.'
     exit 1
+}
+
+# ------------------------------------------------------- E A PASTA TEM DE SER SUA
+#
+# A ACL do ARQUIVO nao protege o NOME dentro da pasta: quem puder criar e apagar
+# entradas ali pode trocar o arquivo entre a hora em que ele recebe a ACL e a
+# hora em que a chave e escrita nele, e a chave acaba num objeto escolhido por
+# outra pessoa. Conferir a ACL do arquivo depois nao resolve, porque a conferencia
+# tem a mesma corrida.
+#
+# O que fecha isso e a pasta nao ser gravavel por terceiros.
+#
+# A CONFERENCIA E CALIBRADA, e a calibragem tem motivo. A primeira versao
+# recusava qualquer identidade fora de uma lista curta, e recusou o proprio
+# perfil do dono: um perfil do Windows costuma carregar ACEs de SIDs ORFAOS --
+# restos de instalacao anterior, que nao resolvem para conta nenhuma e que
+# ninguem pode usar para entrar. Recusar por causa deles tornaria o script
+# inutil, e um script inutil e um script que se contorna.
+#
+# Entao: GRUPO AMPLO recusa, porque "Todos pode escrever aqui" e exatamente a
+# ameaca. Identidade individual avisa, porque pode ser um SID orfao (inofensivo)
+# ou outra pessoa de verdade (nao inofensiva) -- e daqui nao da para distinguir
+# uma coisa da outra com confianca suficiente para impedir alguem de gerar a
+# propria chave.
+$gruposAmplos = @{
+    'S-1-1-0'       = 'Todos'
+    'S-1-5-11'      = 'Usuarios Autenticados'
+    'S-1-5-32-545'  = 'Usuarios'
+    'S-1-5-32-546'  = 'Convidados'
+    'S-1-5-4'       = 'INTERATIVO'
+    'S-1-5-7'       = 'LOGON ANONIMO'
+}
+$deConfianca = @(
+    [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value,
+    'S-1-5-18',      # SYSTEM
+    'S-1-5-32-544',  # BUILTIN\Administrators
+    'S-1-3-0'        # CREATOR OWNER
+)
+$escrita = 'WriteData|CreateFiles|Delete|DeleteSubdirectoriesAndFiles|' +
+           'ChangePermissions|TakeOwnership|FullControl|Modify|Write'
+
+$avisar = @()
+foreach ($regra in (Get-Acl $pastaAbsoluta).Access) {
+    if ($regra.AccessControlType -ne 'Allow') { continue }
+    if ($regra.FileSystemRights.ToString() -notmatch $escrita) { continue }
+
+    $quem = try {
+        $regra.IdentityReference.Translate(
+            [System.Security.Principal.SecurityIdentifier]).Value
+    } catch { "$($regra.IdentityReference)" }
+
+    if ($deConfianca -contains $quem) { continue }
+
+    if ($gruposAmplos.ContainsKey($quem)) {
+        throw ("RECUSADO: '$($gruposAmplos[$quem])' pode escrever em " +
+               "$pastaAbsoluta. Quem escreve na pasta pode trocar o arquivo da " +
+               "chave depois de ele receber a ACL, e a ACL do arquivo nao " +
+               "protege o NOME dentro da pasta. Escolha uma pasta que so voce " +
+               "possa alterar -- o padrao, %USERPROFILE%\.iris, e uma.")
+    }
+    $avisar += "$($regra.IdentityReference) ($($regra.FileSystemRights))"
+}
+
+if ($avisar.Count -gt 0) {
+    Write-Host ''
+    Write-Host 'ATENCAO: estas identidades tambem podem escrever na pasta da chave:' -ForegroundColor Yellow
+    $avisar | ForEach-Object { Write-Host "  $_" }
+    Write-Host ''
+    Write-Host 'Se alguma delas for outra PESSOA, ela pode trocar o arquivo da chave'
+    Write-Host 'depois de ele receber a ACL. SIDs que aparecem como numero cru'
+    Write-Host 'costumam ser restos de instalacao anterior, e nao pertencem a conta'
+    Write-Host 'nenhuma -- esses sao inofensivos.'
+    Write-Host ''
 }
 
 # ---------------------------------------------------------- a ACL vem PRIMEIRO
