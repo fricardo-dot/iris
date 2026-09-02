@@ -93,9 +93,27 @@ Namespace Global.Iris.Assist
         ''' </summary>
         Friend ReadOnly Property EhOControle As Boolean
             Get
+                ' A ISENCAO CONFERE A PARTE INTEIRA, e nao so o corpo.
+                '
+                ' Ela conferia Item Is Nothing e o corpo constante -- e assunto,
+                ' remetente e destinatarios ficavam livres. Uma parte sem item
+                ' podia carregar o corpo canonico e levar de carona qualquer coisa
+                ' nesses tres campos, e o EnvelopeBuilder os serializava como
+                ' conteudo que a capability nao cobre. Egresso sem auditoria pela
+                ' porta da excecao. Achado por revisao externa em 01/09/2026.
+                '
+                ' A ficha nao entra na conferencia porque ela e SORTEADA a cada
+                ' lote: exigir um valor fixo seria exigir que o controle nao fosse
+                ' sorteado. Exige-se a FORMA, que e o que separa ficha de texto.
                 Return Item Is Nothing AndAlso
                        String.Equals(Corpo, LoteDeClassificacao.TextoDoControle(),
-                                     StringComparison.Ordinal)
+                                     StringComparison.Ordinal) AndAlso
+                       CorpoCompleto AndAlso
+                       String.Equals(Assunto, LoteDeClassificacao.AssuntoDoControle,
+                                     StringComparison.Ordinal) AndAlso
+                       Remetente.Length = 0 AndAlso
+                       Destinatarios.Count = 0 AndAlso
+                       LoteDeClassificacao.EhFichaDeItemValida(Ficha)
             End Get
         End Property
 

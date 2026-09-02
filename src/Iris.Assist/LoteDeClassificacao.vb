@@ -279,10 +279,30 @@ Namespace Global.Iris.Assist
         ''' primeiro teste ponta a ponta da borda, em 01/09/2026.
         ''' </summary>
         Public Shared Function EhFichaValida(ficha As String) As Boolean
-            If ficha Is Nothing OrElse ficha.Length <> TamanhoDaFicha + 1 Then Return False
+            Return EhFichaDeItemValida(ficha) OrElse EhFichaDeRegraValida(ficha)
+        End Function
 
-            Dim prefixo = ficha.Substring(0, 1)
-            If prefixo <> PrefixoDeItem AndAlso prefixo <> PrefixoDeRegra Then Return False
+        ''' <summary>
+        ''' <b>Uma ficha de MENSAGEM</b> — o que pode aparecer numa parte do
+        ''' envelope.
+        '''
+        ''' Separada da de regra porque o crivo era mais frouxo que o emissor:
+        ''' fichas de regra nunca atravessam o pipeline de conteúdo, e aceitá-las
+        ''' ali deixava uma borda defeituosa carimbar numa mensagem um apelido que
+        ''' o modelo lê como regra. Achado por revisão externa em 01/09/2026.
+        ''' </summary>
+        Public Shared Function EhFichaDeItemValida(ficha As String) As Boolean
+            Return TemAForma(ficha, PrefixoDeItem)
+        End Function
+
+        ''' <summary>Uma ficha de REGRA. Não aparece em parte nenhuma.</summary>
+        Public Shared Function EhFichaDeRegraValida(ficha As String) As Boolean
+            Return TemAForma(ficha, PrefixoDeRegra)
+        End Function
+
+        Private Shared Function TemAForma(ficha As String, prefixo As String) As Boolean
+            If ficha Is Nothing OrElse ficha.Length <> TamanhoDaFicha + 1 Then Return False
+            If Not ficha.StartsWith(prefixo, StringComparison.Ordinal) Then Return False
 
             For i = 1 To ficha.Length - 1
                 If Alfabeto.IndexOf(ficha(i)) < 0 Then Return False
@@ -398,8 +418,16 @@ Namespace Global.Iris.Assist
         ''' constante deste arquivo — o envelope confere isso antes de deixá-la
         ''' passar, para ninguém usar a isenção de item como carona.
         ''' </summary>
+        ''' <summary>
+        ''' O assunto da parte de controle. É constante, e é <b>lido pelos dois
+        ''' lados</b>: por quem monta a parte e por quem confere que uma parte sem
+        ''' item é mesmo o controle. Duas cópias divergiriam, e a divergência sairia
+        ''' como o controle sendo recusado pelo próprio envelope.
+        ''' </summary>
+        Friend Const AssuntoDoControle As String = "(controle)"
+
         Public Function ParteDoControle() As MessagePart
-            Return New MessagePart(Nothing, "", "(controle)", "", Nothing,
+            Return New MessagePart(Nothing, "", AssuntoDoControle, "", Nothing,
                                    TextoDoControle(), True, _fichaDoControle)
         End Function
 
@@ -494,6 +522,24 @@ Namespace Global.Iris.Assist
                         "a resposta trouxe um item que não foi enviado")
                 End If
 
+                Dim nome = UmCampoSo(item, "label")
+                Dim rotulo As Rotulo
+                If nome Is Nothing OrElse Not RotulosConhecidos.TryGetValue(nome, rotulo) Then
+                    ' ROTULO QUE NAO EXISTE INVALIDA SO O ITEM. E a unica
+                    ' inconsistencia que nao sugere troca de identidade: o modelo
+                    ' escreveu uma palavra inventada, e a mensagem fica SEM
+                    ' rotulo em vez de com um rotulo inventado.
+                    '
+                    ' E A CONFERENCIA DO ROTULO VEM ANTES DA DAS REGRAS, desde
+                    ' 01/09/2026. Na ordem anterior, um item com rules invalido E
+                    ' label desconhecido entrava nas DUAS listas -- e SemRegras se
+                    ' descreve como "tiveram rotulo", entao as contagens deixavam
+                    ' de ser uma particao e a frase da tela somava a mesma
+                    ' mensagem duas vezes. Achado por revisao externa.
+                    semRotulo.Add(chave)
+                    Continue For
+                End If
+
                 Dim marcadas As IReadOnlyList(Of String) = Nothing
                 If RegrasMarcadas(item, marcadas) Then
                     If _porRegra.Count > 0 Then casadas(chave) = marcadas
@@ -508,17 +554,6 @@ Namespace Global.Iris.Assist
                     ' volta em SemRegras. Achado por revisao externa em
                     ' 31/08/2026.
                     semRegras.Add(chave)
-                End If
-
-                Dim nome = UmCampoSo(item, "label")
-                Dim rotulo As Rotulo
-                If nome Is Nothing OrElse Not RotulosConhecidos.TryGetValue(nome, rotulo) Then
-                    ' ROTULO QUE NAO EXISTE INVALIDA SO O ITEM. E a unica
-                    ' inconsistencia que nao sugere troca de identidade: o modelo
-                    ' escreveu uma palavra inventada, e a mensagem fica SEM
-                    ' rotulo em vez de com um rotulo inventado.
-                    semRotulo.Add(chave)
-                    Continue For
                 End If
 
                 ' NAO SE CHAMA "confianca": o local eclipsaria a funcao

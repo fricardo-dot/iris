@@ -599,6 +599,35 @@ Public Class LoteDeClassificacaoTests
         CollectionAssert.Contains(conferido.SemRegras.ToArray(), aChave)
     End Sub
 
+    ''' <summary>
+    ''' <b>A mesma mensagem não entra em duas contagens.</b>
+    '''
+    ''' <c>SemRegras</c> se descreve como <i>"tiveram rótulo, e as regras não
+    ''' voltaram"</i>. Só que a conferência das regras vinha antes da do rótulo, e
+    ''' um item com <c>rules</c> inválido <b>e</b> <c>label</c> desconhecido entrava
+    ''' nas duas listas.
+    '''
+    ''' As contagens deixavam de ser uma partição, e a frase da tela somava a mesma
+    ''' mensagem duas vezes — dizendo "faltaram 2" sobre um lote de uma. Achado por
+    ''' revisão externa em 01/09/2026.
+    ''' </summary>
+    <TestMethod>
+    Public Sub Rotulo_inventado_E_regra_torta_contam_UMA_vez()
+        Dim aChave = Chave("a")
+        Dim montado = ComRegras({aChave}, "clientes reclamando de atraso")
+
+        Dim conferido = montado.Conferir(ComControle(montado,
+            "[{""item_key"":""" & montado.FichaDe(aChave) & """," &
+            " ""label"":""nao_existe_este_rotulo""," &
+            " ""rules"":[""r1""]}]"))
+
+        Assert.IsTrue(conferido.IdentidadesConferem, conferido.Motivo)
+        CollectionAssert.Contains(conferido.SemRotulo.ToArray(), aChave,
+            "rotulo inventado tem de aparecer em SemRotulo")
+        CollectionAssert.DoesNotContain(conferido.SemRegras.ToArray(), aChave,
+            "A MESMA MENSAGEM FOI CONTADA DUAS VEZES")
+    End Sub
+
 
     ''' <summary>
     ''' <b>O contraponto da regra dura.</b> A mesma regra duas vezes no mesmo

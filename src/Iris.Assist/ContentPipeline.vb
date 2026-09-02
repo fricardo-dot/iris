@@ -233,8 +233,11 @@ Namespace Global.Iris.Assist
             ' Vazia e legitima: e o caso de fora de lote, que e o caminho por
             ' mensagem. Preenchida e torta nao e engano de digitacao -- e sinal de
             ' que alguem esta montando envelope por um caminho que ninguem previu.
+            ' DE ITEM, e nao "de item ou de regra": a ficha de regra nunca
+            ' atravessa este pipeline, e aceita-la aqui era um crivo mais frouxo
+            ' que o emissor.
             If Not String.IsNullOrEmpty(ficha) AndAlso
-               Not LoteDeClassificacao.EhFichaValida(ficha) Then
+               Not LoteDeClassificacao.EhFichaDeItemValida(ficha) Then
                 Return Recusar(ContentRefusal.FichaInvalida)
             End If
 

@@ -913,6 +913,7 @@ Namespace Global.Iris.App.ViewModels
                 Detail.Clear()
                 Acervo?.Apontar(Nothing, Nothing, Nothing)
                 Agenda?.Apontar(Nothing)
+                OAlvoMudou()
                 OnPropertyChanged(NameOf(MostrarAcervo))
                 Return
             End If
@@ -939,6 +940,9 @@ Namespace Global.Iris.App.ViewModels
             ' stores: e dele que sai a medicao do ambiente, e enumerar os
             ' stores a cada clique seria ida ao COM por nada.
             Acervo?.Apontar(pasta.Key, pasta.Name, StoreDe(pasta.Key))
+
+            ' O DESFECHO DA CLASSIFICACAO E DE UMA PASTA. Ver OAlvoMudou.
+            OAlvoMudou()
 
             ' Trocar de pasta esvazia o leitor: manter a mensagem anterior
             ' aberta enquanto a lista mostra outra pasta seria mentir sobre
@@ -1035,6 +1039,9 @@ Namespace Global.Iris.App.ViewModels
             Dim pasta = Folders.Selected
             If pasta IsNot Nothing Then
                 Acervo?.Apontar(pasta.Key, pasta.Name, StoreDe(pasta.Key))
+
+            ' O DESFECHO DA CLASSIFICACAO E DE UMA PASTA. Ver OAlvoMudou.
+            OAlvoMudou()
             End If
         End Function
 
