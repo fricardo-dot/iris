@@ -1,9 +1,8 @@
 # Plano da IA do Iris
 
-> Estado em 01/09/2026: os **núcleos das dez etapas** estão construídos e
-> testados, e passaram por **trinta e cinco revisões externas** — uma por etapa,
-> e depois seis rodadas de cinco sobre o conjunto. Suíte em **1475 verdes, nada
-> pulado**.
+> Estado em 02/09/2026: os **núcleos das dez etapas** estão construídos e
+> testados, e passaram por **quarenta revisões externas** — uma por etapa, e
+> depois trinta sobre o conjunto. Suíte em **1526 verdes, nada pulado**.
 >
 > **A borda em lote existe desde 01/09/2026**, e com ela a *classificação de uma
 > pasta* deixou de ser biblioteca sem chamador: há botão na janela, ao lado do de
@@ -14,9 +13,21 @@
 > logo abaixo: sete das dez chegam ao dono, e as três que faltam estão nomeadas
 > com o motivo.
 >
+> **E em 02/09/2026 o trabalho saiu do plano da IA**: entrou a distribuição —
+> verificar versões, com assinatura —, que não é IA e está registrada em
+> [LANCAR.md](LANCAR.md). Ela levou mais **dezessete revisões**, em quatro
+> rodadas, e está resumida [no fim deste documento](#e-depois-a-distribuição).
+>
 > Este documento não existia enquanto o plano era executado: ele viveu na
 > conversa, e os commits foram o registro. Está escrito agora para o plano
 > parar de morar só ali.
+>
+> **Uma correção de aritmética, e ela é do gênero que este arquivo persegue.**
+> A versão anterior dizia "trinta e cinco revisões — uma por etapa, e depois
+> seis rodadas de cinco". Dez mais seis vezes cinco são quarenta, não trinta e
+> cinco. O número certo era 35 e a descrição é que estava errada: eram *cinco*
+> rodadas somando vinte e cinco. Ninguém tinha conferido a conta de uma frase
+> que abre o documento inteiro.
 
 ## O que está ligado e o que não está
 
@@ -542,6 +553,200 @@ o que ele ensina é operacional: **quando o controle negativo for barato, desfa�
 a correção e veja o teste falhar**. Todos os testes desta rodada passaram por
 isso — sete sabotagens, sete vermelhos.
 
+## A oitava rodada — a trava que estava meia pela terceira vez
+
+Cinco passadas sobre o produto inteiro, em 02/09/2026. Foi a última sobre a IA,
+e a que mais ensinou sobre *o que um conserto pontual não conserta*.
+
+### A mesma trava, três nomes, três voltas
+
+Uma `SqliteConnection` não tem contrato de uso simultâneo — o WAL coordena
+*conexões*, e não torna uma conexão reentrante. Essa confusão produziu a falha
+rara de 25/08, e o conserto voltou três vezes:
+
+- **31/08** — "a trava que eu tinha posto não travava nada": ela protegia a
+  recarga contra ela mesma.
+- **01/09** — a trava foi para dentro do `CacheDatabase`, e só o
+  `RotulosNoCache` passou a tomá-la.
+- **02/09** — a revisão achou o escritor, o dreno, o sink da varredura, o
+  serviço do acervo e **o diário do egresso** usando a mesma conexão sem ela. E
+  um `grep` achou mais quatro que a revisão não citou.
+
+O cenário é banal: a varredura dentro de um `BEGIN IMMEDIATE` quando o dreno de
+trinta segundos acorda. "Transaction already active", leitor invalidado, ou o
+registro do egresso falhando — e esse é a única prova do que saiu da máquina.
+
+**O que faltava era a regra ser verificável, e não lembrada.** Entrou um
+meta-teste: todo uso de `.Connection` tem de estar sob `SyncLock`, com uma lista
+de isentos curta em que cada entrada explica por quê — e um segundo teste que
+cobra a explicação e derruba isenção órfã. Ele achou cinco usos que eu já tinha
+deixado passar depois de ler o arquivo.
+
+A isenção do auxiliar privado é **transitiva e recursiva**, e isso não é
+refinamento: a cadeia real tem dois níveis, e uma versão de um nível só acusaria
+o segundo auxiliar como solto. A resposta natural a esse falso positivo seria pôr
+uma trava redundante para calar o teste — e um teste que se cala assim ensina a
+contorná-lo.
+
+### Um teto abaixo do da operação que ele protege não protege
+
+A espera do fechamento era de vinte segundos; o provedor tem sessenta de
+timeout. Uma chamada de trinta vencia a espera: o cache era descartado, a
+resposta chegava depois, a gravação falhava, e **as mesmas mensagens voltavam a
+ser mandadas na abertura seguinte** — divulgação duplicada, paga duas vezes.
+
+O número passou a ser um só, num lugar só. E a janela some antes de esperar:
+isto roda na thread da tela, e uma janela congelada por um minuto é
+indistinguível de um travamento — o dono mata o processo, que é exatamente o que
+a espera existe para evitar.
+
+### O teto do corpo contava caracteres contra um orçamento de bytes
+
+Eu tinha escrito que dividir por dois era "conservador em português". Um emoji
+pesa quatro, e português tem emoji como qualquer outra língua. Vinte corpos
+"dentro do teto" somavam o dobro do orçamento, o envelope saía truncado, e
+aquele grupo nunca era classificado.
+
+**E o teste usava só `x` ASCII**, em que caractere e byte coincidem: uma fixture
+que apaga a distinção que o teste deveria medir não mede nada.
+
+### Seis lugares afirmavam "a mutação começou" sem saber
+
+Calendário, contatos e tarefas capturavam a `COMException` localmente e diziam
+`mutationAttemptStarted:=True` sempre — uma falha ao *abrir a pasta* virava "pode
+ter acontecido". É o erro de sinal trocado da sétima rodada, um nível abaixo, e
+ninguém tinha ido procurá-lo nos irmãos. O calendário também devolvia sucesso sem
+a identidade nova, regra que rascunho, contato e tarefa tinham ganhado no dia
+anterior.
+
+### E os arquivos do perfil eram lidos inteiros antes de qualquer conferência
+
+São arquivos numa pasta gravável por qualquer processo do dono; dois gigabytes no
+lugar de dez linhas derrubam o Iris antes de o `Catch` rodar. Três tetos agora —
+arquivo, linhas, caracteres por linha —, e estourar qualquer um devolve **nada**,
+e não "o que deu para ler": meia lista de regras classifica a caixa com parte
+delas, e meia lista de identidades faz as mensagens do dono virarem "do outro".
+
+### O descarte era uma sequência nua, e o log só existia no depurador
+
+Um `Dispose` que lançasse levava junto todos os seguintes — agenda, tarefas,
+contatos, busca, watcher, compositor, detalhe, conexão, assistente, acervo. O
+`Application_Exit` engole a exceção e segue para o broker, então o processo não
+morre; mas tarefas, mutexes e o cache ficam vivos até ele cair.
+
+E o log das tarefas soltas **não existia**: o comentário dizia "aqui ela pelo
+menos aparece no log", e o código escrevia num `Debug.WriteLine`, que não existe
+em compilação de produção.
+
+### O teste que nasceu quebrado
+
+O meta-teste da marca da mutação não distinguia código morto: marca e efeito
+juntos num `If False Then` passavam. Ao corrigi-lo, um `\b` do meu script virou
+um **caractere de backspace** dentro do padrão, e o regex nunca casava com nada.
+
+Descobri porque rodei a sabotagem e ela **passou**.
+
+> Um teste novo que fica verde na primeira execução não prova nada. O que prova
+> é vê-lo vermelho quando devia.
+
+Essa frase estava no `CLAUDE.md` como princípio; a partir daqui virou
+procedimento, e todas as rodadas seguintes sabotaram cada guarda nova, uma a uma.
+
+---
+
+## E depois: a distribuição
+
+**Isto não é IA**, e está aqui só porque a série continuou e o registro não pode
+ter buraco. O documento dela é o [LANCAR.md](LANCAR.md).
+
+A pergunta que a originou foi *"seria necessário algum sistema de login?"*. Não
+é, e o motivo importa: **login autentica quem baixa**. O que precisa ser
+garantido é o contrário — que o pacote veio de quem diz ter vindo e não foi
+trocado no caminho. Isso é **assinatura**.
+
+E aqui é mais sério que numa atualização comum, pelo mesmo motivo que o portão de
+divulgação existe: o Iris lê o e-mail do dono, e um atualizador é um canal de
+execução de código apontado para *dentro* desse programa. O rigor do que sai
+passou a valer para o que entra.
+
+O desenho, em uma linha cada: ECDSA P-256 com assinatura **destacada**; a
+assinatura é conferida **antes** de o JSON ser interpretado; o endereço do pacote
+tem de ser `https` mesmo vindo assinado; o SHA-256 vem de **dentro** do manifesto
+assinado; a versão tem de **subir**, e não só diferir; e o Iris **não instala
+sozinho nem pergunta sozinho**.
+
+### As quatro rodadas, e o que elas ensinaram
+
+Dezessete revisões externas, em quatro rodadas: **10 graves, depois 6, depois 4,
+depois 4**.
+
+| Rodada | Graves | O pior deles |
+|---|---|---|
+| 1 | 10 | **os dois scripts não rodavam nesta máquina** |
+| 2 | 6 | comentário novo afirmando mais do que o conserto novo fazia |
+| 3 | 4 | a barreira da chave privada **falhava aberta** |
+| 4 | 4 | um conserto meu que **nunca chegou ao disco** |
+
+**A primeira rodada** achou que `powershell.exe` aqui é o 5.1, sobre .NET
+Framework, onde `ExportPkcs8PrivateKeyPem` e `ImportFromPem` não existem — e não
+há `pwsh`. A chave nunca teria sido gerada, e a descoberta seria na hora de
+publicar. A criptografia foi para um utilitário .NET, e o ganho não previsto foi
+o teste que faltava: até ali, "as duas pontas usam o mesmo formato de assinatura"
+era uma afirmação sobre a documentação da plataforma, porque os testes assinavam
+com o mesmo objeto que verificavam.
+
+**A segunda** foi a mais desconfortável: metade dos graves eram **comentários que
+eu tinha escrito junto com o conserto**, afirmando mais do que ele fazia. "Os
+bytes conferidos são exatamente os gravados" ignorava a janela que resta; "nada
+chega ao disco sem o hash bater" era literalmente falso, porque o pacote inteiro
+chega antes — o que não acontece é ele receber o *nome final*.
+
+**A terceira** achou a barreira que protege a chave privada tratando qualquer
+erro do git como "não é repositório": ela se desligava sozinha se o git não
+estivesse no PATH, ou se `GIT_CEILING_DIRECTORIES` atrapalhasse. Uma barreira que
+some calada é pior que nenhuma, porque quem escreveu o script acha que ela está
+lá.
+
+**A quarta** achou que um script meu tinha abortado no meio, e como ele grava o
+arquivo só no fim, **nenhuma** das edições entrou — e eu tinha reportado as três
+como feitas. Não foi o código que falhou; fui eu não conferindo o que afirmei.
+
+### O padrão que se repetiu, e por que eu parei
+
+Em três das quatro rodadas, o defeito mais instrutivo estava **no meu dublê de
+teste**, e não na produção:
+
+- o `FluxoQueEspera` devolvia uma continuação que engolia o cancelamento e
+  devolvia zero — que para quem lê é fim de arquivo. O teste dizia provar
+  cancelamento e provava EOF;
+- o handler falso não preenchia `RequestMessage`, então a conferência do endereço
+  final não tinha o que conferir. Quando a produção passou a recusar o que não
+  sabe, **sete testes caíram de uma vez** — e a culpa era do dublê;
+- e o teste do descarte observava a tarefa do *comando* terminar, não a leitura
+  de rede parar.
+
+> Um dublê infiel num ponto vira, mais cedo ou mais tarde, uma conferência que
+> ninguém pode apertar.
+
+Parei na quarta porque a curva deixou de descer pelo motivo certo: **quatro dos
+achados vieram de código que eu escrevi para consertar a rodada anterior**. A
+partir daí eu estava gerando defeito na mesma taxa em que removia, e o que
+restava era palavra e caso remoto. O que acha outra classe de coisa agora é uso.
+
+### O que ficou declarado em vez de consertado
+
+- **A janela depois do duplo clique.** A garantia do pacote é *pontual*: vale no
+  instante da última conferência. Depois que o caminho aparece na tela, o arquivo
+  é um arquivo como outro. Fechar isso é outro desenho — assinatura Authenticode,
+  entre outros.
+- **O `iris.json` e o `.sig` vêm em dois pedidos.** Se a release virar `latest`
+  entre eles, o cliente diz "a assinatura não confere" sobre um caso em que
+  ninguém atacou nada. Recusa segura, rótulo errado.
+- **Redirect para qualquer host `https`.** O `latest/download` depende disso. O
+  que protege o conteúdo é o SHA-256 de dentro do manifesto assinado.
+- **A escrita atômica do `.sig`** não tem controle negativo: a diferença só
+  aparece quando a escrita falha no meio.
+
 ---
 
 ## O que ficou aberto
@@ -604,10 +809,26 @@ Passou a ser montada, ganhou painel e botão, e — desde a borda em lote — te
 rótulos de verdade para dividir. Até então tudo caía na gaveta *"ainda não
 classificadas"*, que existe justamente para o vazio não parecer resposta.
 
-### 4. O push
+### 4. O push — agora ele tem consequência
 
-Continua adiado por decisão sua: *"quando tiver tudo fechado nós corremos atrás
-disto"*.
+Continuava adiado por decisão sua: *"quando tiver tudo fechado nós corremos
+atrás disto"*. Deixou de ser só higiene em 02/09/2026: **a verificação de
+versões depende de um repositório público existir**, porque é de lá que o
+manifesto assinado é servido.
+
+Antes de ele existir, uma coisa foi feita e uma continua sua:
+
+- **Feito.** Varri os arquivos versionados e achei o seu e-mail de trabalho —
+  e o nome da empresa — em `tools/reiniciar-outlook.ps1` (o caminho do `.ost`
+  estava fixo, e o nome de um `.ost` *é* o endereço da conta) e num log colado
+  no `FASE2.md`. Os arquivos foram limpos, e o histórico foi **reescrito** antes
+  de qualquer push, com a sua autorização: a árvore do topo saiu idêntica, os
+  commits continuam todos lá, e a string não aparece em nenhum objeto
+  alcançável. O resto da varredura saiu limpo — os endereços de fixture são
+  fictícios, e não há chave de API versionada.
+- **Seu.** Gerar a chave de assinatura (ela não passa por mim), colar a pública
+  em `ChaveDeAtualizacao.vb`, e criar o repositório. O roteiro está em
+  [LANCAR.md](LANCAR.md).
 
 ### 5. O que continua fora de escopo, e por quê
 
@@ -623,12 +844,44 @@ Era **a borda em lote**, e ela foi feita em 01/09/2026. O que este parágrafo
 dizia — *"o que está construído é um desenho bem testado de uma coisa que ainda
 não acontece"* — deixou de valer para sete das dez etapas.
 
-O próximo passo agora é **rodar a classificação contra a caixa de verdade**, uma
-pasta pequena primeiro. Tudo acima foi provado contra um provedor de teste que
-responde certo; o que ainda não foi medido é um modelo real diante de um lote
-real — quantos rótulos ele inventa, quantos lotes são recusados pelo controle, e
-quanto custa. Nada disso se descobre com fake.
+O próximo passo era **rodar a classificação contra a caixa de verdade**, uma
+pasta pequena primeiro — e continua sendo, com uma mudança de ordem em
+02/09/2026: antes dele vem **pôr o Iris na segunda máquina**, porque isso agora
+é possível, e porque a distribuição só é real depois de o primeiro pacote ser
+baixado e executado por alguém que não seja quem o compilou.
 
-Depois dele, na ordem: a operação `Perguntar` no vocabulário da ativação, e o
+São três passos seus, nesta ordem, e todos estão em [LANCAR.md](LANCAR.md):
+gerar a chave, colar a pública e criar o repositório, executar o `.exe`
+publicado uma vez.
+
+**Depois** deles, a medição: tudo neste plano foi provado contra um provedor de
+teste que responde certo, e o que ainda não foi medido é um modelo real diante
+de um lote real — quantos rótulos ele inventa, quantos lotes o controle recusa,
+e quanto custa. Nada disso se descobre com fake.
+
+Por último, na ordem: a operação `Perguntar` no vocabulário da ativação, e o
 laço da rodada de rascunhos. Os dois são pequenos; nenhum é urgente enquanto a
-medição acima não existir.
+medição não existir.
+
+---
+
+## Uma nota sobre o método, depois de cinquenta e sete revisões
+
+Vale registrar o que a série inteira ensinou, porque não é o que eu esperava.
+
+**Os defeitos não estavam onde a suíte olhava.** Ela estava verde antes de cada
+rodada, sem exceção. O que as revisões acharam foi, quase sempre, uma de três
+coisas: um teste que não testava o que o nome dele dizia; um comentário
+afirmando mais do que o código fazia; ou um conserto anterior que tinha
+resolvido o sintoma e deixado a causa.
+
+**A trava do cache voltou três vezes** com nomes diferentes, e só parou quando
+virou um meta-teste que a *cobra* em vez de a lembrar. É a lição mais cara da
+série: quando um defeito volta, o conserto certo não é o terceiro conserto
+pontual — é tornar a regra verificável.
+
+**E a sabotagem é o único procedimento que pegou os meus próprios testes.**
+Quatro vezes um teste novo nasceu verde e inútil, uma delas porque um caractere
+invisível no meu regex fazia o padrão nunca casar. Nenhuma revisão externa achou
+essas; achou a sabotagem, que é barata e que passou a ser obrigatória para toda
+guarda nova.
