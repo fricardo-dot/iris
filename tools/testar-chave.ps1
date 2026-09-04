@@ -3,10 +3,19 @@
     Testa a credencial do OpenRouter SEM mandar conteudo de e-mail nenhum.
 
 .DESCRIPTION
-    O canario deu "ProvedorRecusou": alguma coisa devolveu erro HTTP. As duas
-    hipoteses levam a acoes opostas -- chave invalida (401) ou nenhum endpoint
-    atendendo a politica de dados -- e o diario nao guardava o codigo, entao
-    nao dava para distinguir.
+    NASCEU DE UM CASO, E O CASO JA FOI RESOLVIDO. O canario deu
+    "ProvedorRecusou" e havia duas hipoteses com acoes opostas -- chave
+    invalida (401) ou nenhum endpoint atendendo a politica de dados --, e o
+    diario nao guardava o codigo HTTP, entao nao dava para distinguir.
+
+    Em 04/09/2026, ao ligar a IA na segunda maquina, a sondagem respondeu:
+    zdr + only=google-ai-studio,google-vertex ROTEIA, com HTTP 200 atendido
+    pelo Google. A hipotese do roteamento esta descartada para essa
+    combinacao.
+
+    O roteiro continua util pelo que ele e, e nao pela investigacao que o
+    motivou: e o jeito de conferir credencial e roteamento sem mandar um byte
+    de e-mail. Serve para toda maquina nova.
 
     Este roteiro le a MESMA credencial que o Iris le, do Gerenciador de
     Credenciais, e chama /api/v1/key -- que so devolve informacao sobre a
@@ -93,8 +102,8 @@ try {
     Write-Host "O que o OpenRouter diz dela (util para o limite que o Codex pediu):"
     Write-Host $r.Content
     Write-Host ""
-    Write-Host "Entao o erro do canario NAO foi a chave. A hipotese que sobra e a" -ForegroundColor Yellow
-    Write-Host "restricao de roteamento: zdr + only=google pode nao ter endpoint." -ForegroundColor Yellow
+    Write-Host "A credencial esta boa. Se a IA ainda recusar, o que sobra e a" -ForegroundColor Yellow
+    Write-Host "restricao de roteamento -- rode de novo com -Sondar." -ForegroundColor Yellow
 } catch {
     $resp = $_.Exception.Response
     Write-Host ""
