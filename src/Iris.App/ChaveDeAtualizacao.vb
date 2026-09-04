@@ -37,7 +37,8 @@ Namespace Global.Iris.App
         ''' que <c>ExportSubjectPublicKeyInfo</c> escreve e
         ''' <c>ImportSubjectPublicKeyInfo</c> lê.
         ''' </summary>
-        Public Const PublicaBase64 As String = ""
+        Public Const PublicaBase64 As String =
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAErab4hnGNCe9Q4XkXbLPi77+nlYhGZf9Zy/87het7/77KojY11mM6UQPB4lZaL9mdq2Z5+os54sD638OQu+k/Lw=="
 
         ''' <summary>
         ''' Onde o manifesto assinado é publicado. Nas releases do GitHub,
@@ -45,7 +46,8 @@ Namespace Global.Iris.App
         ''' aponta para a última — não é preciso saber o número da versão para
         ''' perguntar qual é a última versão.
         ''' </summary>
-        Public Const Endereco As String = ""
+        Public Const Endereco As String =
+            "https://github.com/fricardo-dot/iris/releases/latest/download/iris.json"
 
         ''' <summary>
         ''' <c>False</c> antes de a chave e o endereço serem preenchidos. A tela
