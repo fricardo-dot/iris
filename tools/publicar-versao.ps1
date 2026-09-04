@@ -64,7 +64,10 @@ param(
     [Parameter(Mandatory, ParameterSetName = 'Publicar')] [string] $Repositorio,
     [Parameter(Mandatory, ParameterSetName = 'Chave')] [switch] $MostrarChavePublica,
     [string] $Chave = (Join-Path $env:USERPROFILE '.iris\chave-de-assinatura.pem'),
-    [switch] $Publicar
+    [switch] $Publicar,
+
+    # ONDE OS PACOTES FICAM. Vazio = descobre sozinho, ver abaixo.
+    [string] $Saida
 )
 
 $ErrorActionPreference = 'Stop'
@@ -125,7 +128,20 @@ if ($bytesDasNotas -gt 60000) {
 
 # ------------------------------------------------------------------ compilacao
 
-$saida = Join-Path $raiz "artefatos\$Versao"
+# ONDE GRAVAR, em tres degraus -- e nenhum deles crava uma letra de unidade
+# no codigo, porque a segunda maquina nao tem as mesmas.
+#
+#   1. -Saida, se voce passar;
+#   2. a variavel de ambiente IRIS_ARTEFATOS, se existir;
+#   3. artefatos\ dentro do repositorio, que e o padrao e esta no .gitignore.
+#
+# O degrau 2 existe para a maquina que tem um disco melhor: define-se uma vez,
+# e todas as publicacoes seguintes vao para la sem ninguem lembrar de nada. Um
+# .exe autocontido tem 63 MB, e tres releases enchem um C: apertado.
+$ondeGravar = $Saida
+if (-not $ondeGravar) { $ondeGravar = $env:IRIS_ARTEFATOS }
+if (-not $ondeGravar) { $ondeGravar = Join-Path $raiz 'artefatos' }
+$saida = Join-Path $ondeGravar $Versao
 if (Test-Path $saida) { Remove-Item -Recurse -Force $saida }
 New-Item -ItemType Directory -Force $saida | Out-Null
 
@@ -209,6 +225,9 @@ $arquivoDasNotas = Join-Path $saida 'notas.txt'
 
 Write-Host ''
 Write-Host "Versao $Versao pronta em $saida" -ForegroundColor Green
+if ($env:IRIS_ARTEFATOS -and -not $Saida) {
+    Write-Host "  (por IRIS_ARTEFATOS; use -Saida para mandar para outro lugar)" -ForegroundColor DarkGray
+}
 Write-Host ("  Iris-$Versao.exe   {0:N1} MB" -f ($tamanho / 1MB))
 Write-Host "  iris.json          sha256 $sha"
 Write-Host "  iris.json.sig      $((Get-Item $arquivoDaAssinatura).Length) bytes"

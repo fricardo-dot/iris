@@ -98,9 +98,31 @@ o build por `-p:Version=`, e o arquivo só muda **no fim de tudo** — depois do
 `gh release create`, quando ele acontece, porque o ponto de não-retorno é a
 release existir. Sem `-Publicar`, o script diz como desfazer.
 
-Ele **não publica**. Deixa os arquivos em `artefatos/<versao>/` e imprime o
-comando `gh release create`. Subir a release é um ato seu, e um ato público.
-Com `-Publicar`, ele sobe.
+Ele **não publica**. Deixa os arquivos e imprime o comando
+`gh release create`. Subir a release é um ato seu, e um ato público. Com
+`-Publicar`, ele sobe.
+
+### Onde os pacotes ficam
+
+Um `.exe` autocontido tem 63 MB, e três releases enchem um disco apertado. A
+pasta é decidida em três degraus, e **nenhum deles crava uma letra de unidade
+no código** — a segunda máquina não tem os mesmos discos:
+
+| | |
+|---|---|
+| `-Saida <pasta>` | se você passar, manda |
+| `IRIS_ARTEFATOS` | variável de ambiente, se existir |
+| `artefatos\` | o padrão, dentro do repositório e no `.gitignore` |
+
+Nesta máquina o `IRIS_ARTEFATOS` está em `D:\Iriseleases` — o `C:` tem
+pouco espaço, e o `D:` é outro volume. O script avisa na saída quando está
+usando a variável, para você não descobrir isso procurando o arquivo.
+
+**Nada disso precisa de backup**: o pacote se reconstrói do commit, e a release
+publicada é a cópia que importa. A única coisa insubstituível é a chave
+privada, e ela mora noutro lugar de propósito — em `D:\Iris-chave-de-assinatura`,
+**fora** da árvore dos pacotes. Uma pasta que você abre, navega e um dia copia
+inteira para algum lugar não é vizinhança para a chave que assina tudo.
 
 Depois: **commite o `Directory.Build.props`**. O número da versão vive lá,
 e só lá.
