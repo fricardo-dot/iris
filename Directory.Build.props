@@ -11,7 +11,7 @@
        assinado. Dois lugares divergiriam, e a divergência apareceria como o
        Iris oferecendo para baixar a versão que ele já é. -->
   <PropertyGroup>
-    <Version>0.1.0</Version>
+    <Version>0.2.0</Version>
 
     <!-- InformationalVersion é a que a tela mostra e a que o verificador lê.
          AssemblyVersion fica em 0.1.0.0 e serve ao carregador do .NET; as duas
