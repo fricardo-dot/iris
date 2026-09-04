@@ -149,21 +149,57 @@ permite acumular reputação; o EV historicamente recebia tratamento melhor.
 Nenhum dos dois é garantia de silêncio, e os dois têm custo anual. Para duas
 máquinas suas, não vale.
 
-## Antes do primeiro push
+## O primeiro push, e o que ele deixou resolvido
 
-Nada foi empurrado para lugar nenhum: os commits estão só aqui. Duas coisas
-para decidir antes de o repositório existir:
+**Feito em 03/09/2026.** O repositório é
+[github.com/fricardo-dot/iris](https://github.com/fricardo-dot/iris), público —
+e público é requisito, não preferência: o Iris não manda credencial nenhuma,
+então `latest/download` só responde em repositório aberto.
 
-1. ~~**O histórico carrega o seu e-mail de trabalho.**~~ **Feito.** Os
-   arquivos foram limpos e o histórico foi reescrito em 02/09/2026, antes de
-   qualquer push: a árvore do topo saiu idêntica, os 392 commits continuam
-   lá, e a string não aparece em nenhum objeto alcançável.
+Duas coisas foram resolvidas antes de ele existir, e as duas ficariam caras
+depois:
 
-2. **Repositório público ou privado.** O Iris não manda credencial nenhuma,
-   então `latest/download` só funciona para ele num repositório público.
-   Assets de repositório privado até podem ser baixados — com autenticação —,
-   e isso exigiria pôr um token dentro do atualizador, ou hospedar os arquivos
-   em outro lugar. As duas coisas são desenhos diferentes deste.
+1. **O e-mail de trabalho saiu do histórico.** Ele estava em dois arquivos — o
+   caminho fixo de um `.ost` num script, e um log colado num documento; o nome
+   de um `.ost` *é* o endereço da conta. Os arquivos foram limpos e o histórico
+   reescrito, com a árvore do topo saindo idêntica.
+2. **O autor dos commits passou a ser o `noreply` do GitHub.** Eles estavam com
+   um endereço fictício, que funcionava e não associava nada à conta. Agora são
+   `294185678+fricardo-dot@users.noreply.github.com` — o GitHub reconhece o
+   autor, e nenhum endereço real fica público. A configuração ficou no
+   repositório, e não na global, para os commits seguintes não voltarem ao
+   antigo.
+
+### E o ciclo foi conferido contra a release de verdade
+
+Na 0.2.0, com o código do cliente e a chave embutida no executável — não com
+dublê:
+
+| Versão instalada | Desfecho |
+|---|---|
+| 0.1.0 | há versão nova, oferece a 0.2.0 |
+| 0.2.0 | já está em dia |
+| 9.9.9 | já está em dia — **o rebaixamento é recusado** |
+
+Depois o download inteiro: 66.422.849 bytes, SHA-256 igual ao do manifesto
+assinado, promovido com o nome final, nenhum `.parcial` sobrando. Os três
+hashes conferem — o do manifesto, o do arquivo compilado e o do baixado.
+
+**Duas coisas só aconteceram aí, e nenhum teste as tinha exercitado:** um
+redirecionamento HTTPS de verdade — o `latest/download` redireciona para
+`objects.githubusercontent.com` —, e a assinatura atravessando a rede. Até
+então, "as duas pontas usam o mesmo formato" era prova de laboratório, com
+assinador e leitor no mesmo processo.
+
+### O que ainda falta
+
+**Executar o `Iris-0.2.0.exe` na segunda máquina.** É o único passo que fecha a
+distribuição de fato: um pacote baixado e executado por quem não o compilou. O
+Windows vai avisar — *"aplicativo não reconhecido"*, com **Mais informações →
+Executar assim mesmo** —, pelo motivo explicado acima, na seção do que a
+assinatura não compra.
+
+Lá, o botão de versões deve dizer *"Você já está na versão 0.2.0"*.
 
 ## Onde as peças moram
 
